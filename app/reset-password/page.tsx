@@ -1,208 +1,128 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const params = useSearchParams();
+  const search = useSearchParams();
 
-  // Supabase sends these in the URL
-  const accessToken = params.get("access_token");
-  const type = params.get("type");
-
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
-  const [statusType, setStatusType] = useState<"error" | "success" | "info">(
-    "info"
+  const [email, setEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [mode, setMode] = useState<"request" | "reset">(
+    search.get("type") === "recovery" ? "reset" : "request"
   );
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tokenValid, setTokenValid] = useState(true);
 
-  // Basic checks when page loads
-  useEffect(() => {
-    if (!accessToken || type !== "recovery") {
-      setStatus("This reset link is invalid or has expired.");
-      setStatusType("error");
-      setTokenValid(false);
+  async function handleRequest(e: FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password?type=recovery`,
+      });
+      if (error) throw error;
+      setMessage("Reset link sent! Check your email.");
+    } catch (err: any) {
+      setError(err.message ?? "Failed to send reset email.");
+    } finally {
+      setLoading(false);
     }
-  }, [accessToken, type]);
-
-  const canSubmit =
-    !loading &&
-    tokenValid &&
-    password.length >= 8 &&
-    confirm.length >= 8 &&
-    password === confirm;
+  }
 
   async function handleReset(e: FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return;
-
     setLoading(true);
-    setStatus(null);
+    setError(null);
+    setMessage(null);
 
-    const { error } = await supabase.auth.updateUser({
-      password,
-    });
-
-    if (error) {
-      setStatus(error.message || "Unable to update password. Try again.");
-      setStatusType("error");
+    try {
+      const { data: { user }, error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (error) throw error;
+      setMessage("Password updated. Redirecting to login…");
+      setTimeout(() => router.replace("/login"), 1500);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to update password.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setStatus("Password updated successfully! Redirecting you to login…");
-    setStatusType("success");
-
-    // Small delay so they can see the success message
-    setTimeout(() => {
-      router.push("/login");
-    }, 1500);
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
-      <div className="w-full max-w-lg">
-        {/* Fetti branded card */}
-        <div className="relative rounded-2xl bg-slate-900/90 border border-slate-800 shadow-[0_0_80px_rgba(15,23,42,0.9)] overflow-hidden">
-          {/* Glow bar */}
-          <div className="absolute inset-x-0 -top-px h-px bg-gradient-to-r from-emerald-400 via-teal-400 to-lime-400" />
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-50">
+      <div className="w-full max-w-md rounded-2xl bg-slate-900/80 border border-slate-800 p-8 shadow-xl">
+        <h1 className="text-xl font-semibold mb-2">
+          {mode === "request" ? "Reset your password" : "Set a new password"}
+        </h1>
+        <p className="text-xs text-slate-400 mb-6">
+          {mode === "request"
+            ? "Enter your email and we’ll send you a secure reset link."
+            : "Enter your new password to finish resetting your account."}
+        </p>
 
-          <div className="px-8 pt-8 pb-6">
-            {/* Header / logo row */}
-            <div className="flex items-center gap-3 mb-6">
-              <div className="h-10 w-10 rounded-xl bg-slate-950/80 flex items-center justify-center text-2xl shadow-inner">
-                💸
-              </div>
-              <div>
-                <div className="text-sm font-semibold tracking-wide text-slate-100">
-                  Fetti CRM
-                </div>
-                <div className="text-[11px] text-slate-400">
-                  Mortgage & Business Loan Pipeline
-                </div>
-              </div>
+        {message && (
+          <div className="mb-3 rounded-md border border-emerald-500/60 bg-emerald-500/15 px-3 py-2 text-xs text-emerald-200">
+            {message}
+          </div>
+        )}
+        {error && (
+          <div className="mb-3 rounded-md border border-red-500/60 bg-red-500/15 px-3 py-2 text-xs text-red-200">
+            {error}
+          </div>
+        )}
+
+        {mode === "request" ? (
+          <form onSubmit={handleRequest} className="space-y-4">
+            <div>
+              <label className="block text-xs mb-1">Work email</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-fettiGreen/70"
+              />
             </div>
 
-            <h1 className="text-xl font-semibold text-slate-50 mb-1">
-              Reset your password
-            </h1>
-            <p className="text-xs text-slate-400 mb-6">
-              Choose a new password for your Fetti workspace account.
-            </p>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-md bg-fettiGreen px-3 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            >
+              {loading ? "Sending…" : "Send reset link"}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleReset} className="space-y-4">
+            <div>
+              <label className="block text-xs mb-1">New password</label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-fettiGreen/70"
+              />
+            </div>
 
-            {/* Status / alert message */}
-            {status && (
-              <div
-                className={[
-                  "mb-4 rounded-lg px-3 py-2 text-xs border",
-                  statusType === "error" &&
-                    "border-red-500/40 bg-red-500/10 text-red-200",
-                  statusType === "success" &&
-                    "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
-                  statusType === "info" &&
-                    "border-sky-500/40 bg-sky-500/10 text-sky-200",
-                ].join(" ")}
-              >
-                {status}
-              </div>
-            )}
-
-            {!tokenValid ? (
-              <div className="text-xs text-slate-400 space-y-3">
-                <p>
-                  If you requested a password reset a while ago, that link may
-                  have expired.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => router.push("/login")}
-                  className="inline-flex items-center gap-1 text-emerald-300 hover:text-emerald-200 text-xs font-medium"
-                >
-                  ← Back to login
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleReset} className="space-y-4 mt-2">
-                <div className="space-y-1">
-                  <label className="block text-xs font-medium text-slate-300">
-                    New password
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    minLength={8}
-                    placeholder="Minimum 8 characters"
-                    className="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400"
-                    required
-                  />
-                  <p className="text-[11px] text-slate-500">
-                    Tip: use a phrase with numbers and symbols for stronger
-                    security.
-                  </p>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-xs font-medium text-slate-300">
-                    Confirm new password
-                  </label>
-                  <input
-                    type="password"
-                    value={confirm}
-                    onChange={(e) => setConfirm(e.target.value)}
-                    minLength={8}
-                    placeholder="Type it again"
-                    className="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400"
-                    required
-                  />
-                  {password &&
-                    confirm &&
-                    password !== confirm && (
-                      <p className="text-[11px] text-red-300">
-                        Passwords don’t match yet.
-                      </p>
-                    )}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={!canSubmit}
-                  className={[
-                    "mt-2 w-full inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition",
-                    canSubmit
-                      ? "bg-gradient-to-r from-emerald-400 via-lime-300 to-emerald-400 text-slate-900 hover:brightness-110"
-                      : "bg-slate-800 text-slate-500 cursor-not-allowed",
-                  ].join(" ")}
-                >
-                  {loading ? (
-                    <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-[2px] border-slate-900 border-t-transparent" />
-                      Updating password…
-                    </>
-                  ) : (
-                    <>Reset password</>
-                  )}
-                </button>
-
-                <div className="flex items-center justify-between pt-2 text-[11px] text-slate-500">
-                  <span>JWT-secured access via Supabase</span>
-                  <button
-                    type="button"
-                    onClick={() => router.push("/login")}
-                    className="text-emerald-300 hover:text-emerald-200 font-medium"
-                  >
-                    Back to login
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-md bg-fettiGreen px-3 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            >
+              {loading ? "Updating…" : "Update password"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
