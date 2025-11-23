@@ -8,6 +8,8 @@ interface Props {
   children: ReactNode;
 }
 
+const PUBLIC_ROUTES = ["/login", "/reset-password", "/reset-password/update"];
+
 export default function AuthGuard({ children }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -18,10 +20,14 @@ export default function AuthGuard({ children }: Props) {
 
     async function check() {
       try {
+        // If it’s a public route, don’t block it
+        if (pathname && PUBLIC_ROUTES.some((p) => pathname.startsWith(p))) {
+          return;
+        }
+
         const { data } = await supabase.auth.getSession();
         const session = data.session;
 
-        // If not authenticated and not already on /login, redirect
         if (!session && pathname !== "/login") {
           const next = encodeURIComponent(pathname || "/");
           router.replace(`/login?next=${next}`);
@@ -33,11 +39,10 @@ export default function AuthGuard({ children }: Props) {
 
     check();
 
-    // Optional: keep session fresh
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, _session) => {
-      // You can add logic here if you want to react to sign-out, etc.
+      // could react to sign-out here if needed
     });
 
     return () => {
@@ -47,6 +52,7 @@ export default function AuthGuard({ children }: Props) {
   }, [router, pathname]);
 
   if (checking) {
+    // Keep this light loading state so app doesn’t flash
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-xs text-slate-300">
