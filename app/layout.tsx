@@ -1,11 +1,11 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import Sidebar from "@/components/Sidebar";
-import AuthGuard from "@/components/AuthGuard";
+import { Sidebar } from "@/components/Sidebar";
+import { AuthGuard } from "@/components/AuthGuard";
 
 export const metadata: Metadata = {
   title: "Fetti CRM",
-  description: "Fetti CRM – Investment & Refi Lead Engine",
+  description: "Fetti CRM — Investment & Refi Lead Engine",
 };
 
 export default function RootLayout({
@@ -15,14 +15,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-slate-950 text-slate-50">
-        {/* Only protect inner app pages */}
+      <body className="bg-slate-950 text-slate-50">
         <AuthGuard>
-          <div className="flex">
+          <div className="min-h-screen bg-slate-950 text-slate-50 flex">
             <Sidebar />
-            <main className="flex-1 min-h-screen bg-slate-950">
-              <div className="max-w-6xl mx-auto px-4 py-8">{children}</div>
-            </main>
+            <main className="flex-1 bg-slate-950">{children}</main>
           </div>
         </AuthGuard>
       </body>
