@@ -26,7 +26,7 @@ export function Topbar() {
       <div className="flex items-center gap-3 text-xs">
         <span className="hidden sm:inline text-slate-400">Logged in as</span>
         <span className="rounded-full bg-slate-900 px-3 py-1 text-slate-100">
-          you@fettifi.com
+          info@fettifi.com
         </span>
       </div>
     </header>
