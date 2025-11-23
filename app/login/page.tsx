@@ -10,164 +10,153 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setMessage(null);
     setError(null);
-    setInfo(null);
+
+    if (!email || !password) {
+      setError("Please enter both email and password.");
+      setLoading(false);
+      return;
+    }
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (signInError) {
+        setError(signInError.message || "Unable to log in. Please check your email and password.");
+        return;
+      }
 
-      // Login OK -> go to dashboard
-      router.replace("/");
+      if (data.session) {
+        // Logged in successfully → send to dashboard
+        router.replace("/");
+      } else {
+        setError("Login failed. No session returned.");
+      }
     } catch (err: any) {
       console.error(err);
-      setError(err.message ?? "Authentication failed");
+      setError(err?.message || "Unexpected error logging in.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handlePasswordReset() {
+  async function handleForgotPassword() {
+    setLoading(true);
+    setMessage(null);
     setError(null);
-    setInfo(null);
 
     if (!email) {
-      setError("Enter your email above first so we know where to send the link.");
+      setError("Enter your email above first, then click Forgot password.");
+      setLoading(false);
       return;
     }
 
     try {
-      setLoading(true);
+      const redirectTo = `${window.location.origin}/reset-password`;
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        // You can later change this to a dedicated reset page if you want
-        redirectTo: `${window.location.origin}/login`,
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
       });
 
-      if (error) throw error;
-
-      setInfo("Password reset email sent. Check your inbox for the link.");
+      if (resetError) {
+        setError(resetError.message || "Could not send reset email.");
+      } else {
+        setMessage("Password reset email sent. Check your inbox.");
+      }
     } catch (err: any) {
       console.error(err);
-      setError(err.message ?? "Failed to send password reset email.");
+      setError(err?.message || "Unexpected error sending reset email.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-      <div className="absolute inset-0 fetti-gradient opacity-40 pointer-events-none" />
-
-      <div className="relative z-10 w-full max-w-md px-6">
-        <div className="mb-6 flex items-center justify-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-slate-900 flex items-center justify-center text-2xl shadow-lg shadow-slate-900/80">
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100">
+      <div className="w-full max-w-md rounded-2xl bg-slate-900/90 border border-slate-800 p-8 shadow-xl">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="h-10 w-10 rounded-xl bg-slate-950/80 flex items-center justify-center text-2xl">
             💸
           </div>
           <div>
-            <div className="text-sm font-semibold tracking-wide">
-              Fetti CRM
-            </div>
+            <div className="text-sm font-semibold tracking-wide">Fetti CRM</div>
             <div className="text-[11px] text-slate-400">
-              Mortgage & Business Loan Pipeline
+              Mortgage &amp; Business Loan Pipeline
             </div>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 backdrop-blur-md shadow-2xl shadow-slate-950/80">
-          <div className="px-6 pt-6 pb-4 border-b border-slate-800">
-            <h1 className="text-lg font-semibold">Log in to your workspace</h1>
-            <p className="mt-1 text-xs text-slate-400">
-              Use your work email to access the mortgage &amp; business loan
-              pipeline.
-            </p>
+        <h1 className="text-lg font-semibold mb-1">Log in to your workspace</h1>
+        <p className="text-xs text-slate-400 mb-6">
+          Use your work email to access the mortgage &amp; business loan pipeline.
+        </p>
+
+        {error && (
+          <div className="mb-4 rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+            {error}
+          </div>
+        )}
+
+        {message && (
+          <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+            {message}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-xs text-slate-300">Work email</label>
+            <input
+              type="email"
+              className="w-full rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm outline-none focus:border-fettiGreen focus:ring-1 focus:ring-fettiGreen"
+              placeholder="you@fettifi.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value.trim())}
+            />
           </div>
 
-          <form onSubmit={handleSubmit} className="px-6 pb-6 pt-4 space-y-4">
-            {error && (
-              <div className="text-xs text-red-300 bg-red-950/40 border border-red-500/40 rounded-md px-3 py-2">
-                {error}
-              </div>
-            )}
+          <div className="space-y-1">
+            <label className="text-xs text-slate-300">Password</label>
+            <input
+              type="password"
+              className="w-full rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm outline-none focus:border-fettiGreen focus:ring-1 focus:ring-fettiGreen"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
 
-            {info && (
-              <div className="text-xs text-emerald-300 bg-emerald-950/30 border border-emerald-500/40 rounded-md px-3 py-2">
-                {info}
-              </div>
-            )}
+          <button
+            type="submit"
+            disabled={loading}
+            className="mt-2 w-full rounded-lg bg-fettiGreen px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-lime-400 disabled:opacity-60 disabled:cursor-not-allowed transition"
+          >
+            {loading ? "Signing in…" : "Log in"}
+          </button>
+        </form>
 
-            <div className="space-y-1">
-              <label
-                htmlFor="email"
-                className="text-xs font-medium text-slate-300"
-              >
-                Work email
-              </label>
-              <input
-                id="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none focus:border-fettiGreen focus:ring-1 focus:ring-fettiGreen/70 placeholder:text-slate-500"
-                placeholder="you@fettifi.com"
-              />
-            </div>
+        <button
+          type="button"
+          onClick={handleForgotPassword}
+          className="mt-3 w-full text-[11px] text-slate-400 hover:text-slate-200 text-right"
+        >
+          Forgot password?
+        </button>
 
-            <div className="space-y-1">
-              <label
-                htmlFor="password"
-                className="text-xs font-medium text-slate-300"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none focus:border-fettiGreen focus:ring-1 focus:ring-fettiGreen/70 placeholder:text-slate-500"
-                placeholder="••••••••"
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
-                onClick={handlePasswordReset}
-                disabled={loading}
-                className="text-[11px] text-fettiGreen hover:text-emerald-300 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                Forgot password?
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-1 flex items-center justify-center rounded-lg bg-fettiGreen text-slate-950 text-sm font-semibold py-2.5 shadow-lg shadow-emerald-900/40 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed transition"
-            >
-              {loading ? "Working..." : "Log in"}
-            </button>
-
-            <p className="text-[11px] text-slate-500 text-center pt-2 border-t border-slate-800/70 mt-4">
-              JWT-secured workspace access via Supabase.
-            </p>
-          </form>
-        </div>
+        <p className="mt-6 text-[10px] text-slate-500 text-center">
+          JWT-secured workspace access via Supabase.
+        </p>
       </div>
     </div>
   );
