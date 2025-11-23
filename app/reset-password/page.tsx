@@ -1,68 +1,88 @@
+// app/reset-password/page.tsx
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function ResetPasswordPage() {
   const [email, setEmail] = useState("");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  async function sendReset(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setMessage("");
-    setError("");
+    setLoading(true);
+    setMessage(null);
+    setError(null);
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/update-password`,
-    });
+    try {
+      const redirectTo = `${window.location.origin}/update-password`;
 
-    if (error) {
-      setError(error.message);
-      return;
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      });
+
+      if (error) {
+        console.error("Reset error:", error);
+        setError(error.message || "Could not send reset email.");
+        return;
+      }
+
+      setMessage(
+        "Reset email sent. Check your inbox and click the link to set a new password."
+      );
+    } catch (err: any) {
+      console.error(err);
+      setError("Unexpected error sending reset email.");
+    } finally {
+      setLoading(false);
     }
-
-    setMessage("Password reset email sent. Check your inbox.");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950">
-      <form
-        onSubmit={sendReset}
-        className="w-full max-w-sm bg-slate-900 p-8 rounded-xl border border-slate-800"
-      >
-        <h2 className="text-xl font-semibold text-white mb-4">
-          Reset your password
-        </h2>
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100">
+      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/90 px-8 py-10 shadow-xl">
+        <h1 className="text-lg font-semibold mb-1">Reset your password</h1>
+        <p className="text-xs text-slate-400 mb-5">
+          Enter the email for your Fetti CRM workspace. You&apos;ll get a link
+          to choose a new password.
+        </p>
 
         {error && (
-          <div className="mb-3 text-red-400 text-sm bg-red-900/20 p-2 rounded">
+          <div className="mb-4 rounded-md bg-red-900/30 border border-red-500/60 px-3 py-2 text-xs text-red-200">
             {error}
           </div>
         )}
 
         {message && (
-          <div className="mb-3 text-green-400 text-sm bg-green-900/20 p-2 rounded">
+          <div className="mb-4 rounded-md bg-emerald-900/30 border border-emerald-500/60 px-3 py-2 text-xs text-emerald-200">
             {message}
           </div>
         )}
 
-        <label className="text-slate-300 text-sm">Email</label>
-        <input
-          type="email"
-          className="w-full mt-1 mb-3 p-2 bg-slate-800 text-white rounded"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-xs text-slate-300">Email</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-fettiGreen focus:ring-1 focus:ring-fettiGreen"
+              placeholder="you@fettifi.com"
+            />
+          </div>
 
-        <button
-          type="submit"
-          className="w-full mt-3 p-2 rounded bg-fettiGreen text-black font-semibold"
-        >
-          Send Reset Email
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={loading}
+            className="mt-2 w-full rounded-lg bg-fettiGreen px-3 py-2 text-sm font-medium text-slate-950 hover:bg-lime-300 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? "Sending…" : "Send Reset Email"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
