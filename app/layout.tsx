@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import Sidebar from "@/components/Sidebar";
+import { Sidebar } from "@/components/Sidebar";
 import AuthGuard from "@/components/AuthGuard";
 
 export const metadata: Metadata = {
