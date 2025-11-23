@@ -11,26 +11,55 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setInfo(null);
 
     try {
-      // Email + password login with Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
 
-      // If login succeeds, send them to the dashboard
+      // Login OK -> go to dashboard
       router.replace("/");
     } catch (err: any) {
       console.error(err);
       setError(err.message ?? "Authentication failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePasswordReset() {
+    setError(null);
+    setInfo(null);
+
+    if (!email) {
+      setError("Enter your email above first so we know where to send the link.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        // You can later change this to a dedicated reset page if you want
+        redirectTo: `${window.location.origin}/login`,
+      });
+
+      if (error) throw error;
+
+      setInfo("Password reset email sent. Check your inbox for the link.");
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message ?? "Failed to send password reset email.");
     } finally {
       setLoading(false);
     }
@@ -59,7 +88,7 @@ export default function LoginPage() {
           <div className="px-6 pt-6 pb-4 border-b border-slate-800">
             <h1 className="text-lg font-semibold">Log in to your workspace</h1>
             <p className="mt-1 text-xs text-slate-400">
-              Use your work email to access the mortgage & business loan
+              Use your work email to access the mortgage &amp; business loan
               pipeline.
             </p>
           </div>
@@ -68,6 +97,12 @@ export default function LoginPage() {
             {error && (
               <div className="text-xs text-red-300 bg-red-950/40 border border-red-500/40 rounded-md px-3 py-2">
                 {error}
+              </div>
+            )}
+
+            {info && (
+              <div className="text-xs text-emerald-300 bg-emerald-950/30 border border-emerald-500/40 rounded-md px-3 py-2">
+                {info}
               </div>
             )}
 
@@ -109,12 +144,23 @@ export default function LoginPage() {
               />
             </div>
 
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={handlePasswordReset}
+                disabled={loading}
+                className="text-[11px] text-fettiGreen hover:text-emerald-300 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Forgot password?
+              </button>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 flex items-center justify-center rounded-lg bg-fettiGreen text-slate-950 text-sm font-semibold py-2.5 shadow-lg shadow-emerald-900/40 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed transition"
+              className="w-full mt-1 flex items-center justify-center rounded-lg bg-fettiGreen text-slate-950 text-sm font-semibold py-2.5 shadow-lg shadow-emerald-900/40 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed transition"
             >
-              {loading ? "Logging in..." : "Log in"}
+              {loading ? "Working..." : "Log in"}
             </button>
 
             <p className="text-[11px] text-slate-500 text-center pt-2 border-t border-slate-800/70 mt-4">
