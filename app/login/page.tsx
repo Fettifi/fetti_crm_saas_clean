@@ -1,142 +1,126 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/";
 
-  const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
-    setMessage(null);
     setError(null);
 
     try {
-      if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
-        setMessage("Logged in successfully.");
-        router.replace(next);
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (error) throw error;
-        setMessage(
-          "Account created. Check your email if confirmation is required, then log in."
-        );
-        setMode("login");
-      }
+      // Email + password login with Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      // If login succeeds, send them to the dashboard
+      router.replace("/");
     } catch (err: any) {
       console.error(err);
-      setError(err.message ?? "Authentication error");
+      setError(err.message ?? "Authentication failed");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 fetti-gradient">
-      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-fettiGreen to-fettiGold flex items-center justify-center text-2xl">
+    <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
+      <div className="absolute inset-0 fetti-gradient opacity-40 pointer-events-none" />
+
+      <div className="relative z-10 w-full max-w-md px-6">
+        <div className="mb-6 flex items-center justify-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-slate-900 flex items-center justify-center text-2xl shadow-lg shadow-slate-900/80">
             💸
           </div>
           <div>
-            <div className="text-sm font-semibold tracking-wide">Fetti CRM</div>
-            <div className="text-xs text-slate-400">We Do Money.</div>
+            <div className="text-sm font-semibold tracking-wide">
+              Fetti CRM
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Mortgage & Business Loan Pipeline
+            </div>
           </div>
         </div>
 
-        <h1 className="text-lg font-semibold text-slate-50 mb-1">
-          {mode === "login" ? "Log in to your workspace" : "Create your account"}
-        </h1>
-        <p className="text-xs text-slate-400 mb-4">
-          Use your work email to access the mortgage & business loan pipeline.
-        </p>
-
-        {message && (
-          <div className="mb-3 rounded-lg border border-emerald-500/40 bg-emerald-900/20 px-3 py-2 text-xs text-emerald-200">
-            {message}
-          </div>
-        )}
-        {error && (
-          <div className="mb-3 rounded-lg border border-red-500/40 bg-red-900/20 px-3 py-2 text-xs text-red-200">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
-              Work email
-            </label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none focus:border-fettiGreen focus:ring-1 focus:ring-fettiGreen"
-              placeholder="you@fettifi.com"
-            />
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 backdrop-blur-md shadow-2xl shadow-slate-950/80">
+          <div className="px-6 pt-6 pb-4 border-b border-slate-800">
+            <h1 className="text-lg font-semibold">Log in to your workspace</h1>
+            <p className="mt-1 text-xs text-slate-400">
+              Use your work email to access the mortgage & business loan
+              pipeline.
+            </p>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
-              Password
-            </label>
-            <input
-              type="password"
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none focus:border-fettiGreen focus:ring-1 focus:ring-fettiGreen"
-              placeholder="••••••••"
-            />
-          </div>
+          <form onSubmit={handleSubmit} className="px-6 pb-6 pt-4 space-y-4">
+            {error && (
+              <div className="text-xs text-red-300 bg-red-950/40 border border-red-500/40 rounded-md px-3 py-2">
+                {error}
+              </div>
+            )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="mt-1 inline-flex w-full items-center justify-center rounded-lg bg-fettiGreen px-3 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {loading
-              ? "Working..."
-              : mode === "login"
-              ? "Log in"
-              : "Create account"}
-          </button>
-        </form>
+            <div className="space-y-1">
+              <label
+                htmlFor="email"
+                className="text-xs font-medium text-slate-300"
+              >
+                Work email
+              </label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none focus:border-fettiGreen focus:ring-1 focus:ring-fettiGreen/70 placeholder:text-slate-500"
+                placeholder="you@fettifi.com"
+              />
+            </div>
 
-        <div className="mt-3 text-[11px] text-slate-400 flex items-center justify-between">
-          <span>JWT-secured workspace access via Supabase.</span>
-          <button
-            type="button"
-            onClick={() =>
-              setMode((m) => (m === "login" ? "signup" : "login"))
-            }
-            className="text-emerald-300 hover:text-emerald-200 underline-offset-2 hover:underline"
-          >
-            {mode === "login"
-              ? "Need an account?"
-              : "Already have an account?"}
-          </button>
+            <div className="space-y-1">
+              <label
+                htmlFor="password"
+                className="text-xs font-medium text-slate-300"
+              >
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none focus:border-fettiGreen focus:ring-1 focus:ring-fettiGreen/70 placeholder:text-slate-500"
+                placeholder="••••••••"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full mt-2 flex items-center justify-center rounded-lg bg-fettiGreen text-slate-950 text-sm font-semibold py-2.5 shadow-lg shadow-emerald-900/40 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed transition"
+            >
+              {loading ? "Logging in..." : "Log in"}
+            </button>
+
+            <p className="text-[11px] text-slate-500 text-center pt-2 border-t border-slate-800/70 mt-4">
+              JWT-secured workspace access via Supabase.
+            </p>
+          </form>
         </div>
       </div>
     </div>
