@@ -1,0 +1,255 @@
+"use client";
+
+import { useState } from "react";
+// 👇 IMPORTANT: use the SAME import you use in app/leads/page.tsx
+import { supabase } from "@/supabase/client"; // adjust path if your client file is different
+
+type LeadFormState = {
+  full_name: string;
+  email: string;
+  phone: string;
+  state: string;
+  occupancy: string;
+  loan_purpose: string;
+  property_value: string;
+  credit_band: string;
+  liquid_assets: string;
+  notes: string;
+};
+
+const initialState: LeadFormState = {
+  full_name: "",
+  email: "",
+  phone: "",
+  state: "",
+  occupancy: "",
+  loan_purpose: "",
+  property_value: "",
+  credit_band: "",
+  liquid_assets: "",
+  notes: "",
+};
+
+export default function ApplyPage() {
+  const [form, setForm] = useState<LeadFormState>(initialState);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const { error } = await supabase.from("leads").insert([
+        {
+          full_name: form.full_name,
+          email: form.email,
+          phone: form.phone,
+          state: form.state,
+          occupancy: form.occupancy,
+          loan_purpose: form.loan_purpose,
+          property_value: form.property_value
+            ? Number(form.property_value.replace(/,/g, ""))
+            : null,
+          credit_band: form.credit_band,
+          liquid_assets: form.liquid_assets
+            ? Number(form.liquid_assets.replace(/,/g, ""))
+            : null,
+          notes: form.notes,
+          source: "web-form", // shows up in your CRM
+          stage: "New Lead",
+        },
+      ]);
+
+      if (error) {
+        console.error(error);
+        setError("Something went wrong saving this lead.");
+      } else {
+        setMessage("✅ Thanks! Your info has been submitted.");
+        setForm(initialState);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Unexpected error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
+      <div className="w-full max-w-xl bg-slate-900/80 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-xl">
+        <h1 className="text-2xl font-bold mb-2 text-fetti-green">
+          Get Pre-Qualified with Fetti
+        </h1>
+        <p className="text-sm text-slate-300 mb-6">
+          Tell us a little about your scenario and we&apos;ll run it through the
+          Fetti CRM engine.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold mb-1">
+                Full Name
+              </label>
+              <input
+                name="full_name"
+                value={form.full_name}
+                onChange={handleChange}
+                required
+                className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-fetti-green"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">Email</label>
+              <input
+                type="email"
+                name="email"
+                value={form.email}
+                onChange={handleChange}
+                required
+                className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-fetti-green"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">Phone</label>
+              <input
+                name="phone"
+                value={form.phone}
+                onChange={handleChange}
+                className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-fetti-green"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">State</label>
+              <input
+                name="state"
+                value={form.state}
+                onChange={handleChange}
+                className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-fetti-green"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold mb-1">
+                Occupancy
+              </label>
+              <select
+                name="occupancy"
+                value={form.occupancy}
+                onChange={handleChange}
+                className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-fetti-green"
+              >
+                <option value="">Select...</option>
+                <option value="Primary">Primary</option>
+                <option value="Second Home">Second Home</option>
+                <option value="Investment">Investment</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">
+                Loan Purpose
+              </label>
+              <select
+                name="loan_purpose"
+                value={form.loan_purpose}
+                onChange={handleChange}
+                className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-fetti-green"
+              >
+                <option value="">Select...</option>
+                <option value="Purchase">Purchase</option>
+                <option value="Refinance">Refinance</option>
+                <option value="Cash Out">Cash Out</option>
+                <option value="Bridge">Bridge</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold mb-1">
+                Estimated Property Value
+              </label>
+              <input
+                name="property_value"
+                value={form.property_value}
+                onChange={handleChange}
+                className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-fetti-green"
+                placeholder="500000"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">
+                Liquid Assets (approx.)
+              </label>
+              <input
+                name="liquid_assets"
+                value={form.liquid_assets}
+                onChange={handleChange}
+                className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-fetti-green"
+                placeholder="75000"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold mb-1">
+              Credit Band
+            </label>
+            <select
+              name="credit_band"
+              value={form.credit_band}
+              onChange={handleChange}
+              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-fetti-green"
+            >
+              <option value="">Select...</option>
+              <option value="760+">760+</option>
+              <option value="720-759">720-759</option>
+              <option value="680-719">680-719</option>
+              <option value="640-679">640-679</option>
+              <option value="<640">&lt;640</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold mb-1">
+              Notes / Scenario
+            </label>
+            <textarea
+              name="notes"
+              value={form.notes}
+              onChange={handleChange}
+              rows={3}
+              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-fetti-green"
+              placeholder="Tell us anything important about this deal..."
+            />
+          </div>
+
+          {message && <p className="text-sm text-emerald-400">{message}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-2 rounded-lg bg-fetti-green text-slate-950 font-semibold py-2 text-sm hover:bg-emerald-400 disabled:opacity-60"
+          >
+            {loading ? "Submitting..." : "Submit Lead"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
