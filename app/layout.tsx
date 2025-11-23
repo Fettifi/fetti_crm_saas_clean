@@ -1,26 +1,27 @@
 import "./globals.css";
-import type { ReactNode } from "react";
-import { Sidebar } from "@/components/Sidebar";
-import { Topbar } from "@/components/Topbar";
+import type { Metadata } from "next";
+import Sidebar from "@/components/Sidebar";
+import AuthGuard from "@/components/AuthGuard";
 
-export const metadata = {
-  title: "Fetti CRM SaaS",
-  description: "Fetti Leads · Investment & Refi Lead Engine"
+export const metadata: Metadata = {
+  title: "Fetti CRM",
+  description: "Fetti CRM – Investment & Refi Lead Engine",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body>
-        <div className="min-h-screen flex bg-slate-950 text-slate-50">
-          <Sidebar />
-          <div className="flex-1 flex flex-col">
-            <Topbar />
-            <main className="flex-1 px-4 py-4 md:px-6 md:py-6 bg-slate-950">
-              {children}
-            </main>
+      <body className="bg-slate-950 text-slate-50">
+        <AuthGuard>
+          <div className="min-h-screen flex">
+            <Sidebar />
+            <main className="flex-1 bg-slate-950">{children}</main>
           </div>
-        </div>
+        </AuthGuard>
       </body>
     </html>
   );
