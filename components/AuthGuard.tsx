@@ -7,11 +7,11 @@ type AuthGuardProps = {
 };
 
 /**
- * TEMPORARY STUB:
+ * TEMP STUB:
  * - No Supabase
- * - No env vars
  * - No redirects
- * Just renders children so we can stop 500 errors in production.
+ * - No cookies
+ * Just render children so nothing can crash on the server.
  */
 export default function AuthGuard({ children }: AuthGuardProps) {
   return <>{children}</>;
