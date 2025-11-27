@@ -1,40 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import React from "react";
 
-type Props = {
+interface AuthGuardProps {
   children: React.ReactNode;
-};
+}
 
-export function AuthGuard({ children }: Props) {
-  const router = useRouter();
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    async function check() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session) {
-        router.replace("/login");
-      } else {
-        setChecking(false);
-      }
-    }
-
-    check();
-  }, [router]);
-
-  if (checking) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-50">
-        Checking your session...
-      </div>
-    );
-  }
-
+/**
+ * TEMPORARY GUARD:
+ * We are disabling the session check because the production site
+ * is hanging on "Checking your session...".
+ *
+ * Once auth is fully stable, we can reintroduce proper checks here.
+ */
+export default function AuthGuard({ children }: AuthGuardProps) {
   return <>{children}</>;
 }
