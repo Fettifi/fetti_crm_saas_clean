@@ -2,7 +2,7 @@
 
 import { ReactNode } from "react";
 import Sidebar from "@/components/Sidebar";
-import { AuthGuard } from "@/components/AuthGuard";
+import AuthGuard from "@/components/AuthGuard";
 
 type AppShellProps = {
   children: ReactNode;

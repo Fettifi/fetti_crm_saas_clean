@@ -2,23 +2,15 @@
 
 import { ReactNode } from "react";
 
-export type AuthGuardProps = {
+type AuthGuardProps = {
   children: ReactNode;
 };
 
 /**
- * TEMPORARY AUTH GUARD
- * --------------------
- * For now, we allow all users through without checking the session.
- * This removes the "Checking your session..." hang in production.
- *
- * Once auth is fully stable, we can reintroduce proper checks here.
+ * TEMPORARY NO-OP AUTH GUARD
+ * This just renders children as-is.
+ * We'll reintroduce real Supabase auth checks once the app is stable.
  */
-
-// Named export (matches: import { AuthGuard } from "@/components/AuthGuard")
-export function AuthGuard({ children }: AuthGuardProps) {
+export default function AuthGuard({ children }: AuthGuardProps) {
   return <>{children}</>;
 }
-
-// Default export (matches: import AuthGuard from "@/components/AuthGuard")
-export default AuthGuard;
