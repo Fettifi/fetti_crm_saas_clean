@@ -9,6 +9,10 @@ export const metadata: Metadata = {
   description: "Fetti CRM Super Agent Dashboard",
 };
 
+// IMPORTANT: don't statically prerender everything.
+// This avoids the “heap out of memory” during "Generating static pages".
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({
   children,
 }: {
