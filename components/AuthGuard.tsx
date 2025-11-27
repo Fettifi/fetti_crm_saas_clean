@@ -2,7 +2,7 @@
 
 import { ReactNode } from "react";
 
-type AuthGuardProps = {
+export type AuthGuardProps = {
   children: ReactNode;
 };
 
@@ -14,6 +14,11 @@ type AuthGuardProps = {
  *
  * Once auth is fully stable, we can reintroduce proper checks here.
  */
-export default function AuthGuard({ children }: AuthGuardProps) {
+
+// Named export (matches: import { AuthGuard } from "@/components/AuthGuard")
+export function AuthGuard({ children }: AuthGuardProps) {
   return <>{children}</>;
 }
+
+// Default export (matches: import AuthGuard from "@/components/AuthGuard")
+export default AuthGuard;
