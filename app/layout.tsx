@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 import AuthGuard from "@/components/AuthGuard";
-import { Sidebar } from "@/components/Sidebar";
+import Sidebar from "@/components/Sidebar";
 
 export const metadata: Metadata = {
   title: "Fetti CRM",
