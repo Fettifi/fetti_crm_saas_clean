@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
-import { Sidebar } from "@/components/Sidebar";
+import Sidebar from "@/components/Sidebar";
 import { AuthGuard } from "@/components/AuthGuard";
 
 type AppShellProps = {
