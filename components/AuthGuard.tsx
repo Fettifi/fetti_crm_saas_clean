@@ -1,15 +1,16 @@
 "use client";
 
-import React from "react";
+import { ReactNode } from "react";
 
-interface AuthGuardProps {
-  children: React.ReactNode;
-}
+type AuthGuardProps = {
+  children: ReactNode;
+};
 
 /**
- * TEMPORARY GUARD:
- * We are disabling the session check because the production site
- * is hanging on "Checking your session...".
+ * TEMPORARY AUTH GUARD
+ * --------------------
+ * For now, we allow all users through without checking the session.
+ * This removes the "Checking your session..." hang in production.
  *
  * Once auth is fully stable, we can reintroduce proper checks here.
  */
