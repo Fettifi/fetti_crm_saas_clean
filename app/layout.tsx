@@ -1,26 +1,33 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import AppShell from "@/components/AppShell";
-import { ReactNode } from "react";
+
+import AuthGuard from "@/components/AuthGuard";
+import { Sidebar } from "@/components/Sidebar";
 
 export const metadata: Metadata = {
   title: "Fetti CRM",
   description: "Fetti CRM Super Agent Dashboard",
 };
 
-// Avoid heavy static generation and force dynamic rendering
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-type RootLayoutProps = {
-  children: ReactNode;
-};
-
-export default function RootLayout({ children }: RootLayoutProps) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body className="bg-black text-white">
-        <AppShell>{children}</AppShell>
+      <body className="min-h-screen bg-slate-950 text-slate-50">
+        <AuthGuard>
+          <div className="flex min-h-screen">
+            {/* Left sidebar navigation */}
+            <Sidebar />
+
+            {/* Main content area */}
+            <main className="flex-1 overflow-y-auto">
+              {children}
+            </main>
+          </div>
+        </AuthGuard>
       </body>
     </html>
   );
