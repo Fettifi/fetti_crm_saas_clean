@@ -1,15 +1,17 @@
 "use client";
 
-import { ReactNode } from "react";
+import React from "react";
 
 type AuthGuardProps = {
-  children: ReactNode;
+  children: React.ReactNode;
 };
 
 /**
- * TEMPORARY NO-OP AUTH GUARD
- * This just renders children as-is.
- * We'll reintroduce real Supabase auth checks once the app is stable.
+ * TEMPORARY STUB:
+ * - No Supabase
+ * - No env vars
+ * - No redirects
+ * Just renders children so we can stop 500 errors in production.
  */
 export default function AuthGuard({ children }: AuthGuardProps) {
   return <>{children}</>;
