@@ -1,68 +1,56 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 
-type NavItem = {
-  href: string;
-  label: string;
-};
-
-const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/leads", label: "Leads" },
-  { href: "/pipeline", label: "Pipeline" },
-  { href: "/team", label: "Team" },
-  { href: "/settings", label: "Settings" },
+const navItems = [
+  { href: "/", label: "Dashboard", icon: "📊" },
+  { href: "/leads", label: "Leads", icon: "📋" },
+  { href: "/pipeline", label: "Pipeline", icon: "📈" },
+  { href: "/team", label: "Team", icon: "👥" },
+  { href: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 bg-slate-950 text-slate-50 flex flex-col border-r border-slate-800">
-      {/* Brand / Logo */}
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-800">
-        <div className="flex items-center justify-center w-18 h-18">
-          <Image
-            src="/fetti-logo.png"
-            alt="Fetti CRM"
-            width={72}
-            height={72}
-            className="rounded-full object-contain"
-            priority
-          />
+    <aside className="hidden md:flex w-64 flex-col border-r border-slate-800 bg-slate-950/80">
+      <div className="px-6 py-6 border-b border-slate-800 flex items-center gap-3">
+        <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-fetti-green to-fetti-gold flex items-center justify-center text-black font-black text-xl">
+          F
         </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold leading-tight">
-            Fetti SuperAgent
-          </span>
-          <span className="text-xs text-slate-400">
-            We Do Money!!
-          </span>
+        <div>
+          <div className="text-sm font-semibold tracking-wide">Fetti CRM</div>
+          <div className="text-xs text-slate-400">We Do Money.</div>
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 py-4 space-y-1">
-        {navItems.map((item) => {
-          const active = pathname === item.href;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={[
-                "flex items-center px-4 py-2 text-sm transition-colors",
-                active
-                  ? "bg-slate-800 text-white"
-                  : "text-slate-300 hover:bg-slate-800/70 hover:text-white",
-              ].join(" ")}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 py-4">
+        <ul className="space-y-1">
+          {navItems.map((item) => {
+            const active =
+              item.href === "/"
+                ? pathname === "/"
+                : pathname.startsWith(item.href);
+
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={`mx-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
+                    active
+                      ? "bg-slate-800 text-fetti-green font-medium border border-fetti-green/60"
+                      : "text-slate-300 hover:bg-slate-900 hover:text-white"
+                  }`}
+                >
+                  <span className="h-4 w-4">{item.icon}</span>
+                  <span>{item.label}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       </nav>
     </aside>
   );

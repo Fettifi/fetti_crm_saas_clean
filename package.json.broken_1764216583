@@ -1,0 +1,7 @@
+"scripts": {
+  "dev": "next dev",
+  "build": "next build && next export",
+  "start": "electron .",
+  "pack": "electron-builder --dir",
+  "dist": "electron-builder"
+}

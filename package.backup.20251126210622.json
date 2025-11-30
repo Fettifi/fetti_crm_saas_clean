@@ -1,0 +1,19 @@
+{
+  "name": "fetti-crm-saas-clean-fresh",
+  "version": "1.1.0",
+  "private": true,
+  "main": "electron-main.js",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    // ...whatever is already there...
+  },
+  "devDependencies": {
+    // ...whatever is already there...
+  }
+}
