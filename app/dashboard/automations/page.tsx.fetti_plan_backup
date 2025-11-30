@@ -1,0 +1,14 @@
+import { getFettiSequences } from "@/lib/fettiSequences";
+import { FettiAutomationsPanel } from "@/components/FettiAutomationsPanel";
+
+export const dynamic = "force-dynamic";
+
+export default function DashboardAutomationsPage() {
+  const fetti = getFettiSequences();
+
+  return (
+    <main className="p-6 md:p-8 space-y-6">
+      <FettiAutomationsPanel fetti={fetti} />
+    </main>
+  );
+}

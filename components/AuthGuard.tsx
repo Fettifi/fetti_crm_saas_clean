@@ -2,16 +2,16 @@
 
 import React from "react";
 
-type AuthGuardProps = {
+interface AuthGuardProps {
   children: React.ReactNode;
-};
+}
 
 /**
- * TEMP STUB:
- * - No Supabase
- * - No redirects
- * - No cookies
- * Just render children so nothing can crash on the server.
+ * TEMPORARY GUARD:
+ * We are disabling the session check because the production site
+ * is hanging on "Checking your session...".
+ *
+ * Once auth is fully stable, we can reintroduce proper checks here.
  */
 export default function AuthGuard({ children }: AuthGuardProps) {
   return <>{children}</>;

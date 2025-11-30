@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "brand": "Fetti",
+  "timezone": "America/Los_Angeles",
+  "states": ["CA", "FL", "MI", "OH"],
+  "pipelines": [
+    "mortgage",
+    "dscr",
+    "hard_money",
+    "fix_and_flip"
+  ],
+  "sequences": {
+    "sms": {
+      "label": "Fetti Domination SMS",
+      "file": "sequences/fetti_sms_followup.txt",
+      "channel": "sms",
+      "description": "High-intensity long-term SMS follow-up for investors and borrowers."
+    },
+    "email": {
+      "label": "Fetti Domination Email",
+      "file": "sequences/fetti_email_followup.txt",
+      "channel": "email",
+      "description": "Email cadence supporting DSCR, Fix & Flip, Hard Money, and refi borrowers."
+    },
+    "voicemail": {
+      "label": "Fetti Voicemail Drops",
+      "file": "sequences/fetti_voicemail_scripts.txt",
+      "channel": "voicemail",
+      "description": "Short voicemail scripts for re-engagement and credibility."
+    }
+  }
+}
