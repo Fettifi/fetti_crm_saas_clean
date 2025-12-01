@@ -6,9 +6,10 @@ import Image from "next/image";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/leads", label: "Leads" },
   { href: "/requests", label: "Requests" },
-  { href: "/automations", label: "Automations" },
   { href: "/pipeline", label: "Pipeline" },
+  { href: "/dashboard/automations", label: "Automations" },
   { href: "/team", label: "Team" },
   { href: "/settings", label: "Settings" },
 ];
