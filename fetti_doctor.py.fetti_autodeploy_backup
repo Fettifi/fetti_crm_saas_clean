@@ -74,16 +74,6 @@ def main():
 
     if failed_step is None:
         print("\n[FETTI DOCTOR] All steps passed. ✅")
-# Auto-deploy hook: optional Git + Vercel push
-import os as _os_autodeploy, subprocess as _sub_autodeploy
-if _os_autodeploy.environ.get("FETTI_AUTO_DEPLOY") == "1":
-    print("\n[FETTI DOCTOR] Auto-deploy enabled – running `npm run fetti:deploy`...")
-    try:
-        _sub_autodeploy.run(["npm", "run", "fetti:deploy"], check=True)
-        print("[FETTI DOCTOR] Auto-deploy completed successfully.")
-    except _sub_autodeploy.CalledProcessError as e:
-        print(f"[FETTI DOCTOR] Auto-deploy failed with code {e.returncode}.")
-
         print("[FETTI DOCTOR] Lint / Test (if any) / Build all succeeded with no critical issues.\n")
         sys.exit(0)
     else:
