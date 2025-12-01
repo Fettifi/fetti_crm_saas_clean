@@ -1,6 +1,6 @@
 - [x] Lead + Application status enums (DONE – do NOT modify lib/leadStatus.ts)
   - NOTE: LeadStatus and ApplicationStatus are already defined in lib/leadStatus.ts.
-    Future work should only IMPORT and USE these types; do not change that file.
+    Future work should only IMPORT and USE these types; do not change that file. 
 
 - [ ] Dashboard widgets for leads and applications
   - Create "New Leads (last 7 days)" dashboard widget showing count and list of leads
