@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 // FETTI DESIGN LOCK:
 // This dashboard layout + sidebar is the visual baseline.
@@ -9,6 +10,7 @@ import Link from "next/link";
 // Feature agents MUST NOT:
 // - Replace the overall dark theme and layout shell.
 // - Remove the left sidebar or top header.
+// - Remove or swap out the FETTI logo block.
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
@@ -22,14 +24,27 @@ function Sidebar() {
   return (
     <aside className="hidden md:flex md:flex-col w-64 bg-black/40 border-r border-slate-800">
       <div className="px-6 py-5 border-b border-slate-800">
-        <div className="text-[10px] tracking-[0.25em] uppercase text-emerald-400">
-          FETTI CRM
-        </div>
-        <div className="mt-1 text-lg font-semibold text-slate-50">
-          Command Center
-        </div>
-        <div className="mt-1 text-xs text-slate-500">
-          We Do Money • Enterprise
+        <div className="flex items-center gap-3">
+          <div className="relative h-10 w-10">
+            <Image
+              src="/fetti-logo.png"
+              alt="Fetti Financial Services LLC"
+              fill
+              className="object-contain"
+              priority
+            />
+          </div>
+          <div>
+            <div className="text-[10px] tracking-[0.25em] uppercase text-emerald-400">
+              FETTI FINANCIAL SERVICES LLC
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-50">
+              Command Center
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Annuit Coeptis • We Do Money
+            </div>
+          </div>
         </div>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1 text-sm">
