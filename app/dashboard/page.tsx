@@ -4,10 +4,6 @@ import React from "react";
 import Link from "next/link";
 import Image from "next/image";
 
-// FETTI DASHBOARD SHELL – DEBUG VERSION
-// If you do NOT see "DEBUG FETTI DASHBOARD SHELL" in the UI,
-// then Vercel is not using this repo/branch.
-
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/requests", label: "Requests" },
@@ -55,7 +51,7 @@ function Sidebar() {
       </nav>
 
       <div className="px-4 py-4 border-t border-slate-800 text-[11px] text-slate-500">
-        Fetti CRM • DEBUG FETTI DASHBOARD SHELL
+        Fetti CRM • Fetti Financial Services LLC
       </div>
     </aside>
   );
@@ -80,6 +76,7 @@ function StatCard({
 }
 
 export default function DashboardPage() {
+  // Placeholder counts – Matrix/agents will wire these to real data later.
   const totalLeads = 0;
   const inPipeline = 0;
   const funded = 0;
@@ -91,41 +88,46 @@ export default function DashboardPage() {
       <main className="flex-1 flex flex-col">
         {/* Top header */}
         <header className="border-b border-slate-800 px-6 md:px-10 py-5">
-          <h1 className="text-xl md:text-2xl font-semibold text-slate-50">
-            DEBUG FETTI DASHBOARD SHELL
-          </h1>
-          <p className="mt-1 text-xs md:text-sm text-slate-400 max-w-xl">
-            If you are seeing this title, you are on the correct build and repo.
-          </p>
+          <div className="max-w-6xl mx-auto">
+            <h1 className="text-xl md:text-2xl font-semibold text-slate-50">
+              Dashboard
+            </h1>
+            <p className="mt-1 text-xs md:text-sm text-slate-400 max-w-xl">
+              Overview of your Fetti CRM pipeline. Hook this up to Supabase
+              analytics when you&apos;re ready.
+            </p>
+          </div>
         </header>
 
         {/* Content */}
         <div className="flex-1 px-4 md:px-10 py-6">
-          {/* Top stat cards row */}
-          <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <StatCard
-              title="Total Leads"
-              value={totalLeads}
-              subtitle="All leads currently stored in Fetti CRM."
-            />
-            <StatCard
-              title="In Pipeline"
-              value={inPipeline}
-              subtitle="Leads currently in active stages."
-            />
-            <StatCard
-              title="Funded"
-              value={funded}
-              subtitle="Successfully funded deals."
-            />
-          </section>
+          <div className="max-w-6xl mx-auto space-y-8">
+            {/* Top stat cards row */}
+            <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <StatCard
+                title="Total Leads"
+                value={totalLeads}
+                subtitle="All leads currently stored in Fetti CRM."
+              />
+              <StatCard
+                title="In Pipeline"
+                value={inPipeline}
+                subtitle="Leads currently in active stages."
+              />
+              <StatCard
+                title="Funded"
+                value={funded}
+                subtitle="Successfully funded deals."
+              />
+            </section>
 
-          {/* Reserved space for Matrix widgets */}
-          <section className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 px-5 py-6 text-xs text-slate-500">
-            Matrix workspace: future widgets (lead lists, pipeline boards,
-            automations) should be added inside this area without changing the
-            shell layout or sidebar.
-          </section>
+            {/* Matrix workspace – future widgets live here */}
+            <section className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 px-5 py-6 text-xs text-slate-500">
+              Matrix workspace: lead lists, pipeline boards, automations, and
+              analytics widgets should be added inside this area without
+              changing the shell layout or sidebar.
+            </section>
+          </div>
         </div>
       </main>
     </div>
