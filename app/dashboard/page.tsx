@@ -63,9 +63,7 @@ function StatCard({ label, value, subtitle }: StatCardProps) {
         {label}
       </div>
       <div className="text-xl font-semibold text-slate-50">{value}</div>
-      {subtitle && (
-        <div className="text-xs text-slate-500">{subtitle}</div>
-      )}
+      {subtitle && <div className="text-xs text-slate-500">{subtitle}</div>}
     </div>
   );
 }
@@ -100,17 +98,17 @@ export default function DashboardPage() {
             <StatCard
               label="New leads (last 7 days)"
               value="—"
-              subtitle="Matrix can wire this to real data later."
+              subtitle="Matrix will wire this to real data."
             />
             <StatCard
               label="Apps in progress"
               value="—"
-              subtitle="Statuses: STARTED • IN_PROGRESS • INCOMPLETE"
+              subtitle="STARTED • IN_PROGRESS • INCOMPLETE"
             />
             <StatCard
               label="Submitted apps"
               value="—"
-              subtitle="Status: SUBMITTED"
+              subtitle="SUBMITTED"
             />
           </section>
 
@@ -124,7 +122,7 @@ export default function DashboardPage() {
                     Pipeline overview
                   </h2>
                   <span className="text-[11px] text-slate-500">
-                    Fetti matrix will replace this with real pipeline data.
+                    Matrix will replace this with live pipeline stats.
                   </span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-slate-400">
@@ -155,7 +153,7 @@ export default function DashboardPage() {
                     Workboard
                   </h2>
                   <span className="text-[11px] text-slate-500">
-                    Quick notes / upcoming matrix automations.
+                    Quick notes for upcoming matrix automations.
                   </span>
                 </div>
                 <ul className="space-y-2 text-xs text-slate-400">
@@ -173,7 +171,7 @@ export default function DashboardPage() {
                   Recent activity
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Matrix can later populate this with real-time events
+                  Matrix can later populate this with live events
                   (new leads, app updates, tasks) without changing the shell.
                 </p>
               </div>
