@@ -9,7 +9,8 @@
     "lint": "next lint",
     "fetti:auto": "python3 fetti_doctor_wrapper.py --auto",
     "fetti:feature": "python3 fetti_feature_runner.py",
-    "fetti:watch": "npx nodemon --watch app --watch components --watch lib --ext ts,tsx,js,jsx --exec \"npm run fetti:auto && npm run fetti:feature\""
+    "fetti:watch": "npx nodemon --watch app --watch components --watch lib --ext ts,tsx,js,jsx --exec \"npm run fetti:auto && npm run fetti:feature\"",
+    "fetti:deploy": "bash scripts/fetti_deploy.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.86.0",
