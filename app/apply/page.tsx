@@ -1,3 +1,10 @@
+// FETTI DESIGN LOCK:
+// This file controls the public /apply multi-step flow and visual design.
+// Feature agents MAY wire data and small UX tweaks, but MUST NOT:
+// - Replace the overall layout or dark Fetti theme
+// - Remove the step-by-step conversational flow
+// Major redesigns require an explicit task in fetti_feature_plan.md.
+
 "use client";
 
 import { FormEvent, useState } from "react";
