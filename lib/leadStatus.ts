@@ -1,15 +1,19 @@
-export enum LeadStatus {
-  NEW = 'NEW',
-  CONTACTED = 'CONTACTED',
-  ENGAGED = 'ENGAGED',
-  DEAD = 'DEAD',
-  NOT_QUALIFIED = 'NOT_QUALIFIED',
-}
+export const leadStatusEnum = [
+  'NEW',
+  'CONTACTED',
+  'ENGAGED',
+  'DEAD',
+  'NOT_QUALIFIED',
+] as const;
 
-export enum ApplicationStatus {
-  STARTED = 'STARTED',
-  IN_PROGRESS = 'IN_PROGRESS',
-  SUBMITTED = 'SUBMITTED',
-  INCOMPLETE = 'INCOMPLETE',
-  WITHDRAWN = 'WITHDRAWN',
-}
+export type LeadStatus = (typeof leadStatusEnum)[number];
+
+export const applicationStatusEnum = [
+  'STARTED',
+  'IN_PROGRESS',
+  'SUBMITTED',
+  'INCOMPLETE',
+  'WITHDRAWN',
+] as const;
+
+export type ApplicationStatus = (typeof applicationStatusEnum)[number];
