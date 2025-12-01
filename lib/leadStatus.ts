@@ -17,3 +17,18 @@ export const applicationStatusEnum = [
 ] as const;
 
 export type ApplicationStatus = (typeof applicationStatusEnum)[number];
+export const leadStatuses = [
+  'new',
+  'contacted',
+  'qualified',
+  'lost',
+]
+
+export const applicationStatuses = [
+  'received',
+  'in_review',
+  'interview',
+  'offered',
+  'hired',
+  'rejected',
+]
