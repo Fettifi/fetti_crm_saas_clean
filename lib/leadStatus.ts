@@ -32,3 +32,32 @@ export const applicationStatuses = [
   'hired',
   'rejected',
 ]
+export const leadStatusOptions = [
+  'New',
+  'Contacted',
+  'Qualified',
+  'Lost',
+];
+
+export enum LeadStatusEnum {
+  New = 'New',
+  Contacted = 'Contacted',
+  Qualified = 'Qualified',
+  Lost = 'Lost',
+}
+
+export enum ApplicationStatusEnum {
+  Submitted = 'Submitted',
+  InReview = 'InReview',
+  Accepted = 'Accepted',
+  Rejected = 'Rejected',
+  Withdrawn = 'Withdrawn',
+}
+
+export const applicationStatusOptions = [
+  ApplicationStatusEnum.Submitted,
+  ApplicationStatusEnum.InReview,
+  ApplicationStatusEnum.Accepted,
+  ApplicationStatusEnum.Rejected,
+  ApplicationStatusEnum.Withdrawn,
+];
