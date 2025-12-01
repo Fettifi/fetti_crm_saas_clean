@@ -16,5 +16,11 @@
     "source": "fetti_doctor",
     "step": "--auto",
     "details": "Traceback (most recent call last):\n  File \"/Users/fetti/Desktop/fetti_crm_saas_clean_fresh/fetti_doctor.py\", line 79, in <module>\n    if _os_autodeploy.get(\"FETTI_AUTO_DEPLOY\") == \"1\":\nAttributeError: module 'os' has no attribute 'get'\n"
+  },
+  {
+    "ts": "2025-12-01T03:19:48.850895Z",
+    "source": "fetti_doctor",
+    "step": "--auto",
+    "details": "\n> fetti-crm-saas@1.0.0 fetti:deploy\n> bash scripts/fetti_deploy.sh\n\n========================================\n   <0001dep>  Fetti Deploy Helper\n========================================\n\n[DEPLOY] Git status:\n M fetti_doctor.py\n M fetti_last_errors.json\n?? fetti_doctor.py.fetti_autodeploy_backup\n\n[DEPLOY] You have local changes.\n[DEPLOY] Creating a commit before pushing...\n[main 8c5d0ea] chore: auto-deploy from Fetti Doctor pipeline\n 3 files changed, 104 insertions(+)\n create mode 100644 fetti_doctor.py.fetti_autodeploy_backup\n\n[DEPLOY] Pushing branch: main\nTo https://github.com/Fettifi/fetti_crm_saas_clean.git\n   30686d3..8c5d0ea  main -> main\n\n\u2705 Deploy push sent to remote. Vercel will pick this up and deploy.\n\n[FETTI DOCTOR] Auto-deploy enabled \u2013 running `npm run fetti:deploy`...\n[FETTI DOCTOR] Auto-deploy completed successfully.\nTraceback (most recent call last):\n  File \"/Users/fetti/Desktop/fetti_crm_saas_clean_fresh/fetti_doctor.py\", line 91, in <module>\n    f\"\\n[FETTI DOCTOR] Health check failed at step '{failed_step}' \"\nNameError: name 'failed_step' is not defined\n"
   }
 ]
