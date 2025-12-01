@@ -12,15 +12,51 @@ type TabKey =
   | "team"
   | "settings";
 
-const tabs: { key: TabKey; label: string }[] = [
-  { key: "overview", label: "Dashboard" },
-  { key: "leads", label: "Leads" },
-  { key: "requests", label: "Requests" },
-  { key: "pipeline", label: "Pipeline" },
-  { key: "automations", label: "Automations" },
-  { key: "team", label: "Team" },
-  { key: "settings", label: "Settings" },
-];
+const tabConfig: Record<
+  TabKey,
+  {
+    label: string;
+    description: string;
+  }
+> = {
+  overview: {
+    label: "Dashboard",
+    description:
+      "Overview of your Fetti CRM pipeline. Hook this up to Supabase analytics when you're ready.",
+  },
+  leads: {
+    label: "Leads",
+    description: "Review and manage inbound leads in your Fetti CRM.",
+  },
+  requests: {
+    label: "Requests",
+    description:
+      "Track loan requests, docs, and underwriting workflows in one place.",
+  },
+  pipeline: {
+    label: "Pipeline",
+    description: "Visualize where each deal sits from application to funding.",
+  },
+  automations: {
+    label: "Automations",
+    description:
+      "Configure Matrix-style automations, sequences, and follow-ups.",
+  },
+  team: {
+    label: "Team",
+    description: "Manage access for your loan officers, processors, and staff.",
+  },
+  settings: {
+    label: "Settings",
+    description:
+      "Control Fetti CRM configuration, branding, and integration settings.",
+  },
+};
+
+const tabs = (Object.keys(tabConfig) as TabKey[]).map((key) => ({
+  key,
+  label: tabConfig[key].label,
+}));
 
 function Sidebar({
   activeTab,
@@ -75,7 +111,7 @@ function Sidebar({
       </nav>
 
       <div className="px-4 py-4 border-t border-slate-800 text-[11px] text-slate-500">
-        Fetti CRM • Fetti Financial Services LLC
+        Fetti CRM · Fetti Financial Services LLC
       </div>
     </aside>
   );
@@ -137,9 +173,9 @@ function PlaceholderPanel({ title }: { title: string }) {
     <section className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 px-5 py-6 text-xs text-slate-400">
       <div className="text-sm font-semibold text-slate-100 mb-2">{title}</div>
       <p>
-        Matrix workspace for <span className="font-mono">{title}</span>.  
-        Your agents / auto-features should add lists, tables, and flows here
-        instead of changing the global layout.
+        Matrix workspace for <span className="font-mono">{title}</span>. Your
+        agents / auto-features should add lists, tables, and flows here instead
+        of changing the global layout.
       </p>
     </section>
   );
@@ -168,9 +204,7 @@ function ActiveTabContent({ activeTab }: { activeTab: TabKey }) {
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
-
-  const activeLabel =
-    tabs.find((t) => t.key === activeTab)?.label ?? "Dashboard";
+  const active = tabConfig[activeTab];
 
   return (
     <div className="min-h-screen bg-[#020617] text-slate-100 flex">
@@ -181,12 +215,10 @@ export default function DashboardPage() {
         <header className="border-b border-slate-800 px-6 md:px-10 py-5">
           <div className="max-w-6xl mx-auto">
             <h1 className="text-xl md:text-2xl font-semibold text-slate-50">
-              {activeLabel}
+              {active.label}
             </h1>
             <p className="mt-1 text-xs md:text-sm text-slate-400 max-w-xl">
-              This screen stays on /dashboard. The sidebar only changes the
-              Matrix workspace content; it does not navigate away or reload
-              the page.
+              {active.description}
             </p>
           </div>
         </header>
