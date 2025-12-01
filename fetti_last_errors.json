@@ -1,26 +1,5 @@
-[
-  {
-    "ts": "2025-12-01T02:30:11.408380Z",
-    "source": "self_test",
-    "step": "demo",
-    "details": "This is a test error from fetti_error_logger."
-  },
-  {
-    "ts": "2025-12-01T02:43:46.931922Z",
-    "source": "fetti_doctor",
-    "step": "--auto",
-    "details": "\n> fetti-crm-saas@1.0.0 lint\n> next lint\n\n\n./app/loading.tsx\n5:9  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element\n\ninfo  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules\n\n> fetti-crm-saas@1.0.0 build\n> next build\n\n   \u25b2 Next.js 14.1.0\n   - Environments: .env.local\n\n   Creating an optimized production build ...\nFailed to compile.\n\n./app/dashboard/page.tsx\nError: \n  \u001b[31mx\u001b[0m Expression expected\n    ,-[\u001b[36;1;4m/Users/fetti/Desktop/fetti_crm_saas_clean_fresh/app/dashboard/page.tsx\u001b[0m:18:1]\n \u001b[2m18\u001b[0m |   );\n \u001b[2m19\u001b[0m | }\n \u001b[2m20\u001b[0m | \n \u001b[2m21\u001b[0m |         <p className=\"mt-2 text-lg text-gray-600\">Fetti SuperAgent is live and healthy.</p>\n    : \u001b[31;1m                                                 ^\u001b[0m\n    `----\n\n  \u001b[31mx\u001b[0m Expected ';', '}' or <eof>\n    ,-[\u001b[36;1;4m/Users/fetti/Desktop/fetti_crm_saas_clean_fresh/app/dashboard/page.tsx\u001b[0m:18:1]\n \u001b[2m18\u001b[0m |   );\n \u001b[2m19\u001b[0m | }\n \u001b[2m20\u001b[0m | \n \u001b[2m21\u001b[0m |         <p className=\"mt-2 text-lg text-gray-600\">Fetti SuperAgent is live and healthy.</p>\n    : \u001b[31;1m                                                 ^^^|^^\u001b[0m\u001b[33;1m ^^^^^^^^^^\u001b[0m\n    :                                                     \u001b[31;1m`-- \u001b[31;1mThis is the expression part of an expression statement\u001b[0m\u001b[0m\n    `----\n\nCaused by:\n    Syntax Error\n\nImport trace for requested module:\n./app/dashboard/page.tsx\n\n\n> Build failed because of webpack errors\n\n========================================\n   <0001doc>  Fetti Doctor \u2013 CRM Helper\n========================================\n- Runs a multi-step health check for this repo:\n    1) npm run lint\n    2) npm test (only if defined in package.json)\n    3) npm run build\n- Designed to be called with --auto by Fetti Wizard / Wrapper.\n\n\n\n============================================================\n[2025-11-30 18:43:44] FETTI DOCTOR \u2013 Step: Lint\n============================================================\n[FETTI DOCTOR] $ npm run lint\n\n\n[FETTI DOCTOR] Step 'Lint' \u2705 (exit code 0)\n\n============================================================\n[2025-11-30 18:43:45] FETTI DOCTOR \u2013 Step: Build\n============================================================\n[FETTI DOCTOR] $ npm run build\n\n\n[FETTI DOCTOR] Step 'Build' \u274c (exit code 1)\n\n[FETTI DOCTOR] Health check failed at step 'Build' with exit code 1. \u274c\n"
-  },
-  {
-    "ts": "2025-12-01T03:17:48.816970Z",
-    "source": "fetti_doctor",
-    "step": "--auto",
-    "details": "Traceback (most recent call last):\n  File \"/Users/fetti/Desktop/fetti_crm_saas_clean_fresh/fetti_doctor.py\", line 79, in <module>\n    if _os_autodeploy.get(\"FETTI_AUTO_DEPLOY\") == \"1\":\nAttributeError: module 'os' has no attribute 'get'\n"
-  },
-  {
-    "ts": "2025-12-01T03:19:48.850895Z",
-    "source": "fetti_doctor",
-    "step": "--auto",
-    "details": "\n> fetti-crm-saas@1.0.0 fetti:deploy\n> bash scripts/fetti_deploy.sh\n\n========================================\n   <0001dep>  Fetti Deploy Helper\n========================================\n\n[DEPLOY] Git status:\n M fetti_doctor.py\n M fetti_last_errors.json\n?? fetti_doctor.py.fetti_autodeploy_backup\n\n[DEPLOY] You have local changes.\n[DEPLOY] Creating a commit before pushing...\n[main 8c5d0ea] chore: auto-deploy from Fetti Doctor pipeline\n 3 files changed, 104 insertions(+)\n create mode 100644 fetti_doctor.py.fetti_autodeploy_backup\n\n[DEPLOY] Pushing branch: main\nTo https://github.com/Fettifi/fetti_crm_saas_clean.git\n   30686d3..8c5d0ea  main -> main\n\n\u2705 Deploy push sent to remote. Vercel will pick this up and deploy.\n\n[FETTI DOCTOR] Auto-deploy enabled \u2013 running `npm run fetti:deploy`...\n[FETTI DOCTOR] Auto-deploy completed successfully.\nTraceback (most recent call last):\n  File \"/Users/fetti/Desktop/fetti_crm_saas_clean_fresh/fetti_doctor.py\", line 91, in <module>\n    f\"\\n[FETTI DOCTOR] Health check failed at step '{failed_step}' \"\nNameError: name 'failed_step' is not defined\n"
-  }
-]
+{
+  "failed_step": null,
+  "exit_code": 0,
+  "timestamp": "2025-11-30T19:27:46.878517"
+}
