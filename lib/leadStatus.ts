@@ -1,0 +1,15 @@
+export enum LeadStatus {
+  NEW = 'NEW',
+  CONTACTED = 'CONTACTED',
+  ENGAGED = 'ENGAGED',
+  DEAD = 'DEAD',
+  NOT_QUALIFIED = 'NOT_QUALIFIED',
+}
+
+export enum ApplicationStatus {
+  STARTED = 'STARTED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  SUBMITTED = 'SUBMITTED',
+  INCOMPLETE = 'INCOMPLETE',
+  WITHDRAWN = 'WITHDRAWN',
+}

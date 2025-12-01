@@ -1,4 +1,5 @@
 import os
+from fetti_brain_loader import build_brain_context
 import json
 import textwrap
 import datetime as _dt
@@ -198,7 +199,9 @@ def apply_json_edits(edits: List[dict]) -> bool:
     Behaviors:
     - If before is a non-empty string and exists in file: replace first occurrence.
     - If before is an empty string: APPEND `after` to the end of the file.
-    - If before is non-empty but not found: log and APPEND `after` as a fallback.
+    - If before is non-empty but not found:
+        • For TSX/JSX files: skip the edit for safety (do NOT append raw JSX).
+        • For other files: append `after` as a fallback, with a log message.
     """
     applied_any = False
 
@@ -219,47 +222,47 @@ def apply_json_edits(edits: List[dict]) -> bool:
             print(f"[AI] Skipping edit outside SAFE roots: {file_rel}")
             continue
 
-        target_path = PROJECT_ROOT / file_rel
-        if not target_path.exists():
+        path = PROJECT_ROOT / file_rel
+        if not path.exists():
             print(f"[AI] File not found, skipping: {file_rel}")
             continue
 
-        try:
-            src = target_path.read_text()
-        except Exception as e:
-            print(f"[AI] Could not read {file_rel}: {e}")
+        text = path.read_text()
+
+        # Case 1: APPEND mode when 'before' is empty
+        if before == "":
+            new_text = text + ("\n" if not text.endswith("\n") else "") + after + "\n"
+            path.write_text(new_text)
+            print(f"[AI] ✅ APPENDED edit to {file_rel}")
+            applied_any = True
             continue
 
-        backup = target_path.with_suffix(target_path.suffix + ".fetti_plan_backup")
-        if not backup.exists():
-            try:
-                backup.write_text(src)
-                print(f"[AI] Created backup: {backup.relative_to(PROJECT_ROOT)}")
-            except Exception as e:
-                print(f"[AI] Could not create backup for {file_rel}: {e}")
-
-        if before == "":
-            print(f"[AI] Appending code to {file_rel} (before == \"\")")
-            new_src = src.rstrip() + "\n\n" + after + "\n"
-        else:
-            if before in src:
-                print(f"[AI] Replacing first occurrence of provided 'before' snippet in {file_rel}")
-                new_src = src.replace(before, after, 1)
-            else:
-                print(f"[AI] 'before' snippet not found in {file_rel}, falling back to APPEND mode.")
-                new_src = src.rstrip() + "\n\n" + after + "\n"
-
-        try:
-            target_path.write_text(new_src)
-            print(f"[AI] ✅ Applied edit to {file_rel}")
+        # Case 2: normal replace when 'before' is found
+        if before in text:
+            new_text = text.replace(before, after, 1)
+            path.write_text(new_text)
+            print(f"[AI] ✅ Replaced first occurrence of 'before' snippet in {file_rel}")
             applied_any = True
-        except Exception as e:
-            print(f"[AI] Failed to write updated file {file_rel}: {e}")
+            continue
 
-    if not applied_any:
-        print("[AI] No edits were actually applied.")
+        # Case 3: 'before' not found
+        if file_rel.endswith((".tsx", ".jsx")):
+            # Safety: do NOT append raw JSX/TSX outside components
+            print(
+                f"[AI] 'before' snippet not found in {file_rel}; "
+                f"SKIPPING edit for safety (no raw JSX append)."
+            )
+            continue
+
+        print(
+            f"[AI] 'before' snippet not found in {file_rel}, "
+            f"APPENDING edit as fallback."
+        )
+        new_text = text + ("\n" if not text.endswith("\n") else "") + after + "\n"
+        path.write_text(new_text)
+        applied_any = True
+
     return applied_any
-
 
 def ai_apply_task(task: str) -> bool:
     print(f"\n[AI] Asking OpenAI to implement task:\n      {task}\n")
@@ -329,6 +332,19 @@ Rules:
             "You only output strict JSON edits (file/before/after), no explanations."
         ),
         input=[
+      {
+        "role": "system",
+        "content": (
+          "You are the Fetti Feature Agent running inside the Fetti CRM repo. "
+          "Before proposing ANY edits, carefully read the brain context and past "
+          "errors that have been loaded for you (recent build failures, lint "
+          "errors, and plan notes). Your primary goal is to avoid repeating "
+          "known mistakes. Prefer minimal, surgical edits that keep the app "
+          "building successfully. If something in the brain suggests a risk, "
+          "adjust your edits to stay on the safe path."
+        ),
+      },
+
             {
                 "role": "user",
                 "content": [

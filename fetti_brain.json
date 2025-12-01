@@ -1,0 +1,32 @@
+{
+  "repo_laws": [
+    "All app router pages under app/** must have exactly one default export.",
+    "Do not add useState or useEffect directly to app/** page files unless they are marked as client components with 'use client'. Prefer moving stateful logic into components/.",
+    "Never define multiple functions with the same name in a single file.",
+    "Do not export multiple handlers with the same HTTP method in the same route.ts file."
+  ],
+  "file_laws": {
+    "app/dashboard/page.tsx": [
+      "This file must have exactly one default export function DashboardPage.",
+      "Any extra widgets or logic should be composed via components, not via a second DashboardPage definition."
+    ],
+    "app/api/leads/route.ts": [
+      "This file must contain only one POST handler. If you need to change logic, modify the existing POST instead of adding another.",
+      "Do not re-import NextResponse in the same file under a second import statement."
+    ]
+  },
+  "error_patterns": [
+    {
+      "pattern": "Exported identifiers must be unique",
+      "recommendation": "Ensure there is only one default export, and no duplicate named exports in the same file."
+    },
+    {
+      "pattern": "the name `POST` is defined multiple times",
+      "recommendation": "Modify the existing POST handler instead of creating a second one in the same route.ts."
+    },
+    {
+      "pattern": "the name `NextResponse` is defined multiple times",
+      "recommendation": "Import NextResponse only once at the top of the file and reuse that import."
+    }
+  ]
+}

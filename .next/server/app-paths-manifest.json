@@ -1,0 +1,18 @@
+{
+  "/_not-found": "app/_not-found.js",
+  "/api/applications/route": "app/api/applications/route.js",
+  "/api/fetti/sequences/route": "app/api/fetti/sequences/route.js",
+  "/api/leads/route": "app/api/leads/route.js",
+  "/icon.svg/route": "app/icon.svg/route.js",
+  "/apply/page": "app/apply/page.js",
+  "/dashboard/automations/page": "app/dashboard/automations/page.js",
+  "/leads/page": "app/leads/page.js",
+  "/pipeline/page": "app/pipeline/page.js",
+  "/login/page": "app/login/page.js",
+  "/reset-password/page": "app/reset-password/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/page": "app/page.js",
+  "/update-password/page": "app/update-password/page.js",
+  "/team/page": "app/team/page.js",
+  "/settings/page": "app/settings/page.js"
+}
