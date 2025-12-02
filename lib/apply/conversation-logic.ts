@@ -128,9 +128,12 @@ function captureData(step: string, input: string, data: any) {
         case 'MORTGAGE_DECLARATIONS': data.bankruptcy = input.toLowerCase().includes('yes'); break;
         case 'INV_PURCHASE_PRICE': data.purchasePrice = cleanNum(input); break;
         case 'INV_REHAB_BUDGET': data.rehabBudget = cleanNum(input); break;
+        case 'INV_LAND_VALUE': data.purchasePrice = cleanNum(input); break; // Map Land Value to Purchase Price/Asset Value
+        case 'INV_CONST_BUDGET': data.rehabBudget = cleanNum(input); break; // Map Const Budget to Rehab/Project Budget
         case 'INV_ARV': data.arv = cleanNum(input); break;
         case 'INV_EXPERIENCE': data.experience = input; break;
         case 'INV_EXIT_STRATEGY': data.exitStrategy = input; break;
+        case 'INV_BRIDGE_AMOUNT': data.purchasePrice = cleanNum(input); break; // New capture for Bridge
         case 'ASK_EMAIL': data.email = input; break;
 
         // Verification Captures (Simulated)
@@ -225,8 +228,8 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
                 nextStep = 'INV_LAND_VALUE';
                 nextMessage = { id: 'ask_land', role: 'system', content: "New Construction. What's the land value?", type: 'text' };
             } else if (lower.includes('bridge')) {
-                nextStep = 'INV_EXIT_STRATEGY';
-                nextMessage = { id: 'ask_exit', role: 'system', content: "Bridge Loan. Speed is key. What's your exit strategy?", type: 'text' };
+                nextStep = 'INV_BRIDGE_AMOUNT';
+                nextMessage = { id: 'ask_bridge_amt', role: 'system', content: "Bridge Loan. Speed is key. How much capital do you need?", type: 'text' };
             } else {
                 nextStep = 'MORTGAGE_LOAN_AMOUNT';
                 nextMessage = { id: 'ask_amt', role: 'system', content: "Standard Mortgage. How much are you looking to borrow?", type: 'text' };
@@ -254,6 +257,10 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
         case 'INV_CONST_BUDGET':
             nextStep = 'INV_ARV';
             nextMessage = { id: 'ask_arv', role: 'system', content: "Projected ARV?", type: 'text' };
+            break;
+        case 'INV_BRIDGE_AMOUNT':
+            nextStep = 'INV_EXIT_STRATEGY';
+            nextMessage = { id: 'ask_exit', role: 'system', content: "Got it. What's your exit strategy?", type: 'text' };
             break;
         case 'INV_ARV':
             // New: Verify Property Value
