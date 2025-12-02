@@ -198,6 +198,7 @@ def run_plan_once() -> bool:
         print(f"\n[PLAN] Step failed: {title}")
         print("[PLAN] Sending to AI for auto-fix...")
 
+        # First attempt
         fixed = ai_fix_project(title, cmd, log)
 
         if not fixed:
@@ -206,9 +207,21 @@ def run_plan_once() -> bool:
 
         print("\n[PLAN] Re-running failed step after AI fix...\n")
         ok2, log2 = run_cmd(title, cmd)
+        
         if not ok2:
-            print("[PLAN] Still failing even after AI fix. Stopping.")
-            return False
+            print("[PLAN] First retry failed. Attempting self-correction...")
+            # Self-correction: try again with the new error
+            fixed2 = ai_fix_project(f"{title} (retry)", cmd, log2)
+            
+            if fixed2:
+                print("\n[PLAN] Re-running after self-correction...\n")
+                ok3, log3 = run_cmd(title, cmd)
+                if not ok3:
+                    print("[PLAN] Still failing after self-correction. Stopping.")
+                    return False
+            else:
+                print("[PLAN] Self-correction could not fix. Stopping.")
+                return False
 
     return True
 

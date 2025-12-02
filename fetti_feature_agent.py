@@ -193,6 +193,47 @@ def build_repo_hint() -> str:
     return "\n".join(lines)
 
 
+def get_git_history(max_commits: int = 10) -> str:
+    """
+    Get recent git commit history for context.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "log", f"-{max_commits}", "--oneline", "--no-decorate"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0 and result.stdout:
+            lines = ["Recent commits:"]
+            for line in result.stdout.strip().split("\n"):
+                lines.append(f"  • {line}")
+            return "\n".join(lines)
+    except Exception:
+        pass
+    return "Git history unavailable"
+
+
+def get_file_preview(file_path: Path, max_lines: int = 50) -> str:
+    """
+    Get preview of file content (first max_lines).
+    """
+    try:
+        if file_path.exists() and file_path.is_file():
+            content = file_path.read_text()
+            all_lines = content.split("\n")
+            lines = all_lines[:max_lines]
+            preview = "\n".join(lines)
+            if len(all_lines) > max_lines:
+                remaining = len(all_lines) - max_lines
+                preview += f"\n... ({remaining} more lines)"
+            return preview
+    except Exception:
+        pass
+    return ""
+
+
 def apply_json_edits(edits: List[dict]) -> bool:
     """
     Apply JSON edits: {file, before, after}.
@@ -280,6 +321,7 @@ def ai_apply_task(task: str) -> bool:
     print(f"\n[AI] Asking Gemini to implement task:\n      {task}\n")
 
     repo_hint = build_repo_hint()
+    git_history = get_git_history(10)
     brain_context = ""
     
     try:
@@ -288,6 +330,23 @@ def ai_apply_task(task: str) -> bool:
             brain_context = f"\n\n**BRAIN CONTEXT (Previous Learnings)**:\n{brain_ctx}\n"
     except Exception as e:
         print(f"[AI] Could not load brain context: {e}")
+    
+    # Add git history to context
+    if git_history and git_history != "Git history unavailable":
+        brain_context += f"\n**GIT HISTORY**:\n{git_history}\n"
+    
+    # Add previews of key files if they exist
+    key_files = ["package.json", "tsconfig.json", "next.config.mjs"]
+    file_previews = []
+    for key_file in key_files:
+        file_path = PROJECT_ROOT / key_file
+        if file_path.exists():
+            preview = get_file_preview(file_path, 30)
+            if preview:
+                file_previews.append(f"\n**{key_file} (preview)**:\n```\n{preview}\n```")
+    
+    if file_previews:
+        brain_context += "\n**KEY FILE PREVIEWS**:" + "".join(file_previews) + "\n"
 
     system_instruction = (
         "You are the Fetti Feature Agent running inside the Fetti CRM repo. "
