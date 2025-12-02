@@ -5,7 +5,7 @@ import { scheduleStandardSequence, triggerBehavioralEmail } from '@/lib/automati
 
 export type LoanType = 'Business' | 'Mortgage' | null;
 export type BusinessProduct = 'MCA' | 'Line of Credit' | 'Working Capital' | 'Factoring' | null;
-export type MortgageProduct = 'Purchase' | 'Refinance' | 'Construction' | 'FixAndFlip' | 'Bridge' | 'Other' | null;
+export type MortgageProduct = 'Purchase' | 'Refinance' | 'New Construction' | 'FixAndFlip' | 'Bridge' | 'Other' | null;
 
 export interface ConversationState {
     step: string;
@@ -224,7 +224,7 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
                 };
             } else {
                 nextStep = 'MORTGAGE_PRODUCT';
-                nextMessage = { id: 'ask_mortgage_product', role: 'system', content: "Real Estate. Excellent. What's the strategy? Purchase, Refi, Fix & Flip, or Construction?", type: 'options', options: ['Purchase', 'Refinance', 'Fix & Flip', 'Construction', 'Bridge'] };
+                nextMessage = { id: 'ask_mortgage_product', role: 'system', content: "Real Estate. Excellent. What's the strategy? Purchase, Refi, Fix & Flip, or New Construction?", type: 'options', options: ['Purchase', 'Refinance', 'Fix & Flip', 'New Construction', 'Bridge'] };
             }
             break;
 
