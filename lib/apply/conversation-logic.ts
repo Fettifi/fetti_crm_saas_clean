@@ -1,9 +1,13 @@
+import { calculateDealScore, DealScore } from '@/lib/intelligence/deal-scorer';
+import { logInteraction } from '@/lib/learning/optimization-engine';
+
 export type LoanType = 'Business' | 'Mortgage' | null;
 export type MortgageProduct = 'Purchase' | 'Refinance' | 'Construction' | 'FixAndFlip' | 'Bridge' | 'Other' | null;
 
 export interface ConversationState {
     step: string;
     loanType: LoanType;
+    dealScore: DealScore;
     data: {
         // Common
         fullName?: string;
@@ -58,289 +62,211 @@ export interface Message {
 export const INITIAL_STATE: ConversationState = {
     step: 'INIT',
     loanType: null,
+    dealScore: { score: 50, probability: 'Medium', recommendation: '', missingCriticalInfo: [] },
     data: {},
     history: [
         {
             id: 'welcome',
             role: 'system',
-            content: "Hi! I'm Fetti, your AI assistant. I can help you apply for a loan quickly. To get started, what's your full name?",
+            content: "Hi! I'm Fetti, your AI assistant. I'm here to get you funded. To start, what's your full name?",
             type: 'text',
         },
     ],
 };
 
+// --- Dynamic Graph Logic ---
+
 export function getNextStep(state: ConversationState, input: string): Partial<ConversationState> {
-    const { step, loanType, data } = state;
+    const { step, data } = state;
     const nextData = { ...data };
-    let nextStep = step;
-    let nextMessage: Message | null = null;
 
-    switch (step) {
-        case 'INIT':
-            nextData.fullName = input;
-            nextStep = 'ASK_LOAN_TYPE';
-            nextMessage = {
-                id: 'ask_loan_type',
-                role: 'system',
-                content: `Nice to meet you, ${input}! Are you looking for a Business Loan or a Mortgage Loan?`,
-                type: 'options',
-                options: ['Business Loan', 'Mortgage Loan'],
-            };
-            break;
+    // 1. Capture Data based on current step
+    captureData(step, input, nextData);
 
-        case 'ASK_LOAN_TYPE':
-            if (input.toLowerCase().includes('business')) {
-                nextStep = 'BUSINESS_REVENUE';
-                nextMessage = {
-                    id: 'ask_revenue',
-                    role: 'system',
-                    content: "Great! Let's talk business. What is your annual revenue? (You can also upload a bank statement to skip this!)",
-                    type: 'upload',
-                };
-                return { step: nextStep, loanType: 'Business', data: nextData, history: [...state.history, { id: Date.now().toString(), role: 'user', content: input }, nextMessage] };
-            } else if (input.toLowerCase().includes('mortgage')) {
-                nextStep = 'MORTGAGE_PRODUCT';
-                nextMessage = {
-                    id: 'ask_mortgage_product',
-                    role: 'system',
-                    content: "Exciting! What are you looking to do today?",
-                    type: 'options',
-                    options: ['Purchase a Home', 'Refinance', 'Fix & Flip', 'New Construction', 'Bridge Loan'],
-                };
-                return { step: nextStep, loanType: 'Mortgage', data: nextData, history: [...state.history, { id: Date.now().toString(), role: 'user', content: input }, nextMessage] };
-            } else {
-                nextMessage = {
-                    id: 'ask_loan_type_retry',
-                    role: 'system',
-                    content: "I didn't quite catch that. Business Loan or Mortgage Loan?",
-                    type: 'options',
-                    options: ['Business Loan', 'Mortgage Loan'],
-                };
-            }
-            break;
+    // 2. Recalculate Score
+    const newScore = calculateDealScore(nextData);
 
-        // --- Mortgage Flow (1003 + Investment) ---
+    // 3. Determine Next Step based on Graph & Score
+    const { nextStep, nextMessage } = determineNextMove(step, nextData, newScore, input);
 
-        case 'MORTGAGE_PRODUCT':
-            const lowerInput = input.toLowerCase();
-            if (lowerInput.includes('purchase')) nextData.mortgageProduct = 'Purchase';
-            else if (lowerInput.includes('refinance')) nextData.mortgageProduct = 'Refinance';
-            else if (lowerInput.includes('fix')) nextData.mortgageProduct = 'FixAndFlip';
-            else if (lowerInput.includes('construction')) nextData.mortgageProduct = 'Construction';
-            else if (lowerInput.includes('bridge')) nextData.mortgageProduct = 'Bridge';
-            else nextData.mortgageProduct = 'Other';
-
-            // Branching based on product
-            if (nextData.mortgageProduct === 'FixAndFlip') {
-                nextStep = 'INV_PURCHASE_PRICE';
-                nextMessage = {
-                    id: 'ask_purchase_price',
-                    role: 'system',
-                    content: "Fix & Flip! Great strategy. What is the purchase price of the property?",
-                    type: 'text',
-                };
-            } else if (nextData.mortgageProduct === 'Construction') {
-                nextStep = 'INV_LAND_VALUE';
-                nextMessage = {
-                    id: 'ask_land_value',
-                    role: 'system',
-                    content: "New Construction. Nice. What is the current value or cost of the land?",
-                    type: 'text',
-                };
-            } else if (nextData.mortgageProduct === 'Bridge') {
-                nextStep = 'INV_EXIT_STRATEGY';
-                nextMessage = {
-                    id: 'ask_exit_strategy',
-                    role: 'system',
-                    content: "Bridge Loan. Got it. What is your exit strategy? (e.g., Sell, Refinance)",
-                    type: 'text',
-                };
-            } else {
-                // Standard Mortgage Flow
-                nextStep = 'MORTGAGE_PROPERTY';
-                nextMessage = {
-                    id: 'ask_property',
-                    role: 'system',
-                    content: "Got it. Tell me about the property. Is it a Single Family Home, Condo, or something else?",
-                    type: 'text',
-                };
-            }
-            break;
-
-        // --- Investment Specific Steps ---
-
-        case 'INV_PURCHASE_PRICE':
-            nextData.purchasePrice = parseInt(input.replace(/[^0-9]/g, '')) || 0;
-            nextStep = 'INV_REHAB_BUDGET';
-            nextMessage = {
-                id: 'ask_rehab_budget',
-                role: 'system',
-                content: "And what is your estimated rehab budget?",
-                type: 'text',
-            };
-            break;
-
-        case 'INV_REHAB_BUDGET':
-            nextData.rehabBudget = parseInt(input.replace(/[^0-9]/g, '')) || 0;
-            nextStep = 'INV_ARV';
-            nextMessage = {
-                id: 'ask_arv',
-                role: 'system',
-                content: "What is the estimated After Repair Value (ARV)?",
-                type: 'text',
-            };
-            break;
-
-        case 'INV_LAND_VALUE':
-            // Reuse purchasePrice field for land value to keep schema simple, or add landValue
-            nextData.purchasePrice = parseInt(input.replace(/[^0-9]/g, '')) || 0;
-            nextStep = 'INV_CONST_BUDGET';
-            nextMessage = {
-                id: 'ask_const_budget',
-                role: 'system',
-                content: "What is your total construction budget?",
-                type: 'text',
-            };
-            break;
-
-        case 'INV_CONST_BUDGET':
-            nextData.rehabBudget = parseInt(input.replace(/[^0-9]/g, '')) || 0; // Reuse rehabBudget
-            nextStep = 'INV_ARV';
-            nextMessage = {
-                id: 'ask_arv',
-                role: 'system',
-                content: "What is the estimated completed value (ARV)?",
-                type: 'text',
-            };
-            break;
-
-        case 'INV_ARV':
-            nextData.arv = parseInt(input.replace(/[^0-9]/g, '')) || 0;
-            nextStep = 'INV_EXPERIENCE';
-            nextMessage = {
-                id: 'ask_experience',
-                role: 'system',
-                content: "How many similar projects have you completed in the last 3 years?",
-                type: 'options',
-                options: ['0 (First time)', '1-2', '3+'],
-            };
-            break;
-
-        case 'INV_EXPERIENCE':
-            nextData.experience = input;
-            // Merge back to standard flow for financials
-            nextStep = 'MORTGAGE_ASSETS';
-            nextMessage = {
-                id: 'ask_assets',
-                role: 'system',
-                content: "Thanks. To close this out, what is the total value of your liquid assets available for this deal?",
-                type: 'text',
-            };
-            break;
-
-        case 'INV_EXIT_STRATEGY':
-            nextData.exitStrategy = input;
-            nextStep = 'MORTGAGE_ASSETS';
-            nextMessage = {
-                id: 'ask_assets',
-                role: 'system',
-                content: "Understood. What is the total value of your liquid assets?",
-                type: 'text',
-            };
-            break;
-
-        // --- Standard Mortgage Steps (Reused) ---
-
-        case 'MORTGAGE_PROPERTY':
-            nextData.propertyType = input;
-            nextStep = 'MORTGAGE_EMPLOYMENT';
-            nextMessage = {
-                id: 'ask_employment',
-                role: 'system',
-                content: "Thanks. Now, let's cover employment. Who is your current employer and what is your position? (You can upload a W2 or Paystub to speed this up!)",
-                type: 'upload',
-            };
-            break;
-
-        case 'MORTGAGE_EMPLOYMENT':
-            nextData.employerName = input;
-            nextStep = 'MORTGAGE_INCOME';
-            nextMessage = {
-                id: 'ask_income',
-                role: 'system',
-                content: "And what is your approximate monthly income from this job?",
-                type: 'text',
-            };
-            break;
-
-        case 'MORTGAGE_INCOME':
-            nextData.monthlyIncome = parseInt(input.replace(/[^0-9]/g, '')) || 0;
-            nextStep = 'MORTGAGE_ASSETS';
-            nextMessage = {
-                id: 'ask_assets',
-                role: 'system',
-                content: "Almost done with the financials. What is the total value of your liquid assets (Cash, Checking, Savings)?",
-                type: 'text',
-            };
-            break;
-
-        case 'MORTGAGE_ASSETS':
-            nextData.liquidAssets = parseInt(input.replace(/[^0-9]/g, '')) || 0;
-            nextStep = 'MORTGAGE_DECLARATIONS';
-            nextMessage = {
-                id: 'ask_declarations',
-                role: 'system',
-                content: "Last step - just a quick legal check. Have you declared bankruptcy in the last 7 years?",
-                type: 'options',
-                options: ['Yes', 'No'],
-            };
-            break;
-
-        case 'MORTGAGE_DECLARATIONS':
-            nextData.bankruptcy = input.toLowerCase().includes('yes');
-            nextStep = 'ASK_EMAIL';
-            nextMessage = {
-                id: 'ask_email',
-                role: 'system',
-                content: "Perfect, thanks for all that info. What's the best email address to send your application summary to?",
-                type: 'text',
-            };
-            break;
-
-        // --- Business Flow ---
-
-        case 'BUSINESS_REVENUE':
-            nextData.revenue = parseInt(input.replace(/[^0-9]/g, '')) || 0;
-            nextStep = 'ASK_EMAIL';
-            nextMessage = {
-                id: 'ask_email',
-                role: 'system',
-                content: "Got it. What's the best email address to reach you at?",
-                type: 'text',
-            };
-            break;
-
-        // --- Common ---
-
-        case 'ASK_EMAIL':
-            nextData.email = input;
-            nextStep = 'COMPLETE';
-            nextMessage = {
-                id: 'complete',
-                role: 'system',
-                content: "Fantastic! I've gathered all the necessary information. Submitting your application now...",
-                type: 'text',
-            };
-            break;
-    }
+    // 4. Log Interaction
+    logInteraction(step, 'complete');
+    logInteraction(nextStep, 'view');
 
     if (nextMessage) {
         return {
             step: nextStep,
+            dealScore: newScore,
             data: nextData,
             history: [...state.history, { id: Date.now().toString(), role: 'user', content: input }, nextMessage],
         };
     }
 
     return {};
+}
+
+function captureData(step: string, input: string, data: any) {
+    const cleanNum = (str: string) => parseInt(str.replace(/[^0-9]/g, '')) || 0;
+
+    switch (step) {
+        case 'INIT': data.fullName = input; break;
+        case 'ASK_LOAN_TYPE': /* Handled in logic */ break;
+        case 'BUSINESS_REVENUE': data.revenue = cleanNum(input); break;
+        case 'MORTGAGE_PRODUCT': /* Handled in logic */ break;
+        case 'MORTGAGE_PROPERTY': data.propertyType = input; break;
+        case 'MORTGAGE_EMPLOYMENT': data.employerName = input; break;
+        case 'MORTGAGE_INCOME': data.monthlyIncome = cleanNum(input); break;
+        case 'MORTGAGE_ASSETS': data.liquidAssets = cleanNum(input); break;
+        case 'MORTGAGE_DECLARATIONS': data.bankruptcy = input.toLowerCase().includes('yes'); break;
+        case 'INV_PURCHASE_PRICE': data.purchasePrice = cleanNum(input); break;
+        case 'INV_REHAB_BUDGET': data.rehabBudget = cleanNum(input); break;
+        case 'INV_ARV': data.arv = cleanNum(input); break;
+        case 'INV_EXPERIENCE': data.experience = input; break;
+        case 'INV_EXIT_STRATEGY': data.exitStrategy = input; break;
+        case 'ASK_EMAIL': data.email = input; break;
+    }
+}
+
+function determineNextMove(currentStep: string, data: any, score: DealScore, lastInput: string): { nextStep: string, nextMessage: Message } {
+    let nextStep = currentStep;
+    let nextMessage: Message = { id: 'error', role: 'system', content: "Thinking...", type: 'text' };
+
+    // --- Objection Handling / Intervention ---
+    // If score drops suddenly or is very low, intervene
+    if (score.probability === 'Low' && currentStep !== 'OBJECTION_HANDLING' && currentStep !== 'ASK_LOAN_TYPE') {
+        return {
+            nextStep: 'OBJECTION_HANDLING',
+            nextMessage: {
+                id: 'intervention',
+                role: 'system',
+                content: "I noticed some factors might make approval tricky. Would you be open to adding a co-signer or looking at alternative programs to boost your chances?",
+                type: 'options',
+                options: ['Yes, tell me more', 'No, continue as is'],
+            }
+        };
+    }
+
+    if (currentStep === 'OBJECTION_HANDLING') {
+        if (lastInput.toLowerCase().includes('yes')) {
+            // Pivot logic could go here
+            return {
+                nextStep: 'MORTGAGE_ASSETS', // Skip to assets for now
+                nextMessage: { id: 'pivot', role: 'system', content: "Great. Strong assets can often offset other factors. What is the total value of your liquid assets?", type: 'text' }
+            };
+        } else {
+            // Continue where we left off (simplified for this graph)
+            return {
+                nextStep: 'MORTGAGE_ASSETS',
+                nextMessage: { id: 'continue', role: 'system', content: "Understood. Let's proceed. What is the total value of your liquid assets?", type: 'text' }
+            };
+        }
+    }
+
+    // --- Main Graph Traversal ---
+
+    switch (currentStep) {
+        case 'INIT':
+            nextStep = 'ASK_LOAN_TYPE';
+            nextMessage = {
+                id: 'ask_loan_type',
+                role: 'system',
+                content: `Nice to meet you, ${data.fullName}! To get you the best funding, are you looking for a Business Loan or a Mortgage Loan?`,
+                type: 'options',
+                options: ['Business Loan', 'Mortgage Loan'],
+            };
+            break;
+
+        case 'ASK_LOAN_TYPE':
+            if (lastInput.toLowerCase().includes('business')) {
+                nextStep = 'BUSINESS_REVENUE';
+                nextMessage = { id: 'ask_revenue', role: 'system', content: "Business it is. What's your annual revenue? (Upload a bank statement to skip!)", type: 'upload' };
+            } else {
+                nextStep = 'MORTGAGE_PRODUCT';
+                nextMessage = { id: 'ask_mortgage_product', role: 'system', content: "Real Estate. Excellent. What's the strategy? Purchase, Refi, Fix & Flip, or Construction?", type: 'options', options: ['Purchase', 'Refinance', 'Fix & Flip', 'Construction', 'Bridge'] };
+            }
+            break;
+
+        case 'MORTGAGE_PRODUCT':
+            const lower = lastInput.toLowerCase();
+            if (lower.includes('fix')) {
+                nextStep = 'INV_PURCHASE_PRICE';
+                nextMessage = { id: 'ask_pp', role: 'system', content: "Fix & Flip. High potential. What's the purchase price?", type: 'text' };
+            } else if (lower.includes('construction')) {
+                nextStep = 'INV_LAND_VALUE';
+                nextMessage = { id: 'ask_land', role: 'system', content: "New Construction. What's the land value?", type: 'text' };
+            } else if (lower.includes('bridge')) {
+                nextStep = 'INV_EXIT_STRATEGY';
+                nextMessage = { id: 'ask_exit', role: 'system', content: "Bridge Loan. Speed is key. What's your exit strategy?", type: 'text' };
+            } else {
+                nextStep = 'MORTGAGE_PROPERTY';
+                nextMessage = { id: 'ask_prop', role: 'system', content: "Standard Mortgage. What type of property is this?", type: 'text' };
+            }
+            break;
+
+        // ... (Investment Steps) ...
+        case 'INV_PURCHASE_PRICE':
+            nextStep = 'INV_REHAB_BUDGET';
+            nextMessage = { id: 'ask_rehab', role: 'system', content: "And the rehab budget?", type: 'text' };
+            break;
+        case 'INV_REHAB_BUDGET':
+            nextStep = 'INV_ARV';
+            nextMessage = { id: 'ask_arv', role: 'system', content: "What's the After Repair Value (ARV)?", type: 'text' };
+            break;
+        case 'INV_LAND_VALUE':
+            nextStep = 'INV_CONST_BUDGET';
+            nextMessage = { id: 'ask_const', role: 'system', content: "Construction budget?", type: 'text' };
+            break;
+        case 'INV_CONST_BUDGET':
+            nextStep = 'INV_ARV';
+            nextMessage = { id: 'ask_arv', role: 'system', content: "Projected ARV?", type: 'text' };
+            break;
+        case 'INV_ARV':
+            nextStep = 'INV_EXPERIENCE';
+            nextMessage = { id: 'ask_exp', role: 'system', content: "How many similar projects have you done in the last 3 years?", type: 'options', options: ['0', '1-2', '3+'] };
+            break;
+        case 'INV_EXPERIENCE':
+        case 'INV_EXIT_STRATEGY':
+            nextStep = 'MORTGAGE_ASSETS';
+            nextMessage = { id: 'ask_assets', role: 'system', content: "Liquidity check. Total liquid assets?", type: 'text' };
+            break;
+
+        // ... (Standard Steps) ...
+        case 'MORTGAGE_PROPERTY':
+            nextStep = 'MORTGAGE_EMPLOYMENT';
+            nextMessage = { id: 'ask_emp', role: 'system', content: "Employment info. Who do you work for? (Upload W2/Paystub supported)", type: 'upload' };
+            break;
+        case 'MORTGAGE_EMPLOYMENT':
+            nextStep = 'MORTGAGE_INCOME';
+            nextMessage = { id: 'ask_inc', role: 'system', content: "Monthly income?", type: 'text' };
+            break;
+        case 'MORTGAGE_INCOME':
+            nextStep = 'MORTGAGE_ASSETS';
+            nextMessage = { id: 'ask_assets', role: 'system', content: "Total liquid assets?", type: 'text' };
+            break;
+
+        // ... (Closing Steps) ...
+        case 'BUSINESS_REVENUE':
+        case 'MORTGAGE_ASSETS':
+            // Fast Track Check
+            if (score.probability === 'High') {
+                nextStep = 'ASK_EMAIL';
+                nextMessage = { id: 'ask_email_fast', role: 'system', content: "Your profile looks excellent. I'm fast-tracking this. What's your email to send the funding agreement?", type: 'text' };
+            } else {
+                nextStep = 'MORTGAGE_DECLARATIONS';
+                nextMessage = { id: 'ask_dec', role: 'system', content: "Just a few final checks. Any bankruptcy in the last 7 years?", type: 'options', options: ['Yes', 'No'] };
+            }
+            break;
+
+        case 'MORTGAGE_DECLARATIONS':
+            nextStep = 'ASK_EMAIL';
+            nextMessage = { id: 'ask_email', role: 'system', content: "Got it. What's your email to finalize the application?", type: 'text' };
+            break;
+
+        case 'ASK_EMAIL':
+            nextStep = 'COMPLETE';
+            nextMessage = { id: 'complete', role: 'system', content: "Application submitted! Our underwriting team is reviewing your file now.", type: 'text' };
+            break;
+    }
+
+    return { nextStep, nextMessage };
 }
