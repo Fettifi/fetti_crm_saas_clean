@@ -2,6 +2,9 @@
 
 import Image from 'next/image';
 import { useState } from 'react';
+import NewLeadsWidget from '@/components/dashboard/NewLeadsWidget';
+import AppsInProgressWidget from '@/components/dashboard/AppsInProgressWidget';
+import SubmittedAppsWidget from '@/components/dashboard/SubmittedAppsWidget';
 
 type TabId =
   | 'dashboard'
@@ -84,21 +87,9 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
       <>
         {/* Top stat row */}
         <section className="grid gap-4 md:grid-cols-3">
-          <StatCard
-            title="NEW LEADS (7D)"
-            value="–"
-            subtitle="Matrix will wire this to live data."
-          />
-          <StatCard
-            title="APPS IN PROGRESS"
-            value="–"
-            subtitle="STARTED · IN_PROGRESS · INCOMPLETE"
-          />
-          <StatCard
-            title="SUBMITTED APPS"
-            value="–"
-            subtitle="Ready for processing / funding."
-          />
+          <NewLeadsWidget />
+          <AppsInProgressWidget />
+          <SubmittedAppsWidget />
         </section>
 
         {/* Matrix workspace */}

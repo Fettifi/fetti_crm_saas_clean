@@ -12,6 +12,14 @@ if [ ! -f "package.json" ] || [ ! -d ".git" ]; then
   exit 1
 fi
 
+echo "[DEPLOY] Running local build check..."
+# Run build to ensure no errors before pushing
+if ! npm run build; then
+  echo "[DEPLOY] ❌ Local build failed. Fix errors before deploying."
+  exit 1
+fi
+echo "[DEPLOY] ✅ Local build passed."
+
 echo "[DEPLOY] Git status:"
 git status --short || true
 echo ""

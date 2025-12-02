@@ -27,20 +27,36 @@ export default function ApplyPage() {
     setError(null);
 
     try {
-      const { error } = await supabase.from("leads").insert([
+      // 1. Create Lead
+      const { data: leadData, error: leadError } = await supabase
+        .from("leads")
+        .insert([
+          {
+            full_name: fullName,
+            email,
+            phone,
+            state,
+            loan_purpose: loanPurpose,
+            source: "fetti-crm-apply",
+          },
+        ])
+        .select()
+        .single();
+
+      if (leadError) throw leadError;
+
+      // 2. Create Application
+      const { error: appError } = await supabase.from("applications").insert([
         {
-          full_name: fullName,
-          email,
-          phone,
-          state,
-          loan_purpose: loanPurpose,
-          source: "fetti-crm-apply",
+          contact_id: leadData.id, // Assuming 'leads' are contacts
+          status: "STARTED",
+          // created_at is usually auto-generated
         },
       ]);
 
-      if (error) throw error;
+      if (appError) throw appError;
 
-      setMessage("Lead submitted! You can see it instantly on the Leads tab.");
+      setMessage("Lead and Application submitted! You can see it instantly on the Leads tab.");
       setFullName("");
       setEmail("");
       setPhone("");
