@@ -28,5 +28,25 @@
       "pattern": "the name `NextResponse` is defined multiple times",
       "recommendation": "Import NextResponse only once at the top of the file and reuse that import."
     }
+  ],
+  "successful_examples": [
+    {
+      "description": "Adding a new API route",
+      "file": "app/api/example/route.ts",
+      "before": "// API routes go here",
+      "after": "export async function GET(request: Request) {\n  return Response.json({ status: 'ok' });\n}"
+    },
+    {
+      "description": "Importing and using a Supabase client",
+      "file": "app/example/page.tsx",
+      "before": "export default function Page() {",
+      "after": "import { supabase } from '@/lib/supabaseClient';\n\nexport default function Page() {"
+    },
+    {
+      "description": "Adding TypeScript type safety",
+      "file": "lib/types.ts",
+      "before": "export interface User {",
+      "after": "export interface User {\n  id: string;\n  email: string;\n  created_at: string;"
+    }
   ]
 }

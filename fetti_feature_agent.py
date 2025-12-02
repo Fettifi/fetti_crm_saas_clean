@@ -234,6 +234,34 @@ def get_file_preview(file_path: Path, max_lines: int = 50) -> str:
     return ""
 
 
+def search_code(pattern: str, file_extensions: List[str] = None) -> str:
+    """
+    Search for code patterns using grep.
+    """
+    if not file_extensions:
+        file_extensions = [".ts", ".tsx", ".js", ".jsx"]
+    
+    try:
+        # Build grep command
+        cmd = ["grep", "-r", "-n", "--include=*.ts", "--include=*.tsx", 
+               "--include=*.js", "--include=*.jsx", pattern, "app/", "components/", "lib/"]
+        
+        result = subprocess.run(
+            cmd,
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0 and result.stdout:
+            lines = result.stdout.strip().split("\n")[:20]  # Limit to 20 results
+            return "\n".join(lines)
+    except Exception:
+        pass
+    return ""
+
+
 def apply_json_edits(edits: List[dict]) -> bool:
     """
     Apply JSON edits: {file, before, after}.
@@ -347,6 +375,20 @@ def ai_apply_task(task: str) -> bool:
     
     if file_previews:
         brain_context += "\n**KEY FILE PREVIEWS**:" + "".join(file_previews) + "\n"
+    
+    # Add few-shot examples from brain
+    try:
+        brain_data = json.loads((PROJECT_ROOT / "fetti_brain.json").read_text())
+        examples = brain_data.get("successful_examples", [])
+        if examples:
+            example_text = "\n**SUCCESSFUL EDIT EXAMPLES** (for reference):\n"
+            for ex in examples[:3]:  # Limit to 3 examples
+                example_text += f"- {ex.get('description', 'Example')}\n"
+                example_text += f"  File: {ex.get('file', 'N/A')}\n"
+                example_text += f"  Pattern: Replace specific code with improved version\n"
+            brain_context += example_text
+    except Exception:
+        pass
 
     system_instruction = (
         "You are the Fetti Feature Agent running inside the Fetti CRM repo. "
@@ -358,6 +400,10 @@ def ai_apply_task(task: str) -> bool:
         "adjust your edits to stay on the safe path.\n\n"
         "You have access to extended thinking capabilities - use them for complex "
         "architectural decisions or when considering multiple approaches.\n\n"
+        "**REASONING APPROACH**:\n"
+        "1. First, critique the current state and identify the minimal change needed\n"
+        "2. Consider edge cases and potential breaking changes\n"
+        "3. Then generate the most effective, safe edit\n\n"
         "You only output strict JSON edits (file/before/after), no explanations."
     )
 
