@@ -120,6 +120,7 @@ function captureData(step: string, input: string, data: any) {
         case 'ASK_LOAN_TYPE': /* Handled in logic */ break;
         case 'BUSINESS_REVENUE': data.revenue = cleanNum(input); break;
         case 'MORTGAGE_PRODUCT': /* Handled in logic */ break;
+        case 'MORTGAGE_LOAN_AMOUNT': data.purchasePrice = cleanNum(input); break; // Map to purchasePrice for now to align with DB
         case 'MORTGAGE_PROPERTY': data.propertyType = input; break;
         case 'MORTGAGE_EMPLOYMENT': data.employerName = input; break;
         case 'MORTGAGE_INCOME': data.monthlyIncome = cleanNum(input); break;
@@ -227,9 +228,14 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
                 nextStep = 'INV_EXIT_STRATEGY';
                 nextMessage = { id: 'ask_exit', role: 'system', content: "Bridge Loan. Speed is key. What's your exit strategy?", type: 'text' };
             } else {
-                nextStep = 'MORTGAGE_PROPERTY';
-                nextMessage = { id: 'ask_prop', role: 'system', content: "Standard Mortgage. What type of property is this?", type: 'text' };
+                nextStep = 'MORTGAGE_LOAN_AMOUNT';
+                nextMessage = { id: 'ask_amt', role: 'system', content: "Standard Mortgage. How much are you looking to borrow?", type: 'text' };
             }
+            break;
+
+        case 'MORTGAGE_LOAN_AMOUNT':
+            nextStep = 'MORTGAGE_PROPERTY';
+            nextMessage = { id: 'ask_prop', role: 'system', content: "Got it. What type of property is this?", type: 'text' };
             break;
 
         // ... (Investment Steps) ...
