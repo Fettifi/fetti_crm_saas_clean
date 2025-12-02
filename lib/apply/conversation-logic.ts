@@ -16,6 +16,7 @@ export interface ConversationState {
         fullName?: string;
         email?: string;
         phone?: string;
+        leadId?: string;
 
         // Business
         businessProduct?: BusinessProduct;

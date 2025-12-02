@@ -163,6 +163,9 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 }
 
                 await triggerBehavioralEmail(leadData.id, 'REFERRAL_REWARD');
+
+                // Save leadId to state for ReferralWidget
+                setState(prev => ({ ...prev, data: { ...prev.data, leadId: leadData.id } }));
             }
 
         } catch (error) {
@@ -260,7 +263,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 {/* Referral Widget on Complete */}
                 {state.step === 'COMPLETE' && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                        <ReferralWidget />
+                        <ReferralWidget leadId={state.data.leadId} />
                     </div>
                 )}
 

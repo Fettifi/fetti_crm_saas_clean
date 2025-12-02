@@ -1,15 +1,47 @@
-import React, { useState } from 'react';
-import { Copy, Check, Share2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Copy, Check, Share2, Loader2 } from 'lucide-react';
 
-export default function ReferralWidget() {
+interface ReferralWidgetProps {
+    leadId?: string;
+}
+
+export default function ReferralWidget({ leadId }: ReferralWidgetProps) {
     const [copied, setCopied] = useState(false);
-    const referralLink = "https://fetti.app/invite/u/john-doe-123"; // Mock unique link
+    const [referralCode, setReferralCode] = useState<string | null>(null);
+    const [referralCount, setReferralCount] = useState(0);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!leadId) return;
+
+        async function fetchReferral() {
+            try {
+                const res = await fetch(`/api/growth/referral?leadId=${leadId}`);
+                const data = await res.json();
+                if (data.code) {
+                    setReferralCode(data.code);
+                    setReferralCount(data.count);
+                }
+            } catch (error) {
+                console.error('Failed to fetch referral:', error);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        fetchReferral();
+    }, [leadId]);
+
+    const referralLink = referralCode ? `https://fetti.app/invite/${referralCode}` : 'Generating...';
 
     const handleCopy = () => {
+        if (!referralCode) return;
         navigator.clipboard.writeText(referralLink);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
+
+    if (!leadId) return null;
 
     return (
         <div className="bg-slate-900 border border-emerald-500/30 rounded-xl p-6 mt-6 max-w-md mx-auto text-center shadow-2xl shadow-emerald-900/20">
@@ -28,22 +60,26 @@ export default function ReferralWidget() {
             <div className="mb-6">
                 <div className="flex justify-between text-xs text-slate-400 mb-2">
                     <span>0 Referrals</span>
-                    <span className="text-emerald-400 font-medium">1 / 3 Joined</span>
+                    <span className="text-emerald-400 font-medium">{referralCount} / 3 Joined</span>
                     <span>3 Referrals</span>
                 </div>
                 <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 w-1/3 transition-all duration-500" />
+                    <div
+                        className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
+                        style={{ width: `${Math.min((referralCount / 3) * 100, 100)}%` }}
+                    />
                 </div>
             </div>
 
             {/* Link Box */}
             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg p-2 mb-4">
                 <code className="flex-1 text-slate-300 text-sm truncate px-2">
-                    {referralLink}
+                    {loading ? <Loader2 className="animate-spin w-4 h-4 mx-auto" /> : referralLink}
                 </code>
                 <button
                     onClick={handleCopy}
-                    className="p-2 hover:bg-slate-800 rounded-md transition-colors text-emerald-500"
+                    disabled={loading}
+                    className="p-2 hover:bg-slate-800 rounded-md transition-colors text-emerald-500 disabled:opacity-50"
                 >
                     {copied ? <Check size={18} /> : <Copy size={18} />}
                 </button>
