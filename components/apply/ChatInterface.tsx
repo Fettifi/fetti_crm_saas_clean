@@ -9,11 +9,15 @@ import { INITIAL_STATE, ConversationState, Message, getNextStep, MortgageProduct
 import { ExtractedData } from '@/lib/apply/document-processor';
 import { supabase } from '@/lib/supabaseClient';
 
+import { useSearchParams } from 'next/navigation';
+
 interface ChatInterfaceProps {
     initialProduct?: string | null;
 }
 
 export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
+    const searchParams = useSearchParams();
+
     // Initialize state with product if provided
     const [state, setState] = useState<ConversationState>(() => {
         if (initialProduct) {
@@ -126,7 +130,10 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                     last_name: data.fullName?.split(' ').slice(1).join(' ') || '',
                     email: data.email,
                     status: 'New',
-                    source: 'AI_Chat_Apply'
+                    source: 'AI_Chat_Apply',
+                    utm_source: searchParams.get('utm_source'),
+                    utm_medium: searchParams.get('utm_medium'),
+                    utm_campaign: searchParams.get('utm_campaign'),
                 }])
                 .select()
                 .single();
