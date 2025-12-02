@@ -4,6 +4,7 @@ import { verifyIdentity, verifyAssets, verifyProperty } from '@/lib/intelligence
 import { scheduleStandardSequence, triggerBehavioralEmail } from '@/lib/automations/scheduler';
 
 export type LoanType = 'Business' | 'Mortgage' | null;
+export type BusinessProduct = 'MCA' | 'Line of Credit' | 'Working Capital' | 'Factoring' | null;
 export type MortgageProduct = 'Purchase' | 'Refinance' | 'Construction' | 'FixAndFlip' | 'Bridge' | 'Other' | null;
 
 export interface ConversationState {
@@ -17,6 +18,7 @@ export interface ConversationState {
         phone?: string;
 
         // Business
+        businessProduct?: BusinessProduct;
         revenue?: number;
         industry?: string;
 
@@ -118,6 +120,7 @@ function captureData(step: string, input: string, data: any) {
     switch (step) {
         case 'INIT': data.fullName = input; break;
         case 'ASK_LOAN_TYPE': /* Handled in logic */ break;
+        case 'BUSINESS_PRODUCT': /* Handled in logic, but let's save string */ data.businessProduct = input; break;
         case 'BUSINESS_REVENUE': data.revenue = cleanNum(input); break;
         case 'MORTGAGE_PRODUCT': /* Handled in logic */ break;
         case 'MORTGAGE_LOAN_AMOUNT': data.purchasePrice = cleanNum(input); break; // Map to purchasePrice for now to align with DB
@@ -211,12 +214,23 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
 
         case 'ASK_LOAN_TYPE':
             if (lastInput.toLowerCase().includes('business')) {
-                nextStep = 'BUSINESS_REVENUE';
-                nextMessage = { id: 'ask_revenue', role: 'system', content: "Business it is. What's your annual revenue? (Upload a bank statement to skip!)", type: 'upload' };
+                nextStep = 'BUSINESS_PRODUCT';
+                nextMessage = {
+                    id: 'ask_biz_prod',
+                    role: 'system',
+                    content: "Business Funding. Smart choice. Which product fits your needs?",
+                    type: 'options',
+                    options: ['MCA', 'Line of Credit', 'Working Capital', 'Factoring']
+                };
             } else {
                 nextStep = 'MORTGAGE_PRODUCT';
                 nextMessage = { id: 'ask_mortgage_product', role: 'system', content: "Real Estate. Excellent. What's the strategy? Purchase, Refi, Fix & Flip, or Construction?", type: 'options', options: ['Purchase', 'Refinance', 'Fix & Flip', 'Construction', 'Bridge'] };
             }
+            break;
+
+        case 'BUSINESS_PRODUCT':
+            nextStep = 'BUSINESS_REVENUE';
+            nextMessage = { id: 'ask_revenue', role: 'system', content: "Got it. What's your annual revenue? (Upload a bank statement to skip!)", type: 'upload' };
             break;
 
         case 'MORTGAGE_PRODUCT':
