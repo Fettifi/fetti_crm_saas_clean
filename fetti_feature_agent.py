@@ -7,12 +7,13 @@ import subprocess
 from pathlib import Path
 from typing import List
 
-from openai import OpenAI
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+load_dotenv()  # Load environment variables from .env file
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 PLAN_PATH = PROJECT_ROOT / "fetti_feature_plan.md"
-MODEL = os.environ.get("FETTI_WIZARD_MODEL", "gpt-4.1-mini")
-client = OpenAI()  # uses OPENAI_API_KEY
 
 
 SAFE_ROOTS = (
@@ -186,7 +187,7 @@ def build_repo_hint() -> str:
                 rel = p.relative_to(PROJECT_ROOT)
                 lines.append(f"  • {rel}")
                 count += 1
-                if count >= 40:
+                if count >= 200:
                     lines.append("  • ...")
                     break
     return "\n".join(lines)
@@ -264,10 +265,42 @@ def apply_json_edits(edits: List[dict]) -> bool:
 
     return applied_any
 
+MODEL_NAME = os.environ.get("FETTI_WIZARD_MODEL", "gemini-2.0-flash-thinking-exp")
+API_KEY = os.environ.get("GEMINI_API_KEY")
+
+try:
+    if not API_KEY:
+        print("[WARNING] GEMINI_API_KEY not set. Agent will fail to generate content.")
+    else:
+        genai.configure(api_key=API_KEY)
+except Exception as e:
+    print(f"[ERROR] Failed to configure Gemini client: {e}")
+
 def ai_apply_task(task: str) -> bool:
-    print(f"\n[AI] Asking OpenAI to implement task:\n      {task}\n")
+    print(f"\n[AI] Asking Gemini to implement task:\n      {task}\n")
 
     repo_hint = build_repo_hint()
+    brain_context = ""
+    
+    try:
+        brain_ctx = build_brain_context()
+        if brain_ctx:
+            brain_context = f"\n\n**BRAIN CONTEXT (Previous Learnings)**:\n{brain_ctx}\n"
+    except Exception as e:
+        print(f"[AI] Could not load brain context: {e}")
+
+    system_instruction = (
+        "You are the Fetti Feature Agent running inside the Fetti CRM repo. "
+        "Before proposing ANY edits, carefully read the brain context and past "
+        "errors that have been loaded for you (recent build failures, lint "
+        "errors, and plan notes). Your primary goal is to avoid repeating "
+        "known mistakes. Prefer minimal, surgical edits that keep the app "
+        "building successfully. If something in the brain suggests a risk, "
+        "adjust your edits to stay on the safe path.\n\n"
+        "You have access to extended thinking capabilities - use them for complex "
+        "architectural decisions or when considering multiple approaches.\n\n"
+        "You only output strict JSON edits (file/before/after), no explanations."
+    )
 
     user_prompt = f"""
 You are the feature builder AI for the "Fetti CRM" project (Next.js / TypeScript / Supabase / Prisma or other DB).
@@ -279,7 +312,7 @@ Current task:
 
 Current SAFE repo structure (only SAFE roots shown):
 {repo_hint}
-
+{brain_context}
 Constraints:
 - Repository root is the current working directory.
 - You CANNOT run shell commands.
@@ -325,46 +358,21 @@ Rules:
 - You MUST return valid JSON, nothing else.
 """
 
-    response = OpenAI().responses.create(
-        model=MODEL,
-        instructions=(
-            "You are a senior engineer for Fetti CRM. "
-            "You only output strict JSON edits (file/before/after), no explanations."
-        ),
-        input=[
-      {
-        "role": "system",
-        "content": (
-          "You are the Fetti Feature Agent running inside the Fetti CRM repo. "
-          "Before proposing ANY edits, carefully read the brain context and past "
-          "errors that have been loaded for you (recent build failures, lint "
-          "errors, and plan notes). Your primary goal is to avoid repeating "
-          "known mistakes. Prefer minimal, surgical edits that keep the app "
-          "building successfully. If something in the brain suggests a risk, "
-          "adjust your edits to stay on the safe path."
-        ),
-      },
-
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": user_prompt,
-                    }
-                ],
-            }
-        ],
-    )
-
-    raw = response.output_text
-    print("\n[AI] Raw model output:")
-    print(raw)
-
     try:
+        model = genai.GenerativeModel(
+            model_name=MODEL_NAME,
+            system_instruction=system_instruction,
+            generation_config={"response_mime_type": "application/json"}
+        )
+        
+        response = model.generate_content(user_prompt)
+        raw = response.text
+        print("\n[AI] Raw model output:")
+        print(raw)
+
         data = json.loads(raw)
     except Exception as e:
-        print(f"[AI] ❌ Could not parse model output as JSON: {e}")
+        print(f"[AI] ❌ Model generation or parsing failed: {e}")
         return False
 
     edits = data.get("edits") or []

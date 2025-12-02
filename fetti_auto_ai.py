@@ -6,11 +6,22 @@ import time
 import datetime as _dt
 from pathlib import Path
 
-from openai import OpenAI
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+load_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-MODEL = os.environ.get("FETTI_WIZARD_MODEL", "gpt-4.1-mini")
-client = OpenAI()  # uses OPENAI_API_KEY from env
+MODEL_NAME = os.environ.get("FETTI_WIZARD_MODEL", "gemini-2.0-flash-thinking-exp")
+API_KEY = os.environ.get("GEMINI_API_KEY")
+
+try:
+    if not API_KEY:
+        print("[WARNING] GEMINI_API_KEY not set.")
+    else:
+        genai.configure(api_key=API_KEY)
+except Exception as e:
+    print(f"[ERROR] Failed to configure Gemini: {e}")
 
 PLAN = [
     ("Run lint",   ["npm", "run", "lint"]),
@@ -109,30 +120,21 @@ def ai_fix_project(step_title, cmd, log: str) -> bool:
     - You MUST return valid JSON, nothing else.
     """
 
-    response = client.responses.create(
-        model=MODEL,
-        instructions="You are a senior TypeScript/Next.js engineer for Fetti CRM. You only output strict JSON edits, no explanations.",
-        input=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": user_prompt,
-                    }
-                ],
-            }
-        ],
-    )
-
-    raw = response.output_text
-    print("\n[AI] Raw model output:")
-    print(raw)
-
     try:
+        model = genai.GenerativeModel(
+            model_name=MODEL_NAME,
+            system_instruction="You are a senior TypeScript/Next.js engineer for Fetti CRM. You only output strict JSON edits, no explanations.",
+            generation_config={"response_mime_type": "application/json"}
+        )
+        
+        response = model.generate_content(user_prompt)
+        raw = response.text
+        print("\n[AI] Raw model output:")
+        print(raw)
+
         data = json.loads(raw)
     except Exception as e:
-        print(f"\n[AI] ❌ Could not parse model output as JSON: {e}")
+        print(f"\n[AI] ❌ Model generation or parsing failed: {e}")
         return False
 
     edits = data.get("edits") or []
