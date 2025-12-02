@@ -198,9 +198,38 @@ function captureData(step: string, input: string, data: any) {
     }
 }
 
+function getAcknowledgement(step: string, input: string): string {
+    const lower = input.toLowerCase();
+    const acknowledgements = [
+        "Got it.", "Understood.", "Okay.", "Noted.", "Great.", "Perfect.", "Thanks."
+    ];
+    const randomAck = () => acknowledgements[Math.floor(Math.random() * acknowledgements.length)];
+
+    switch (step) {
+        case 'INIT':
+            return `Nice to meet you, ${input.split(' ')[0]}.`;
+        case 'ASK_LOAN_TYPE':
+            return lower.includes('business') ? "Business growth is what we do best." : "Real estate is a solid investment.";
+        case 'BUSINESS_PRODUCT':
+            return "That's a popular choice for flexibility.";
+        case 'MORTGAGE_PRODUCT':
+            if (lower.includes('fix')) return "Fix & Flip projects can be very lucrative.";
+            if (lower.includes('construction')) return "Building from the ground up. Exciting.";
+            if (lower.includes('bridge')) return "Bridge loans are great for speed.";
+            return "A classic choice.";
+        case 'BUSINESS_REVENUE':
+        case 'MORTGAGE_INCOME':
+            return "That's a healthy number.";
+        default:
+            return randomAck();
+    }
+}
+
 function determineNextMove(currentStep: string, data: any, score: DealScore, lastInput: string): { nextStep: string, nextMessage: Message } {
     let nextStep = currentStep;
     let nextMessage: Message = { id: 'error', role: 'system', content: "Thinking...", type: 'text' };
+
+    const ack = getAcknowledgement(currentStep, lastInput);
 
     // --- Objection Handling / Intervention ---
     if (score.probability === 'Low' && currentStep !== 'OBJECTION_HANDLING' && currentStep !== 'ASK_LOAN_TYPE') {
@@ -209,7 +238,7 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             nextMessage: {
                 id: 'intervention',
                 role: 'system',
-                content: "I noticed some factors might make approval tricky. Would you be open to adding a co-signer or looking at alternative programs to boost your chances?",
+                content: "I'm analyzing the numbers, and it looks like approval might be tight with the current profile. Would you be open to adding a co-signer or exploring alternative programs to boost your chances?",
                 type: 'options',
                 options: ['Yes, tell me more', 'No, continue as is'],
             }
@@ -220,12 +249,12 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
         if (lastInput.toLowerCase().includes('yes')) {
             return {
                 nextStep: 'MORTGAGE_ASSETS',
-                nextMessage: { id: 'pivot', role: 'system', content: "Great. Strong assets can often offset other factors. What is the total value of your liquid assets?", type: 'text' }
+                nextMessage: { id: 'pivot', role: 'system', content: "That's the spirit. Strong assets can often offset other factors. What is the total value of your liquid assets (cash, stocks, etc.)?", type: 'text' }
             };
         } else {
             return {
                 nextStep: 'MORTGAGE_ASSETS',
-                nextMessage: { id: 'continue', role: 'system', content: "Understood. Let's proceed. What is the total value of your liquid assets?", type: 'text' }
+                nextMessage: { id: 'continue', role: 'system', content: "Understood. We'll do our best with what we have. Moving on, what is the total value of your liquid assets?", type: 'text' }
             };
         }
     }
@@ -239,7 +268,7 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             nextMessage = {
                 id: 'verify_id',
                 role: 'system',
-                content: `Welcome, ${data.fullName}. To access our exclusive rates, we need to verify your identity securely.`,
+                content: `${ack} To access our exclusive rates, I need to quickly verify your identity. It's secure and takes just a moment.`,
                 type: 'verify_identity', // New UI type
             };
             break;
@@ -249,7 +278,7 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             nextMessage = {
                 id: 'ask_loan_type',
                 role: 'system',
-                content: "Identity Verified. Access Granted. Are you looking for a Business Loan or a Mortgage Loan?",
+                content: "Identity Verified. Access Granted. Now, are you looking for a Business Loan or a Mortgage Loan?",
                 type: 'options',
                 options: ['Business Loan', 'Mortgage Loan'],
             };
@@ -261,92 +290,92 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
                 nextMessage = {
                     id: 'ask_biz_prod',
                     role: 'system',
-                    content: "Business Funding. Smart choice. Which product fits your needs?",
+                    content: `${ack} Which specific product are you interested in?`,
                     type: 'options',
                     options: ['MCA', 'Line of Credit', 'Working Capital', 'Factoring']
                 };
             } else {
                 nextStep = 'MORTGAGE_PRODUCT';
-                nextMessage = { id: 'ask_mortgage_product', role: 'system', content: "Real Estate. Excellent. What's the strategy? Purchase, Refi, Fix & Flip, or New Construction?", type: 'options', options: ['Purchase', 'Refinance', 'Fix & Flip', 'New Construction', 'Bridge'] };
+                nextMessage = { id: 'ask_mortgage_product', role: 'system', content: `${ack} What's the strategy for this property?`, type: 'options', options: ['Purchase', 'Refinance', 'Fix & Flip', 'New Construction', 'Bridge'] };
             }
             break;
 
         case 'BUSINESS_PRODUCT':
             nextStep = 'BUSINESS_REVENUE';
-            nextMessage = { id: 'ask_revenue', role: 'system', content: "Got it. What's your annual revenue? (Upload a bank statement to skip!)", type: 'upload' };
+            nextMessage = { id: 'ask_revenue', role: 'system', content: `${ack} To get you the best offer, I need to know your annual revenue. (You can also upload a bank statement if that's easier!)`, type: 'upload' };
             break;
 
         case 'MORTGAGE_PRODUCT':
             const lower = lastInput.toLowerCase();
             if (lower.includes('fix')) {
                 nextStep = 'INV_PURCHASE_PRICE';
-                nextMessage = { id: 'ask_pp', role: 'system', content: "Fix & Flip. High potential. What's the purchase price?", type: 'text' };
+                nextMessage = { id: 'ask_pp', role: 'system', content: `${ack} What's the purchase price of the property?`, type: 'text' };
             } else if (lower.includes('construction')) {
                 nextStep = 'INV_LAND_VALUE';
-                nextMessage = { id: 'ask_land', role: 'system', content: "New Construction. What's the land value?", type: 'text' };
+                nextMessage = { id: 'ask_land', role: 'system', content: `${ack} What is the current value of the land?`, type: 'text' };
             } else if (lower.includes('bridge')) {
                 nextStep = 'INV_BRIDGE_AMOUNT';
-                nextMessage = { id: 'ask_bridge_amt', role: 'system', content: "Bridge Loan. Speed is key. How much capital do you need?", type: 'text' };
+                nextMessage = { id: 'ask_bridge_amt', role: 'system', content: `${ack} How much capital do you need for this bridge loan?`, type: 'text' };
             } else {
                 nextStep = 'MORTGAGE_LOAN_AMOUNT';
-                nextMessage = { id: 'ask_amt', role: 'system', content: "Standard Mortgage. How much are you looking to borrow?", type: 'text' };
+                nextMessage = { id: 'ask_amt', role: 'system', content: `${ack} How much are you looking to borrow?`, type: 'text' };
             }
             break;
 
         case 'MORTGAGE_LOAN_AMOUNT':
             nextStep = 'MORTGAGE_PROPERTY';
-            nextMessage = { id: 'ask_prop', role: 'system', content: "Got it. What type of property is this?", type: 'text' };
+            nextMessage = { id: 'ask_prop', role: 'system', content: "Got it. And what type of property is this (e.g., Single Family, Condo, Multi-unit)?", type: 'text' };
             break;
 
         // ... (Investment Steps) ...
         case 'INV_PURCHASE_PRICE':
             nextStep = 'INV_REHAB_BUDGET';
-            nextMessage = { id: 'ask_rehab', role: 'system', content: "And the rehab budget?", type: 'text' };
+            nextMessage = { id: 'ask_rehab', role: 'system', content: "Okay. And what is your estimated rehab budget?", type: 'text' };
             break;
         case 'INV_REHAB_BUDGET':
             nextStep = 'INV_ARV';
-            nextMessage = { id: 'ask_arv', role: 'system', content: "What's the After Repair Value (ARV)?", type: 'text' };
+            nextMessage = { id: 'ask_arv', role: 'system', content: "Makes sense. What do you project the After Repair Value (ARV) will be?", type: 'text' };
             break;
         case 'INV_LAND_VALUE':
             nextStep = 'INV_CONST_BUDGET';
-            nextMessage = { id: 'ask_const', role: 'system', content: "Construction budget?", type: 'text' };
+            nextMessage = { id: 'ask_const', role: 'system', content: "Okay. What is your total construction budget?", type: 'text' };
             break;
         case 'INV_CONST_BUDGET':
             nextStep = 'INV_ARV';
-            nextMessage = { id: 'ask_arv', role: 'system', content: "Projected ARV?", type: 'text' };
+            nextMessage = { id: 'ask_arv', role: 'system', content: "Got it. What is the projected ARV upon completion?", type: 'text' };
             break;
         case 'INV_BRIDGE_AMOUNT':
             nextStep = 'INV_EXIT_STRATEGY';
-            nextMessage = { id: 'ask_exit', role: 'system', content: "Got it. What's your exit strategy?", type: 'text' };
+            nextMessage = { id: 'ask_exit', role: 'system', content: "Understood. What is your exit strategy for this loan?", type: 'text' };
             break;
         case 'INV_ARV':
             // New: Verify Property Value
             nextStep = 'VERIFY_PROPERTY';
-            nextMessage = { id: 'verify_prop', role: 'system', content: "Checking property valuations...", type: 'verify_property' };
+            nextMessage = { id: 'verify_prop', role: 'system', content: "Let me quickly check the property valuations in that area...", type: 'verify_property' };
             break;
         case 'VERIFY_PROPERTY':
             nextStep = 'INV_EXPERIENCE';
-            nextMessage = { id: 'ask_exp', role: 'system', content: "Valuation confirmed. How many similar projects have you done in the last 3 years?", type: 'options', options: ['0', '1-2', '3+'] };
+            nextMessage = { id: 'ask_exp', role: 'system', content: "Valuation looks consistent. How many similar projects have you successfully completed in the last 3 years?", type: 'options', options: ['0', '1-2', '3+'] };
             break;
         case 'INV_EXPERIENCE':
         case 'INV_EXIT_STRATEGY':
             // New: Verify Assets instead of asking
             nextStep = 'VERIFY_ASSETS';
-            nextMessage = { id: 'verify_assets', role: 'system', content: "To finalize your pre-approval, please connect your primary bank account securely.", type: 'verify_assets' };
+            nextMessage = { id: 'verify_assets', role: 'system', content: "To finalize your pre-approval, please connect your primary bank account securely. This helps us verify reserves.", type: 'verify_assets' };
             break;
 
         // ... (Standard Steps) ...
         case 'MORTGAGE_PROPERTY':
             nextStep = 'MORTGAGE_EMPLOYMENT';
-            nextMessage = { id: 'ask_emp', role: 'system', content: "Employment info. Who do you work for? (Upload W2/Paystub supported)", type: 'upload' };
+            nextMessage = { id: 'ask_emp', role: 'system', content: "Thanks. Now for employment info. Who is your current employer? (You can upload a W2 or Paystub if you prefer)", type: 'upload' };
             break;
         case 'MORTGAGE_EMPLOYMENT':
             nextStep = 'MORTGAGE_INCOME';
-            nextMessage = { id: 'ask_inc', role: 'system', content: "Monthly income?", type: 'text' };
+            nextMessage = { id: 'ask_inc', role: 'system', content: "And what is your gross monthly income?", type: 'text' };
             break;
         case 'MORTGAGE_INCOME':
             nextStep = 'VERIFY_ASSETS'; // Use verification here too
-            nextMessage = { id: 'verify_assets', role: 'system', content: "To finalize your pre-approval, please connect your primary bank account securely.", type: 'verify_assets' };
+            nextMessage = { id: 'verify_assets', role: 'system', content: `${ack} To finalize your pre-approval, please connect your primary bank account securely.`, type: 'verify_assets' };
             break;
 
         // ... (Closing Steps) ...
@@ -356,24 +385,21 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             // Fast Track Check
             if (score.probability === 'High') {
                 nextStep = 'ASK_EMAIL';
-                nextMessage = { id: 'ask_email_fast', role: 'system', content: "Your profile is verified and excellent. I'm fast-tracking this. What's your email to send the funding agreement?", type: 'text' };
-                // Trigger Fast Track Email (Note: We need leadId here, which we don't have in this pure function. 
-                // Ideally this happens in the UI component or a side effect handler. 
-                // For now, we'll assume the UI handles the side effect based on the message ID or we'd need to refactor to async/side-effects.)
+                nextMessage = { id: 'ask_email_fast', role: 'system', content: "Your profile is verified and looks excellent. I'm fast-tracking this application. What's the best email to send the funding agreement to?", type: 'text' };
             } else {
                 nextStep = 'MORTGAGE_DECLARATIONS';
-                nextMessage = { id: 'ask_dec', role: 'system', content: "Just a few final checks. Any bankruptcy in the last 7 years?", type: 'options', options: ['Yes', 'No'] };
+                nextMessage = { id: 'ask_dec', role: 'system', content: "Just a few final compliance checks. Have you declared bankruptcy in the last 7 years?", type: 'options', options: ['Yes', 'No'] };
             }
             break;
 
         case 'MORTGAGE_DECLARATIONS':
             nextStep = 'ASK_EMAIL';
-            nextMessage = { id: 'ask_email', role: 'system', content: "Got it. What's your email to finalize the application?", type: 'text' };
+            nextMessage = { id: 'ask_email', role: 'system', content: "Understood. What's the best email address to send your application summary to?", type: 'text' };
             break;
 
         case 'ASK_EMAIL':
             nextStep = 'COMPLETE';
-            nextMessage = { id: 'complete', role: 'system', content: "Application submitted! Our underwriting team is reviewing your verified file now.", type: 'text' };
+            nextMessage = { id: 'complete', role: 'system', content: "Perfect. Application submitted! Our underwriting team is reviewing your verified file right now. You'll hear from us shortly.", type: 'text' };
             break;
     }
 
