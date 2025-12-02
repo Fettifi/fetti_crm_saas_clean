@@ -123,9 +123,19 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
     return {};
 }
 
-function validateInput(step: string, input: string): string | null {
-    const cleanNum = (str: string) => parseInt(str.replace(/[^0-9]/g, '')) || 0;
+function parseNumber(input: string): number {
+    const lower = input.toLowerCase().trim();
+    let multiplier = 1;
+    if (lower.endsWith('k')) multiplier = 1000;
+    else if (lower.endsWith('m')) multiplier = 1000000;
+    else if (lower.endsWith('b')) multiplier = 1000000000;
 
+    const numStr = lower.replace(/[^0-9.]/g, '');
+    const num = parseFloat(numStr);
+    return isNaN(num) ? 0 : Math.floor(num * multiplier);
+}
+
+function validateInput(step: string, input: string): string | null {
     switch (step) {
         case 'INIT':
             if (input.length < 2) return "Please enter your full name.";
@@ -143,35 +153,33 @@ function validateInput(step: string, input: string): string | null {
         case 'INV_ARV':
         case 'INV_BRIDGE_AMOUNT':
         case 'MORTGAGE_LOAN_AMOUNT':
-            if (cleanNum(input) <= 0) return "Please enter a valid amount greater than 0.";
+            if (parseNumber(input) <= 0) return "Please enter a valid amount greater than 0 (e.g., 100k, 50000).";
             break;
     }
     return null;
 }
 
 function captureData(step: string, input: string, data: any) {
-    const cleanNum = (str: string) => parseInt(str.replace(/[^0-9]/g, '')) || 0;
-
     switch (step) {
         case 'INIT': data.fullName = input; break;
         case 'ASK_LOAN_TYPE': /* Handled in logic */ break;
         case 'BUSINESS_PRODUCT': /* Handled in logic, but let's save string */ data.businessProduct = input; break;
-        case 'BUSINESS_REVENUE': data.revenue = cleanNum(input); break;
+        case 'BUSINESS_REVENUE': data.revenue = parseNumber(input); break;
         case 'MORTGAGE_PRODUCT': /* Handled in logic */ break;
-        case 'MORTGAGE_LOAN_AMOUNT': data.purchasePrice = cleanNum(input); break; // Map to purchasePrice for now to align with DB
+        case 'MORTGAGE_LOAN_AMOUNT': data.purchasePrice = parseNumber(input); break; // Map to purchasePrice for now to align with DB
         case 'MORTGAGE_PROPERTY': data.propertyType = input; break;
         case 'MORTGAGE_EMPLOYMENT': data.employerName = input; break;
-        case 'MORTGAGE_INCOME': data.monthlyIncome = cleanNum(input); break;
-        case 'MORTGAGE_ASSETS': data.liquidAssets = cleanNum(input); break;
+        case 'MORTGAGE_INCOME': data.monthlyIncome = parseNumber(input); break;
+        case 'MORTGAGE_ASSETS': data.liquidAssets = parseNumber(input); break;
         case 'MORTGAGE_DECLARATIONS': data.bankruptcy = input.toLowerCase().includes('yes'); break;
-        case 'INV_PURCHASE_PRICE': data.purchasePrice = cleanNum(input); break;
-        case 'INV_REHAB_BUDGET': data.rehabBudget = cleanNum(input); break;
-        case 'INV_LAND_VALUE': data.purchasePrice = cleanNum(input); break; // Map Land Value to Purchase Price/Asset Value
-        case 'INV_CONST_BUDGET': data.rehabBudget = cleanNum(input); break; // Map Const Budget to Rehab/Project Budget
-        case 'INV_ARV': data.arv = cleanNum(input); break;
+        case 'INV_PURCHASE_PRICE': data.purchasePrice = parseNumber(input); break;
+        case 'INV_REHAB_BUDGET': data.rehabBudget = parseNumber(input); break;
+        case 'INV_LAND_VALUE': data.purchasePrice = parseNumber(input); break; // Map Land Value to Purchase Price/Asset Value
+        case 'INV_CONST_BUDGET': data.rehabBudget = parseNumber(input); break; // Map Const Budget to Rehab/Project Budget
+        case 'INV_ARV': data.arv = parseNumber(input); break;
         case 'INV_EXPERIENCE': data.experience = input; break;
         case 'INV_EXIT_STRATEGY': data.exitStrategy = input; break;
-        case 'INV_BRIDGE_AMOUNT': data.purchasePrice = cleanNum(input); break; // New capture for Bridge
+        case 'INV_BRIDGE_AMOUNT': data.purchasePrice = parseNumber(input); break; // New capture for Bridge
         case 'ASK_EMAIL': data.email = input; break;
 
         // Verification Captures (Simulated)
