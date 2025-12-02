@@ -1,5 +1,5 @@
 export type LoanType = 'Business' | 'Mortgage' | null;
-export type MortgageProduct = 'Purchase' | 'Refinance' | 'Construction' | 'Other' | null;
+export type MortgageProduct = 'Purchase' | 'Refinance' | 'Construction' | 'FixAndFlip' | 'Bridge' | 'Other' | null;
 
 export interface ConversationState {
     step: string;
@@ -36,6 +36,13 @@ export interface ConversationState {
         // Meta
         downPayment?: number;
         creditScore?: number;
+
+        // Investment Specific
+        purchasePrice?: number;
+        rehabBudget?: number;
+        arv?: number; // After Repair Value
+        experience?: string; // 0, 1-2, 3+
+        exitStrategy?: string;
     };
     history: Message[];
 }
@@ -98,7 +105,7 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
                     role: 'system',
                     content: "Exciting! What are you looking to do today?",
                     type: 'options',
-                    options: ['Purchase a Home', 'Refinance', 'Construction Loan', 'Other'],
+                    options: ['Purchase a Home', 'Refinance', 'Fix & Flip', 'New Construction', 'Bridge Loan'],
                 };
                 return { step: nextStep, loanType: 'Mortgage', data: nextData, history: [...state.history, { id: Date.now().toString(), role: 'user', content: input }, nextMessage] };
             } else {
@@ -112,22 +119,137 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
             }
             break;
 
-        // --- Mortgage Flow (1003) ---
+        // --- Mortgage Flow (1003 + Investment) ---
 
         case 'MORTGAGE_PRODUCT':
-            if (input.toLowerCase().includes('purchase')) nextData.mortgageProduct = 'Purchase';
-            else if (input.toLowerCase().includes('refinance')) nextData.mortgageProduct = 'Refinance';
-            else if (input.toLowerCase().includes('construction')) nextData.mortgageProduct = 'Construction';
+            const lowerInput = input.toLowerCase();
+            if (lowerInput.includes('purchase')) nextData.mortgageProduct = 'Purchase';
+            else if (lowerInput.includes('refinance')) nextData.mortgageProduct = 'Refinance';
+            else if (lowerInput.includes('fix')) nextData.mortgageProduct = 'FixAndFlip';
+            else if (lowerInput.includes('construction')) nextData.mortgageProduct = 'Construction';
+            else if (lowerInput.includes('bridge')) nextData.mortgageProduct = 'Bridge';
             else nextData.mortgageProduct = 'Other';
 
-            nextStep = 'MORTGAGE_PROPERTY';
+            // Branching based on product
+            if (nextData.mortgageProduct === 'FixAndFlip') {
+                nextStep = 'INV_PURCHASE_PRICE';
+                nextMessage = {
+                    id: 'ask_purchase_price',
+                    role: 'system',
+                    content: "Fix & Flip! Great strategy. What is the purchase price of the property?",
+                    type: 'text',
+                };
+            } else if (nextData.mortgageProduct === 'Construction') {
+                nextStep = 'INV_LAND_VALUE';
+                nextMessage = {
+                    id: 'ask_land_value',
+                    role: 'system',
+                    content: "New Construction. Nice. What is the current value or cost of the land?",
+                    type: 'text',
+                };
+            } else if (nextData.mortgageProduct === 'Bridge') {
+                nextStep = 'INV_EXIT_STRATEGY';
+                nextMessage = {
+                    id: 'ask_exit_strategy',
+                    role: 'system',
+                    content: "Bridge Loan. Got it. What is your exit strategy? (e.g., Sell, Refinance)",
+                    type: 'text',
+                };
+            } else {
+                // Standard Mortgage Flow
+                nextStep = 'MORTGAGE_PROPERTY';
+                nextMessage = {
+                    id: 'ask_property',
+                    role: 'system',
+                    content: "Got it. Tell me about the property. Is it a Single Family Home, Condo, or something else?",
+                    type: 'text',
+                };
+            }
+            break;
+
+        // --- Investment Specific Steps ---
+
+        case 'INV_PURCHASE_PRICE':
+            nextData.purchasePrice = parseInt(input.replace(/[^0-9]/g, '')) || 0;
+            nextStep = 'INV_REHAB_BUDGET';
             nextMessage = {
-                id: 'ask_property',
+                id: 'ask_rehab_budget',
                 role: 'system',
-                content: "Got it. Tell me about the property. Is it a Single Family Home, Condo, or something else?",
+                content: "And what is your estimated rehab budget?",
                 type: 'text',
             };
             break;
+
+        case 'INV_REHAB_BUDGET':
+            nextData.rehabBudget = parseInt(input.replace(/[^0-9]/g, '')) || 0;
+            nextStep = 'INV_ARV';
+            nextMessage = {
+                id: 'ask_arv',
+                role: 'system',
+                content: "What is the estimated After Repair Value (ARV)?",
+                type: 'text',
+            };
+            break;
+
+        case 'INV_LAND_VALUE':
+            // Reuse purchasePrice field for land value to keep schema simple, or add landValue
+            nextData.purchasePrice = parseInt(input.replace(/[^0-9]/g, '')) || 0;
+            nextStep = 'INV_CONST_BUDGET';
+            nextMessage = {
+                id: 'ask_const_budget',
+                role: 'system',
+                content: "What is your total construction budget?",
+                type: 'text',
+            };
+            break;
+
+        case 'INV_CONST_BUDGET':
+            nextData.rehabBudget = parseInt(input.replace(/[^0-9]/g, '')) || 0; // Reuse rehabBudget
+            nextStep = 'INV_ARV';
+            nextMessage = {
+                id: 'ask_arv',
+                role: 'system',
+                content: "What is the estimated completed value (ARV)?",
+                type: 'text',
+            };
+            break;
+
+        case 'INV_ARV':
+            nextData.arv = parseInt(input.replace(/[^0-9]/g, '')) || 0;
+            nextStep = 'INV_EXPERIENCE';
+            nextMessage = {
+                id: 'ask_experience',
+                role: 'system',
+                content: "How many similar projects have you completed in the last 3 years?",
+                type: 'options',
+                options: ['0 (First time)', '1-2', '3+'],
+            };
+            break;
+
+        case 'INV_EXPERIENCE':
+            nextData.experience = input;
+            // Merge back to standard flow for financials
+            nextStep = 'MORTGAGE_ASSETS';
+            nextMessage = {
+                id: 'ask_assets',
+                role: 'system',
+                content: "Thanks. To close this out, what is the total value of your liquid assets available for this deal?",
+                type: 'text',
+            };
+            break;
+
+        case 'INV_EXIT_STRATEGY':
+            nextData.exitStrategy = input;
+            nextStep = 'MORTGAGE_ASSETS';
+            nextMessage = {
+                id: 'ask_assets',
+                role: 'system',
+                content: "Understood. What is the total value of your liquid assets?",
+                type: 'text',
+            };
+            break;
+
+        // --- Standard Mortgage Steps (Reused) ---
 
         case 'MORTGAGE_PROPERTY':
             nextData.propertyType = input;
@@ -141,7 +263,6 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
             break;
 
         case 'MORTGAGE_EMPLOYMENT':
-            // Simple extraction if they typed it
             nextData.employerName = input;
             nextStep = 'MORTGAGE_INCOME';
             nextMessage = {
@@ -207,7 +328,7 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
             nextMessage = {
                 id: 'complete',
                 role: 'system',
-                content: "Fantastic! I've gathered all the necessary information for your 1003 application. Submitting it to our underwriting team now...",
+                content: "Fantastic! I've gathered all the necessary information. Submitting your application now...",
                 type: 'text',
             };
             break;
