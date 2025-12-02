@@ -2,7 +2,9 @@ export interface ExtractedData {
     fullName?: string;
     address?: string;
     revenue?: number;
-    documentType: 'ID' | 'BankStatement' | 'Unknown';
+    employerName?: string;
+    monthlyIncome?: number;
+    documentType: 'ID' | 'BankStatement' | 'W2' | 'Paystub' | 'Unknown';
 }
 
 export async function processDocument(file: File): Promise<ExtractedData> {
@@ -23,6 +25,22 @@ export async function processDocument(file: File): Promise<ExtractedData> {
         return {
             documentType: 'BankStatement',
             revenue: 500000, // Mock extraction
+        };
+    }
+
+    if (fileName.includes('w2') || fileName.includes('w-2')) {
+        return {
+            documentType: 'W2',
+            employerName: 'Acme Corp',
+            monthlyIncome: 8500,
+        };
+    }
+
+    if (fileName.includes('paystub') || fileName.includes('pay')) {
+        return {
+            documentType: 'Paystub',
+            employerName: 'Acme Corp',
+            monthlyIncome: 8500,
         };
     }
 

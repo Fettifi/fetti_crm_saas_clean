@@ -56,6 +56,10 @@ export default function ChatInterface() {
         } else if (data.documentType === 'BankStatement' && data.revenue) {
             updates.revenue = data.revenue;
             systemMsg = `I see an annual revenue of $${data.revenue.toLocaleString()}. Impressive! I've saved that for you.`;
+        } else if ((data.documentType === 'W2' || data.documentType === 'Paystub') && data.employerName) {
+            updates.employerName = data.employerName;
+            updates.monthlyIncome = data.monthlyIncome;
+            systemMsg = `Got it. You work at ${data.employerName} earning about $${data.monthlyIncome?.toLocaleString()}/mo. I've updated your employment info.`;
         } else {
             systemMsg = "I couldn't quite read that document, but I've attached it to your file.";
         }
@@ -133,8 +137,8 @@ export default function ChatInterface() {
                     >
                         <div
                             className={`max-w-[80%] p-3 rounded-2xl ${msg.role === 'user'
-                                    ? 'bg-emerald-600 text-white rounded-tr-none'
-                                    : 'bg-slate-800 text-slate-200 rounded-tl-none'
+                                ? 'bg-emerald-600 text-white rounded-tr-none'
+                                : 'bg-slate-800 text-slate-200 rounded-tl-none'
                                 }`}
                         >
                             <p className="text-sm leading-relaxed">{msg.content}</p>

@@ -1,15 +1,39 @@
 export type LoanType = 'Business' | 'Mortgage' | null;
+export type MortgageProduct = 'Purchase' | 'Refinance' | 'Construction' | 'Other' | null;
 
 export interface ConversationState {
     step: string;
     loanType: LoanType;
     data: {
+        // Common
         fullName?: string;
         email?: string;
         phone?: string;
+
+        // Business
         revenue?: number;
         industry?: string;
+
+        // Mortgage (1003 Sections)
+        mortgageProduct?: MortgageProduct;
         propertyType?: string;
+        propertyAddress?: string;
+        occupancy?: 'Primary' | 'Secondary' | 'Investment';
+
+        // Employment & Income
+        employerName?: string;
+        position?: string;
+        yearsEmployed?: number;
+        monthlyIncome?: number;
+
+        // Assets
+        liquidAssets?: number; // Cash, Bank accounts
+
+        // Declarations
+        bankruptcy?: boolean;
+        lawsuits?: boolean;
+
+        // Meta
         downPayment?: number;
         creditScore?: number;
     };
@@ -68,16 +92,16 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
                 };
                 return { step: nextStep, loanType: 'Business', data: nextData, history: [...state.history, { id: Date.now().toString(), role: 'user', content: input }, nextMessage] };
             } else if (input.toLowerCase().includes('mortgage')) {
-                nextStep = 'MORTGAGE_PROPERTY';
+                nextStep = 'MORTGAGE_PRODUCT';
                 nextMessage = {
-                    id: 'ask_property',
+                    id: 'ask_mortgage_product',
                     role: 'system',
-                    content: "Exciting! What type of property are you looking to buy? (e.g., Single Family, Condo, Multi-unit)",
-                    type: 'text',
+                    content: "Exciting! What are you looking to do today?",
+                    type: 'options',
+                    options: ['Purchase a Home', 'Refinance', 'Construction Loan', 'Other'],
                 };
                 return { step: nextStep, loanType: 'Mortgage', data: nextData, history: [...state.history, { id: Date.now().toString(), role: 'user', content: input }, nextMessage] };
             } else {
-                // Fallback
                 nextMessage = {
                     id: 'ask_loan_type_retry',
                     role: 'system',
@@ -87,6 +111,82 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
                 };
             }
             break;
+
+        // --- Mortgage Flow (1003) ---
+
+        case 'MORTGAGE_PRODUCT':
+            if (input.toLowerCase().includes('purchase')) nextData.mortgageProduct = 'Purchase';
+            else if (input.toLowerCase().includes('refinance')) nextData.mortgageProduct = 'Refinance';
+            else if (input.toLowerCase().includes('construction')) nextData.mortgageProduct = 'Construction';
+            else nextData.mortgageProduct = 'Other';
+
+            nextStep = 'MORTGAGE_PROPERTY';
+            nextMessage = {
+                id: 'ask_property',
+                role: 'system',
+                content: "Got it. Tell me about the property. Is it a Single Family Home, Condo, or something else?",
+                type: 'text',
+            };
+            break;
+
+        case 'MORTGAGE_PROPERTY':
+            nextData.propertyType = input;
+            nextStep = 'MORTGAGE_EMPLOYMENT';
+            nextMessage = {
+                id: 'ask_employment',
+                role: 'system',
+                content: "Thanks. Now, let's cover employment. Who is your current employer and what is your position? (You can upload a W2 or Paystub to speed this up!)",
+                type: 'upload',
+            };
+            break;
+
+        case 'MORTGAGE_EMPLOYMENT':
+            // Simple extraction if they typed it
+            nextData.employerName = input;
+            nextStep = 'MORTGAGE_INCOME';
+            nextMessage = {
+                id: 'ask_income',
+                role: 'system',
+                content: "And what is your approximate monthly income from this job?",
+                type: 'text',
+            };
+            break;
+
+        case 'MORTGAGE_INCOME':
+            nextData.monthlyIncome = parseInt(input.replace(/[^0-9]/g, '')) || 0;
+            nextStep = 'MORTGAGE_ASSETS';
+            nextMessage = {
+                id: 'ask_assets',
+                role: 'system',
+                content: "Almost done with the financials. What is the total value of your liquid assets (Cash, Checking, Savings)?",
+                type: 'text',
+            };
+            break;
+
+        case 'MORTGAGE_ASSETS':
+            nextData.liquidAssets = parseInt(input.replace(/[^0-9]/g, '')) || 0;
+            nextStep = 'MORTGAGE_DECLARATIONS';
+            nextMessage = {
+                id: 'ask_declarations',
+                role: 'system',
+                content: "Last step - just a quick legal check. Have you declared bankruptcy in the last 7 years?",
+                type: 'options',
+                options: ['Yes', 'No'],
+            };
+            break;
+
+        case 'MORTGAGE_DECLARATIONS':
+            nextData.bankruptcy = input.toLowerCase().includes('yes');
+            nextStep = 'ASK_EMAIL';
+            nextMessage = {
+                id: 'ask_email',
+                role: 'system',
+                content: "Perfect, thanks for all that info. What's the best email address to send your application summary to?",
+                type: 'text',
+            };
+            break;
+
+        // --- Business Flow ---
 
         case 'BUSINESS_REVENUE':
             nextData.revenue = parseInt(input.replace(/[^0-9]/g, '')) || 0;
@@ -99,16 +199,7 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
             };
             break;
 
-        case 'MORTGAGE_PROPERTY':
-            nextData.propertyType = input;
-            nextStep = 'ASK_EMAIL';
-            nextMessage = {
-                id: 'ask_email',
-                role: 'system',
-                content: "Understood. What's the best email address to reach you at?",
-                type: 'text',
-            };
-            break;
+        // --- Common ---
 
         case 'ASK_EMAIL':
             nextData.email = input;
@@ -116,7 +207,7 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
             nextMessage = {
                 id: 'complete',
                 role: 'system',
-                content: "Perfect! I have everything I need to get your application started. Submitting now...",
+                content: "Fantastic! I've gathered all the necessary information for your 1003 application. Submitting it to our underwriting team now...",
                 type: 'text',
             };
             break;
