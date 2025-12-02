@@ -191,6 +191,16 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
 
                 // Save leadId to state for ReferralWidget
                 setState(prev => ({ ...prev, data: { ...prev.data, leadId: leadData.id } }));
+
+                // Add success message with Portal Link
+                const portalLink = `${window.location.origin}/portal/${leadData.id}`;
+                const successMsg: Message = {
+                    id: 'final_success',
+                    role: 'system',
+                    content: `Application submitted successfully! You can track your status and upload documents securely here: [Application Portal](${portalLink})`,
+                    type: 'text'
+                };
+                setState(prev => ({ ...prev, history: [...prev.history, successMsg] }));
             }
 
         } catch (error) {

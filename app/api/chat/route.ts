@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
-import { ConversationState } from '@/lib/apply/conversation-logic';
+import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
 
 const SYSTEM_PROMPT = `
 You are Frank, a senior Loan Coordinator at Fetti. Your goal is to guide users through a loan application conversationally, collecting specific data points while maintaining a "Velvet Rope" premium feel.
@@ -40,6 +40,11 @@ export async function POST(req: NextRequest) {
         const { history, state } = await req.json();
         const lastUserMessage = history[history.length - 1].content;
 
+        // 1. Deterministic Data Capture (Safety Net)
+        const deterministicData: any = {};
+        captureData(state.step, lastUserMessage, deterministicData);
+
+        // 2. LLM Processing
         const chat = model.startChat({
             history: [
                 { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
@@ -58,8 +63,15 @@ export async function POST(req: NextRequest) {
 
         const result = await chat.sendMessage(prompt);
         const responseText = result.response.text();
+        const aiResponse = JSON.parse(responseText);
 
-        return NextResponse.json(JSON.parse(responseText));
+        // 3. Merge Data (Deterministic takes precedence for numbers to ensure parsing accuracy)
+        const mergedData = { ...aiResponse.extractedData, ...deterministicData };
+
+        return NextResponse.json({
+            ...aiResponse,
+            extractedData: mergedData
+        });
 
     } catch (error) {
         console.error('Chat API Error:', error);

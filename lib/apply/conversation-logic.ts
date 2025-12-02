@@ -135,7 +135,7 @@ function parseNumber(input: string): number {
     return isNaN(num) ? 0 : Math.floor(num * multiplier);
 }
 
-function validateInput(step: string, input: string): string | null {
+export function validateInput(step: string, input: string): string | null {
     switch (step) {
         case 'INIT':
             if (input.length < 2) return "Please enter your full name.";
@@ -159,7 +159,7 @@ function validateInput(step: string, input: string): string | null {
     return null;
 }
 
-function captureData(step: string, input: string, data: any) {
+export function captureData(step: string, input: string, data: any) {
     switch (step) {
         case 'INIT': data.fullName = input; break;
         case 'ASK_LOAN_TYPE': /* Handled in logic */ break;
