@@ -59,23 +59,48 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
         setInput('');
         setIsTyping(true);
 
-        // Simulate AI thinking
-        setTimeout(async () => {
-            // Process input
-            const nextState = getNextStep({ ...state, history: [...state.history, userMsg] }, text);
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    history: [...state.history, userMsg],
+                    state: state
+                })
+            });
 
-            if (nextState.step) {
-                setState(prev => ({ ...prev, ...nextState }));
+            const data = await response.json();
 
-                if (nextState.step === 'COMPLETE') {
-                    await submitApplication(nextState.data!, nextState.dealScore || state.dealScore);
-                }
-            } else {
-                // Fallback if no state change (shouldn't happen with our logic)
-                setIsTyping(false);
+            // Construct new system message
+            const sysMsg: Message = {
+                id: Date.now().toString(),
+                role: 'system',
+                content: data.message,
+                type: data.uiType,
+                options: data.options
+            };
+
+            setState(prev => ({
+                ...prev,
+                step: data.nextStep,
+                data: { ...prev.data, ...data.extractedData },
+                history: [...prev.history, sysMsg]
+            }));
+
+            if (data.nextStep === 'COMPLETE') {
+                await submitApplication({ ...state.data, ...data.extractedData }, state.dealScore);
             }
+
+        } catch (error) {
+            console.error('Chat error:', error);
+            // Fallback error message
+            setState(prev => ({
+                ...prev,
+                history: [...prev.history, { id: Date.now().toString(), role: 'system', content: "I'm having trouble connecting. Please try again.", type: 'text' }]
+            }));
+        } finally {
             setIsTyping(false);
-        }, 800); // 800ms delay for realism
+        }
     };
 
     const handleVoiceInput = (text: string) => {
