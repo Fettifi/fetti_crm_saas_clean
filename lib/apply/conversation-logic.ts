@@ -1,5 +1,6 @@
 import { calculateDealScore, DealScore } from '@/lib/intelligence/deal-scorer';
 import { logInteraction } from '@/lib/learning/optimization-engine';
+import { verifyIdentity, verifyAssets, verifyProperty } from '@/lib/intelligence/lead-enrichment';
 
 export type LoanType = 'Business' | 'Mortgage' | null;
 export type MortgageProduct = 'Purchase' | 'Refinance' | 'Construction' | 'FixAndFlip' | 'Bridge' | 'Other' | null;
@@ -47,6 +48,11 @@ export interface ConversationState {
         arv?: number; // After Repair Value
         experience?: string; // 0, 1-2, 3+
         exitStrategy?: string;
+
+        // Verification Flags
+        identityVerified?: boolean;
+        assetsVerified?: boolean;
+        propertyVerified?: boolean;
     };
     history: Message[];
 }
@@ -55,7 +61,7 @@ export interface Message {
     id: string;
     role: 'system' | 'user';
     content: string;
-    type?: 'text' | 'options' | 'upload';
+    type?: 'text' | 'options' | 'upload' | 'verify_identity' | 'verify_assets' | 'verify_property'; // Added new types
     options?: string[];
 }
 
@@ -124,6 +130,20 @@ function captureData(step: string, input: string, data: any) {
         case 'INV_EXPERIENCE': data.experience = input; break;
         case 'INV_EXIT_STRATEGY': data.exitStrategy = input; break;
         case 'ASK_EMAIL': data.email = input; break;
+
+        // Verification Captures (Simulated)
+        case 'VERIFY_IDENTITY':
+            data.identityVerified = true;
+            data.creditScore = 740; // Mock enrichment
+            break;
+        case 'VERIFY_ASSETS':
+            data.assetsVerified = true;
+            data.liquidAssets = 125000; // Mock enrichment
+            break;
+        case 'VERIFY_PROPERTY':
+            data.propertyVerified = true;
+            // data.arv = 850000; // Could enrich here
+            break;
     }
 }
 
@@ -132,7 +152,6 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
     let nextMessage: Message = { id: 'error', role: 'system', content: "Thinking...", type: 'text' };
 
     // --- Objection Handling / Intervention ---
-    // If score drops suddenly or is very low, intervene
     if (score.probability === 'Low' && currentStep !== 'OBJECTION_HANDLING' && currentStep !== 'ASK_LOAN_TYPE') {
         return {
             nextStep: 'OBJECTION_HANDLING',
@@ -148,13 +167,11 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
 
     if (currentStep === 'OBJECTION_HANDLING') {
         if (lastInput.toLowerCase().includes('yes')) {
-            // Pivot logic could go here
             return {
-                nextStep: 'MORTGAGE_ASSETS', // Skip to assets for now
+                nextStep: 'MORTGAGE_ASSETS',
                 nextMessage: { id: 'pivot', role: 'system', content: "Great. Strong assets can often offset other factors. What is the total value of your liquid assets?", type: 'text' }
             };
         } else {
-            // Continue where we left off (simplified for this graph)
             return {
                 nextStep: 'MORTGAGE_ASSETS',
                 nextMessage: { id: 'continue', role: 'system', content: "Understood. Let's proceed. What is the total value of your liquid assets?", type: 'text' }
@@ -166,11 +183,22 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
 
     switch (currentStep) {
         case 'INIT':
+            // New: Verify Identity immediately for "Velvet Rope" feel
+            nextStep = 'VERIFY_IDENTITY';
+            nextMessage = {
+                id: 'verify_id',
+                role: 'system',
+                content: `Welcome, ${data.fullName}. To access our exclusive rates, we need to verify your identity securely.`,
+                type: 'verify_identity', // New UI type
+            };
+            break;
+
+        case 'VERIFY_IDENTITY':
             nextStep = 'ASK_LOAN_TYPE';
             nextMessage = {
                 id: 'ask_loan_type',
                 role: 'system',
-                content: `Nice to meet you, ${data.fullName}! To get you the best funding, are you looking for a Business Loan or a Mortgage Loan?`,
+                content: "Identity Verified. Access Granted. Are you looking for a Business Loan or a Mortgage Loan?",
                 type: 'options',
                 options: ['Business Loan', 'Mortgage Loan'],
             };
@@ -221,13 +249,19 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             nextMessage = { id: 'ask_arv', role: 'system', content: "Projected ARV?", type: 'text' };
             break;
         case 'INV_ARV':
+            // New: Verify Property Value
+            nextStep = 'VERIFY_PROPERTY';
+            nextMessage = { id: 'verify_prop', role: 'system', content: "Checking property valuations...", type: 'verify_property' };
+            break;
+        case 'VERIFY_PROPERTY':
             nextStep = 'INV_EXPERIENCE';
-            nextMessage = { id: 'ask_exp', role: 'system', content: "How many similar projects have you done in the last 3 years?", type: 'options', options: ['0', '1-2', '3+'] };
+            nextMessage = { id: 'ask_exp', role: 'system', content: "Valuation confirmed. How many similar projects have you done in the last 3 years?", type: 'options', options: ['0', '1-2', '3+'] };
             break;
         case 'INV_EXPERIENCE':
         case 'INV_EXIT_STRATEGY':
-            nextStep = 'MORTGAGE_ASSETS';
-            nextMessage = { id: 'ask_assets', role: 'system', content: "Liquidity check. Total liquid assets?", type: 'text' };
+            // New: Verify Assets instead of asking
+            nextStep = 'VERIFY_ASSETS';
+            nextMessage = { id: 'verify_assets', role: 'system', content: "To finalize your pre-approval, please connect your primary bank account securely.", type: 'verify_assets' };
             break;
 
         // ... (Standard Steps) ...
@@ -240,17 +274,18 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             nextMessage = { id: 'ask_inc', role: 'system', content: "Monthly income?", type: 'text' };
             break;
         case 'MORTGAGE_INCOME':
-            nextStep = 'MORTGAGE_ASSETS';
-            nextMessage = { id: 'ask_assets', role: 'system', content: "Total liquid assets?", type: 'text' };
+            nextStep = 'VERIFY_ASSETS'; // Use verification here too
+            nextMessage = { id: 'verify_assets', role: 'system', content: "To finalize your pre-approval, please connect your primary bank account securely.", type: 'verify_assets' };
             break;
 
         // ... (Closing Steps) ...
         case 'BUSINESS_REVENUE':
+        case 'VERIFY_ASSETS': // Replaces MORTGAGE_ASSETS
         case 'MORTGAGE_ASSETS':
             // Fast Track Check
             if (score.probability === 'High') {
                 nextStep = 'ASK_EMAIL';
-                nextMessage = { id: 'ask_email_fast', role: 'system', content: "Your profile looks excellent. I'm fast-tracking this. What's your email to send the funding agreement?", type: 'text' };
+                nextMessage = { id: 'ask_email_fast', role: 'system', content: "Your profile is verified and excellent. I'm fast-tracking this. What's your email to send the funding agreement?", type: 'text' };
             } else {
                 nextStep = 'MORTGAGE_DECLARATIONS';
                 nextMessage = { id: 'ask_dec', role: 'system', content: "Just a few final checks. Any bankruptcy in the last 7 years?", type: 'options', options: ['Yes', 'No'] };
@@ -264,7 +299,7 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
 
         case 'ASK_EMAIL':
             nextStep = 'COMPLETE';
-            nextMessage = { id: 'complete', role: 'system', content: "Application submitted! Our underwriting team is reviewing your file now.", type: 'text' };
+            nextMessage = { id: 'complete', role: 'system', content: "Application submitted! Our underwriting team is reviewing your verified file now.", type: 'text' };
             break;
     }
 
