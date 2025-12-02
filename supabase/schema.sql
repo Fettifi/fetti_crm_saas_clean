@@ -36,3 +36,20 @@ alter table verifications enable row level security;
 -- Allow public insert for now (demo mode), lock down in production
 create policy "Allow public insert referrals" on referrals for insert with check (true);
 create policy "Allow public insert verifications" on verifications for insert with check (true);
+
+-- 5. Create Automation Queue Table
+create table if not exists automation_queue (
+  id uuid default uuid_generate_v4() primary key,
+  lead_id uuid references leads(id),
+  template_id text not null,
+  subject text not null,
+  body text,
+  scheduled_at timestamp with time zone not null,
+  sent_at timestamp with time zone,
+  status text default 'pending', -- pending, sent, failed, cancelled
+  created_at timestamp with time zone default now()
+);
+
+alter table automation_queue enable row level security;
+create policy "Allow public insert automation_queue" on automation_queue for insert with check (true);
+

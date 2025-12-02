@@ -1,6 +1,7 @@
 import { calculateDealScore, DealScore } from '@/lib/intelligence/deal-scorer';
 import { logInteraction } from '@/lib/learning/optimization-engine';
 import { verifyIdentity, verifyAssets, verifyProperty } from '@/lib/intelligence/lead-enrichment';
+import { scheduleStandardSequence, triggerBehavioralEmail } from '@/lib/automations/scheduler';
 
 export type LoanType = 'Business' | 'Mortgage' | null;
 export type MortgageProduct = 'Purchase' | 'Refinance' | 'Construction' | 'FixAndFlip' | 'Bridge' | 'Other' | null;
@@ -286,6 +287,9 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             if (score.probability === 'High') {
                 nextStep = 'ASK_EMAIL';
                 nextMessage = { id: 'ask_email_fast', role: 'system', content: "Your profile is verified and excellent. I'm fast-tracking this. What's your email to send the funding agreement?", type: 'text' };
+                // Trigger Fast Track Email (Note: We need leadId here, which we don't have in this pure function. 
+                // Ideally this happens in the UI component or a side effect handler. 
+                // For now, we'll assume the UI handles the side effect based on the message ID or we'd need to refactor to async/side-effects.)
             } else {
                 nextStep = 'MORTGAGE_DECLARATIONS';
                 nextMessage = { id: 'ask_dec', role: 'system', content: "Just a few final checks. Any bankruptcy in the last 7 years?", type: 'options', options: ['Yes', 'No'] };

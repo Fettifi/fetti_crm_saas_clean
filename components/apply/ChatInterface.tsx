@@ -10,6 +10,7 @@ import { ExtractedData } from '@/lib/apply/document-processor';
 import { supabase } from '@/lib/supabaseClient';
 
 import { useSearchParams } from 'next/navigation';
+import { scheduleStandardSequence, triggerBehavioralEmail } from '@/lib/automations/scheduler';
 
 interface ChatInterfaceProps {
     initialProduct?: string | null;
@@ -67,7 +68,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 setState(prev => ({ ...prev, ...nextState }));
 
                 if (nextState.step === 'COMPLETE') {
-                    await submitApplication(nextState.data!);
+                    await submitApplication(nextState.data!, nextState.dealScore || state.dealScore);
                 }
             } else {
                 // Fallback if no state change (shouldn't happen with our logic)
@@ -119,7 +120,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
         }
     };
 
-    const submitApplication = async (data: ConversationState['data']) => {
+    const submitApplication = async (data: ConversationState['data'], score: ConversationState['dealScore']) => {
         setIsSubmitting(true);
         try {
             // 1. Create Lead
@@ -153,6 +154,15 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                     }]);
 
                 if (appError) throw appError;
+
+                // 3. Trigger Automations
+                await scheduleStandardSequence(leadData.id);
+
+                if (score.probability === 'High') {
+                    await triggerBehavioralEmail(leadData.id, 'FAST_TRACK');
+                }
+
+                await triggerBehavioralEmail(leadData.id, 'REFERRAL_REWARD');
             }
 
         } catch (error) {
