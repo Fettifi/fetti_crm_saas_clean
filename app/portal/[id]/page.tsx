@@ -1,18 +1,24 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { Loader2, Upload, CheckCircle, FileText, Shield } from 'lucide-react';
 
 export default function ApplicationPortal() {
     const params = useParams();
+    const router = useRouter();
     const id = params.id as string;
     const [application, setApplication] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState<string | null>(null);
 
     useEffect(() => {
+        const session = localStorage.getItem('portal_session');
+        if (!session || session !== id) {
+            router.push('/portal/login');
+            return;
+        }
         if (id) fetchApplication();
     }, [id]);
 
@@ -21,7 +27,7 @@ export default function ApplicationPortal() {
             const { data, error } = await supabase
                 .from('applications')
                 .select('*, leads(*)')
-                .eq('lead_id', id) // Assuming ID passed is lead_id for now, or app_id
+                .eq('lead_id', id)
                 .single();
 
             if (error) throw error;
@@ -44,7 +50,6 @@ export default function ApplicationPortal() {
 
             if (uploadError) throw uploadError;
 
-            // Update UI or DB to reflect upload
             alert('Document uploaded successfully!');
         } catch (error) {
             console.error('Upload error:', error);
