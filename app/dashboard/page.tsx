@@ -5,6 +5,8 @@ import { useState } from 'react';
 import NewLeadsWidget from '@/components/dashboard/NewLeadsWidget';
 import AppsInProgressWidget from '@/components/dashboard/AppsInProgressWidget';
 import SubmittedAppsWidget from '@/components/dashboard/SubmittedAppsWidget';
+import AutomationsWidget from '@/components/dashboard/AutomationsWidget';
+import ReferralStatsWidget from '@/components/dashboard/ReferralStatsWidget';
 
 type TabId =
   | 'dashboard'
@@ -90,6 +92,8 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
           <NewLeadsWidget />
           <AppsInProgressWidget />
           <SubmittedAppsWidget />
+          <AutomationsWidget />
+          <ReferralStatsWidget />
         </section>
 
         {/* Matrix workspace */}

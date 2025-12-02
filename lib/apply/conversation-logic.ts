@@ -78,7 +78,7 @@ export const INITIAL_STATE: ConversationState = {
         {
             id: 'welcome',
             role: 'system',
-            content: "Hi! I'm Fetti, your AI assistant. I'm here to get you funded. To start, what's your full name?",
+            content: "Hi! I'm Frank, your Loan Coordinator. I'm here to get you funded. To start, what's your full name?",
             type: 'text',
         },
     ],
@@ -90,16 +90,24 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
     const { step, data } = state;
     const nextData = { ...data };
 
-    // 1. Capture Data based on current step
+    // 1. Validate Input
+    const validationError = validateInput(step, input);
+    if (validationError) {
+        return {
+            history: [...state.history, { id: Date.now().toString(), role: 'user', content: input }, { id: Date.now().toString() + '_err', role: 'system', content: validationError, type: 'text' }],
+        };
+    }
+
+    // 2. Capture Data based on current step
     captureData(step, input, nextData);
 
-    // 2. Recalculate Score
+    // 3. Recalculate Score
     const newScore = calculateDealScore(nextData);
 
-    // 3. Determine Next Step based on Graph & Score
+    // 4. Determine Next Step based on Graph & Score
     const { nextStep, nextMessage } = determineNextMove(step, nextData, newScore, input);
 
-    // 4. Log Interaction
+    // 5. Log Interaction
     logInteraction(step, 'complete');
     logInteraction(nextStep, 'view');
 
@@ -113,6 +121,32 @@ export function getNextStep(state: ConversationState, input: string): Partial<Co
     }
 
     return {};
+}
+
+function validateInput(step: string, input: string): string | null {
+    const cleanNum = (str: string) => parseInt(str.replace(/[^0-9]/g, '')) || 0;
+
+    switch (step) {
+        case 'INIT':
+            if (input.length < 2) return "Please enter your full name.";
+            break;
+        case 'ASK_EMAIL':
+            if (!input.includes('@') || !input.includes('.')) return "Please enter a valid email address.";
+            break;
+        case 'BUSINESS_REVENUE':
+        case 'MORTGAGE_INCOME':
+        case 'MORTGAGE_ASSETS':
+        case 'INV_PURCHASE_PRICE':
+        case 'INV_REHAB_BUDGET':
+        case 'INV_LAND_VALUE':
+        case 'INV_CONST_BUDGET':
+        case 'INV_ARV':
+        case 'INV_BRIDGE_AMOUNT':
+        case 'MORTGAGE_LOAN_AMOUNT':
+            if (cleanNum(input) <= 0) return "Please enter a valid amount greater than 0.";
+            break;
+    }
+    return null;
 }
 
 function captureData(step: string, input: string, data: any) {

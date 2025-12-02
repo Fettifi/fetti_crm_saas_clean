@@ -186,16 +186,9 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     </div>
                     <div>
-                        <h2 className="font-semibold text-white">Fetti AI</h2>
-                        <p className="text-xs text-slate-400">Autonomous Closer • Online</p>
+                        <h2 className="font-semibold text-white">Frank</h2>
+                        <p className="text-xs text-slate-400">Loan Coordinator • Online</p>
                     </div>
-                </div>
-                {/* Deal Score Indicator (Mini) */}
-                <div className="flex items-center gap-2 bg-slate-950 px-3 py-1 rounded-full border border-slate-800">
-                    <span className="text-xs text-slate-500">Deal Probability</span>
-                    <span className={`text-xs font-bold ${state.dealScore.probability === 'High' ? 'text-emerald-400' : state.dealScore.probability === 'Low' ? 'text-red-400' : 'text-yellow-400'}`}>
-                        {state.dealScore.score}%
-                    </span>
                 </div>
             </div>
 
