@@ -203,7 +203,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                             {msg.content}
 
                             {/* Options Rendering */}
-                            {msg.type === 'options' && msg.options && (
+                            {msg.options && msg.options.length > 0 && (
                                 <div className="mt-3 flex flex-wrap gap-2">
                                     {msg.options.map((opt) => (
                                         <button

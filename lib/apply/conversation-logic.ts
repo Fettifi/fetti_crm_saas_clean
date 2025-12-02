@@ -268,8 +268,9 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             nextMessage = {
                 id: 'verify_id',
                 role: 'system',
-                content: `${ack} To access our exclusive rates, I need to quickly verify your identity. It's secure and takes just a moment.`,
-                type: 'verify_identity', // New UI type
+                content: `${ack} To fast-track your approval, you can upload your ID or Passport now. It's completely optional but helps us get you the best rates.`,
+                type: 'upload',
+                options: ['I uploaded it', 'Skip for now']
             };
             break;
 
@@ -278,7 +279,7 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             nextMessage = {
                 id: 'ask_loan_type',
                 role: 'system',
-                content: "Identity Verified. Access Granted. Now, are you looking for a Business Loan or a Mortgage Loan?",
+                content: "Got it. Let's move on. Are you looking for a Business Loan or a Mortgage Loan?",
                 type: 'options',
                 options: ['Business Loan', 'Mortgage Loan'],
             };
