@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
-import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
+import { ConversationState, captureData, getNextStep } from '@/lib/apply/conversation-logic';
 import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, manageRoadmap, getKnowledgeBase } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
@@ -252,14 +252,9 @@ const tools = [
 
 export async function POST(req: NextRequest) {
     try {
-        const { history, state, attachment } = await req.json();
+        const { history, state, attachment, mode } = await req.json();
         const lastUserMessage = history[history.length - 1].content;
 
-        // 1. Deterministic Data Capture (Safety Net)
-        const deterministicData: any = {};
-        captureData(state.step, lastUserMessage, deterministicData);
-
-        // 2. LLM Processing
         // Convert client history to Gemini format
         const geminiHistory = history.map((msg: any) => ({
             role: msg.role === 'user' ? 'user' : 'model',
@@ -356,6 +351,38 @@ Return JSON ONLY.
             tools: tools as any
         });
 
+        // 1. Assistant Mode (Free Chat)
+        if (mode === 'assistant') {
+            const result = await chat.sendMessage(lastUserMessage);
+            const response = result.response;
+            const text = response.text();
+
+            // Try to parse JSON if the model returns it (it should due to responseMimeType)
+            // If it returns a string, wrap it.
+            let messageContent = text;
+            try {
+                const json = JSON.parse(text);
+                messageContent = json.message || text;
+            } catch (e) {
+                // content is already string
+            }
+
+            return NextResponse.json({
+                message: messageContent,
+                nextStep: 'ASSISTANT',
+                extractedData: {},
+                uiType: 'text'
+            });
+        }
+
+        // 2. Standard Mortgage Flow Logic
+
+        // Deterministic Data Capture (Safety Net)
+        const deterministicData: any = {};
+        captureData(state.step, lastUserMessage, deterministicData);
+
+        // Determine Next Step based on current state and user input
+        const nextStep = getNextStep(state, lastUserMessage);
         const promptText = `
         Current Step: ${state.step}
         Current Data: ${JSON.stringify(state.data)}

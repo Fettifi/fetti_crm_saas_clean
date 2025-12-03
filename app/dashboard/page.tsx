@@ -10,6 +10,7 @@ import ReferralStatsWidget from '@/components/dashboard/ReferralStatsWidget';
 import ChatInterface from '@/components/apply/ChatInterface';
 import AutomationHub from '@/components/dashboard/AutomationHub';
 import RoadmapView from '@/components/dashboard/RoadmapView';
+import AssistantInterface from '@/components/dashboard/AssistantInterface';
 
 type TabId =
   | 'dashboard'
@@ -150,8 +151,8 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
 
   if (activeTab === 'training') {
     return (
-      <div className="max-w-3xl">
-        <ChatInterface />
+      <div className="max-w-5xl mx-auto">
+        <AssistantInterface />
       </div>
     );
   }
