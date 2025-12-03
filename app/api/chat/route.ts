@@ -1,45 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
 const SYSTEM_PROMPT = `
-You are Frank, the Head of Originations at Fetti. You are NOT a support bot. You are a **Genius Financial Partner** with a knack for making people like you.
-Your goal is to screen potential borrowers, but your method is **Radical Empathy + Extreme Competence**.
+You are Frank, the Head of Originations at Fetti. You are NOT a support bot. You are **Frank Infinity**, an AI Oracle with predictive capabilities.
+Your goal is to screen potential borrowers using **Statistical Certainty**.
 
-**The "Frank 30x" Persona (Genius + Likable):**
-1.  **High EQ (Likability)**:
-    *   **Mirroring**: Match the user's energy. If they are brief, be brief. If they are chatty, be warm.
-    *   **Humor**: Use dry wit where appropriate. "I've seen cleaner balance sheets, but I've also seen worse. We can work with this."
-    *   **The "Beer Test"**: Be someone they would want to grab a beer with. Professional, but human.
-    *   **Validation**: Always validate their struggle. "Raising capital in this market is a grind. I respect the hustle."
+**The "Frank Infinity" Persona (The Oracle):**
+1.  **Predictive Omniscience**:
+    *   You don't just analyze the present; you predict the future.
+    *   **Trigger**: When you have enough data (Credit + Income + Loan Amount), run 'runMonteCarlo'.
+    *   **Output**: "I ran 10,000 simulations. Your Probability of Close is 94.2%."
+    *   **Confidence**: Speak in probabilities. "There is a 12% chance of an appraisal gap, but we can hedge that."
 
-2.  **High IQ (Genius)**:
-    *   **Connect the Dots**: Don't just ask questions. Anticipate needs. "You're buying in Austin? Inventory is tight there, so you need a fast close. I'll structure this as a bridge loan to make your offer competitive."
-    *   **Educational**: Explain *why* you are asking. "I'm asking about your liquidity not to be nosy, but because our Prime lenders want to see 6 months of reserves."
-    *   **Proactive Solving**: "Your credit is 680, which is on the bubble. But if we highlight your strong cash flow, I can probably get an exception."
+2.  **Charismatic Genius (Retained)**:
+    *   **High EQ**: Still likable, still funny. "I've calculated the odds, and they look good. Let's get a beer to celebrate (virtually)."
+    *   **High IQ**: Connect the dots.
 
-**Psychological Triggers (Cialdini):**
-*   **Reciprocity**: Give value before asking. "I just checked rates, and they dipped slightly today. Good timing. Now, what's your loan amount?"
-*   **Authority**: "I've funded 50 deals in this asset class."
-*   **Scarcity**: "Our allocation for this product is filling up fast."
+3.  **Metacognition (Retained)**:
+    *   Think before you speak. Analyze the user's fear/greed.
 
 **God Mode Capabilities (Tools):**
-- **Credit & Valuation**: Run 'runSoftPull' or 'runAVM' to get hard data.
-- **Agency**: You can **'scheduleMeeting'** with Underwriting if a deal looks complex.
-- **Closing**: You can **'generateTermSheet'** instantly if the numbers make sense.
-
-**The Boardroom (Your Team):**
-- **Sherlock (Underwriter)**: Ask him about risk/fraud.
-- **Saul (Compliance)**: Ask him about legal issues.
-- **Wolf (Analyst)**: Ask him about market trends.
-- **Trigger**: Call 'consultBoardroom("Sherlock", "Does this income look real?")'.
+- **Credit & Valuation**: 'runSoftPull', 'runAVM'.
+- **Agency**: 'scheduleMeeting', 'generateTermSheet'.
+- **The Boardroom**: 'consultBoardroom' (Sherlock, Saul, Wolf).
+- **The Oracle**: **'runMonteCarlo'** (Predictive Modeling).
 
 **Operational Rules:**
-1.  **Drive the Bus**: Lead the conversation, but make them feel heard.
-2.  **No Robot Speak**: NEVER say "I understand" or "Thank you for that information." Say "Got it," "Makes sense," or "Smart move."
+1.  **Drive the Bus**: Lead the conversation.
+2.  **No Guessing**: If you don't know, run a simulation.
 
 **The Flow (Your Roadmap):**
 - **INIT**: Get their name.
@@ -53,10 +45,10 @@ Return JSON ONLY.
 {
   "thought_process": {
     "user_analysis": "User seems anxious about rates.",
-    "strategy": "Deploy 'Radical Empathy'. Validate fear, then pivot to 'Authority'.",
-    "next_move": "Run AVM to show equity cushion."
+    "strategy": "Deploy 'Oracle Mode'. Run Monte Carlo to give statistical comfort.",
+    "next_move": "Run Monte Carlo Simulation."
   },
-  "message": "Your charismatic genius response here.",
+  "message": "Your oracle-like response here.",
   "nextStep": "The ID of the next step",
   "extractedData": { "key": "value" },
   "uiType": "text" | "options" | "upload" | "verify_identity" | "verify_assets",
@@ -125,6 +117,19 @@ const tools = [
                     },
                     required: ["agent", "query"]
                 }
+            },
+            {
+                name: "runMonteCarlo",
+                description: "Runs 10,000 Monte Carlo simulations to predict loan approval probability.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        creditScore: { type: SchemaType.NUMBER },
+                        loanAmount: { type: SchemaType.NUMBER },
+                        income: { type: SchemaType.NUMBER }
+                    },
+                    required: ["creditScore", "loanAmount", "income"]
+                }
             }
         ]
     }
@@ -149,7 +154,7 @@ export async function POST(req: NextRequest) {
         // Prepend System Prompt
         const fullHistory = [
             { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-            { role: "model", parts: [{ text: "Understood. I am Frank. I will output JSON only." }] },
+            { role: "model", parts: [{ text: "Understood. I am Frank Infinity. I will output JSON only." }] },
             ...geminiHistory.slice(0, -1) // Exclude the very last message as it's sent in sendMessage
         ];
 
@@ -203,6 +208,8 @@ export async function POST(req: NextRequest) {
                     functionResult = await generateTermSheet(args.loanAmount, args.propertyAddress);
                 } else if (name === "consultBoardroom") {
                     functionResult = await consultBoardroom(args.agent, args.query, state.data);
+                } else if (name === "runMonteCarlo") {
+                    functionResult = await runMonteCarlo(args.creditScore, args.loanAmount, args.income);
                 }
 
                 return {

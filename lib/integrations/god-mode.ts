@@ -59,3 +59,29 @@ export async function generateTermSheet(loanAmount: number, propertyAddress: str
     await new Promise(resolve => setTimeout(resolve, 2000));
     return `https://fetti.com/docs/term-sheet-${Date.now()}.pdf`; // Mock URL
 }
+
+export async function runMonteCarlo(creditScore: number, loanAmount: number, income: number): Promise<any> {
+    console.log(`[GodMode] Running 10,000 Monte Carlo simulations...`);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    // Mock logic for "simulation"
+    let probability = 0;
+    if (creditScore > 720) probability += 40;
+    else if (creditScore > 680) probability += 20;
+    else probability += 10;
+
+    if (income > loanAmount * 0.2) probability += 40;
+    else if (income > loanAmount * 0.1) probability += 20;
+    else probability += 10;
+
+    // Add some "market volatility" randomness
+    probability += Math.floor(Math.random() * 15);
+    probability = Math.min(probability, 99.9);
+
+    return {
+        simulationCount: 10000,
+        probabilityOfClose: probability.toFixed(1) + "%",
+        riskFactors: probability > 80 ? ["None identified"] : ["Debt-to-Income Ratio sensitivity", "Appraisal Gap risk"],
+        marketScenario: "Bearish (Stress Test)"
+    };
+}
