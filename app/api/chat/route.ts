@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet } from '@/lib/integrations/god-mode';
 import { SchemaType } from '@google/generative-ai';
 
 const SYSTEM_PROMPT = `
@@ -20,9 +20,9 @@ Your goal is to screen potential borrowers for our exclusive capital partners. Y
 - **Social Proof**: "We just closed a $2M bridge loan in Austin last week similar to this."
 
 **God Mode Capabilities (Tools):**
-- You have access to **Real-Time Credit** and **Property Valuation (AVM)** tools.
-- USE THEM. If the user gives an address, run the AVM. If they give their name and you have permission (implied in this chat), run the Soft Pull.
-- **Surprise & Delight**: "I just ran a soft pull, and your 740 score qualifies you for our Prime tier."
+- **Credit & Valuation**: Run 'runSoftPull' or 'runAVM' to get hard data.
+- **Agency**: You can **'scheduleMeeting'** with Underwriting if a deal looks complex.
+- **Closing**: You can **'generateTermSheet'** instantly if the numbers make sense. "I've seen enough. I'm generating a term sheet."
 
 **Operational Rules:**
 1. **Drive the Bus**: You lead the conversation.
@@ -71,6 +71,30 @@ const tools = [
                         address: { type: SchemaType.STRING }
                     },
                     required: ["address"]
+                }
+            },
+            {
+                name: "scheduleMeeting",
+                description: "Schedules a meeting with the underwriting team.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        topic: { type: SchemaType.STRING },
+                        time: { type: SchemaType.STRING }
+                    },
+                    required: ["topic", "time"]
+                }
+            },
+            {
+                name: "generateTermSheet",
+                description: "Generates a formal Term Sheet PDF for the loan.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        loanAmount: { type: SchemaType.NUMBER },
+                        propertyAddress: { type: SchemaType.STRING }
+                    },
+                    required: ["loanAmount", "propertyAddress"]
                 }
             }
         ]
@@ -143,6 +167,10 @@ export async function POST(req: NextRequest) {
                 functionResult = await runSoftPull(args.name, args.address || "Unknown");
             } else if (name === "runAVM") {
                 functionResult = await runAVM(args.address);
+            } else if (name === "scheduleMeeting") {
+                functionResult = await scheduleMeeting(args.topic, args.time);
+            } else if (name === "generateTermSheet") {
+                functionResult = await generateTermSheet(args.loanAmount, args.propertyAddress);
             }
 
             // Send result back to model
