@@ -39,11 +39,8 @@ export async function uploadDocument(file: File): Promise<string | null> {
 }
 
 export async function processDocument(file: File): Promise<ExtractedData> {
-    // 1. Upload File
-    const fileUrl = await uploadDocument(file);
-
-    // 2. Convert to Base64 for Vision API
-    const base64Data = await new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
+    // 1. Convert to Base64 for Vision API (Priority)
+    const base64Promise = new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = () => {
@@ -55,6 +52,14 @@ export async function processDocument(file: File): Promise<ExtractedData> {
         };
         reader.onerror = error => reject(error);
     });
+
+    // 2. Upload File (Secondary - don't block UI if this fails)
+    const uploadPromise = uploadDocument(file).catch(err => {
+        console.error("Background upload failed:", err);
+        return null;
+    });
+
+    const [base64Data, fileUrl] = await Promise.all([base64Promise, uploadPromise]);
 
     const fileName = file.name.toLowerCase();
     let data: ExtractedData = {
