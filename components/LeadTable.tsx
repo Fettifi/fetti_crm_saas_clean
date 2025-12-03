@@ -31,7 +31,7 @@ export default function LeadTable() {
       const { data, error } = await supabase
         .from("leads")
         .select(
-          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source"
+          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, applications(notes)"
         )
         .order("created_at", { ascending: false })
         .limit(200);
@@ -101,6 +101,7 @@ export default function LeadTable() {
             <th className="px-3 py-2">Credit</th>
             <th className="px-3 py-2">Stage</th>
             <th className="px-3 py-2">Source</th>
+            <th className="px-3 py-2">Deal Score</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-800">
@@ -119,6 +120,25 @@ export default function LeadTable() {
               <td className="px-3 py-2">{lead.credit_band ?? "—"}</td>
               <td className="px-3 py-2">{lead.stage ?? "New Lead"}</td>
               <td className="px-3 py-2">{lead.source ?? "generated"}</td>
+              <td className="px-3 py-2">
+                {(() => {
+                  // @ts-ignore
+                  const app = lead.applications?.[0];
+                  if (!app?.notes) return <span className="text-slate-600">—</span>;
+                  try {
+                    const notes = JSON.parse(app.notes);
+                    const score = notes.dealScore?.score || notes.dealScore?.probability;
+                    if (!score) return <span className="text-slate-600">—</span>;
+
+                    const color = score === 'High' || score > 80 ? 'text-emerald-400' :
+                      score === 'Medium' || score > 50 ? 'text-yellow-400' : 'text-red-400';
+
+                    return <span className={`font-mono font-bold ${color}`}>{score}</span>;
+                  } catch (e) {
+                    return <span className="text-slate-600">Error</span>;
+                  }
+                })()}
+              </td>
             </tr>
           ))}
         </tbody>

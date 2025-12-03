@@ -62,9 +62,13 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
         utterance.rate = 1.1; // Slightly faster
         utterance.pitch = 1.0;
 
-        // Try to find a good voice
+        // Try to find a good voice (Prioritize Male)
         const voices = window.speechSynthesis.getVoices();
-        const preferredVoice = voices.find(v => v.name.includes('Google US English') || v.name.includes('Samantha'));
+        const preferredVoice = voices.find(v =>
+            (v.name.includes('Male') && v.lang.includes('en-US')) ||
+            v.name.includes('Google US English') ||
+            v.name.includes('Daniel')
+        );
         if (preferredVoice) utterance.voice = preferredVoice;
 
         window.speechSynthesis.speak(utterance);
