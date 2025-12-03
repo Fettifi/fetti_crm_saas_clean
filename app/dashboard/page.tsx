@@ -8,6 +8,7 @@ import SubmittedAppsWidget from '@/components/dashboard/SubmittedAppsWidget';
 import AutomationsWidget from '@/components/dashboard/AutomationsWidget';
 import ReferralStatsWidget from '@/components/dashboard/ReferralStatsWidget';
 import ChatInterface from '@/components/apply/ChatInterface';
+import AutomationHub from '@/components/dashboard/AutomationHub';
 
 type TabId =
   | 'dashboard'
@@ -130,8 +131,7 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
       'Workspace for Pipeline. Matrix agents should add pipeline boards, Kanban views, and stage analytics here.',
     requests:
       'Workspace for Requests. Matrix agents should add request lists, 1003 exports, and LOS integrations here.',
-    automations:
-      'Workspace for Automations. Matrix agents should add automations timelines, triggers, and logs here.',
+    automations: '',
     settings:
       'Workspace for Settings. Agents should add configuration tables and flows here instead of changing layout.tsx or this shell.',
     team:
@@ -143,6 +143,14 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
     return (
       <div className="max-w-3xl">
         <ChatInterface />
+      </div>
+    );
+  }
+
+  if (activeTab === 'automations') {
+    return (
+      <div className="max-w-4xl">
+        <AutomationHub />
       </div>
     );
   }
@@ -220,9 +228,25 @@ export default function DashboardPage() {
             <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]" />
             <span className="font-medium text-slate-300">Matrix: Online</span>
           </div>
-          <p className="mt-1 leading-snug">
+          <p className="mt-1 leading-snug mb-3">
             Agent changes should respect this shell, sidebar, and branding.
           </p>
+
+          <button
+            onClick={async () => {
+              const { createBrowserClient } = await import('@supabase/ssr');
+              const supabase = createBrowserClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+              );
+              await supabase.auth.signOut();
+              window.location.href = '/login';
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-slate-400 transition hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/50"
+          >
+            <span>Log Out</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>
+          </button>
         </div>
       </aside>
 
