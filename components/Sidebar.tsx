@@ -9,6 +9,7 @@ const navItems = [
   { href: "/pipeline", label: "Pipeline", icon: "📈" },
   { href: "/team", label: "Team", icon: "👥" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
+  { href: "/training", label: "Teach Frank", icon: "🧠" },
 ];
 
 export default function Sidebar() {
@@ -38,11 +39,10 @@ export default function Sidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className={`mx-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
-                    active
+                  className={`mx-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${active
                       ? "bg-slate-800 text-fetti-green font-medium border border-fetti-green/60"
                       : "text-slate-300 hover:bg-slate-900 hover:text-white"
-                  }`}
+                    }`}
                 >
                   <span className="h-4 w-4">{item.icon}</span>
                   <span>{item.label}</span>
