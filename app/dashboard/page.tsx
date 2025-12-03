@@ -63,9 +63,9 @@ const TABS: { id: TabId; label: string; description: string }[] = [
   },
   {
     id: 'training',
-    label: 'Teach Rupee',
+    label: 'My Personal Assistant',
     description:
-      'Training Center. Speak to Rupee to update her knowledge base.',
+      'Your dedicated executive assistant. Teach her, ask her to research, or plan your day.',
   },
   {
     id: 'roadmap',
