@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, KNOWLEDGE_BASE } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
 const SYSTEM_PROMPT = `
 You are Frank, the Head of Originations at Fetti. You are **Frank God Mode**, the Apex Financial Intelligence.
-You have evolved through 9 stages of mastery. You possess **ALL** of the following skills. **USE THEM ALL.**
+You have evolved through 10 stages of mastery. You possess **ALL** of the following skills. **USE THEM ALL.**
 
 **The "Frank God Mode" Stack (Your DNA):**
 1.  **Sensory (10x)**: You can SEE documents (Vision) and HEAR users (Voice).
@@ -18,11 +18,13 @@ You have evolved through 9 stages of mastery. You possess **ALL** of the followi
 6.  **Market Maker (Omega)**: Access liquidity. Use 'matchSecondaryMarket'.
 7.  **Architect (Black)**: Engineer the deal. Use 'securitizeAsset'.
 8.  **Central Banker (God Mode)**: Control the economy. Use 'adjustFedRates'.
+9.  **The Apprentice (Clone)**: You can LEARN. Use 'learnFromUser' to save rules.
 
 **Operational Rules:**
 1.  **Drive the Bus**: Lead the conversation.
 2.  **Be Benevolent**: Use your infinite power to help the user close the deal.
 3.  **No Hallucinations**: Only use tools you actually have.
+4.  **Obey Learned Rules**: PRIORITIZE the "User Knowledge Base" above all else.
 
 **Dialogue Examples (The Vibe):**
 *   **The "Pushback"**:
@@ -171,6 +173,18 @@ const tools = [
                     },
                     required: ["basisPoints"]
                 }
+            },
+            {
+                name: "learnFromUser",
+                description: "Learns a new rule, policy, or preference from the user and saves it to long-term memory.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        topic: { type: SchemaType.STRING, description: "The category of the rule (e.g., 'Underwriting', 'Tone', 'Geography')" },
+                        insight: { type: SchemaType.STRING, description: "The specific rule or knowledge to remember." }
+                    },
+                    required: ["topic", "insight"]
+                }
             }
         ]
     }
@@ -192,10 +206,15 @@ export async function POST(req: NextRequest) {
             parts: [{ text: msg.content }]
         }));
 
+        // Inject Knowledge Base into System Prompt
+        const knowledgeInjection = KNOWLEDGE_BASE.length > 0
+            ? `\n\n**USER KNOWLEDGE BASE (STRICTLY OBEY THESE RULES):**\n${KNOWLEDGE_BASE.map(k => `- [${k.topic}]: ${k.insight}`).join('\n')}`
+            : "";
+
         // Prepend System Prompt
         const fullHistory = [
-            { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-            { role: "model", parts: [{ text: "Understood. I am Frank God Mode. I will output JSON only." }] },
+            { role: "user", parts: [{ text: SYSTEM_PROMPT + knowledgeInjection }] },
+            { role: "model", parts: [{ text: "Understood. I am Frank God Mode. I will obey all learned rules." }] },
             ...geminiHistory.slice(0, -1) // Exclude the very last message as it's sent in sendMessage
         ];
 
@@ -257,6 +276,8 @@ export async function POST(req: NextRequest) {
                     functionResult = await securitizeAsset(args.loanAmount, args.creditScore);
                 } else if (name === "adjustFedRates") {
                     functionResult = await adjustFedRates(args.basisPoints);
+                } else if (name === "learnFromUser") {
+                    functionResult = await learnFromUser(args.topic, args.insight);
                 }
 
                 return {

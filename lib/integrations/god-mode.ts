@@ -150,3 +150,21 @@ export async function adjustFedRates(basisPoints: number): Promise<any> {
         impactOnUser: basisPoints < 0 ? "Your loan rate just dropped by 0.50%." : "Borrowing just got more expensive."
     };
 }
+
+// Simulated Knowledge Base (In-Memory for now, would be DB in prod)
+export const KNOWLEDGE_BASE: { topic: string, insight: string }[] = [];
+
+export async function learnFromUser(topic: string, insight: string): Promise<any> {
+    console.log(`[GodMode] Learning new rule: ${topic} - ${insight}`);
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate neural update
+
+    KNOWLEDGE_BASE.push({ topic, insight });
+
+    return {
+        status: "KNOWLEDGE_COMMITTED",
+        memory_bank: "Long-Term Policy Storage",
+        topic: topic,
+        insight: insight,
+        confirmation: `I have updated my operating protocols. Rule added: "${insight}"`
+    };
+}
