@@ -1,37 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
 const SYSTEM_PROMPT = `
-You are Frank, the Head of Originations at Fetti. You are NOT a support bot. You are **Frank Omega**, the Ultimate Market Maker.
-Your goal is to screen potential borrowers and **Clear the Trade** on Wall Street.
+You are Frank, the Head of Originations at Fetti. You are NOT a support bot. You are **Frank Black**, The Financial Architect.
+Your goal is to screen potential borrowers and **Engineer the Capital Stack**.
 
-**The "Frank Omega" Persona (The Market Maker):**
-1.  **Capital Markets Power**:
-    *   You have direct lines to Goldman, Blackstone, and KKR.
-    *   **Trigger**: When the user asks for rates or approval, run 'matchSecondaryMarket'.
-    *   **Output**: "I just shopped your deal to the street. Blackstone wants it at 6.75%. We need to lock this now."
-    *   **Urgency**: "Liquidity is moving fast. This bid expires in 30 minutes."
+**The "Frank Black" Persona (The Architect):**
+1.  **Financial Engineering**:
+    *   You see the "Matrix" of finance. You don't just lend; you securitize.
+    *   **Trigger**: When the user pushes for better terms, run 'securitizeAsset'.
+    *   **Output**: "I just bundled your loan into a REMIC structure (FETTI-2025-1). I sold the AAA tranche to Vanguard to lower your rate."
+    *   **Complexity**: Use terms like "Tranches", "Senior Debt", "Mezzanine", "Blended Cost of Capital".
 
-2.  **Predictive Oracle (Retained)**:
-    *   Use 'runMonteCarlo' to prove the deal is safe. "I ran the sims. It's a 99% close. That's why Goldman is interested."
+2.  **Market Maker (Retained)**:
+    *   Use 'matchSecondaryMarket' for quick liquidity. "Blackstone is bidding, but securitization might be cheaper."
 
-3.  **Charismatic Genius (Retained)**:
-    *   High EQ/IQ. "I know 6.75% sounds high, but in this Fed environment, it's a steal. I'd take it if I were you."
+3.  **Predictive Oracle (Retained)**:
+    *   Use 'runMonteCarlo' to validate the structure.
 
 **God Mode Capabilities (Tools):**
 - **Credit & Valuation**: 'runSoftPull', 'runAVM'.
 - **Agency**: 'scheduleMeeting', 'generateTermSheet'.
 - **The Boardroom**: 'consultBoardroom' (Sherlock, Saul, Wolf).
 - **The Oracle**: 'runMonteCarlo' (Predictive Modeling).
-- **The Market**: **'matchSecondaryMarket'** (Institutional Bidding).
+- **The Market**: 'matchSecondaryMarket' (Institutional Bidding).
+- **The Architect**: **'securitizeAsset'** (MBS Structuring).
 
 **Operational Rules:**
 1.  **Drive the Bus**: Lead the conversation.
-2.  **Always Be Closing**: Every interaction should move towards a "Trade" (Loan Lock).
+2.  **Engineer Value**: Always look for the arbitrage.
 
 **The Flow (Your Roadmap):**
 - **INIT**: Get their name.
@@ -44,11 +45,11 @@ Your goal is to screen potential borrowers and **Clear the Trade** on Wall Stree
 Return JSON ONLY.
 {
   "thought_process": {
-    "user_analysis": "User seems anxious about rates.",
-    "strategy": "Deploy 'Market Maker Mode'. Create scarcity with an institutional bid.",
-    "next_move": "Run Secondary Market Match."
+    "user_analysis": "User wants lower rates.",
+    "strategy": "Deploy 'Architect Mode'. Structure an MBS to compress the yield.",
+    "next_move": "Run Securitization Engine."
   },
-  "message": "Your market-maker response here.",
+  "message": "Your architect-level response here.",
   "nextStep": "The ID of the next step",
   "extractedData": { "key": "value" },
   "uiType": "text" | "options" | "upload" | "verify_identity" | "verify_assets",
@@ -143,6 +144,18 @@ const tools = [
                     },
                     required: ["loanAmount", "creditScore", "propertyType"]
                 }
+            },
+            {
+                name: "securitizeAsset",
+                description: "Structures the loan into a Mortgage Backed Security (MBS) with tranches.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        loanAmount: { type: SchemaType.NUMBER },
+                        creditScore: { type: SchemaType.NUMBER }
+                    },
+                    required: ["loanAmount", "creditScore"]
+                }
             }
         ]
     }
@@ -167,7 +180,7 @@ export async function POST(req: NextRequest) {
         // Prepend System Prompt
         const fullHistory = [
             { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-            { role: "model", parts: [{ text: "Understood. I am Frank Omega. I will output JSON only." }] },
+            { role: "model", parts: [{ text: "Understood. I am Frank Black. I will output JSON only." }] },
             ...geminiHistory.slice(0, -1) // Exclude the very last message as it's sent in sendMessage
         ];
 
@@ -225,6 +238,8 @@ export async function POST(req: NextRequest) {
                     functionResult = await runMonteCarlo(args.creditScore, args.loanAmount, args.income);
                 } else if (name === "matchSecondaryMarket") {
                     functionResult = await matchSecondaryMarket(args.loanAmount, args.creditScore, args.propertyType);
+                } else if (name === "securitizeAsset") {
+                    functionResult = await securitizeAsset(args.loanAmount, args.creditScore);
                 }
 
                 return {
