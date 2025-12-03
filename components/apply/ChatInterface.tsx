@@ -204,19 +204,25 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 setState(prev => ({ ...prev, data: { ...prev.data, leadId: leadData.id } }));
 
                 // Add success message with Portal Link
-                const portalLink = `${window.location.origin}/portal/${leadData.id}`;
+                const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : '';
+                const portalLink = `${origin}/portal/${leadData.id}`;
+
                 const successMsg: Message = {
                     id: 'final_success',
                     role: 'system',
-                    content: `Application submitted successfully! You can track your status and upload documents securely here: [Application Portal](${portalLink})`,
+                    content: `Application submitted successfully! \n\n**Next Steps:**\n1. Access your secure portal here: [Application Portal](${portalLink})\n2. Check your email for your access code.\n3. Upload your documents to fast-track your approval.`,
                     type: 'text'
                 };
                 setState(prev => ({ ...prev, history: [...prev.history, successMsg] }));
             }
-
-        } catch (error) {
+        } catch (error: any) {
             console.error('Submission error:', error);
-            const errorMsg: Message = { id: Date.now().toString(), role: 'system', content: "There was a slight glitch submitting your application, but don't worry, I've saved your progress locally.", type: 'text' };
+            const errorMsg: Message = {
+                id: Date.now().toString(),
+                role: 'system',
+                content: `I encountered an error submitting your application: ${error.message || 'Unknown error'}. \n\nPlease try again or contact support with this reference: ${data.email}`,
+                type: 'text'
+            };
             setState(prev => ({ ...prev, history: [...prev.history, errorMsg] }));
         } finally {
             setIsSubmitting(false);
