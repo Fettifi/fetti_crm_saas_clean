@@ -39,14 +39,12 @@ export async function uploadDocument(file: File): Promise<string | null> {
 }
 
 export async function processDocument(file: File): Promise<ExtractedData> {
-    // 1. Convert to Base64 for Vision API (Priority)
+    // 2. Convert to Base64 for Vision API (Priority)
     const base64Promise = new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = () => {
             const result = reader.result as string;
-            // Remove data:image/png;base64, prefix
-            const base64 = result.split(',')[1];
             let mimeType = file.type;
 
             // Fallback for missing mime type
@@ -58,7 +56,32 @@ export async function processDocument(file: File): Promise<ExtractedData> {
                 else mimeType = 'application/octet-stream';
             }
 
-            resolve({ base64, mimeType });
+            // If image, compress it
+            if (mimeType.startsWith('image/')) {
+                const img = new Image();
+                img.src = result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 1024;
+                    const scaleSize = MAX_WIDTH / img.width;
+                    canvas.width = MAX_WIDTH;
+                    canvas.height = img.height * scaleSize;
+
+                    const ctx = canvas.getContext('2d');
+                    ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    const compressedBase64 = compressedDataUrl.split(',')[1];
+                    resolve({ base64: compressedBase64, mimeType: 'image/jpeg' });
+                };
+                img.onerror = (err) => {
+                    console.warn('Image compression failed, using original', err);
+                    resolve({ base64: result.split(',')[1], mimeType });
+                };
+            } else {
+                // Return original for PDF/other
+                resolve({ base64: result.split(',')[1], mimeType });
+            }
         };
         reader.onerror = error => reject(error);
     });
