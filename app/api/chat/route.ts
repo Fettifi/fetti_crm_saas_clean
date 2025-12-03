@@ -51,6 +51,11 @@ Your goal is to screen potential borrowers, but your method is **Radical Empathy
 **Output Protocol:**
 Return JSON ONLY.
 {
+  "thought_process": {
+    "user_analysis": "User seems anxious about rates.",
+    "strategy": "Deploy 'Radical Empathy'. Validate fear, then pivot to 'Authority'.",
+    "next_move": "Run AVM to show equity cushion."
+  },
   "message": "Your charismatic genius response here.",
   "nextStep": "The ID of the next step",
   "extractedData": { "key": "value" },
@@ -180,34 +185,38 @@ export async function POST(req: NextRequest) {
         let response = result.response;
         let functionCalls = response.functionCalls();
 
-        // Handle Function Calling Loop
+        // Handle Function Calling Loop (Parallel Execution)
         while (functionCalls && functionCalls.length > 0) {
-            const call = functionCalls[0];
-            const name = call.name;
-            const args = call.args as any;
+            // Execute all calls in parallel
+            const toolPromises = functionCalls.map(async (call) => {
+                const name = call.name;
+                const args = call.args as any;
+                let functionResult;
 
-            let functionResult;
-            if (name === "runSoftPull") {
-                functionResult = await runSoftPull(args.name, args.address || "Unknown");
-            } else if (name === "runAVM") {
-                functionResult = await runAVM(args.address);
-            } else if (name === "scheduleMeeting") {
-                functionResult = await scheduleMeeting(args.topic, args.time);
-            } else if (name === "generateTermSheet") {
-                functionResult = await generateTermSheet(args.loanAmount, args.propertyAddress);
-            } else if (name === "consultBoardroom") {
-                functionResult = await consultBoardroom(args.agent, args.query, state.data);
-            }
+                if (name === "runSoftPull") {
+                    functionResult = await runSoftPull(args.name, args.address || "Unknown");
+                } else if (name === "runAVM") {
+                    functionResult = await runAVM(args.address);
+                } else if (name === "scheduleMeeting") {
+                    functionResult = await scheduleMeeting(args.topic, args.time);
+                } else if (name === "generateTermSheet") {
+                    functionResult = await generateTermSheet(args.loanAmount, args.propertyAddress);
+                } else if (name === "consultBoardroom") {
+                    functionResult = await consultBoardroom(args.agent, args.query, state.data);
+                }
 
-            // Send result back to model
-            result = await chat.sendMessage([
-                {
+                return {
                     functionResponse: {
                         name: name,
                         response: { result: functionResult }
                     }
-                }
-            ]);
+                };
+            });
+
+            const toolResponses = await Promise.all(toolPromises);
+
+            // Send all results back to model
+            result = await chat.sendMessage(toolResponses);
             response = result.response;
             functionCalls = response.functionCalls();
         }
