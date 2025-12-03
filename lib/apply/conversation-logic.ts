@@ -180,7 +180,10 @@ export function captureData(step: string, input: string, data: any) {
         case 'INV_EXPERIENCE': data.experience = input; break;
         case 'INV_EXIT_STRATEGY': data.exitStrategy = input; break;
         case 'INV_BRIDGE_AMOUNT': data.purchasePrice = parseNumber(input); break; // New capture for Bridge
-        case 'ASK_EMAIL': data.email = input; break;
+        case 'ASK_EMAIL':
+            const emailMatch = input.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+            data.email = emailMatch ? emailMatch[0] : input.trim();
+            break;
 
         // Verification Captures (Simulated)
         case 'VERIFY_IDENTITY':

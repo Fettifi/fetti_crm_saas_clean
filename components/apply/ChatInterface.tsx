@@ -148,6 +148,12 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
     const submitApplication = async (data: ConversationState['data'], score: ConversationState['dealScore']) => {
         setIsSubmitting(true);
         try {
+            if (!data.email) {
+                throw new Error("Missing email address");
+            }
+
+            console.log("Submitting application for:", data.email);
+
             // 1. Create Lead
             const { data: leadData, error: leadError } = await supabase
                 .from("leads")
@@ -163,6 +169,11 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 }])
                 .select()
                 .single();
+
+            if (leadError) {
+                console.error("Lead creation error:", leadError);
+                throw leadError;
+            }
 
             if (leadError) throw leadError;
 

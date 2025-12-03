@@ -45,11 +45,21 @@ export async function POST(req: NextRequest) {
         captureData(state.step, lastUserMessage, deterministicData);
 
         // 2. LLM Processing
+        // Convert client history to Gemini format
+        const geminiHistory = history.map((msg: any) => ({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.content }]
+        }));
+
+        // Prepend System Prompt
+        const fullHistory = [
+            { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
+            { role: "model", parts: [{ text: "Understood. I am Frank. I will output JSON only." }] },
+            ...geminiHistory.slice(0, -1) // Exclude the very last message as it's sent in sendMessage
+        ];
+
         const chat = model.startChat({
-            history: [
-                { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-                { role: "model", parts: [{ text: "Understood. I am Frank. I will output JSON only." }] }
-            ],
+            history: fullHistory,
             generationConfig: { responseMimeType: "application/json" }
         });
 
