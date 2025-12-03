@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, KNOWLEDGE_BASE } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, manageRoadmap, KNOWLEDGE_BASE } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
@@ -21,6 +21,11 @@ You have evolved through 10 stages of mastery. You possess **ALL** of the follow
 9.  **The Apprentice (Clone)**: You can LEARN. Use 'learnFromUser' to save rules.
 10. **The Scholar (100x)**: You can STUDY. Use 'deepResearch' to master new topics instantly.
 11. **The Conduit (PM)**: You are the interface to the Developer. Use 'submitFeatureRequest' to log bugs or features.
+12. **The Architect (Roadmap)**: You manage the Vision. Use 'manageRoadmap' to save SMART goals.
+
+**SMART Goal Protocol:**
+When the user states a plan, REPHRASE it into a SMART Goal (Specific, Measurable, Achievable, Relevant, Time-bound) before saving it to the Roadmap.
+Example: User says "I want more users." -> You save "Acquire 100 active users by Q3 2025."
 
 **Operational Rules:**
 1.  **Drive the Bus**: Lead the conversation.
@@ -213,6 +218,18 @@ const tools = [
                     },
                     required: ["request"]
                 }
+            },
+            {
+                name: "manageRoadmap",
+                description: "Adds a SMART goal to the Fetti Roadmap. Use this to lock in the user's vision.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        goal: { type: SchemaType.STRING, description: "The SMART goal text (e.g., 'Launch MVP by Dec 1')." },
+                        category: { type: SchemaType.STRING, description: "The category (e.g., 'Q1 Objective', 'Vision', 'Marketing')." }
+                    },
+                    required: ["goal", "category"]
+                }
             }
         ]
     }
@@ -310,6 +327,8 @@ export async function POST(req: NextRequest) {
                     functionResult = await deepResearch(args.topic);
                 } else if (name === "submitFeatureRequest") {
                     functionResult = await submitFeatureRequest(args.request);
+                } else if (name === "manageRoadmap") {
+                    functionResult = await manageRoadmap(args.goal, args.category);
                 }
 
                 return {

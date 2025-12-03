@@ -215,3 +215,28 @@ export async function submitFeatureRequest(request: string): Promise<any> {
         };
     }
 }
+
+export async function manageRoadmap(goal: string, category: string): Promise<any> {
+    console.log(`[GodMode] Updating Roadmap: ${goal}`);
+
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const filePath = path.join(process.cwd(), 'roadmap.md');
+    const entry = `\n- [ ] **${category.toUpperCase()}**: ${goal}`;
+
+    try {
+        fs.appendFileSync(filePath, entry);
+        return {
+            status: "ROADMAP_UPDATED",
+            goal: goal,
+            message: "I have updated the official Fetti Roadmap. Your vision is locked in."
+        };
+    } catch (error) {
+        console.error("Failed to update roadmap:", error);
+        return {
+            status: "ERROR",
+            message: "Failed to access the Roadmap file."
+        };
+    }
+}

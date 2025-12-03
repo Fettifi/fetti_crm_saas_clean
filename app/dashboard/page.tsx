@@ -9,6 +9,7 @@ import AutomationsWidget from '@/components/dashboard/AutomationsWidget';
 import ReferralStatsWidget from '@/components/dashboard/ReferralStatsWidget';
 import ChatInterface from '@/components/apply/ChatInterface';
 import AutomationHub from '@/components/dashboard/AutomationHub';
+import RoadmapView from '@/components/dashboard/RoadmapView';
 
 type TabId =
   | 'dashboard'
@@ -18,7 +19,8 @@ type TabId =
   | 'automations'
   | 'settings'
   | 'team'
-  | 'training';
+  | 'training'
+  | 'roadmap';
 
 const TABS: { id: TabId; label: string; description: string }[] = [
   {
@@ -64,6 +66,12 @@ const TABS: { id: TabId; label: string; description: string }[] = [
     label: 'Teach Frank',
     description:
       'Training Center. Speak to Frank to update his knowledge base.',
+  },
+  {
+    id: 'roadmap',
+    label: 'Roadmap',
+    description:
+      'The Master Plan. Frank manages this vision board.',
   },
 ];
 
@@ -137,6 +145,7 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
     team:
       'Workspace for Team. Matrix agents should add team rosters, permissions, and routing rules here.',
     training: '',
+    roadmap: '',
   };
 
   if (activeTab === 'training') {
@@ -151,6 +160,14 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
     return (
       <div className="max-w-4xl">
         <AutomationHub />
+      </div>
+    );
+  }
+
+  if (activeTab === 'roadmap') {
+    return (
+      <div className="max-w-4xl">
+        <RoadmapView />
       </div>
     );
   }
