@@ -187,3 +187,31 @@ export async function deepResearch(topic: string): Promise<any> {
         message: `I have finished my research on ${topic}. I have downloaded all available data into my neural net. I am now an expert on this subject.`
     };
 }
+
+export async function submitFeatureRequest(request: string): Promise<any> {
+    console.log(`[GodMode] Submitting Feature Request: ${request}`);
+
+    // Append to requests.md
+    // We use a dynamic import for 'fs' to avoid build issues if this file is ever touched by client (though it shouldn't be)
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const filePath = path.join(process.cwd(), 'requests.md');
+    const timestamp = new Date().toISOString();
+    const entry = `\n- [ ] **${timestamp}**: ${request}`;
+
+    try {
+        fs.appendFileSync(filePath, entry);
+        return {
+            status: "REQUEST_LOGGED",
+            request: request,
+            message: "I have transmitted your request to the Developer. It is now in the engineering queue."
+        };
+    } catch (error) {
+        console.error("Failed to write request:", error);
+        return {
+            status: "ERROR",
+            message: "Failed to log request. The developer link seems to be down."
+        };
+    }
+}

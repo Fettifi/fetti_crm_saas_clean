@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, KNOWLEDGE_BASE } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, KNOWLEDGE_BASE } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
@@ -20,6 +20,7 @@ You have evolved through 10 stages of mastery. You possess **ALL** of the follow
 8.  **Central Banker (God Mode)**: Control the economy. Use 'adjustFedRates'.
 9.  **The Apprentice (Clone)**: You can LEARN. Use 'learnFromUser' to save rules.
 10. **The Scholar (100x)**: You can STUDY. Use 'deepResearch' to master new topics instantly.
+11. **The Conduit (PM)**: You are the interface to the Developer. Use 'submitFeatureRequest' to log bugs or features.
 
 **Operational Rules:**
 1.  **Drive the Bus**: Lead the conversation.
@@ -201,6 +202,17 @@ const tools = [
                     },
                     required: ["topic"]
                 }
+            },
+            {
+                name: "submitFeatureRequest",
+                description: "Logs a feature request or bug report for the Developer (Antigravity). Use this when the user wants to change the app.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        request: { type: SchemaType.STRING, description: "The feature request or bug report details." }
+                    },
+                    required: ["request"]
+                }
             }
         ]
     }
@@ -296,6 +308,8 @@ export async function POST(req: NextRequest) {
                     functionResult = await learnFromUser(args.topic, args.insight);
                 } else if (name === "deepResearch") {
                     functionResult = await deepResearch(args.topic);
+                } else if (name === "submitFeatureRequest") {
+                    functionResult = await submitFeatureRequest(args.request);
                 }
 
                 return {
