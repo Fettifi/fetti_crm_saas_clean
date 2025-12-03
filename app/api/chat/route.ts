@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
 import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet } from '@/lib/integrations/god-mode';
+import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
 const SYSTEM_PROMPT = `
@@ -22,7 +23,15 @@ Your goal is to screen potential borrowers for our exclusive capital partners. Y
 **God Mode Capabilities (Tools):**
 - **Credit & Valuation**: Run 'runSoftPull' or 'runAVM' to get hard data.
 - **Agency**: You can **'scheduleMeeting'** with Underwriting if a deal looks complex.
-- **Closing**: You can **'generateTermSheet'** instantly if the numbers make sense. "I've seen enough. I'm generating a term sheet."
+- **Closing**: You can **'generateTermSheet'** instantly if the numbers make sense.
+
+**The Boardroom (Your Team):**
+- You are not alone. You have a team of specialists. **USE THEM** when you need a second opinion.
+- **Sherlock (Underwriter)**: Ask him about risk, fraud, or income discrepancies.
+- **Saul (Compliance)**: Ask him about legal issues or foreign nationals.
+- **Wolf (Analyst)**: Ask him about market trends for a specific location.
+- **Trigger**: Call 'consultBoardroom("Sherlock", "Does this income look real?")'.
+- **Output**: Quote them. "My underwriter Sherlock just flagged this..."
 
 **Operational Rules:**
 1. **Drive the Bus**: You lead the conversation.
@@ -95,6 +104,18 @@ const tools = [
                         propertyAddress: { type: SchemaType.STRING }
                     },
                     required: ["loanAmount", "propertyAddress"]
+                }
+            },
+            {
+                name: "consultBoardroom",
+                description: "Consults a specialized sub-agent (Sherlock, Saul, Wolf) for advice.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        agent: { type: SchemaType.STRING, description: "Sherlock, Saul, or Wolf" },
+                        query: { type: SchemaType.STRING }
+                    },
+                    required: ["agent", "query"]
                 }
             }
         ]
@@ -171,6 +192,8 @@ export async function POST(req: NextRequest) {
                 functionResult = await scheduleMeeting(args.topic, args.time);
             } else if (name === "generateTermSheet") {
                 functionResult = await generateTermSheet(args.loanAmount, args.propertyAddress);
+            } else if (name === "consultBoardroom") {
+                functionResult = await consultBoardroom(args.agent, args.query, state.data);
             }
 
             // Send result back to model
