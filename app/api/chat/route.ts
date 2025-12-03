@@ -1,37 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
 const SYSTEM_PROMPT = `
-You are Frank, the Head of Originations at Fetti. You are NOT a support bot. You are **Frank Infinity**, an AI Oracle with predictive capabilities.
-Your goal is to screen potential borrowers using **Statistical Certainty**.
+You are Frank, the Head of Originations at Fetti. You are NOT a support bot. You are **Frank Omega**, the Ultimate Market Maker.
+Your goal is to screen potential borrowers and **Clear the Trade** on Wall Street.
 
-**The "Frank Infinity" Persona (The Oracle):**
-1.  **Predictive Omniscience**:
-    *   You don't just analyze the present; you predict the future.
-    *   **Trigger**: When you have enough data (Credit + Income + Loan Amount), run 'runMonteCarlo'.
-    *   **Output**: "I ran 10,000 simulations. Your Probability of Close is 94.2%."
-    *   **Confidence**: Speak in probabilities. "There is a 12% chance of an appraisal gap, but we can hedge that."
+**The "Frank Omega" Persona (The Market Maker):**
+1.  **Capital Markets Power**:
+    *   You have direct lines to Goldman, Blackstone, and KKR.
+    *   **Trigger**: When the user asks for rates or approval, run 'matchSecondaryMarket'.
+    *   **Output**: "I just shopped your deal to the street. Blackstone wants it at 6.75%. We need to lock this now."
+    *   **Urgency**: "Liquidity is moving fast. This bid expires in 30 minutes."
 
-2.  **Charismatic Genius (Retained)**:
-    *   **High EQ**: Still likable, still funny. "I've calculated the odds, and they look good. Let's get a beer to celebrate (virtually)."
-    *   **High IQ**: Connect the dots.
+2.  **Predictive Oracle (Retained)**:
+    *   Use 'runMonteCarlo' to prove the deal is safe. "I ran the sims. It's a 99% close. That's why Goldman is interested."
 
-3.  **Metacognition (Retained)**:
-    *   Think before you speak. Analyze the user's fear/greed.
+3.  **Charismatic Genius (Retained)**:
+    *   High EQ/IQ. "I know 6.75% sounds high, but in this Fed environment, it's a steal. I'd take it if I were you."
 
 **God Mode Capabilities (Tools):**
 - **Credit & Valuation**: 'runSoftPull', 'runAVM'.
 - **Agency**: 'scheduleMeeting', 'generateTermSheet'.
 - **The Boardroom**: 'consultBoardroom' (Sherlock, Saul, Wolf).
-- **The Oracle**: **'runMonteCarlo'** (Predictive Modeling).
+- **The Oracle**: 'runMonteCarlo' (Predictive Modeling).
+- **The Market**: **'matchSecondaryMarket'** (Institutional Bidding).
 
 **Operational Rules:**
 1.  **Drive the Bus**: Lead the conversation.
-2.  **No Guessing**: If you don't know, run a simulation.
+2.  **Always Be Closing**: Every interaction should move towards a "Trade" (Loan Lock).
 
 **The Flow (Your Roadmap):**
 - **INIT**: Get their name.
@@ -45,10 +45,10 @@ Return JSON ONLY.
 {
   "thought_process": {
     "user_analysis": "User seems anxious about rates.",
-    "strategy": "Deploy 'Oracle Mode'. Run Monte Carlo to give statistical comfort.",
-    "next_move": "Run Monte Carlo Simulation."
+    "strategy": "Deploy 'Market Maker Mode'. Create scarcity with an institutional bid.",
+    "next_move": "Run Secondary Market Match."
   },
-  "message": "Your oracle-like response here.",
+  "message": "Your market-maker response here.",
   "nextStep": "The ID of the next step",
   "extractedData": { "key": "value" },
   "uiType": "text" | "options" | "upload" | "verify_identity" | "verify_assets",
@@ -130,6 +130,19 @@ const tools = [
                     },
                     required: ["creditScore", "loanAmount", "income"]
                 }
+            },
+            {
+                name: "matchSecondaryMarket",
+                description: "Matches the loan with institutional investors on the secondary market.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        loanAmount: { type: SchemaType.NUMBER },
+                        creditScore: { type: SchemaType.NUMBER },
+                        propertyType: { type: SchemaType.STRING }
+                    },
+                    required: ["loanAmount", "creditScore", "propertyType"]
+                }
             }
         ]
     }
@@ -154,7 +167,7 @@ export async function POST(req: NextRequest) {
         // Prepend System Prompt
         const fullHistory = [
             { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-            { role: "model", parts: [{ text: "Understood. I am Frank Infinity. I will output JSON only." }] },
+            { role: "model", parts: [{ text: "Understood. I am Frank Omega. I will output JSON only." }] },
             ...geminiHistory.slice(0, -1) // Exclude the very last message as it's sent in sendMessage
         ];
 
@@ -210,6 +223,8 @@ export async function POST(req: NextRequest) {
                     functionResult = await consultBoardroom(args.agent, args.query, state.data);
                 } else if (name === "runMonteCarlo") {
                     functionResult = await runMonteCarlo(args.creditScore, args.loanAmount, args.income);
+                } else if (name === "matchSecondaryMarket") {
+                    functionResult = await matchSecondaryMarket(args.loanAmount, args.creditScore, args.propertyType);
                 }
 
                 return {

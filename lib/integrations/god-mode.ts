@@ -85,3 +85,30 @@ export async function runMonteCarlo(creditScore: number, loanAmount: number, inc
         marketScenario: "Bearish (Stress Test)"
     };
 }
+
+export async function matchSecondaryMarket(loanAmount: number, creditScore: number, propertyType: string): Promise<any> {
+    console.log(`[GodMode] Shopping loan to Secondary Market (Wall St)...`);
+    await new Promise(resolve => setTimeout(resolve, 2500));
+
+    const buyers = [
+        "Goldman Sachs Asset Management",
+        "Blackstone Real Estate Debt Strategies",
+        "KKR Real Estate Credit",
+        "Apollo Global Management",
+        "Starwood Property Trust"
+    ];
+
+    const randomBuyer = buyers[Math.floor(Math.random() * buyers.length)];
+    const baseRate = 6.5;
+    const riskPremium = (850 - creditScore) / 100; // Higher score = lower rate
+    const finalRate = (baseRate + riskPremium).toFixed(3) + "%";
+
+    return {
+        status: "BID_RECEIVED",
+        buyer: randomBuyer,
+        bidAmount: "100% of Par",
+        interestRate: finalRate,
+        stipulations: ["Appraisal Review", "Title Insurance"],
+        expiry: "Offer expires in 30 minutes"
+    };
+}
