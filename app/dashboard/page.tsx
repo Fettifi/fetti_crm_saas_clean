@@ -7,6 +7,7 @@ import AppsInProgressWidget from '@/components/dashboard/AppsInProgressWidget';
 import SubmittedAppsWidget from '@/components/dashboard/SubmittedAppsWidget';
 import AutomationsWidget from '@/components/dashboard/AutomationsWidget';
 import ReferralStatsWidget from '@/components/dashboard/ReferralStatsWidget';
+import ChatInterface from '@/components/apply/ChatInterface';
 
 type TabId =
   | 'dashboard'
@@ -15,7 +16,8 @@ type TabId =
   | 'requests'
   | 'automations'
   | 'settings'
-  | 'team';
+  | 'team'
+  | 'training';
 
 const TABS: { id: TabId; label: string; description: string }[] = [
   {
@@ -55,6 +57,12 @@ const TABS: { id: TabId; label: string; description: string }[] = [
     label: 'Team',
     description:
       'Matrix workspace for team members, roles, and routing rules.',
+  },
+  {
+    id: 'training',
+    label: 'Teach Frank',
+    description:
+      'Training Center. Speak to Frank to update his knowledge base.',
   },
 ];
 
@@ -128,7 +136,16 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
       'Workspace for Settings. Agents should add configuration tables and flows here instead of changing layout.tsx or this shell.',
     team:
       'Workspace for Team. Matrix agents should add team rosters, permissions, and routing rules here.',
+    training: '',
   };
+
+  if (activeTab === 'training') {
+    return (
+      <div className="max-w-3xl">
+        <ChatInterface />
+      </div>
+    );
+  }
 
   return (
     <section className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 px-5 py-6 text-xs text-slate-400">
