@@ -118,6 +118,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
     };
 
     const handleExtraction = (data: ExtractedData) => {
+        console.log('handleExtraction called with:', { ...data, base64: data.base64 ? 'PRESENT' : 'MISSING' });
         // If we have base64 data, send it to the LLM for analysis
         if (data.base64 && data.mimeType) {
             handleSendMessage(`I've uploaded my ${data.documentType}.`, {
@@ -125,6 +126,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 mimeType: data.mimeType
             });
         } else {
+            console.warn('Missing base64 or mimeType for upload');
             // Fallback for legacy mock extraction
             let systemMsg = '';
             const updates: any = {};

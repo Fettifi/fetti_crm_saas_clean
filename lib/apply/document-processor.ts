@@ -47,7 +47,17 @@ export async function processDocument(file: File): Promise<ExtractedData> {
             const result = reader.result as string;
             // Remove data:image/png;base64, prefix
             const base64 = result.split(',')[1];
-            const mimeType = file.type;
+            let mimeType = file.type;
+
+            // Fallback for missing mime type
+            if (!mimeType) {
+                const ext = file.name.split('.').pop()?.toLowerCase();
+                if (ext === 'pdf') mimeType = 'application/pdf';
+                else if (ext === 'png') mimeType = 'image/png';
+                else if (ext === 'jpg' || ext === 'jpeg') mimeType = 'image/jpeg';
+                else mimeType = 'application/octet-stream';
+            }
+
             resolve({ base64, mimeType });
         };
         reader.onerror = error => reject(error);
