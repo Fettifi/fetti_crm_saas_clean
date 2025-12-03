@@ -110,6 +110,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
 
     const handleVoiceInput = (text: string) => {
         setInput(text);
+        handleSendMessage(text);
     };
 
     const handleFileUpload = (file: File) => {

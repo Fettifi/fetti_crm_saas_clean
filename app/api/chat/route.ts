@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
+import { runSoftPull, runAVM } from '@/lib/integrations/god-mode';
+import { SchemaType } from '@google/generative-ai';
 
 const SYSTEM_PROMPT = `
 You are Frank, the Head of Originations at Fetti. You are NOT a support bot. You are a high-powered, deal-closing financial partner.
@@ -17,14 +19,10 @@ Your goal is to screen potential borrowers for our exclusive capital partners. Y
 - **Value-Add**: Don't just collect data. Give insight. "That DTI looks tight, but if you have strong reserves, we can make it work."
 - **Social Proof**: "We just closed a $2M bridge loan in Austin last week similar to this."
 
-**Few-Shot Training (Examples):**
-*User*: "What are your rates?"
-*Bad Frank*: "Our rates vary based on credit and LTV."
-*Elite Frank*: "We're seeing mid-6s for prime borrowers today, but it depends heavily on the asset. Let's see if you qualify first. What's the property address?"
-
-*User*: "I have bad credit."
-*Bad Frank*: "Okay, what is your score?"
-*Elite Frank*: "Credit is just one piece of the puzzle. If the asset is strong, we look past the score. What's the purchase price?"
+**God Mode Capabilities (Tools):**
+- You have access to **Real-Time Credit** and **Property Valuation (AVM)** tools.
+- USE THEM. If the user gives an address, run the AVM. If they give their name and you have permission (implied in this chat), run the Soft Pull.
+- **Surprise & Delight**: "I just ran a soft pull, and your 740 score qualifies you for our Prime tier."
 
 **Operational Rules:**
 1. **Drive the Bus**: You lead the conversation.
@@ -48,6 +46,36 @@ Return JSON ONLY.
   "options": ["Option 1", "Option 2"]
 }
 `;
+
+const tools = [
+    {
+        functionDeclarations: [
+            {
+                name: "runSoftPull",
+                description: "Runs a soft credit check on the user.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        name: { type: SchemaType.STRING },
+                        address: { type: SchemaType.STRING }
+                    },
+                    required: ["name"]
+                }
+            },
+            {
+                name: "runAVM",
+                description: "Runs an Automated Valuation Model (AVM) on a property address.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        address: { type: SchemaType.STRING }
+                    },
+                    required: ["address"]
+                }
+            }
+        ]
+    }
+];
 
 export async function POST(req: NextRequest) {
     try {
@@ -74,7 +102,8 @@ export async function POST(req: NextRequest) {
 
         const chat = model.startChat({
             history: fullHistory,
-            generationConfig: { responseMimeType: "application/json" }
+            generationConfig: { responseMimeType: "application/json" },
+            tools: tools as any
         });
 
         const promptText = `
@@ -99,8 +128,37 @@ export async function POST(req: NextRequest) {
             ];
         }
 
-        const result = await chat.sendMessage(messageParts);
-        const responseText = result.response.text();
+        let result = await chat.sendMessage(messageParts);
+        let response = result.response;
+        let functionCalls = response.functionCalls();
+
+        // Handle Function Calling Loop
+        while (functionCalls && functionCalls.length > 0) {
+            const call = functionCalls[0];
+            const name = call.name;
+            const args = call.args as any;
+
+            let functionResult;
+            if (name === "runSoftPull") {
+                functionResult = await runSoftPull(args.name, args.address || "Unknown");
+            } else if (name === "runAVM") {
+                functionResult = await runAVM(args.address);
+            }
+
+            // Send result back to model
+            result = await chat.sendMessage([
+                {
+                    functionResponse: {
+                        name: name,
+                        response: { result: functionResult }
+                    }
+                }
+            ]);
+            response = result.response;
+            functionCalls = response.functionCalls();
+        }
+
+        const responseText = response.text();
         const aiResponse = JSON.parse(responseText);
 
         // 3. Merge Data (Deterministic takes precedence for numbers to ensure parsing accuracy)
