@@ -49,10 +49,14 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
     }, [initialProduct, state.step]);
 
 
-    const handleSendMessage = async (text: string) => {
-        if (!text.trim()) return;
+    const handleSendMessage = async (text: string, attachment?: { base64: string, mimeType: string }) => {
+        if (!text.trim() && !attachment) return;
 
-        const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text };
+        const userMsg: Message = {
+            id: Date.now().toString(),
+            role: 'user',
+            content: text || (attachment ? 'Uploaded a document' : '')
+        };
 
         // Optimistic update
         setState(prev => ({ ...prev, history: [...prev.history, userMsg] }));
@@ -65,7 +69,8 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     history: [...state.history, userMsg],
-                    state: state
+                    state: state,
+                    attachment // Send attachment to API
                 })
             });
 
@@ -108,40 +113,39 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
     };
 
     const handleFileUpload = (file: File) => {
-        const sysMsg: Message = {
-            id: Date.now().toString(),
-            role: 'system',
-            content: `Uploading ${file.name}...`,
-            type: 'text'
-        };
-        setState(prev => ({ ...prev, history: [...prev.history, sysMsg] }));
+        // This is handled by FileUploader component now
     };
 
     const handleExtraction = (data: ExtractedData) => {
-        let systemMsg = '';
-        const updates: any = {};
-
-        if (data.documentType === 'ID' && data.fullName) {
-            updates.fullName = data.fullName;
-            systemMsg = `Thanks! I've extracted your name: ${data.fullName}.`;
-        } else if (data.documentType === 'BankStatement' && data.revenue) {
-            updates.revenue = data.revenue;
-            systemMsg = `I see an annual revenue of $${data.revenue.toLocaleString()}. Impressive! I've saved that for you.`;
-        } else if ((data.documentType === 'W2' || data.documentType === 'Paystub') && data.employerName) {
-            updates.employerName = data.employerName;
-            updates.monthlyIncome = data.monthlyIncome;
-            systemMsg = `Got it. You work at ${data.employerName} earning about $${data.monthlyIncome?.toLocaleString()}/mo. I've updated your employment info.`;
+        // If we have base64 data, send it to the LLM for analysis
+        if (data.base64 && data.mimeType) {
+            handleSendMessage(`I've uploaded my ${data.documentType}.`, {
+                base64: data.base64,
+                mimeType: data.mimeType
+            });
         } else {
-            systemMsg = "I couldn't quite read that document, but I've attached it to your file.";
-        }
+            // Fallback for legacy mock extraction
+            let systemMsg = '';
+            const updates: any = {};
 
-        if (systemMsg) {
-            const msg: Message = { id: Date.now().toString(), role: 'system', content: systemMsg, type: 'text' };
-            setState(prev => ({
-                ...prev,
-                data: { ...prev.data, ...updates },
-                history: [...prev.history, msg]
-            }));
+            if (data.documentType === 'ID' && data.fullName) {
+                updates.fullName = data.fullName;
+                systemMsg = `Thanks! I've extracted your name: ${data.fullName}.`;
+            } else if (data.documentType === 'BankStatement' && data.revenue) {
+                updates.revenue = data.revenue;
+                systemMsg = `I see an annual revenue of $${data.revenue.toLocaleString()}. Impressive! I've saved that for you.`;
+            } else {
+                systemMsg = "I couldn't quite read that document, but I've attached it to your file.";
+            }
+
+            if (systemMsg) {
+                const msg: Message = { id: Date.now().toString(), role: 'system', content: systemMsg, type: 'text' };
+                setState(prev => ({
+                    ...prev,
+                    data: { ...prev.data, ...updates },
+                    history: [...prev.history, msg]
+                }));
+            }
         }
     };
 

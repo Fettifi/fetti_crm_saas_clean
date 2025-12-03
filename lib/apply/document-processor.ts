@@ -8,6 +8,8 @@ export interface ExtractedData {
     monthlyIncome?: number;
     documentType: 'ID' | 'BankStatement' | 'W2' | 'Paystub' | 'Unknown';
     fileUrl?: string;
+    base64?: string; // New field for Vision API
+    mimeType?: string; // New field for Vision API
 }
 
 export async function uploadDocument(file: File): Promise<string | null> {
@@ -40,39 +42,37 @@ export async function processDocument(file: File): Promise<ExtractedData> {
     // 1. Upload File
     const fileUrl = await uploadDocument(file);
 
-    // Simulate processing delay (Mock OCR)
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    // 2. Convert to Base64 for Vision API
+    const base64Data = await new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+            const result = reader.result as string;
+            // Remove data:image/png;base64, prefix
+            const base64 = result.split(',')[1];
+            const mimeType = file.type;
+            resolve({ base64, mimeType });
+        };
+        reader.onerror = error => reject(error);
+    });
 
     const fileName = file.name.toLowerCase();
-    let data: ExtractedData = { documentType: 'Unknown', fileUrl: fileUrl || undefined };
+    let data: ExtractedData = {
+        documentType: 'Unknown',
+        fileUrl: fileUrl || undefined,
+        base64: base64Data.base64,
+        mimeType: base64Data.mimeType
+    };
 
+    // Basic filename heuristics (can be removed once Vision is active, but good as fallback)
     if (fileName.includes('id') || fileName.includes('license') || fileName.includes('passport')) {
-        data = {
-            ...data,
-            documentType: 'ID',
-            fullName: 'John Doe', // Mock extraction
-            address: '123 Main St, Springfield, IL',
-        };
+        data.documentType = 'ID';
     } else if (fileName.includes('bank') || fileName.includes('statement')) {
-        data = {
-            ...data,
-            documentType: 'BankStatement',
-            revenue: 500000, // Mock extraction
-        };
+        data.documentType = 'BankStatement';
     } else if (fileName.includes('w2') || fileName.includes('w-2')) {
-        data = {
-            ...data,
-            documentType: 'W2',
-            employerName: 'Acme Corp',
-            monthlyIncome: 8500,
-        };
+        data.documentType = 'W2';
     } else if (fileName.includes('paystub') || fileName.includes('pay')) {
-        data = {
-            ...data,
-            documentType: 'Paystub',
-            employerName: 'Acme Corp',
-            monthlyIncome: 8500,
-        };
+        data.documentType = 'Paystub';
     }
 
     return data;

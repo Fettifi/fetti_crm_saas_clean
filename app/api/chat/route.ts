@@ -51,7 +51,7 @@ Return JSON ONLY.
 
 export async function POST(req: NextRequest) {
     try {
-        const { history, state } = await req.json();
+        const { history, state, attachment } = await req.json();
         const lastUserMessage = history[history.length - 1].content;
 
         // 1. Deterministic Data Capture (Safety Net)
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        const prompt = `
+        const promptText = `
         Current Step: ${state.step}
         Current Data: ${JSON.stringify(state.data)}
         User Input: "${lastUserMessage}"
@@ -85,7 +85,21 @@ export async function POST(req: NextRequest) {
         Determine the next move.
         `;
 
-        const result = await chat.sendMessage(prompt);
+        let messageParts: any[] = [{ text: promptText }];
+
+        if (attachment) {
+            messageParts = [
+                {
+                    inlineData: {
+                        data: attachment.base64,
+                        mimeType: attachment.mimeType
+                    }
+                },
+                { text: promptText + "\n\n[SYSTEM: The user has uploaded a document. Analyze it to extract relevant data (Name, Revenue, Income, Address) and update 'extractedData'.]" }
+            ];
+        }
+
+        const result = await chat.sendMessage(messageParts);
         const responseText = result.response.text();
         const aiResponse = JSON.parse(responseText);
 
