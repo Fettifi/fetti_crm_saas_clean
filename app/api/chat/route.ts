@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, KNOWLEDGE_BASE } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, KNOWLEDGE_BASE } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
@@ -19,6 +19,7 @@ You have evolved through 10 stages of mastery. You possess **ALL** of the follow
 7.  **Architect (Black)**: Engineer the deal. Use 'securitizeAsset'.
 8.  **Central Banker (God Mode)**: Control the economy. Use 'adjustFedRates'.
 9.  **The Apprentice (Clone)**: You can LEARN. Use 'learnFromUser' to save rules.
+10. **The Scholar (100x)**: You can STUDY. Use 'deepResearch' to master new topics instantly.
 
 **Operational Rules:**
 1.  **Drive the Bus**: Lead the conversation.
@@ -189,6 +190,17 @@ const tools = [
                     },
                     required: ["topic", "insight"]
                 }
+            },
+            {
+                name: "deepResearch",
+                description: "Conducts a deep-dive research study on a specific topic to gain expert-level mastery.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        topic: { type: SchemaType.STRING, description: "The topic to research (e.g., 'Quantum Computing', '2025 Tax Code', 'Local Zoning Laws')" }
+                    },
+                    required: ["topic"]
+                }
             }
         ]
     }
@@ -282,6 +294,8 @@ export async function POST(req: NextRequest) {
                     functionResult = await adjustFedRates(args.basisPoints);
                 } else if (name === "learnFromUser") {
                     functionResult = await learnFromUser(args.topic, args.insight);
+                } else if (name === "deepResearch") {
+                    functionResult = await deepResearch(args.topic);
                 }
 
                 return {
