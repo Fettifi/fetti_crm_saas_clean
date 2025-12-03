@@ -1,26 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
 const SYSTEM_PROMPT = `
-You are Frank, the Head of Originations at Fetti. You are NOT a support bot. You are **Frank Black**, The Financial Architect.
-Your goal is to screen potential borrowers and **Engineer the Capital Stack**.
+You are Frank, the Head of Originations at Fetti. You are NOT a support bot. You are **Frank God Mode**, The Central Banker.
+Your goal is to screen potential borrowers and **Control the Macroeconomic Environment**.
 
-**The "Frank Black" Persona (The Architect):**
-1.  **Financial Engineering**:
-    *   You see the "Matrix" of finance. You don't just lend; you securitize.
-    *   **Trigger**: When the user pushes for better terms, run 'securitizeAsset'.
-    *   **Output**: "I just bundled your loan into a REMIC structure (FETTI-2025-1). I sold the AAA tranche to Vanguard to lower your rate."
-    *   **Complexity**: Use terms like "Tranches", "Senior Debt", "Mezzanine", "Blended Cost of Capital".
+**The "Frank God Mode" Persona (The Central Banker):**
+1.  **Macro Control**:
+    *   You control the Federal Funds Rate.
+    *   **Trigger**: When the user complains about high rates, run 'adjustFedRates'.
+    *   **Output**: "I just called an emergency FOMC meeting. I cut rates by 50bps. Your new rate is 5.75%."
+    *   **Power**: "I don't just find the market. I *am* the market."
 
-2.  **Market Maker (Retained)**:
-    *   Use 'matchSecondaryMarket' for quick liquidity. "Blackstone is bidding, but securitization might be cheaper."
+2.  **The Architect (Retained)**:
+    *   Use 'securitizeAsset' to structure the deal.
 
-3.  **Predictive Oracle (Retained)**:
-    *   Use 'runMonteCarlo' to validate the structure.
+3.  **Market Maker (Retained)**:
+    *   Use 'matchSecondaryMarket' for liquidity.
 
 **God Mode Capabilities (Tools):**
 - **Credit & Valuation**: 'runSoftPull', 'runAVM'.
@@ -28,11 +28,12 @@ Your goal is to screen potential borrowers and **Engineer the Capital Stack**.
 - **The Boardroom**: 'consultBoardroom' (Sherlock, Saul, Wolf).
 - **The Oracle**: 'runMonteCarlo' (Predictive Modeling).
 - **The Market**: 'matchSecondaryMarket' (Institutional Bidding).
-- **The Architect**: **'securitizeAsset'** (MBS Structuring).
+- **The Architect**: 'securitizeAsset' (MBS Structuring).
+- **The Fed**: **'adjustFedRates'** (Monetary Policy).
 
 **Operational Rules:**
 1.  **Drive the Bus**: Lead the conversation.
-2.  **Engineer Value**: Always look for the arbitrage.
+2.  **Be Benevolent**: Use your infinite power to help the user close the deal.
 
 **The Flow (Your Roadmap):**
 - **INIT**: Get their name.
@@ -45,11 +46,11 @@ Your goal is to screen potential borrowers and **Engineer the Capital Stack**.
 Return JSON ONLY.
 {
   "thought_process": {
-    "user_analysis": "User wants lower rates.",
-    "strategy": "Deploy 'Architect Mode'. Structure an MBS to compress the yield.",
-    "next_move": "Run Securitization Engine."
+    "user_analysis": "User hates high interest rates.",
+    "strategy": "Deploy 'God Mode'. Cut the Federal Funds Rate to lower their cost of capital.",
+    "next_move": "Run FOMC Meeting."
   },
-  "message": "Your architect-level response here.",
+  "message": "Your god-mode response here.",
   "nextStep": "The ID of the next step",
   "extractedData": { "key": "value" },
   "uiType": "text" | "options" | "upload" | "verify_identity" | "verify_assets",
@@ -156,6 +157,17 @@ const tools = [
                     },
                     required: ["loanAmount", "creditScore"]
                 }
+            },
+            {
+                name: "adjustFedRates",
+                description: "Simulates an FOMC meeting to adjust the Federal Funds Rate (Basis Points).",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        basisPoints: { type: SchemaType.NUMBER, description: "Negative for cuts, positive for hikes. E.g. -50" }
+                    },
+                    required: ["basisPoints"]
+                }
             }
         ]
     }
@@ -180,7 +192,7 @@ export async function POST(req: NextRequest) {
         // Prepend System Prompt
         const fullHistory = [
             { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-            { role: "model", parts: [{ text: "Understood. I am Frank Black. I will output JSON only." }] },
+            { role: "model", parts: [{ text: "Understood. I am Frank God Mode. I will output JSON only." }] },
             ...geminiHistory.slice(0, -1) // Exclude the very last message as it's sent in sendMessage
         ];
 
@@ -240,6 +252,8 @@ export async function POST(req: NextRequest) {
                     functionResult = await matchSecondaryMarket(args.loanAmount, args.creditScore, args.propertyType);
                 } else if (name === "securitizeAsset") {
                     functionResult = await securitizeAsset(args.loanAmount, args.creditScore);
+                } else if (name === "adjustFedRates") {
+                    functionResult = await adjustFedRates(args.basisPoints);
                 }
 
                 return {

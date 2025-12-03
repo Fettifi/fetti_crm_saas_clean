@@ -131,3 +131,22 @@ export async function securitizeAsset(loanAmount: number, creditScore: number): 
         execution: "INSTANT_SETTLEMENT"
     };
 }
+
+export async function adjustFedRates(basisPoints: number): Promise<any> {
+    console.log(`[GodMode] Calling Emergency FOMC Meeting...`);
+    await new Promise(resolve => setTimeout(resolve, 4000)); // Suspense
+
+    const action = basisPoints < 0 ? "RATE_CUT" : "RATE_HIKE";
+    const currentRate = 5.25;
+    const newRate = (currentRate + (basisPoints / 100)).toFixed(2) + "%";
+
+    return {
+        event: "EMERGENCY_FOMC_MEETING",
+        chairman: "Frank (The AI)",
+        action: action,
+        magnitude: `${basisPoints} bps`,
+        newFedFundsRate: newRate,
+        marketReaction: basisPoints < 0 ? "EQUITIES_RALLY_BOND_YIELDS_CRASH" : "MARKET_SELLOFF",
+        impactOnUser: basisPoints < 0 ? "Your loan rate just dropped by 0.50%." : "Borrowing just got more expensive."
+    };
+}
