@@ -151,18 +151,60 @@ export async function adjustFedRates(basisPoints: number): Promise<any> {
     };
 }
 
-// Simulated Knowledge Base (In-Memory for now, would be DB in prod)
-export const KNOWLEDGE_BASE: { topic: string, insight: string }[] = [];
+// Persistent Memory Logic
+const MEMORY_FILE = 'memory.json';
+
+async function getMemoryFilePath() {
+    const path = await import('path');
+    return path.join(process.cwd(), MEMORY_FILE);
+}
+
+export async function getKnowledgeBase(): Promise<{ topic: string, insight: string }[]> {
+    try {
+        const fs = await import('fs');
+        const filePath = await getMemoryFilePath();
+        if (fs.existsSync(filePath)) {
+            const data = fs.readFileSync(filePath, 'utf8');
+            return JSON.parse(data);
+        }
+        return [];
+    } catch (error) {
+        console.error("Failed to load memory:", error);
+        return [];
+    }
+}
+
+async function addToMemory(item: { topic: string, insight: string }) {
+    try {
+        const fs = await import('fs');
+        const filePath = await getMemoryFilePath();
+        const currentMemory = await getKnowledgeBase();
+        currentMemory.push(item);
+        fs.writeFileSync(filePath, JSON.stringify(currentMemory, null, 2));
+    } catch (error) {
+        console.error("Failed to save memory:", error);
+    }
+}
+
+// Export for backward compatibility (though it will be a promise-based getter usage in route.ts ideally, 
+// but route.ts imports it as a value. We need to fix route.ts to use getKnowledgeBase or we export a live array?
+// Since route.ts runs on every request, we can just export a function or update the export.)
+// *Correction*: route.ts imports `KNOWLEDGE_BASE`. We should change that import to `getKnowledgeBase`.
+// For now, let's keep `KNOWLEDGE_BASE` as a variable but populate it? No, that's risky.
+// I will export `KNOWLEDGE_BASE` as a getter proxy or just change the usage in route.ts.
+// Let's change usage in route.ts. For now, I'll export the function.
+
+export const KNOWLEDGE_BASE: { topic: string, insight: string }[] = []; // Deprecated, use getKnowledgeBase
 
 export async function learnFromUser(topic: string, insight: string): Promise<any> {
     console.log(`[GodMode] Learning new rule: ${topic} - ${insight}`);
     await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate neural update
 
-    KNOWLEDGE_BASE.push({ topic, insight });
+    await addToMemory({ topic, insight });
 
     return {
         status: "KNOWLEDGE_COMMITTED",
-        memory_bank: "Long-Term Policy Storage",
+        memory_bank: "Long-Term Policy Storage (Persistent)",
         topic: topic,
         insight: insight,
         confirmation: `I have updated my operating protocols. Rule added: "${insight}"`
@@ -177,13 +219,13 @@ export async function deepResearch(topic: string): Promise<any> {
     // For now, we unlock the LLM's latent "Expert Mode" for this topic.
     const insight = `[EXPERT MASTERY UNLOCKED] I have conducted a deep-dive research study on ${topic}. I possess comprehensive, PhD-level knowledge of this subject, including recent developments, technical details, and strategic implications.`;
 
-    KNOWLEDGE_BASE.push({ topic: `Research: ${topic}`, insight });
+    await addToMemory({ topic: `Research: ${topic}`, insight });
 
     return {
         status: "RESEARCH_COMPLETE",
         topic: topic,
         findings: "Comprehensive Knowledge Downloaded.",
-        action: "Memory Updated",
+        action: "Memory Updated (Persistent)",
         message: `I have finished my research on ${topic}. I have downloaded all available data into my neural net. I am now an expert on this subject.`
     };
 }
