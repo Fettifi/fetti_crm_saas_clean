@@ -63,15 +63,15 @@ const TABS: { id: TabId; label: string; description: string }[] = [
   },
   {
     id: 'training',
-    label: 'Teach Frank',
+    label: 'Teach Rupee',
     description:
-      'Training Center. Speak to Frank to update his knowledge base.',
+      'Training Center. Speak to Rupee to update her knowledge base.',
   },
   {
     id: 'roadmap',
     label: 'Roadmap',
     description:
-      'The Master Plan. Frank manages this vision board.',
+      'The Master Plan. Rupee manages this vision board.',
   },
 ];
 
@@ -241,9 +241,14 @@ export default function DashboardPage() {
 
         {/* Matrix status footer */}
         <div className="border-t border-slate-900/80 px-4 py-4 text-[11px] text-slate-500">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]" />
-            <span className="font-medium text-slate-300">Matrix: Online</span>
+          <div className="flex items-center gap-3 rounded-xl bg-slate-900/50 p-3 border border-slate-800">
+            <div className="h-10 w-10 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+              <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-white">Rupee</p>
+              <p className="text-xs text-emerald-400">Online & Ready</p>
+            </div>
           </div>
           <p className="mt-1 leading-snug mb-3">
             Agent changes should respect this shell, sidebar, and branding.

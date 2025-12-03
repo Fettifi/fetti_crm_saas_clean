@@ -59,15 +59,16 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
         window.speechSynthesis.cancel();
 
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 1.1; // Slightly faster
-        utterance.pitch = 1.0;
+        utterance.rate = 0.95; // Slightly slower, more deliberate
+        utterance.pitch = 1.1; // Slightly higher, more feminine
 
-        // Try to find a good voice (Prioritize Male)
+        // Try to find a good Female voice
         const voices = window.speechSynthesis.getVoices();
         const preferredVoice = voices.find(v =>
-            (v.name.includes('Male') && v.lang.includes('en-US')) ||
+            (v.name.includes('Female') && v.lang.includes('en-US')) ||
+            v.name.includes('Samantha') ||
             v.name.includes('Google US English') ||
-            v.name.includes('Daniel')
+            v.name.includes('Victoria')
         );
         if (preferredVoice) utterance.voice = preferredVoice;
 
@@ -276,7 +277,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     </div>
                     <div>
-                        <h2 className="font-semibold text-white">Frank</h2>
+                        <h2 className="font-semibold text-white">Rupee</h2>
                         <p className="text-xs text-slate-400">Loan Coordinator • Online</p>
                     </div>
                 </div>
