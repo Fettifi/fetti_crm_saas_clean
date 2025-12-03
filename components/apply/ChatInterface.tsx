@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Send, Paperclip, FileText, Loader2, ShieldCheck, Building2, Home } from 'lucide-react';
+import { Mic, Send, Paperclip, FileText, Loader2, ShieldCheck, Building2, Home, Volume2, VolumeX } from 'lucide-react';
 import VoiceInput from './VoiceInput';
 import FileUploader from './FileUploader';
 import ReferralWidget from '@/components/growth/ReferralWidget';
@@ -49,6 +49,27 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
     }, [initialProduct, state.step]);
 
 
+    const [isMuted, setIsMuted] = useState(false);
+
+    // Text-to-Speech Logic
+    const speakText = (text: string) => {
+        if (isMuted || typeof window === 'undefined') return;
+
+        // Cancel previous speech
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.1; // Slightly faster
+        utterance.pitch = 1.0;
+
+        // Try to find a good voice
+        const voices = window.speechSynthesis.getVoices();
+        const preferredVoice = voices.find(v => v.name.includes('Google US English') || v.name.includes('Samantha'));
+        if (preferredVoice) utterance.voice = preferredVoice;
+
+        window.speechSynthesis.speak(utterance);
+    };
+
     const handleSendMessage = async (text: string, attachment?: { base64: string, mimeType: string }) => {
         if (!text.trim() && !attachment) return;
 
@@ -85,6 +106,9 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 options: data.options
             };
 
+            // Speak the response
+            speakText(data.message);
+
             setState(prev => ({
                 ...prev,
                 step: data.nextStep,
@@ -99,9 +123,12 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
         } catch (error) {
             console.error('Chat error:', error);
             // Fallback error message
+            const errorMsg = "I'm having trouble connecting. Please try again.";
+            speakText(errorMsg);
+
             setState(prev => ({
                 ...prev,
-                history: [...prev.history, { id: Date.now().toString(), role: 'system', content: "I'm having trouble connecting. Please try again.", type: 'text' }]
+                history: [...prev.history, { id: Date.now().toString(), role: 'system', content: errorMsg, type: 'text' }]
             }));
         } finally {
             setIsTyping(false);

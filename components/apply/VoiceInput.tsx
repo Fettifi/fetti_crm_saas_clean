@@ -28,6 +28,13 @@ export default function VoiceInput({ onTranscript }: VoiceInputProps) {
 
             recognition.onerror = (event: any) => {
                 console.error('Speech recognition error', event.error);
+                if (event.error === 'not-allowed') {
+                    alert('Microphone access denied. Please allow microphone access in your browser settings.');
+                } else if (event.error === 'no-speech') {
+                    // Ignore no-speech errors, just stop listening
+                } else {
+                    alert(`Voice input error: ${event.error}`);
+                }
                 setIsListening(false);
             };
 
