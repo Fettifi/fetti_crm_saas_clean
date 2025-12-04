@@ -279,8 +279,14 @@ const toolDefinitions = [
 ];
 
 export async function POST(req: NextRequest) {
+    let mode = 'mortgage'; // Default mode for error handling context
+
     try {
-        const { history, state, attachment, mode } = await req.json();
+        const body = await req.json();
+        const { history, state, attachment, mode: requestMode } = body; // Keep state and attachment for existing logic
+
+        if (requestMode) mode = requestMode; // Update mode if provided
+
         const lastUserMessage = history[history.length - 1].content;
 
         // Convert client history to Gemini format
@@ -512,8 +518,13 @@ You work for Fetti, a next - gen mortgage lender.
 
     } catch (error) {
         console.error('Chat API Error:', error);
+
+        const errorMessage = mode === 'assistant'
+            ? "I encountered an internal error while processing your request. Please try again."
+            : "I'm having a little trouble connecting to the underwriting server. Let's try that again.";
+
         return NextResponse.json({
-            message: "I'm having a little trouble connecting to the underwriting server. Let's try that again.",
+            message: errorMessage,
             nextStep: 'INIT', // Fallback to safe step
             uiType: 'text'
         }, { status: 500 });
