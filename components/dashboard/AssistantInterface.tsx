@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Send, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { Mic, Send, Sparkles, Volume2, VolumeX, Paperclip, X } from 'lucide-react';
 import VoiceInput from '@/components/apply/VoiceInput';
 
 interface Message {
@@ -21,6 +21,8 @@ export default function AssistantInterface() {
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
+    const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
@@ -52,8 +54,19 @@ export default function AssistantInterface() {
         window.speechSynthesis.speak(utterance);
     };
 
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setSelectedImage(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+    };
+
     const handleSendMessage = async (text: string) => {
-        if (!text.trim()) return;
+        if (!text.trim() && !selectedImage) return;
 
         const userMsg: Message = {
             id: Date.now().toString(),
@@ -72,9 +85,13 @@ export default function AssistantInterface() {
                 body: JSON.stringify({
                     mode: 'assistant', // Flag for backend
                     history: [...messages, userMsg], // Send full history
-                    message: text
+                    message: text,
+                    images: selectedImage ? [selectedImage] : undefined
                 })
             });
+
+            // Clear image after sending
+            setSelectedImage(null);
 
             const data = await response.json();
 
@@ -164,6 +181,35 @@ export default function AssistantInterface() {
                         setInput(text);
                         handleSendMessage(text);
                     }} />
+
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileSelect}
+                        accept="image/*"
+                        className="hidden"
+                    />
+
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`p-2 rounded-full transition-colors ${selectedImage ? 'text-emerald-400 bg-emerald-400/10' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                    >
+                        <Paperclip size={20} />
+                    </button>
+
+                    {selectedImage && (
+                        <div className="absolute bottom-full left-6 mb-2">
+                            <div className="relative group">
+                                <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-lg border border-slate-700 shadow-lg" />
+                                <button
+                                    onClick={() => setSelectedImage(null)}
+                                    className="absolute -top-2 -right-2 bg-slate-900 border border-slate-700 rounded-full p-1 text-slate-400 hover:text-white"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     <input
                         type="text"

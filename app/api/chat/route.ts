@@ -96,7 +96,7 @@ Return JSON ONLY.
 }
 `;
 
-const tools = [
+const toolDefinitions = [
     {
         functionDeclarations: [
             {
@@ -401,7 +401,7 @@ Return JSON ONLY.
         const chat = model.startChat({
             history: fullHistory,
             generationConfig: { responseMimeType: "application/json" },
-            tools: tools as any
+            tools: [{ functionDeclarations: toolDefinitions }] as any
         });
 
         // 1. Assistant Mode (Free Chat)
