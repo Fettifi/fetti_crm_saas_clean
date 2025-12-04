@@ -1,10 +1,30 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-if (!process.env.GEMINI_API_KEY) {
-    throw new Error("Missing GEMINI_API_KEY environment variable");
+const apiKey = process.env.GEMINI_API_KEY;
+
+let model: any;
+
+if (apiKey) {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    // Use the latest experimental model for best performance/reasoning
+    model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+} else {
+    console.warn("GEMINI_API_KEY is missing. Using mock model.");
+    // Mock model that returns a standard error message
+    model = {
+        startChat: () => ({
+            sendMessage: async () => ({
+                response: {
+                    text: () => JSON.stringify({
+                        message: "I am currently offline because my brain (GEMINI_API_KEY) is missing. Please add it to the environment variables.",
+                        nextStep: "ERROR",
+                        uiType: "text"
+                    }),
+                    functionCalls: () => []
+                }
+            })
+        })
+    };
 }
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-// Use the latest experimental model for best performance/reasoning
-export const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+export { model };

@@ -2,9 +2,22 @@ import { Octokit } from 'octokit';
 
 // Initialize Octokit
 // Requires GITHUB_TOKEN in .env
-const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN
-});
+let octokit: Octokit;
+
+if (process.env.GITHUB_TOKEN) {
+    octokit = new Octokit({
+        auth: process.env.GITHUB_TOKEN
+    });
+} else {
+    console.warn("GITHUB_TOKEN is missing. Using mock Octokit.");
+    // Mock Octokit to prevent crashes
+    octokit = new Proxy({} as Octokit, {
+        get: () => async () => {
+            console.warn("GitHub API call blocked: Missing GITHUB_TOKEN");
+            throw new Error("GitHub Integration Disabled (Missing Token)");
+        }
+    });
+}
 
 const OWNER = process.env.REPO_OWNER || 'fetti-crm'; // Default or Env
 const REPO = process.env.REPO_NAME || 'azure-plasma'; // Default or Env
