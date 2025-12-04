@@ -40,6 +40,20 @@ if [ "$current_branch" != "main" ]; then
   exit 1
 fi
 
+# 3) Verify Remote URL (Safety Check)
+# Ensure we are pushing to the correct repository linked to Vercel project 'fetti-crm-saas-clean-rqgt'
+remote_url="$(git remote get-url origin)"
+expected_repo="fetti_crm_saas_clean"
+
+if [[ "$remote_url" != *"$expected_repo"* ]]; then
+  echo "[DEPLOY] ❌ WRONG REPOSITORY DETECTED!"
+  echo "[DEPLOY] Current remote: $remote_url"
+  echo "[DEPLOY] Expected to contain: $expected_repo"
+  echo "[DEPLOY] Aborting to prevent deploying to the wrong place."
+  exit 1
+fi
+
+echo "[DEPLOY] ✅ Verified target repository: $expected_repo"
 echo "[DEPLOY] Pushing branch: $current_branch"
 git push origin "$current_branch"
 
