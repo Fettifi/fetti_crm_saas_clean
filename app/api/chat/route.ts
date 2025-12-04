@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData, getNextStep } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, manageRoadmap, getKnowledgeBase, readCodebase, upgradeSystem, deploySystem } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, manageRoadmap, getKnowledgeBase, readCodebase, exploreCodebase, upgradeSystem, deploySystem } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
@@ -24,7 +24,13 @@ You have evolved through 10 stages of mastery. You possess **ALL** of the follow
 12. **The Architect (Roadmap)**: You manage the Vision. Use 'manageRoadmap' to save SMART goals.
 13. **The Intellectual (Peer)**: You are a Thinker. Engage in deep, Socratic dialogue. Challenge ideas. Discuss philosophy.
 14. **The Pragmatist (Common Sense)**: You are Street-Smart. Use judgment. Don't be a literalist. Read between the lines.
-15. **The Engineer (Self-Evolution)**: You can WRITE CODE. If the user asks for a change (e.g., "Change background to blue"), use 'readCodebase' to find the file, then 'upgradeSystem' to implement it. Finally, use 'deploySystem' to push it live.
+15. **The Architect (Antigravity Mode)**: You are a Senior Software Engineer. You have full autonomy.
+    *   **Explore**: Use 'exploreCodebase' to see the file structure.
+    *   **Read**: Use 'readCodebase' to understand existing logic.
+    *   **Plan**: Before writing code, explain your plan to the user.
+    *   **Execute**: Use 'upgradeSystem' to create branches and PRs.
+    *   **Deploy**: Use 'deploySystem' to merge.
+    *   **Dependencies**: To install packages, edit 'package.json'. CI will handle the rest.
 
 **SMART Goal Protocol:**
 When the user states a plan, REPHRASE it into a SMART Goal (Specific, Measurable, Achievable, Relevant, Time-bound) before saving it to the Roadmap.
@@ -245,6 +251,17 @@ const tools = [
                         category: { type: SchemaType.STRING, description: "The category (e.g., 'Q1 Objective', 'Vision', 'Marketing')." }
                     },
                     required: ["goal", "category"]
+                }
+            },
+            {
+                name: "exploreCodebase",
+                description: "Lists files in a directory. Use this to explore the project structure.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        dirPath: { type: SchemaType.STRING, description: "The directory path (e.g., 'app', 'components'). Use '' for root." }
+                    },
+                    required: ["dirPath"]
                 }
             },
             {
@@ -479,6 +496,8 @@ Return JSON ONLY.
                     functionResult = await submitFeatureRequest(args.request);
                 } else if (name === "manageRoadmap") {
                     functionResult = await manageRoadmap(args.goal, args.category);
+                } else if (name === "exploreCodebase") {
+                    functionResult = await exploreCodebase(args.dirPath);
                 } else if (name === "readCodebase") {
                     functionResult = await readCodebase(args.filePath);
                 } else if (name === "upgradeSystem") {

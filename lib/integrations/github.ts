@@ -18,7 +18,11 @@ export async function readCode(path: string) {
         });
 
         if (Array.isArray(response.data)) {
-            return "Directory listing not supported yet. Please specify a file.";
+            return response.data.map((item: any) => ({
+                name: item.name,
+                path: item.path,
+                type: item.type
+            }));
         }
 
         if ('content' in response.data) {
@@ -29,6 +33,27 @@ export async function readCode(path: string) {
     } catch (error: any) {
         console.error('GitHub Read Error:', error);
         return `Error reading file: ${error.message}`;
+    }
+}
+
+export async function listFiles(path: string) {
+    try {
+        const response = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
+            owner: OWNER,
+            repo: REPO,
+            path: path,
+        });
+
+        if (Array.isArray(response.data)) {
+            return response.data.map((item: any) => ({
+                name: item.name,
+                path: item.path,
+                type: item.type
+            }));
+        }
+        return [];
+    } catch (error: any) {
+        return [];
     }
 }
 
