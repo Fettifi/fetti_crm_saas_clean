@@ -331,11 +331,11 @@ const toolDefinitions = [
 ];
 
 export async function POST(req: NextRequest) {
-    let mode = 'mortgage'; // Default mode for error handling context
+    let mode = 'assistant'; // Default to assistant to debug error message
 
     try {
         const body = await req.json();
-        const { history, state, attachment, mode: requestMode } = body; // Keep state and attachment for existing logic
+        const { history, message, mode: requestMode, image, state, attachment } = body;
 
         if (requestMode) mode = requestMode; // Update mode if provided
 
