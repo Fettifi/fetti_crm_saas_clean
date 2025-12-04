@@ -1,4 +1,5 @@
 // God Mode Integrations (Simulated)
+import { supabase } from '@/lib/supabaseClient';
 
 export interface CreditReport {
     score: number;
@@ -187,29 +188,31 @@ async function addToMemory(item: { topic: string, insight: string }) {
     }
 }
 
-// Export for backward compatibility (though it will be a promise-based getter usage in route.ts ideally, 
-// but route.ts imports it as a value. We need to fix route.ts to use getKnowledgeBase or we export a live array?
-// Since route.ts runs on every request, we can just export a function or update the export.)
-// *Correction*: route.ts imports `KNOWLEDGE_BASE`. We should change that import to `getKnowledgeBase`.
-// For now, let's keep `KNOWLEDGE_BASE` as a variable but populate it? No, that's risky.
-// I will export `KNOWLEDGE_BASE` as a getter proxy or just change the usage in route.ts.
-// Let's change usage in route.ts. For now, I'll export the function.
-
-export const KNOWLEDGE_BASE: { topic: string, insight: string }[] = []; // Deprecated, use getKnowledgeBase
-
 export async function learnFromUser(topic: string, insight: string): Promise<any> {
     console.log(`[GodMode] Learning new rule: ${topic} - ${insight}`);
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate neural update
 
-    await addToMemory({ topic, insight });
+    try {
+        const { error } = await supabase
+            .from('rupee_memory')
+            .insert([{ topic, insight }]);
 
-    return {
-        status: "KNOWLEDGE_COMMITTED",
-        memory_bank: "Long-Term Policy Storage (Persistent)",
-        topic: topic,
-        insight: insight,
-        confirmation: `I have updated my operating protocols. Rule added: "${insight}"`
-    };
+        if (error) throw error;
+
+        return {
+            status: "KNOWLEDGE_COMMITTED",
+            memory_bank: "The Vault (Supabase Cloud Memory)",
+            topic: topic,
+            insight: insight,
+            confirmation: `I have stored this in The Vault. Rule added: "${insight}"`
+        };
+    } catch (error: any) {
+        console.error("Failed to learn:", error);
+        return {
+            status: "FAILURE",
+            message: "Could not write to The Vault.",
+            error: error.message
+        };
+    }
 }
 
 export async function deepResearch(topic: string): Promise<any> {
