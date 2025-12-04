@@ -78,7 +78,7 @@ export const INITIAL_STATE: ConversationState = {
         {
             id: 'welcome',
             role: 'system',
-            content: "Hi! I'm Frank, your Loan Coordinator. I'm here to get you funded. To start, what's your full name?",
+            content: "Hi! I'm Rupee, your Loan Coordinator. I'm here to get you funded. To start, what's your full name?",
             type: 'text',
         },
     ],
