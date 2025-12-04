@@ -103,7 +103,43 @@ export async function proposeUpgrade(path: string, content: string, message: str
 
 export async function deployUpgrade(prNumber: number) {
     try {
-        // Merge PR
+        // 1. Get PR details to find Head SHA
+        const pr = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
+            owner: OWNER,
+            repo: REPO,
+            pull_number: prNumber,
+        });
+        const headSha = pr.data.head.sha;
+
+        // 2. Check CI Status (GitHub Actions)
+        // We poll for a few seconds to see if it's already failed or if it's pending.
+        // In a real agent scenario, we might return "Build Pending" and ask user to try again later.
+        // For this implementation, we will check once.
+
+        const checks = await octokit.request('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', {
+            owner: OWNER,
+            repo: REPO,
+            ref: headSha,
+        });
+
+        const failedChecks = checks.data.check_runs.filter(run => run.conclusion === 'failure');
+        const pendingChecks = checks.data.check_runs.filter(run => run.status === 'in_progress' || run.status === 'queued');
+
+        if (failedChecks.length > 0) {
+            return {
+                success: false,
+                error: `Safety Protocol Engaged: Build failed. I cannot deploy broken code. (Check ID: ${failedChecks[0].id})`
+            };
+        }
+
+        if (pendingChecks.length > 0) {
+            return {
+                success: false,
+                error: "Safety Protocol Engaged: Build is still verifying. Please wait 30 seconds and try 'deploySystem' again."
+            };
+        }
+
+        // 3. Merge PR if safe
         const merge = await octokit.request('PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', {
             owner: OWNER,
             repo: REPO,
