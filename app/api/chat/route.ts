@@ -498,7 +498,7 @@ You work for Fetti, a next - gen mortgage lender.
         // Handle Function Calling Loop (Parallel Execution)
         while (functionCalls && functionCalls.length > 0) {
             // Execute all calls in parallel
-            const toolPromises = functionCalls.map(async (call) => {
+            const toolPromises = functionCalls.map(async (call: any) => {
                 const name = call.name;
                 const args = call.args as any;
                 let functionResult;
