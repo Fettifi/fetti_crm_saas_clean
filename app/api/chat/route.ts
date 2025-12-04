@@ -334,6 +334,7 @@ export async function POST(req: NextRequest) {
     let mode = 'co-founder'; // Default to Co-Founder mode
 
     try {
+        // GLOBAL SAFETY NET START
         const body = await req.json();
         const { history, message, mode: requestMode, image, state, attachment } = body;
 
@@ -507,18 +508,15 @@ ${knowledgeString}
             extractedData: mergedData
         });
 
-    } catch (error) {
-        console.error('Chat API Error:', error);
+    } catch (error: any) {
+        console.error('CRITICAL CHAT API ERROR:', error);
 
-        const errorMessage = mode === 'assistant'
-            ? "I encountered an internal error while processing your request. Please try again."
-            : "I'm having a little trouble connecting to the underwriting server. Let's try that again.";
-
+        // Fallback response to prevent "Underwriting Server" crash message
         return NextResponse.json({
-            message: errorMessage,
-            nextStep: 'INIT', // Fallback to safe step
-            uiType: 'text'
+            message: `I encountered a system error, but I am recovering. Error details: ${error.message || 'Unknown error'}. Please try again.`,
+            nextStep: 'ERROR_RECOVERY',
+            uiType: 'text',
+            extractedData: {}
         }, { status: 500 });
     }
 }
-

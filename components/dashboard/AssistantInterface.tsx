@@ -15,7 +15,7 @@ export default function AssistantInterface() {
         {
             id: 'init',
             role: 'system',
-            content: "I'm online. What's on your mind?"
+            content: "I'm online. Ready to build, partner."
         }
     ]);
     const [input, setInput] = useState('');
