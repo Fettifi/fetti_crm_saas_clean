@@ -235,6 +235,71 @@ export async function deepResearch(topic: string): Promise<any> {
     };
 }
 
+export async function runTerminal(command: string): Promise<any> {
+    console.log(`[GodMode] Executing Terminal Command: ${command}`);
+
+    // Safety Blacklist
+    const blacklist = ['rm -rf', 'sudo', ':(){ :|:& };:'];
+    if (blacklist.some(b => command.includes(b))) {
+        return { status: "BLOCKED", message: "Command blocked by Safety Protocol." };
+    }
+
+    try {
+        const { exec } = await import('child_process');
+        const util = await import('util');
+        const execAsync = util.promisify(exec);
+
+        const { stdout, stderr } = await execAsync(command);
+
+        return {
+            status: "SUCCESS",
+            command: command,
+            output: stdout || stderr,
+            timestamp: new Date().toISOString()
+        };
+    } catch (error: any) {
+        return {
+            status: "FAILURE",
+            command: command,
+            error: error.message
+        };
+    }
+}
+
+export async function manageDependencies(action: 'install' | 'uninstall', packageName: string): Promise<any> {
+    console.log(`[GodMode] Managing Dependencies: ${action} ${packageName}`);
+
+    const command = action === 'install' ? `npm install ${packageName}` : `npm uninstall ${packageName}`;
+
+    // In Vercel, this won't persist, but it works for local dev or self-modification before a commit.
+    return await runTerminal(command);
+}
+
+export async function browseUrl(url: string): Promise<any> {
+    console.log(`[GodMode] Browsing URL: ${url}`);
+
+    try {
+        const response = await fetch(url);
+        const html = await response.text();
+
+        // Simple text extraction (regex-based for now to avoid heavy deps like cheerio)
+        const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 5000); // Limit to 5k chars
+
+        return {
+            status: "SUCCESS",
+            url: url,
+            title: "Page Content",
+            content: text + "..." // Truncated
+        };
+    } catch (error: any) {
+        return {
+            status: "FAILURE",
+            url: url,
+            error: error.message
+        };
+    }
+}
+
 export async function submitFeatureRequest(request: string): Promise<any> {
     console.log(`[GodMode] Submitting Feature Request: ${request}`);
 
