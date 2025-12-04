@@ -83,7 +83,7 @@ export default function AssistantInterface() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    mode: 'assistant', // Flag for backend
+                    mode: 'co-founder', // Flag for backend
                     history: [...messages, userMsg], // Send full history
                     message: text,
                     images: selectedImage ? [selectedImage] : undefined
@@ -120,7 +120,7 @@ export default function AssistantInterface() {
             <div className="relative z-10 p-6 flex justify-between items-center border-b border-white/5">
                 <div className="flex items-center gap-3">
                     <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.5)]" />
-                    <span className="text-emerald-400 font-medium tracking-widest text-xs uppercase">Rupee // Assistant Mode</span>
+                    <span className="text-emerald-400 font-medium tracking-widest text-xs uppercase">Rupee // Co-Founder Mode</span>
                 </div>
                 <button
                     onClick={() => setIsMuted(!isMuted)}

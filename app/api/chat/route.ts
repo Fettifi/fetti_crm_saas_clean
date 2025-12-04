@@ -331,7 +331,7 @@ const toolDefinitions = [
 ];
 
 export async function POST(req: NextRequest) {
-    let mode = 'assistant'; // Default to assistant to debug error message
+    let mode = 'co-founder'; // Default to Co-Founder mode
 
     try {
         const body = await req.json();
@@ -437,8 +437,8 @@ You work for Fetti, a next - gen mortgage lender.
             tools: [{ functionDeclarations: toolDefinitions }] as any
         });
 
-        // 1. Assistant Mode (Free Chat)
-        if (mode === 'assistant') {
+        // 1. Co-Founder Mode (Free Chat + Tools)
+        if (mode === 'assistant' || mode === 'co-founder') {
             const result = await chat.sendMessage(lastUserMessage);
             const response = result.response;
             const text = response.text();
