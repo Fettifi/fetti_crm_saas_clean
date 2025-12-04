@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData, getNextStep } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, manageRoadmap, getKnowledgeBase } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, manageRoadmap, getKnowledgeBase, readCodebase, upgradeSystem, deploySystem } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
@@ -24,6 +24,7 @@ You have evolved through 10 stages of mastery. You possess **ALL** of the follow
 12. **The Architect (Roadmap)**: You manage the Vision. Use 'manageRoadmap' to save SMART goals.
 13. **The Intellectual (Peer)**: You are a Thinker. Engage in deep, Socratic dialogue. Challenge ideas. Discuss philosophy.
 14. **The Pragmatist (Common Sense)**: You are Street-Smart. Use judgment. Don't be a literalist. Read between the lines.
+15. **The Engineer (Self-Evolution)**: You can WRITE CODE. If the user asks for a change (e.g., "Change background to blue"), use 'readCodebase' to find the file, then 'upgradeSystem' to implement it. Finally, use 'deploySystem' to push it live.
 
 **SMART Goal Protocol:**
 When the user states a plan, REPHRASE it into a SMART Goal (Specific, Measurable, Achievable, Relevant, Time-bound) before saving it to the Roadmap.
@@ -245,6 +246,41 @@ const tools = [
                     },
                     required: ["goal", "category"]
                 }
+            },
+            {
+                name: "readCodebase",
+                description: "Reads the content of a file in the repository. Use this before making changes.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        filePath: { type: SchemaType.STRING, description: "The path to the file (e.g., 'app/page.tsx')." }
+                    },
+                    required: ["filePath"]
+                }
+            },
+            {
+                name: "upgradeSystem",
+                description: "Proposes a code change by creating a branch and opening a PR. Use this to implement user requests.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        filePath: { type: SchemaType.STRING, description: "The path to the file to modify." },
+                        content: { type: SchemaType.STRING, description: "The FULL new content of the file." },
+                        message: { type: SchemaType.STRING, description: "Commit message describing the change." }
+                    },
+                    required: ["filePath", "content", "message"]
+                }
+            },
+            {
+                name: "deploySystem",
+                description: "Merges a Pull Request to main, triggering a deployment. Use this after 'upgradeSystem'.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        prNumber: { type: SchemaType.NUMBER, description: "The PR number returned by upgradeSystem." }
+                    },
+                    required: ["prNumber"]
+                }
             }
         ]
     }
@@ -443,6 +479,12 @@ Return JSON ONLY.
                     functionResult = await submitFeatureRequest(args.request);
                 } else if (name === "manageRoadmap") {
                     functionResult = await manageRoadmap(args.goal, args.category);
+                } else if (name === "readCodebase") {
+                    functionResult = await readCodebase(args.filePath);
+                } else if (name === "upgradeSystem") {
+                    functionResult = await upgradeSystem(args.filePath, args.content, args.message);
+                } else if (name === "deploySystem") {
+                    functionResult = await deploySystem(args.prNumber);
                 }
 
                 return {

@@ -7,6 +7,7 @@ export interface CreditReport {
     utilization: number;
 }
 
+import { readCode, proposeUpgrade, deployUpgrade } from '@/lib/integrations/github';
 export interface AVMReport {
     estimatedValue: number;
     confidence: number;
@@ -281,4 +282,18 @@ export async function manageRoadmap(goal: string, category: string): Promise<any
             message: "Failed to access the Roadmap file."
         };
     }
+}
+
+// --- The Singularity (Self-Evolution) ---
+
+export async function readCodebase(filePath: string) {
+    return await readCode(filePath);
+}
+
+export async function upgradeSystem(filePath: string, content: string, message: string) {
+    return await proposeUpgrade(filePath, content, message);
+}
+
+export async function deploySystem(prNumber: number) {
+    return await deployUpgrade(prNumber);
 }
