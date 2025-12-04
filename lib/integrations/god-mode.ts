@@ -300,6 +300,48 @@ export async function browseUrl(url: string): Promise<any> {
     }
 }
 
+export async function manageArtifacts(action: 'read' | 'write', filename: string, content?: string): Promise<any> {
+    console.log(`[GodMode] Managing Artifact: ${action} ${filename}`);
+
+    try {
+        const fs = await import('fs');
+        const path = await import('path');
+
+        // Assume artifacts are in a specific directory or allow absolute paths if careful
+        // For safety, let's restrict to the project root or specific allowed dirs
+        const filePath = path.resolve(process.cwd(), filename);
+
+        if (action === 'read') {
+            if (fs.existsSync(filePath)) {
+                return { status: "SUCCESS", content: fs.readFileSync(filePath, 'utf8') };
+            }
+            return { status: "FAILURE", error: "File not found" };
+        } else {
+            if (!content) return { status: "FAILURE", error: "Content required for write" };
+            fs.writeFileSync(filePath, content);
+            return { status: "SUCCESS", message: "Artifact updated" };
+        }
+    } catch (error: any) {
+        return { status: "FAILURE", error: error.message };
+    }
+}
+
+import { runAutopilotLoop } from '@/lib/agents/autopilot';
+
+export async function startAutopilot(goal: string): Promise<any> {
+    console.log(`[GodMode] Engaging Autopilot: ${goal}`);
+
+    // In a real app, this might trigger a background job.
+    // Here we await it (which might timeout if too long, but fine for demo).
+    const result = await runAutopilotLoop(goal);
+
+    return {
+        status: "AUTOPILOT_ENGAGED",
+        goal: goal,
+        result: result
+    };
+}
+
 export async function submitFeatureRequest(request: string): Promise<any> {
     console.log(`[GodMode] Submitting Feature Request: ${request}`);
 
