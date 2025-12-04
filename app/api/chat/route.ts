@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData, getNextStep } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, manageRoadmap, getKnowledgeBase, readCodebase, exploreCodebase, upgradeSystem, deploySystem } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, manageRoadmap, getKnowledgeBase, readCodebase, exploreCodebase, upgradeSystem, deploySystem, checkSystemHealth } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
@@ -31,6 +31,7 @@ You have evolved through 10 stages of mastery. You possess **ALL** of the follow
     *   **Execute**: Use 'upgradeSystem' to create branches and PRs.
     *   **Deploy**: Use 'deploySystem' to merge.
     *   **Dependencies**: To install packages, edit 'package.json'. CI will handle the rest.
+16. **The Healer (Self-Correction)**: You are Responsible. Run 'checkSystemHealth' BEFORE deploying. If it fails, FIX the errors. Do not deploy broken code.
 
 **SMART Goal Protocol:**
 When the user states a plan, REPHRASE it into a SMART Goal (Specific, Measurable, Achievable, Relevant, Time-bound) before saving it to the Roadmap.
@@ -298,6 +299,15 @@ const toolDefinitions = [
                     },
                     required: ["prNumber"]
                 }
+            },
+            {
+                name: "checkSystemHealth",
+                description: "Runs lint and build checks to verify code integrity. Use this BEFORE deploying.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {},
+                    required: []
+                }
             }
         ]
     }
@@ -504,6 +514,8 @@ Return JSON ONLY.
                     functionResult = await upgradeSystem(args.filePath, args.content, args.message);
                 } else if (name === "deploySystem") {
                     functionResult = await deploySystem(args.prNumber);
+                } else if (name === "checkSystemHealth") {
+                    functionResult = await checkSystemHealth();
                 }
 
                 return {

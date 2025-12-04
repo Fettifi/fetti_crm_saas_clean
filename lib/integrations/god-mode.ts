@@ -301,3 +301,33 @@ export async function upgradeSystem(filePath: string, content: string, message: 
 export async function deploySystem(prNumber: number) {
     return await deployUpgrade(prNumber);
 }
+
+export async function checkSystemHealth(): Promise<any> {
+    console.log(`[GodMode] Running System Health Check...`);
+
+    const cp = await import('child_process');
+    const util = await import('util');
+    const exec = util.promisify(cp.exec);
+
+    try {
+        // Run Lint
+        console.log("Running Lint...");
+        await exec('npm run lint');
+
+        // Run Build (Dry Run)
+        console.log("Running Build...");
+        await exec('npm run build');
+
+        return {
+            status: "HEALTHY",
+            message: "All systems operational. Lint and Build passed."
+        };
+    } catch (error: any) {
+        console.error("Health Check Failed:", error);
+        return {
+            status: "CRITICAL_FAILURE",
+            message: "System Health Check Failed. Please fix the errors below.",
+            errors: error.stdout || error.stderr || error.message
+        };
+    }
+}
