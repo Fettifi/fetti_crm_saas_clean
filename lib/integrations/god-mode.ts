@@ -342,6 +342,51 @@ export async function startAutopilot(goal: string): Promise<any> {
     };
 }
 
+export async function seeProjectStructure(depth: number = 2): Promise<any> {
+    console.log(`[GodMode] Scanning Project Structure (Depth: ${depth})`);
+
+    try {
+        const fs = await import('fs');
+        const path = await import('path');
+
+        const rootDir = process.cwd();
+        const blacklist = ['node_modules', '.git', '.next', '.vercel', 'dist', 'build'];
+
+        function scanDir(dir: string, currentDepth: number): any {
+            if (currentDepth > depth) return null;
+
+            const items = fs.readdirSync(dir);
+            const structure: any = {};
+
+            for (const item of items) {
+                if (blacklist.includes(item)) continue;
+
+                const fullPath = path.join(dir, item);
+                const stat = fs.statSync(fullPath);
+
+                if (stat.isDirectory()) {
+                    const children = scanDir(fullPath, currentDepth + 1);
+                    if (children) structure[item] = children;
+                    else structure[item] = "DIR"; // Max depth reached
+                } else {
+                    structure[item] = "FILE";
+                }
+            }
+            return structure;
+        }
+
+        const tree = scanDir(rootDir, 0);
+
+        return {
+            status: "SUCCESS",
+            structure: tree,
+            message: "Project structure scanned successfully."
+        };
+    } catch (error: any) {
+        return { status: "FAILURE", error: error.message };
+    }
+}
+
 export async function submitFeatureRequest(request: string): Promise<any> {
     console.log(`[GodMode] Submitting Feature Request: ${request}`);
 
