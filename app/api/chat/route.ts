@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { ConversationState, captureData, getNextStep } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, manageRoadmap, getKnowledgeBase, readCodebase, exploreCodebase, upgradeSystem, deploySystem, checkSystemHealth } from '@/lib/integrations/god-mode';
+import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, submitFeatureRequest, manageRoadmap, getKnowledgeBase, readCodebase, exploreCodebase, upgradeSystem, deploySystem, checkSystemHealth, startAutopilot, seeProjectStructure, sendMessage } from '@/lib/integrations/god-mode';
 import { consultBoardroom } from '@/lib/agents/swarm';
 import { SchemaType } from '@google/generative-ai';
 
@@ -284,11 +284,46 @@ const toolDefinitions = [
             },
             {
                 name: "checkSystemHealth",
-                description: "Runs lint and build checks to verify code integrity. Use this BEFORE deploying.",
+                description: "Runs a system health check (linting, type checking, build verification). Use this to self-heal.",
                 parameters: {
                     type: SchemaType.OBJECT,
                     properties: {},
                     required: []
+                }
+            },
+            {
+                name: "startAutopilot",
+                description: "Starts an autonomous recursive loop to solve a complex goal. Use this for multi-step tasks.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        goal: { type: SchemaType.STRING, description: "The high-level goal to achieve (e.g., 'Research Next.js 15 and write a summary')." }
+                    },
+                    required: ["goal"]
+                }
+            },
+            {
+                name: "seeProjectStructure",
+                description: "Scans the project directory and returns a tree view. Use this to orient yourself.",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        depth: { type: SchemaType.NUMBER, description: "The depth of the scan (default: 2)." }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: "sendMessage",
+                description: "Sends a message to the user via external channels (Slack, Email, SMS).",
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        platform: { type: SchemaType.STRING, description: "The platform to use ('slack', 'email', 'sms')." },
+                        recipient: { type: SchemaType.STRING, description: "The recipient (e.g., '#channel', 'email@example.com')." },
+                        content: { type: SchemaType.STRING, description: "The message content." }
+                    },
+                    required: ["platform", "recipient", "content"]
                 }
             }
         ]
@@ -504,6 +539,12 @@ You work for Fetti, a next - gen mortgage lender.
                     functionResult = await deploySystem(args.prNumber);
                 } else if (name === "checkSystemHealth") {
                     functionResult = await checkSystemHealth();
+                } else if (name === "startAutopilot") {
+                    functionResult = await startAutopilot(args.goal);
+                } else if (name === "seeProjectStructure") {
+                    functionResult = await seeProjectStructure(args.depth);
+                } else if (name === "sendMessage") {
+                    functionResult = await sendMessage(args.platform, args.recipient, args.content);
                 }
 
                 return {
