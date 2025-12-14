@@ -402,10 +402,13 @@ export default function AssistantInterface() {
                 {/* Header Content */}
                 <div className="p-6 flex justify-between items-center">
                     <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.5)]" />
+                        <div className="relative">
+                            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.5)]" />
+                            <div className="absolute inset-0 w-3 h-3 rounded-full bg-emerald-500 animate-ping opacity-20" />
+                        </div>
                         <div className="flex flex-col">
-                            <span className="text-emerald-400 font-medium tracking-widest text-xs uppercase">Rupee // Oracle</span>
-                            <span className="text-[10px] text-emerald-500/50 font-mono">SYSTEM ONLINE</span>
+                            <span className="text-emerald-400 font-bold tracking-[0.2em] text-xs uppercase drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]">Rupee // Oracle</span>
+                            <span className="text-[9px] text-emerald-500/40 font-mono tracking-widest">SYSTEM ONLINE</span>
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -589,9 +592,9 @@ export default function AssistantInterface() {
 
 
 
-            {/* Input Bar */}
-            <div className="relative z-10 p-6 pt-0">
-                <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700/50 rounded-full p-2 flex items-center gap-2 shadow-lg">
+            {/* Floating Antigravity Input Bar */}
+            <div className="absolute bottom-8 left-8 right-8 z-20">
+                <div className="bg-slate-950/80 backdrop-blur-xl border border-emerald-500/30 rounded-full p-2 flex items-center gap-3 shadow-[0_0_40px_rgba(16,185,129,0.15)] transition-all hover:border-emerald-500/50 hover:shadow-[0_0_50px_rgba(16,185,129,0.25)] ring-1 ring-white/5">
                     <VoiceInput onTranscript={(text) => {
                         setInput(text);
                         handleSendMessage(text);
@@ -607,18 +610,18 @@ export default function AssistantInterface() {
 
                     <button
                         onClick={() => fileInputRef.current?.click()}
-                        className={`p-2 rounded-full transition-colors ${selectedImage ? 'text-emerald-400 bg-emerald-400/10' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                        className={`p-2 rounded-full transition-all duration-300 ${selectedImage ? 'text-emerald-400 bg-emerald-400/10 shadow-[0_0_15px_rgba(52,211,153,0.3)]' : 'text-slate-400 hover:text-emerald-300 hover:bg-slate-800'}`}
                     >
                         <Paperclip size={20} />
                     </button>
 
                     {selectedImage && (
-                        <div className="absolute bottom-full left-6 mb-2">
+                        <div className="absolute bottom-full left-6 mb-4 animate-in fade-in slide-in-from-bottom-2">
                             <div className="relative group">
-                                <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-lg border border-slate-700 shadow-lg" />
+                                <img src={selectedImage} alt="Preview" className="h-24 w-24 object-cover rounded-xl border border-emerald-500/30 shadow-2xl" />
                                 <button
                                     onClick={() => setSelectedImage(null)}
-                                    className="absolute -top-2 -right-2 bg-slate-900 border border-slate-700 rounded-full p-1 text-slate-400 hover:text-white"
+                                    className="absolute -top-2 -right-2 bg-slate-950 border border-emerald-500/50 rounded-full p-1.5 text-emerald-400 hover:text-white hover:bg-red-500/20 hover:border-red-500 transition-colors shadow-lg"
                                 >
                                     <X size={12} />
                                 </button>
@@ -632,13 +635,13 @@ export default function AssistantInterface() {
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(input)}
                         placeholder="Ask Rupee anything..."
-                        className="flex-1 bg-transparent border-none focus:ring-0 text-white placeholder:text-slate-500 px-2"
+                        className="flex-1 bg-transparent border-none focus:ring-0 text-emerald-50 placeholder:text-emerald-700/50 px-2 font-light tracking-wide"
                     />
 
                     <button
                         onClick={() => handleSendMessage(input)}
                         disabled={!input.trim()}
-                        className="p-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="p-3 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-white rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] active:scale-95"
                     >
                         <Send size={18} />
                     </button>
