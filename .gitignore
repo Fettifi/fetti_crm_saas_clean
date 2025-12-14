@@ -4,3 +4,5 @@ logs/
 node_modules/
 .next/
 fetti_last_errors.json
+.env*.local
+.env

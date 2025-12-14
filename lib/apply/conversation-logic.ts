@@ -78,7 +78,7 @@ export const INITIAL_STATE: ConversationState = {
         {
             id: 'welcome',
             role: 'system',
-            content: "Hi! I'm Rupee, your Loan Coordinator. I'm here to get you funded. To start, what's your full name?",
+            content: "I'm Rupee, your Co-Founder. Let's get you funded. What's your full name?",
             type: 'text',
         },
     ],
@@ -204,15 +204,15 @@ export function captureData(step: string, input: string, data: any) {
 function getAcknowledgement(step: string, input: string): string {
     const lower = input.toLowerCase();
     const acknowledgements = [
-        "Got it.", "Understood.", "Okay.", "Noted.", "Great.", "Perfect.", "Thanks."
+        "On it.", "Copy that.", "Cool.", "Logged.", "Solid.", "Love it.", "Cheers."
     ];
     const randomAck = () => acknowledgements[Math.floor(Math.random() * acknowledgements.length)];
 
     switch (step) {
         case 'INIT':
-            return `Nice to meet you, ${input.split(' ')[0]}.`;
+            return `Nice to meet you, ${input.split(' ')[0]}. Let's build.`;
         case 'ASK_LOAN_TYPE':
-            return lower.includes('business') ? "Business growth is what we do best." : "Real estate is a solid investment.";
+            return lower.includes('business') ? "Business. High leverage. I like it." : "Real estate. Classic wealth builder.";
         case 'BUSINESS_PRODUCT':
             return "That's a popular choice for flexibility.";
         case 'MORTGAGE_PRODUCT':

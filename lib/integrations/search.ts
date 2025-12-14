@@ -19,6 +19,9 @@ export async function searchWeb(query: string): Promise<SearchResult[]> {
     }
 
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
         const response = await fetch("https://api.tavily.com/search", {
             method: "POST",
             headers: {
@@ -30,8 +33,11 @@ export async function searchWeb(query: string): Promise<SearchResult[]> {
                 search_depth: "basic",
                 include_answer: true,
                 max_results: 5
-            })
+            }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             throw new Error(`Search API error: ${response.statusText}`);
@@ -39,11 +45,23 @@ export async function searchWeb(query: string): Promise<SearchResult[]> {
 
         const data = await response.json();
 
-        return data.results.map((result: any) => ({
+
+
+        const results = data.results.map((result: any) => ({
             title: result.title,
             url: result.url,
             content: result.content
         }));
+
+        if (data.answer) {
+            results.unshift({
+                title: "Direct Answer",
+                url: "",
+                content: data.answer
+            });
+        }
+
+        return results;
 
     } catch (error) {
         console.error("Search failed:", error);

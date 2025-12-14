@@ -6,8 +6,8 @@ let model: any;
 
 if (apiKey) {
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Use the latest experimental model for best performance/reasoning
-    model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    // Use gemini-2.0-flash as 1.5 is not available for this key
+    model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 } else {
     console.warn("GEMINI_API_KEY is missing. Using mock model.");
     // Mock model that returns a standard error message

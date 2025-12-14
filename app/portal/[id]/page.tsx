@@ -20,7 +20,12 @@ export default function ApplicationPortal() {
             return;
         }
         if (id) fetchApplication();
-    }, [id]);
+    }, [id, router]);
+
+    const handleSignOut = () => {
+        localStorage.removeItem('portal_session');
+        router.push('/portal/login');
+    };
 
     const fetchApplication = async () => {
         try {
@@ -79,9 +84,17 @@ export default function ApplicationPortal() {
                         <h1 className="text-2xl font-bold">Application Portal</h1>
                         <p className="text-slate-400">ID: {id}</p>
                     </div>
-                    <div className="bg-emerald-500/10 text-emerald-500 px-4 py-2 rounded-full border border-emerald-500/20 flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        {application.status || 'Under Review'}
+                    <div className="flex items-center gap-3">
+                        <div className="bg-emerald-500/10 text-emerald-500 px-4 py-2 rounded-full border border-emerald-500/20 flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            {application.status || 'Under Review'}
+                        </div>
+                        <button
+                            onClick={handleSignOut}
+                            className="text-xs text-slate-500 hover:text-white transition-colors"
+                        >
+                            Sign Out
+                        </button>
                     </div>
                 </div>
 

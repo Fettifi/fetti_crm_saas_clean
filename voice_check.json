@@ -1,0 +1,4 @@
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100   141  100   141    0     0   1074      0 --:--:-- --:--:-- --:--:--  1076
+{"detail":{"status":"missing_permissions","message":"The API key you used is missing the permission voices_read to execute this operation."}}

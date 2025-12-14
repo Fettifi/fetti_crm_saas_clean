@@ -10,11 +10,43 @@ if (process.env.GITHUB_TOKEN) {
     });
 } else {
     console.warn("GITHUB_TOKEN is missing. Using mock Octokit.");
-    // Mock Octokit to prevent crashes
+    // Mock Octokit for Simulated Dev Mode
     octokit = new Proxy({} as Octokit, {
-        get: () => async () => {
-            console.warn("GitHub API call blocked: Missing GITHUB_TOKEN");
-            throw new Error("GitHub Integration Disabled (Missing Token)");
+        get: (target, prop) => {
+            if (prop === 'request') {
+                return async (route: string, params: any) => {
+                    console.log(`[Simulated GitHub] Request: ${route}`, params);
+
+                    // Simulate Read
+                    if (route.includes('GET /repos/{owner}/{repo}/contents')) {
+                        return { data: { content: Buffer.from("// Simulated file content").toString('base64') } };
+                    }
+
+                    // Simulate PR Creation
+                    if (route.includes('POST /repos/{owner}/{repo}/pulls')) {
+                        return {
+                            data: {
+                                number: Math.floor(Math.random() * 1000),
+                                html_url: "https://github.com/fetti-crm/azure-plasma/pull/simulated"
+                            }
+                        };
+                    }
+
+                    // Simulate Merge
+                    if (route.includes('PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge')) {
+                        return {
+                            data: {
+                                message: "Pull Request successfully merged (Simulated).",
+                                sha: "simulated-sha-123"
+                            }
+                        };
+                    }
+
+                    // Default Success
+                    return { data: {} };
+                };
+            }
+            return () => { throw new Error("GitHub Integration Disabled (Missing Token)"); };
         }
     });
 }

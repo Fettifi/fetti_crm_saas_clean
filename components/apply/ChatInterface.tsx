@@ -281,6 +281,13 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                         <p className="text-xs text-slate-400">Loan Coordinator • Online</p>
                     </div>
                 </div>
+                <a 
+                    href="/portal/login" 
+                    target="_blank"
+                    className="text-xs text-slate-500 hover:text-emerald-500 transition-colors flex items-center gap-1"
+                >
+                    Existing User? <span className="underline">Log In</span>
+                </a>
             </div>
 
             {/* Messages */}

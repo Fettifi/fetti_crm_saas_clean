@@ -13,10 +13,21 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  let supabase: any;
+
+  if (supabaseUrl && supabaseKey) {
+    supabase = createBrowserClient(supabaseUrl, supabaseKey);
+  } else {
+    // Mock client for build/offline mode
+    supabase = {
+      auth: {
+        signInWithPassword: async () => ({ error: { message: "Login disabled: Missing environment variables." } })
+      }
+    };
+  }
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault();

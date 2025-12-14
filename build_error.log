@@ -1,0 +1,33 @@
+
+> fetti-crm-saas-clean-rqgt@1.0.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/fetti/package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * /Users/fetti/.gemini/antigravity/playground/azure-plasma/package-lock.json
+
+   ▲ Next.js 16.0.7 (Turbopack)
+   - Environments: .env.local, .env
+
+ ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+   Creating an optimized production build ...
+
+> Build error occurred
+Error: Turbopack build failed with 1 errors:
+./.gemini/antigravity/playground/azure-plasma/app/api/chat/route.ts:60:25
+Parsing ecmascript source code failed
+[0m [90m 58 |[39m [32m**THE ENGINEER (DEV MODE):**[39m
+ [90m 59 |[39m [32mYou have FULL ACCESS to the codebase and terminal.[39m
+[31m[1m>[22m[39m[90m 60 |[39m [32m*   **Read Code**: Use `[39mreadCodebase[32m` to see file content.[39m
+ [90m    |[39m                         [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 61 |[39m [32m*   **Explore**: Use `[39mexploreCodebase[32m` to see directory structure.[39m
+ [90m 62 |[39m [32m*   **Modify (Safe)**: Use `[39mupgradeSystem[32m` to create a branch and PR (Best for big changes).[39m
+ [90m 63 |[39m [32m*   **Modify (Direct)**: Use `[39meditFile[32m` to write directly to a file (Best for quick fixes).[39m[0m
+
+Expected a semicolon
+
+
+    at <unknown> (./.gemini/antigravity/playground/azure-plasma/app/api/chat/route.ts:60:25)

@@ -1,12 +1,12 @@
 {
   "name": "fetti-crm-saas-clean-rqgt",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "next lint .",
     "fetti:auto": "python3 fetti_doctor_wrapper.py --auto",
     "fetti:feature": "python3 fetti_feature_runner.py",
     "fetti:watch": "npx nodemon --watch app --watch components --watch lib --ext ts,tsx,js,jsx --exec \"npm run fetti:auto && npm run fetti:feature\"",
@@ -18,8 +18,9 @@
     "@supabase/supabase-js": "^2.45.0",
     "axios": "^1.7.0",
     "lucide-react": "^0.555.0",
-    "next": "^15.0.0",
+    "next": "^16.0.7",
     "octokit": "^5.0.5",
+    "pg": "^8.16.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.52.0",
@@ -27,12 +28,15 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@types/dotenv": "^6.1.1",
     "@types/node": "^20.12.0",
+    "@types/pg": "^8.16.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.22",
+    "dotenv": "^17.2.3",
     "eslint": "^9.0.0",
-    "eslint-config-next": "15.0.0",
+    "eslint-config-next": "^16.0.7",
     "nodemon": "^3.1.11",
     "postcss": "^8.5.6",
     "supabase": "^2.64.2",
@@ -41,5 +45,8 @@
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.21.0",
     "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
