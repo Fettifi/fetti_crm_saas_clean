@@ -29,7 +29,7 @@ export default function AssistantInterface() {
     const [chunkCount, setChunkCount] = useState(0);
     const [lastChunkType, setLastChunkType] = useState<string>('none');
     const [parseError, setParseError] = useState<string>(''); // Nuclear Option
-    const [debugLog, setDebugLog] = useState<string[]>([]); // Debug Log
+    const [debugLogs, setDebugLogs] = useState<string[]>([]); // Debug Log
     const [showDebug, setShowDebug] = useState(false); // Toggle Debug Panel
     const [showTerminal, setShowTerminal] = useState(false); // Toggle Mini Terminal
     const [terminalInput, setTerminalInput] = useState(''); // Terminal Input
@@ -229,6 +229,10 @@ export default function AssistantInterface() {
         }]);
     };
 
+    const addLog = (msg: string) => {
+        setDebugLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-50));
+    };
+
     const handleSendMessage = async (text: string) => {
         if (!text.trim() && !selectedImage) return;
 
@@ -246,94 +250,104 @@ export default function AssistantInterface() {
         setInput('');
         setIsTyping(true);
         setProgress(5); // Optimistic start for Safari
-        setIsTyping(true);
-        setProgress(5); // Optimistic start for Safari
         setStatusMessage('Connecting...');
-        setDebugLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Connecting...`]);
+        addLog(`Sending: ${text.substring(0, 20)}...`);
 
         try {
+            addLog('Initiating fetch to /api/chat...');
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    mode: 'co-founder', // Unified Oracle Mode
-                    history: [...messages, userMsg], // Send full history
+                    mode: 'co-founder',
+                    history: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })), // Minimal history
                     message: text,
                     images: selectedImage ? [selectedImage] : undefined
                 })
             });
 
+            addLog(`Response Status: ${response.status}`);
+
             // Clear image after sending
             setSelectedImage(null);
 
-            if (!response.body) throw new Error("No response body");
+            if (!response.ok) {
+                const errorText = await response.text();
+                addLog(`Error: ${response.status} - ${errorText.substring(0, 50)}`);
+                throw new Error(`API Error: ${response.status}`);
+            }
+
+            if (!response.body) throw new Error('No response body');
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let done = false;
-            let buffer = '';
+            let accumulatedMessage = '';
+            let isFirstChunk = true;
 
-            while (!done) {
-                const { value, done: doneReading } = await reader.read();
-                done = doneReading;
-                const chunkValue = decoder.decode(value, { stream: true });
-                // setDebugLog(prev => [...prev, `[Chunk] ${chunkValue.substring(0, 50)}...`]); // Too noisy
+            addLog('Stream started...');
 
-                buffer += chunkValue;
-                const lines = buffer.split('\n');
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
 
-                // Keep the last line in the buffer as it might be incomplete
-                buffer = lines.pop() || '';
+                const chunk = decoder.decode(value);
+                // addLog(`Chunk received (${chunk.length} bytes)`); // Too noisy
+
+                const lines = chunk.split('\n');
 
                 for (const line of lines) {
-                    if (line.trim() === '') continue;
-                    try {
-                        setChunkCount(prev => prev + 1);
-                        const data = JSON.parse(line);
-                        setLastChunkType(data.type);
-
-                        if (data.type === 'status') {
-                            console.log("Status Update:", data.message, data.progress); // DEBUG
-                            setDebugLog(prev => [...prev, `[Status] ${data.message} (${data.progress}%)`]);
-                            setStatusMessage(data.message);
-                            setProgress(data.progress);
-                            // Allow UI to update
-                            await new Promise(r => setTimeout(r, 10));
-                        } else if (data.type === 'result') {
-                            setMessages(prev => [...prev, {
-                                id: Date.now().toString(),
-                                role: 'system',
-                                content: data.message
-                            }]);
-
-                            saveMessage('system', data.message);
-                            speakText(data.message);
-
-                            // Reset UI
-                            setProgress(100);
-                            setTimeout(() => {
+                    if (line.trim().startsWith('{')) {
+                        try {
+                            const data = JSON.parse(line);
+                            if (data.type === 'status') {
+                                setStatusMessage(data.message);
+                                setProgress(data.progress);
+                                await new Promise(r => setTimeout(r, 10)); // Allow UI to update
+                            } else if (data.type === 'result') {
+                                if (isFirstChunk) {
+                                    setMessages(prev => [...prev, {
+                                        id: Date.now().toString(),
+                                        role: 'system',
+                                        content: data.message
+                                    }]);
+                                    isFirstChunk = false;
+                                } else {
+                                    setMessages(prev => prev.map((msg, idx) => {
+                                        if (idx === prev.length - 1) {
+                                            return { ...msg, content: data.message }; // Replace for now, or append if streaming partials
+                                        }
+                                        return msg;
+                                    }));
+                                }
+                                accumulatedMessage = data.message;
+                            } else if (data.type === 'error') {
+                                addLog(`Stream Error: ${data.message}`);
+                                console.error("Stream Error:", data.message);
+                                setStatusMessage(`Error: ${data.message}`);
                                 setProgress(0);
-                                setStatusMessage('');
-                            }, 2000);
-                        } else if (data.type === 'debug') {
-                            setDebugLog(prev => [...prev, `[Server Debug] ${data.message}`]);
-                        } else if (data.type === 'error') {
-                            console.error("Stream Error:", data.message);
-                            setStatusMessage(`Error: ${data.message}`);
-                            setProgress(0);
+                            }
+                        } catch (e: any) {
+                            console.warn("Failed to parse chunk:", line);
                         }
-                    } catch (e: any) {
-                        console.warn("Failed to parse chunk:", line);
-                        setParseError(e.message);
                     }
                 }
             }
+            addLog('Stream finished.');
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('Chat error:', error);
             setIsTyping(false);
             setStatusMessage("Connection Failed");
-            setDebugLog(prev => [...prev, `[Error] ${error}`]);
+            addLog(`Exception: ${error.message}`);
+            setMessages(prev => [...prev, {
+                id: Date.now().toString(),
+                role: 'system',
+                content: "⚠️ Connection Error. Check Debug Console."
+            }]);
+        } finally {
+            setIsTyping(false);
+            setStatusMessage('');
+            setProgress(0);
         }
     };
 
@@ -341,7 +355,7 @@ export default function AssistantInterface() {
         if (e.key === 'Enter' && terminalInput.trim()) {
             const cmd = terminalInput.trim();
             setTerminalInput('');
-            setDebugLog(prev => [...prev, `[USER] $ ${cmd}`]);
+            addLog(`[USER] $ ${cmd}`);
 
             // Send to backend as 'dev_console' mode
             try {
@@ -377,17 +391,17 @@ export default function AssistantInterface() {
                         try {
                             const data = JSON.parse(line);
                             if (data.type === 'status') {
-                                setDebugLog(prev => [...prev, `[Status] ${data.message}`]);
+                                addLog(`[Status] ${data.message}`);
                             } else if (data.type === 'result') {
-                                setDebugLog(prev => [...prev, `[Result] ${data.message}`]);
+                                addLog(`[Result] ${data.message}`);
                             } else if (data.type === 'error') {
-                                setDebugLog(prev => [...prev, `[Error] ${data.message}`]);
+                                addLog(`[Error] ${data.message}`);
                             }
                         } catch (e) { }
                     }
                 }
             } catch (error: any) {
-                setDebugLog(prev => [...prev, `[Error] ${error.message}`]);
+                addLog(`[Error] ${error.message}`);
             }
         }
     };
@@ -507,7 +521,7 @@ export default function AssistantInterface() {
                             System initialized. Connected to local environment.<br />
                             Waiting for command...
                         </div>
-                        {debugLog.map((log, i) => (
+                        {debugLogs.map((log, i) => (
                             <div key={i} className={`break-words font-medium ${log.startsWith('[USER]') ? 'text-white' : 'text-emerald-400/90'}`}>
                                 {log.startsWith('[USER]') ? '' : <span className="text-emerald-700 mr-2">$</span>}
                                 {log.replace('[Chunk]', '').replace('[Status]', '').replace('[Result]', '').replace('[USER]', '')}
@@ -658,27 +672,22 @@ export default function AssistantInterface() {
                 </div>
             </div>
 
-            {/* Debug Panel Toggle */}
+
+            {/* Debug Console Toggle */}
             <button
                 onClick={() => setShowDebug(!showDebug)}
-                className="absolute bottom-2 right-2 z-50 text-[10px] text-slate-700 hover:text-slate-500"
+                className="fixed bottom-4 right-4 z-[10000] p-2 bg-slate-900/80 text-slate-500 text-xs rounded hover:text-white"
             >
-                {showDebug ? 'Hide Debug' : 'Show Debug'}
+                {showDebug ? 'Hide Debug' : 'Debug'}
             </button>
 
-            {/* Debug Panel */}
+            {/* Debug Console */}
             {showDebug && (
-                <div className="absolute bottom-16 right-6 z-40 w-80 bg-black/90 border border-slate-700 rounded-lg p-3 text-[10px] font-mono text-green-400 shadow-2xl max-h-60 overflow-y-auto">
-                    <div className="flex justify-between border-b border-slate-800 pb-1 mb-2">
-                        <span>Stream Debugger</span>
-                        <button onClick={() => setDebugLog([])} className="text-slate-500 hover:text-white">Clear</button>
-                    </div>
-                    <div className="space-y-1">
-                        {debugLog.map((log, i) => (
-                            <div key={i} className="break-words border-b border-slate-800/50 pb-0.5">{log}</div>
-                        ))}
-                        {debugLog.length === 0 && <div className="text-slate-600 italic">Waiting for connection...</div>}
-                    </div>
+                <div className="fixed bottom-14 right-4 z-[10000] w-80 bg-slate-950/95 border border-slate-800 rounded-lg p-4 shadow-2xl font-mono text-[10px] text-green-400 max-h-60 overflow-y-auto pointer-events-auto">
+                    <div className="font-bold border-b border-slate-800 mb-2 pb-1">SYSTEM LOGS</div>
+                    {debugLogs.map((log, i) => (
+                        <div key={i} className="mb-1 border-b border-slate-900/50 pb-0.5">{log}</div>
+                    ))}
                 </div>
             )}
         </div>
