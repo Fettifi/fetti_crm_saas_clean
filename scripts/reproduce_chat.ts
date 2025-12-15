@@ -8,7 +8,7 @@ async function testChat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             mode: 'co-founder',
-            history: [],
+            history: [{ role: 'user', content: 'Hello' }],
             message: 'Hello, are you there?'
         })
     });

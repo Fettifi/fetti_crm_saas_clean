@@ -345,7 +345,11 @@ async function* runChatLogic(req: NextRequest) {
         const { history, message, mode: requestMode, image, state, attachment } = body;
         if (requestMode) mode = requestMode;
 
-        const lastUserMessage = history[history.length - 1].content;
+        const lastUserMessage = history.length > 0 ? history[history.length - 1].content : message;
+
+        if (!lastUserMessage) {
+            throw new Error("No message content found in history or request body.");
+        }
 
         // 1. Initial Status (with padding for Safari buffering)
         yield createChunk('status', {
