@@ -340,8 +340,15 @@ function createChunk(type: string, data: any) {
 async function* runChatLogic(req: NextRequest) {
     let mode = 'co-founder';
 
+    yield createChunk('debug', { message: 'Route handler started. Reading body...' });
+
     try {
-        const body = await req.json();
+        const rawBody = await req.text();
+        yield createChunk('debug', { message: `Body read (${rawBody.length} bytes)` });
+
+        if (!rawBody) throw new Error("Empty request body");
+
+        const body = JSON.parse(rawBody);
         const { history, message, mode: requestMode, image, state, attachment } = body;
         if (requestMode) mode = requestMode;
 
