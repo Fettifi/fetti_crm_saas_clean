@@ -80,7 +80,7 @@ const TABS: { id: TabId; label: string; description: string }[] = [
     id: 'roadmap',
     label: 'Roadmap',
     description:
-      'The Master Plan. Oracle manages this vision board.',
+      'The Master Plan. Rupee manages this vision board.',
   },
 ];
 
@@ -262,7 +262,7 @@ export default function DashboardPage() {
               <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             </div>
             <div>
-              <p className="text-sm font-medium text-white">Oracle</p>
+              <p className="text-sm font-medium text-white">Rupee</p>
               <p className="text-xs text-emerald-400">Online & Ready</p>
             </div>
           </div>
