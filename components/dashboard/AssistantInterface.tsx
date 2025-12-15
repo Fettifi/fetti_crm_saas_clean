@@ -307,7 +307,7 @@ export default function AssistantInterface() {
                             } else if (data.type === 'debug') {
                                 addLog(`[Debug] ${data.message}`);
                             } else if (data.type === 'result') {
-                                addLog(`[Result] Message received (${data.message.length} chars)`);
+                                addLog(`[Result] "${data.message.substring(0, 50)}..."`);
                                 if (isFirstChunk) {
                                     setMessages(prev => [...prev, {
                                         id: Date.now().toString(),
