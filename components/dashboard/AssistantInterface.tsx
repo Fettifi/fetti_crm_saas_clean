@@ -16,7 +16,7 @@ export default function AssistantInterface() {
         {
             id: 'init',
             role: 'system',
-            content: "I'm Rupee, your Co-Founder. Let's build."
+            content: "I'm Oracle, your Co-Founder. Let's build."
         }
     ]);
     const [input, setInput] = useState('');
@@ -58,7 +58,7 @@ export default function AssistantInterface() {
             setVoices(available);
 
             // Try to restore from local storage or find best default
-            const saved = localStorage.getItem('rupee_voice');
+            const saved = localStorage.getItem('oracle_voice');
             if (saved) {
                 setSelectedVoice(saved);
             } else {
@@ -75,7 +75,7 @@ export default function AssistantInterface() {
         };
     }, []);
 
-    // Text-to-Speech (Rupee Voice)
+    // Text-to-Speech (Oracle Voice)
     const speakText = async (text: string, voiceOverride?: string) => {
         if (isMuted || typeof window === 'undefined') return;
 
@@ -187,7 +187,7 @@ export default function AssistantInterface() {
     // Load History on Mount
     useEffect(() => {
         const loadHistory = async () => {
-            const savedId = localStorage.getItem('rupee_conversation_id');
+            const savedId = localStorage.getItem('oracle_conversation_id');
             if (savedId) {
                 setConversationId(savedId);
                 const { data, error } = await supabase
@@ -213,7 +213,7 @@ export default function AssistantInterface() {
 
                 if (data) {
                     setConversationId(data.id);
-                    localStorage.setItem('rupee_conversation_id', data.id);
+                    localStorage.setItem('oracle_conversation_id', data.id);
                 }
             }
         };
@@ -425,7 +425,7 @@ export default function AssistantInterface() {
                             <div className="absolute inset-0 w-3 h-3 rounded-full bg-emerald-500 animate-ping opacity-20" />
                         </div>
                         <div className="flex flex-col">
-                            <span className="text-emerald-400 font-bold tracking-[0.2em] text-xs uppercase drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]">Rupee // Oracle</span>
+                            <span className="text-emerald-400 font-bold tracking-[0.2em] text-xs uppercase drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]">Oracle // Co-Founder</span>
                             <span className="text-[9px] text-emerald-500/40 font-mono tracking-widest">SYSTEM ONLINE</span>
                         </div>
                     </div>
@@ -445,8 +445,8 @@ export default function AssistantInterface() {
                             onChange={(e) => {
                                 const newVoice = e.target.value;
                                 setSelectedVoice(newVoice);
-                                localStorage.setItem('rupee_voice', newVoice);
-                                speakText("I'm Rupee.", newVoice);
+                                localStorage.setItem('oracle_voice', newVoice);
+                                speakText("I'm Oracle.", newVoice);
                             }}
                             className="bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500 max-w-[150px] truncate"
                         >
@@ -512,7 +512,7 @@ export default function AssistantInterface() {
                                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                                 <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping opacity-50" />
                             </div>
-                            <span className="text-emerald-400 font-bold tracking-widest text-[10px] uppercase">Rupee // Dev Core</span>
+                            <span className="text-emerald-400 font-bold tracking-widest text-[10px] uppercase">Oracle // Dev Core</span>
                         </div>
                         <button onClick={() => setShowTerminal(false)} className="text-emerald-700 hover:text-emerald-400 transition-colors">
                             <X size={14} />
@@ -660,7 +660,7 @@ export default function AssistantInterface() {
                             type="text"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
-                            placeholder="Ask Rupee anything..."
+                            placeholder="Ask Oracle anything..."
                             className="flex-1 bg-transparent border-none focus:ring-0 text-emerald-50 placeholder:text-emerald-700/50 px-2 font-light tracking-wide"
                             disabled={isTyping}
                         />

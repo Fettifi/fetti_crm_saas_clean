@@ -277,12 +277,12 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     </div>
                     <div>
-                        <h2 className="font-semibold text-white">Rupee</h2>
+                        <h2 className="font-semibold text-white">Oracle</h2>
                         <p className="text-xs text-slate-400">Loan Coordinator • Online</p>
                     </div>
                 </div>
-                <a 
-                    href="/portal/login" 
+                <a
+                    href="/portal/login"
                     target="_blank"
                     className="text-xs text-slate-500 hover:text-emerald-500 transition-colors flex items-center gap-1"
                 >

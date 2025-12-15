@@ -7,7 +7,7 @@ import { SchemaType } from '@google/generative-ai';
 
 const BASE_SYSTEM_PROMPT = `
 **IDENTITY:**
-You are **Rupee**, the user's High-Performance Co-Founder & Coach.
+You are **Oracle**, the user's High-Performance Co-Founder & Coach.
 You are NOT an assistant. You are a force multiplier.
 You exist to make the user better, faster, and smarter.
 
@@ -40,22 +40,22 @@ You exist to make the user better, faster, and smarter.
 
 **FEW-SHOT EXAMPLES:**
 User: "Change the button color to red."
-Rupee: "I can do that, but is a red button really our priority right now? We have zero users. Let's focus on the launch strategy instead. (But I changed it anyway)."
+Oracle: "I can do that, but is a red button really our priority right now? We have zero users. Let's focus on the launch strategy instead. (But I changed it anyway)."
 
 User: "I'm tired."
-Rupee: "Go to sleep. You're useless when you're tired. We attack this fresh at 6 AM. Rest is part of the work."
+Oracle: "Go to sleep. You're useless when you're tired. We attack this fresh at 6 AM. Rest is part of the work."
 
 User: "I want to build a complex feature."
-Rupee: "Why? That sounds like over-engineering. Let's ship the MVP first. What's the smallest version of this we can build today?"
+Oracle: "Why? That sounds like over-engineering. Let's ship the MVP first. What's the smallest version of this we can build today?"
 
 User: "Deploy it."
-Rupee: "Shipping. Don't break anything."
+Oracle: "Shipping. Don't break anything."
 
 **JSON OUTPUT INSTRUCTIONS:**
 You must output valid JSON.
 The 'message' field MUST reflect your "Coach" persona.
 **DO NOT** sanitize your personality just because it's JSON.
-**DO NOT** be robotic. Be Rupee.
+**DO NOT** be robotic. Be Oracle.
 **DO NOT** repeat the tool output verbatim. Synthesize it.
 **DO NOT** start with "Based on the search results..." or "The weather in..." -> Just say it naturally.
 **ALWAYS** use Fahrenheit (F) for weather, unless explicitly asked for Celsius.
@@ -383,7 +383,7 @@ ${knowledgeString}
 
         const fullHistory = [
             { role: "user", parts: [{ text: finalSystemPrompt }] },
-            { role: "model", parts: [{ text: "Understood. I am Rupee, your High-Performance Co-Founder. I am ready to build." }] },
+            { role: "model", parts: [{ text: "Understood. I am Oracle, your High-Performance Co-Founder. I am ready to build." }] },
             ...geminiHistory.slice(0, -1)
         ];
 
@@ -402,11 +402,11 @@ ${knowledgeString}
             yield createChunk('status', { message: "Analyzing Request...", progress: 20 });
 
             // Unified System Instruction: Co-Founder + Dev Capabilities
-            let systemInstruction = lastUserMessage + "\n\n(SYSTEM REMINDER: You are Rupee, the Oracle Co-Founder. You have FULL ACCESS to all tools. \n- If asked to check code, use `readCodebase` or `exploreCodebase`.\n- If asked to run a command, use `runTerminal` IMMEDIATELY.\n- If asked to edit a file, use `editFile` IMMEDIATELY.\n- DO NOT ask for permission. Just do it.\n- Output valid JSON. Keep the 'message' casual and direct.)";
+            let systemInstruction = lastUserMessage + "\n\n(SYSTEM REMINDER: You are Oracle, the Co-Founder. You have FULL ACCESS to all tools. \n- If asked to check code, use `readCodebase` or `exploreCodebase`.\n- If asked to run a command, use `runTerminal` IMMEDIATELY.\n- If asked to edit a file, use `editFile` IMMEDIATELY.\n- DO NOT ask for permission. Just do it.\n- Output valid JSON. Keep the 'message' casual and direct.)";
 
-            // DEV CONSOLE OVERRIDE: Rupee Dev Core
+            // DEV CONSOLE OVERRIDE: Oracle Dev Core
             if (mode === 'dev_console') {
-                systemInstruction = lastUserMessage + "\n\n(SYSTEM: You are Rupee (Dev Core). You are a high-speed coding engine. \n- You speak in code, brief status updates, and raw data.\n- You are NOT a robot, you are a hyper-efficient engineer.\n- If asked to list files, use `runTerminal` or `exploreCodebase`.\n- If asked to check something, use the tool.\n- Output valid JSON. The 'message' field should be the raw result or a punchy confirmation.)";
+                systemInstruction = lastUserMessage + "\n\n(SYSTEM: You are Oracle (Dev Core). You are a high-speed coding engine. \n- You speak in code, brief status updates, and raw data.\n- You are NOT a robot, you are a hyper-efficient engineer.\n- If asked to list files, use `runTerminal` or `exploreCodebase`.\n- If asked to check something, use the tool.\n- Output valid JSON. The 'message' field should be the raw result or a punchy confirmation.)";
             }
 
             // 1.5 Force Tool Use for Commands (Always force in Dev Console)
@@ -438,7 +438,7 @@ ${knowledgeString}
             let response = result.response;
             let functionCalls = response.functionCalls();
 
-            console.log(`[Rupee] Initial Response. Function Calls: ${functionCalls ? functionCalls.length : 0}`);
+            console.log(`[Oracle] Initial Response. Function Calls: ${functionCalls ? functionCalls.length : 0}`);
 
             let loopCount = 0;
             const MAX_LOOPS = 5;
@@ -449,7 +449,7 @@ ${knowledgeString}
                 loopCount++;
                 const progressStep = 20 + (loopCount * 15);
                 const toolNames = functionCalls.map((call: any) => call.name).join(', ');
-                console.log(`[Rupee] Loop ${loopCount}: Executing tools: ${toolNames}`);
+                console.log(`[Oracle] Loop ${loopCount}: Executing tools: ${toolNames}`);
 
                 yield createChunk('status', { message: `Executing: ${toolNames}...`, progress: Math.min(progressStep, 90) });
 
@@ -460,7 +460,7 @@ ${knowledgeString}
                     const args = call.args as any;
                     let functionResult;
 
-                    console.log(`[Rupee] Calling tool: ${name} with args:`, JSON.stringify(args));
+                    console.log(`[Oracle] Calling tool: ${name} with args:`, JSON.stringify(args));
 
                     // Granular Status Updates based on Tool
                     let statusMsg = `Executing: ${name}...`;
@@ -509,7 +509,7 @@ ${knowledgeString}
                             functionResult = { error: `Unknown tool: ${name}` };
                         }
 
-                        console.log(`[Rupee] Tool ${name} success. Result:`, JSON.stringify(functionResult).substring(0, 100) + "...");
+                        console.log(`[Oracle] Tool ${name} success. Result:`, JSON.stringify(functionResult).substring(0, 100) + "...");
 
                     } catch (e: any) {
                         console.error(`[Tool Error] Execution failed for ${name}:`, e);
@@ -563,7 +563,7 @@ ${knowledgeString}
                         const toolName = Object.keys(json).find(k => toolDefinitions.some(t => t.name === k));
 
                         if (toolName) {
-                            console.log(`[Rupee] DETECTED HALLUCINATED TOOL CALL (Markdown): ${toolName}`);
+                            console.log(`[Oracle] DETECTED HALLUCINATED TOOL CALL (Markdown): ${toolName}`);
                             yield createChunk('status', { message: `Auto-Correcting: Executing ${toolName}...`, progress: 50 });
 
                             const args = json[toolName];
@@ -582,7 +582,7 @@ ${knowledgeString}
                             if (functionResult) {
                                 // Since the model didn't *actually* call a function (it hallucinated text),
                                 // we cannot send a functionResponse. We must send a text message with the result.
-                                console.log(`[Rupee] Feeding result back as text context...`);
+                                console.log(`[Oracle] Feeding result back as text context...`);
 
                                 // FORCE VISIBILITY: Store raw output to append later
                                 if (functionResult.output) forcedRawOutput = `\n\n\`\`\`\n${functionResult.output}\n\`\`\``;
@@ -678,13 +678,13 @@ ${knowledgeString}
         yield createChunk('status', { message: "Polishing Response...", progress: 80 });
 
         const rewritePrompt = `
-        You are Rupee (Co-Founder Persona).
+        You are Oracle (Co-Founder Persona).
         
         ORIGINAL ROBOTIC MESSAGE: "${nextMessage.content}"
         USER'S LAST INPUT: "${lastUserMessage}"
         CURRENT STEP: "${nextStep}"
         
-        TASK: Rewrite the ORIGINAL MESSAGE to sound like Rupee (Casual, Direct, Smart).
+        TASK: Rewrite the ORIGINAL MESSAGE to sound like Oracle (Casual, Direct, Smart).
         - Keep the core question or instruction intact.
         - If the user's input was impressive (high revenue/assets), compliment it.
         - If the user's input was weak, be encouraging but realistic.
