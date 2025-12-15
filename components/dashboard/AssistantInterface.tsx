@@ -595,10 +595,12 @@ export default function AssistantInterface() {
             {/* Floating Antigravity Input Bar (Fixed Positioning - Nuclear Option) */}
             <div className="fixed bottom-10 left-0 right-0 z-[9999] flex justify-center pointer-events-none px-4">
                 <div className="w-full max-w-3xl pointer-events-auto bg-slate-950/80 backdrop-blur-xl border border-emerald-500/30 rounded-full p-2 flex items-center gap-3 shadow-[0_0_40px_rgba(16,185,129,0.15)] transition-all hover:scale-[1.01] hover:border-emerald-500/50 hover:shadow-[0_0_50px_rgba(16,185,129,0.25)] ring-1 ring-white/5">
-                    <VoiceInput onTranscript={(text) => {
-                        setInput(text);
-                        handleSendMessage(text);
-                    }} />
+                    <div className="relative z-10">
+                        <VoiceInput onTranscript={(text) => {
+                            setInput(text);
+                            handleSendMessage(text);
+                        }} />
+                    </div>
 
                     <input
                         type="file"
@@ -610,7 +612,7 @@ export default function AssistantInterface() {
 
                     <button
                         onClick={() => fileInputRef.current?.click()}
-                        className={`p-2 rounded-full transition-all duration-300 ${selectedImage ? 'text-emerald-400 bg-emerald-400/10 shadow-[0_0_15px_rgba(52,211,153,0.3)]' : 'text-slate-400 hover:text-emerald-300 hover:bg-slate-800'}`}
+                        className={`relative z-10 p-2 rounded-full transition-all duration-300 ${selectedImage ? 'text-emerald-400 bg-emerald-400/10 shadow-[0_0_15px_rgba(52,211,153,0.3)]' : 'text-slate-400 hover:text-emerald-300 hover:bg-slate-800'}`}
                     >
                         <Paperclip size={20} />
                     </button>
@@ -629,22 +631,30 @@ export default function AssistantInterface() {
                         </div>
                     )}
 
-                    <input
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(input)}
-                        placeholder="Ask Rupee anything..."
-                        className="flex-1 bg-transparent border-none focus:ring-0 text-emerald-50 placeholder:text-emerald-700/50 px-2 font-light tracking-wide"
-                    />
-
-                    <button
-                        onClick={() => handleSendMessage(input)}
-                        disabled={!input.trim()}
-                        className="p-3 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-white rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] active:scale-95"
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            if (input.trim() && !isTyping) handleSendMessage(input);
+                        }}
+                        className="flex-1 flex items-center gap-2"
                     >
-                        <Send size={18} />
-                    </button>
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            placeholder="Ask Rupee anything..."
+                            className="flex-1 bg-transparent border-none focus:ring-0 text-emerald-50 placeholder:text-emerald-700/50 px-2 font-light tracking-wide"
+                            disabled={isTyping}
+                        />
+
+                        <button
+                            type="submit"
+                            disabled={!input.trim() || isTyping}
+                            className="relative z-10 p-3 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-white rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] active:scale-95"
+                        >
+                            {isTyping ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                        </button>
+                    </form>
                 </div>
             </div>
 
