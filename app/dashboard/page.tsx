@@ -11,6 +11,7 @@ import ChatInterface from '@/components/apply/ChatInterface';
 import AutomationHub from '@/components/dashboard/AutomationHub';
 import RoadmapView from '@/components/dashboard/RoadmapView';
 import AssistantInterface from '@/components/dashboard/AssistantInterface';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 type TabId =
   | 'dashboard'
@@ -152,7 +153,9 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
   if (activeTab === 'training') {
     return (
       <div className="max-w-5xl mx-auto">
-        <AssistantInterface />
+        <ErrorBoundary>
+          <AssistantInterface />
+        </ErrorBoundary>
       </div>
     );
   }

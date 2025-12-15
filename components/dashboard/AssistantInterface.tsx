@@ -592,9 +592,9 @@ export default function AssistantInterface() {
 
 
 
-            {/* Floating Antigravity Input Bar (Fixed Positioning - Nuclear Option) */}
-            <div className="fixed bottom-10 left-0 right-0 z-[9999] flex justify-center pointer-events-none px-4">
-                <div className="w-full max-w-3xl pointer-events-auto bg-slate-950/90 backdrop-blur-2xl border border-emerald-500/50 rounded-full p-2 flex items-center gap-3 shadow-[0_0_50px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.01] hover:shadow-[0_0_80px_rgba(16,185,129,0.4)] ring-1 ring-white/10">
+            {/* Floating Antigravity Input Bar (Fixed Positioning - Nuclear Option - TOP DEBUG) */}
+            <div className="fixed top-32 left-0 right-0 z-[9999] flex justify-center pointer-events-none px-4">
+                <div className="w-full max-w-3xl pointer-events-auto bg-pink-500/90 backdrop-blur-2xl border border-white/50 rounded-full p-2 flex items-center gap-3 shadow-[0_0_50px_rgba(236,72,153,0.5)] transition-all hover:scale-[1.01] hover:shadow-[0_0_80px_rgba(236,72,153,0.6)] ring-1 ring-white/20">
                     {/* DEBUG: VoiceInput Disabled */}
                     {/* <VoiceInput onTranscript={(text) => {
                         setInput(text);
