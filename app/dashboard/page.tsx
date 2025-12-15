@@ -10,6 +10,7 @@ import ReferralStatsWidget from '@/components/dashboard/ReferralStatsWidget';
 import ChatInterface from '@/components/apply/ChatInterface';
 import AutomationHub from '@/components/dashboard/AutomationHub';
 import RoadmapView from '@/components/dashboard/RoadmapView';
+import TaskList from '@/components/dashboard/TaskList';
 import AssistantInterface from '@/components/dashboard/AssistantInterface';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
@@ -22,6 +23,7 @@ type TabId =
   | 'settings'
   | 'team'
   | 'training'
+  | 'task-list'
   | 'roadmap';
 
 const TABS: { id: TabId; label: string; description: string }[] = [
@@ -68,6 +70,11 @@ const TABS: { id: TabId; label: string; description: string }[] = [
     label: 'My Personal Assistant',
     description:
       'Your dedicated executive assistant. Teach her, ask her to research, or plan your day.',
+  },
+  {
+    id: 'task-list',
+    label: 'Task List',
+    description: 'Manage your daily tasks and to-dos.',
   },
   {
     id: 'roadmap',
@@ -147,6 +154,7 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
     team:
       'Workspace for Team. Matrix agents should add team rosters, permissions, and routing rules here.',
     training: '',
+    'task-list': '',
     roadmap: '',
   };
 
@@ -166,6 +174,10 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
         <AutomationHub />
       </div>
     );
+  }
+
+  if (activeTab === 'task-list') {
+    return <TaskList />;
   }
 
   if (activeTab === 'roadmap') {
