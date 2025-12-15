@@ -555,7 +555,7 @@ export default function AssistantInterface() {
                 </div>
 
                 {/* Chat Stream */}
-                <div className="flex-1 overflow-y-auto px-8 pb-4 space-y-6 max-h-[400px] scrollbar-thin scrollbar-thumb-slate-800">
+                <div className="flex-1 overflow-y-auto px-8 pb-32 space-y-6 max-h-[400px] scrollbar-thin scrollbar-thumb-slate-800">
                     {messages.map((msg) => (
                         <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-center'}`}>
                             <div className={`max-w-xl ${msg.role === 'user'
@@ -593,7 +593,7 @@ export default function AssistantInterface() {
 
 
             {/* Floating Antigravity Input Bar */}
-            <div className="absolute bottom-8 left-8 right-8 z-20">
+            <div className="absolute bottom-8 left-8 right-8 z-50 pointer-events-auto">
                 <div className="bg-slate-950/80 backdrop-blur-xl border border-emerald-500/30 rounded-full p-2 flex items-center gap-3 shadow-[0_0_40px_rgba(16,185,129,0.15)] transition-all hover:border-emerald-500/50 hover:shadow-[0_0_50px_rgba(16,185,129,0.25)] ring-1 ring-white/5">
                     <VoiceInput onTranscript={(text) => {
                         setInput(text);
