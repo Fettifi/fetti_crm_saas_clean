@@ -595,10 +595,12 @@ export default function AssistantInterface() {
             {/* Floating Antigravity Input Bar (Fixed Positioning - Nuclear Option) */}
             <div className="fixed bottom-10 left-0 right-0 z-[9999] flex justify-center pointer-events-none px-4">
                 <div className="w-full max-w-3xl pointer-events-auto bg-slate-950/90 backdrop-blur-2xl border border-emerald-500/50 rounded-full p-2 flex items-center gap-3 shadow-[0_0_50px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.01] hover:shadow-[0_0_80px_rgba(16,185,129,0.4)] ring-1 ring-white/10">
-                    <VoiceInput onTranscript={(text) => {
+                    {/* DEBUG: VoiceInput Disabled */}
+                    {/* <VoiceInput onTranscript={(text) => {
                         setInput(text);
                         handleSendMessage(text);
-                    }} />
+                    }} /> */}
+                    <div className="text-red-500 text-[10px] font-mono whitespace-nowrap">DEBUG: BAR RENDERED</div>
 
                     <input
                         type="file"
