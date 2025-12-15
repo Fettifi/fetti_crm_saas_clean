@@ -600,7 +600,12 @@ ${knowledgeString}
 
                 if (cleanFinalText.startsWith('{')) {
                     const json = JSON.parse(cleanFinalText);
-                    messageContent = json.message || cleanFinalText;
+                    if (json.message) {
+                        messageContent = json.message;
+                    } else {
+                        // If no 'message' field, return the whole JSON as a code block
+                        messageContent = "```json\n" + JSON.stringify(json, null, 2) + "\n```";
+                    }
                 }
             } catch (e) {
                 // content is already string

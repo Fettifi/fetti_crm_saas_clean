@@ -277,7 +277,7 @@ export default function AssistantInterface() {
                 const { value, done: doneReading } = await reader.read();
                 done = doneReading;
                 const chunkValue = decoder.decode(value, { stream: true });
-                setDebugLog(prev => [...prev, `[Chunk] ${chunkValue.substring(0, 50)}...`]);
+                // setDebugLog(prev => [...prev, `[Chunk] ${chunkValue.substring(0, 50)}...`]); // Too noisy
 
                 buffer += chunkValue;
                 const lines = buffer.split('\n');
