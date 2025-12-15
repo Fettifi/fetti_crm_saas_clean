@@ -408,7 +408,7 @@ export default function AssistantInterface() {
                         </div>
                         <div className="flex flex-col">
                             <span className="text-emerald-400 font-bold tracking-[0.2em] text-xs uppercase drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]">Rupee // Oracle</span>
-                            <span className="text-[9px] text-emerald-500/40 font-mono tracking-widest">SYSTEM ONLINE</span>
+                            <span className="text-[9px] text-emerald-500/40 font-mono tracking-widest">SYSTEM ONLINE (v2.0)</span>
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -592,9 +592,9 @@ export default function AssistantInterface() {
 
 
 
-            {/* Floating Antigravity Input Bar */}
-            <div className="absolute bottom-8 left-8 right-8 z-50 pointer-events-auto border-2 border-red-500">
-                <div className="bg-slate-950/80 backdrop-blur-xl border border-emerald-500/30 rounded-full p-2 flex items-center gap-3 shadow-[0_0_40px_rgba(16,185,129,0.15)] transition-all hover:border-emerald-500/50 hover:shadow-[0_0_50px_rgba(16,185,129,0.25)] ring-1 ring-white/5">
+            {/* Floating Antigravity Input Bar (Fixed Positioning - Nuclear Option) */}
+            <div className="fixed bottom-10 left-0 right-0 z-[9999] flex justify-center pointer-events-none px-4">
+                <div className="w-full max-w-3xl pointer-events-auto bg-slate-950/90 backdrop-blur-2xl border border-emerald-500/50 rounded-full p-2 flex items-center gap-3 shadow-[0_0_50px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.01] hover:shadow-[0_0_80px_rgba(16,185,129,0.4)] ring-1 ring-white/10">
                     <VoiceInput onTranscript={(text) => {
                         setInput(text);
                         handleSendMessage(text);
