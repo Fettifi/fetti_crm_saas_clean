@@ -416,7 +416,7 @@ ${knowledgeString}
 
             // Create a timeout promise
             const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Gemini API Timeout")), 8000)
+                setTimeout(() => reject(new Error("Gemini API Timeout")), 60000)
             );
 
             let result: any = await Promise.race([
@@ -521,7 +521,7 @@ ${knowledgeString}
                 yield createChunk('status', { message: "Synthesizing Answer...", progress: Math.min(progressStep + 10, 95) });
 
                 const loopTimeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Gemini API Timeout (Loop)")), 8000)
+                    setTimeout(() => reject(new Error("Gemini API Timeout (Loop)")), 60000)
                 );
 
                 result = await Promise.race([
