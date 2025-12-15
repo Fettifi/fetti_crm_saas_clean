@@ -280,9 +280,6 @@ export default function DashboardPage() {
       <main className="flex flex-1 flex-col">
         {/* Top header */}
         <header className="border-b border-slate-800 px-6 py-4 md:px-10">
-          <div className="bg-red-500/20 border border-red-500 text-red-200 text-xs p-2 mb-4 rounded text-center font-mono">
-            DEBUG: DASHBOARD LOADED v3.0 (Check "My Personal Assistant" Tab)
-          </div>
           <div className="mx-auto max-w-6xl">
             <h1 className="text-xl font-semibold text-slate-50 md:text-2xl">
               {active.label}

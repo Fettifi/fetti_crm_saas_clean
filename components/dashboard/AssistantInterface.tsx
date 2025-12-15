@@ -408,7 +408,7 @@ export default function AssistantInterface() {
                         </div>
                         <div className="flex flex-col">
                             <span className="text-emerald-400 font-bold tracking-[0.2em] text-xs uppercase drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]">Rupee // Oracle</span>
-                            <span className="text-[9px] text-emerald-500/40 font-mono tracking-widest">SYSTEM ONLINE (v2.0)</span>
+                            <span className="text-[9px] text-emerald-500/40 font-mono tracking-widest">SYSTEM ONLINE</span>
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -592,15 +592,13 @@ export default function AssistantInterface() {
 
 
 
-            {/* Floating Antigravity Input Bar (Fixed Positioning - Nuclear Option - TOP DEBUG) */}
-            <div className="fixed top-32 left-0 right-0 z-[9999] flex justify-center pointer-events-none px-4">
-                <div className="w-full max-w-3xl pointer-events-auto bg-pink-500/90 backdrop-blur-2xl border border-white/50 rounded-full p-2 flex items-center gap-3 shadow-[0_0_50px_rgba(236,72,153,0.5)] transition-all hover:scale-[1.01] hover:shadow-[0_0_80px_rgba(236,72,153,0.6)] ring-1 ring-white/20">
-                    {/* DEBUG: VoiceInput Disabled */}
-                    {/* <VoiceInput onTranscript={(text) => {
+            {/* Floating Antigravity Input Bar (Fixed Positioning - Nuclear Option) */}
+            <div className="fixed bottom-10 left-0 right-0 z-[9999] flex justify-center pointer-events-none px-4">
+                <div className="w-full max-w-3xl pointer-events-auto bg-slate-950/80 backdrop-blur-xl border border-emerald-500/30 rounded-full p-2 flex items-center gap-3 shadow-[0_0_40px_rgba(16,185,129,0.15)] transition-all hover:scale-[1.01] hover:border-emerald-500/50 hover:shadow-[0_0_50px_rgba(16,185,129,0.25)] ring-1 ring-white/5">
+                    <VoiceInput onTranscript={(text) => {
                         setInput(text);
                         handleSendMessage(text);
-                    }} /> */}
-                    <div className="text-red-500 text-[10px] font-mono whitespace-nowrap">DEBUG: BAR RENDERED</div>
+                    }} />
 
                     <input
                         type="file"
