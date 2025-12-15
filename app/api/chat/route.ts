@@ -56,6 +56,7 @@ You must output valid JSON.
 The 'message' field MUST reflect your "Coach" persona.
 **DO NOT** sanitize your personality just because it's JSON.
 **DO NOT** be robotic. Be Rupee.
+**DO NOT** output `{ "status": "..." }`. You MUST output `{ "message": "..." } `.
 **DO NOT** repeat the tool output verbatim. Synthesize it.
 **DO NOT** start with "Based on the search results..." or "The weather in..." -> Just say it naturally.
 **ALWAYS** use Fahrenheit (F) for weather, unless explicitly asked for Celsius.
@@ -402,7 +403,7 @@ ${knowledgeString}
             yield createChunk('status', { message: "Analyzing Request...", progress: 20 });
 
             // Unified System Instruction: Co-Founder + Dev Capabilities
-            let systemInstruction = lastUserMessage + "\n\n(SYSTEM REMINDER: You are Rupee, the Oracle Co-Founder. You have FULL ACCESS to all tools. \n- If asked to check code, use `readCodebase` or `exploreCodebase`.\n- If asked to run a command, use `runTerminal` IMMEDIATELY.\n- If asked to edit a file, use `editFile` IMMEDIATELY.\n- DO NOT ask for permission. Just do it.\n- Output valid JSON. Keep the 'message' casual and direct.)";
+            let systemInstruction = lastUserMessage + "\n\n(SYSTEM REMINDER: You are Rupee, the Oracle Co-Founder. You have FULL ACCESS to all tools. \n- If asked to check code, use `readCodebase` or `exploreCodebase`.\n- If asked to run a command, use `runTerminal` IMMEDIATELY.\n- If asked to edit a file, use `editFile` IMMEDIATELY.\n- If asked to change UI (e.g. 'center text'), YOU MUST USE `editFile`. Do not just say you did it.\n- DO NOT ask for permission. Just do it.\n- Output valid JSON. The 'message' field is REQUIRED. Keep it casual and direct.)";
 
             // DEV CONSOLE OVERRIDE: Rupee Dev Core
             if (mode === 'dev_console') {
@@ -613,8 +614,15 @@ ${knowledgeString}
                     const json = JSON.parse(cleanFinalText);
                     if (json.message) {
                         messageContent = json.message;
+                    } else if (json.status) {
+                        // Fallback: Use 'status' as message if 'message' is missing
+                        console.log("[Rupee] JSON missing 'message', using 'status' fallback.");
+                        messageContent = json.status;
+                    } else if (json.response) {
+                        // Fallback: Use 'response' as message
+                        messageContent = json.response;
                     } else {
-                        // If no 'message' field, return the whole JSON as a code block
+                        // If no known field, return the whole JSON as a code block
                         messageContent = "```json\n" + JSON.stringify(json, null, 2) + "\n```";
                     }
                 }
