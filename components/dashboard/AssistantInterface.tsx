@@ -300,10 +300,14 @@ export default function AssistantInterface() {
                         try {
                             const data = JSON.parse(line);
                             if (data.type === 'status') {
+                                addLog(`[Status] ${data.message}`);
                                 setStatusMessage(data.message);
                                 setProgress(data.progress);
                                 await new Promise(r => setTimeout(r, 10)); // Allow UI to update
+                            } else if (data.type === 'debug') {
+                                addLog(`[Debug] ${data.message}`);
                             } else if (data.type === 'result') {
+                                addLog(`[Result] Message received (${data.message.length} chars)`);
                                 if (isFirstChunk) {
                                     setMessages(prev => [...prev, {
                                         id: Date.now().toString(),
@@ -321,7 +325,7 @@ export default function AssistantInterface() {
                                 }
                                 accumulatedMessage = data.message;
                             } else if (data.type === 'error') {
-                                addLog(`Stream Error: ${data.message}`);
+                                addLog(`[Error] ${data.message}`);
                                 console.error("Stream Error:", data.message);
                                 setStatusMessage(`Error: ${data.message}`);
                                 setProgress(0);
