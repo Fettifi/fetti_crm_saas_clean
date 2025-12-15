@@ -393,7 +393,7 @@ export default function AssistantInterface() {
     };
 
     return (
-        <div className="flex flex-col h-[700px] w-full max-w-4xl mx-auto bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl relative">
+        <div className="flex flex-col h-[calc(100vh-120px)] min-h-[500px] w-full max-w-4xl mx-auto bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl relative">
             {/* Background Effects */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-emerald-900/20 via-slate-950 to-slate-950 pointer-events-none rounded-3xl" />
 
@@ -593,7 +593,7 @@ export default function AssistantInterface() {
 
 
             {/* Floating Antigravity Input Bar */}
-            <div className="absolute bottom-8 left-8 right-8 z-50 pointer-events-auto">
+            <div className="absolute bottom-8 left-8 right-8 z-50 pointer-events-auto border-2 border-red-500">
                 <div className="bg-slate-950/80 backdrop-blur-xl border border-emerald-500/30 rounded-full p-2 flex items-center gap-3 shadow-[0_0_40px_rgba(16,185,129,0.15)] transition-all hover:border-emerald-500/50 hover:shadow-[0_0_50px_rgba(16,185,129,0.25)] ring-1 ring-white/5">
                     <VoiceInput onTranscript={(text) => {
                         setInput(text);
