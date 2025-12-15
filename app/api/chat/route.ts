@@ -411,7 +411,7 @@ ${knowledgeString}
 
             // 1.5 Force Tool Use for Commands (Always force in Dev Console)
             if (mode === 'dev_console' || lastUserMessage.toLowerCase().match(/^(run|exec|list|edit|check|search|find|show|add|create|make|update|delete|remove|install)/)) {
-                systemInstruction += "\n\n(USER REQUESTED ACTION. YOU MUST USE A TOOL. DO NOT JUST TALK. EXECUTE.)";
+                systemInstruction += "\n\n(USER REQUESTED ACTION. YOU MUST USE A TOOL. DO NOT JUST TALK. EXECUTE. \nCRITICAL: If you use a tool, DO NOT output a JSON message. The system will handle the output. JUST CALL THE FUNCTION.)";
             }
 
             // 2. Consult Brain
