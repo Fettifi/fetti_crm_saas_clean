@@ -139,6 +139,7 @@ export default function AssistantInterface() {
             } catch (e: any) {
                 console.warn('Neural TTS failed, falling back to browser voice.', e);
                 setDebugStatus(`Error: ${e.message}. Fallback.`);
+                addLog(`[TTS Error] ${e.message}`); // Log to debug console
                 // Fallback to browser voice if API fails (e.g. no key)
             }
         } else {

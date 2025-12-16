@@ -8,29 +8,17 @@ const ELEVENLABS_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel
 const OPENAI_VOICE_ID = 'shimmer'; // Female, clear
 
 export async function streamAudio(text: string, voiceId: string = ELEVENLABS_VOICE_ID): Promise<ArrayBuffer | null> {
-    // User-provided keys (Hardcoded for immediate fix)
-    const HARDCODED_KEY = 'sk_34414a3f6cf40fd7582612bab354b47b96d438643dfa45c7'; // Verified Valid
+    // Keys
+    const ENV_ELEVENLABS_KEY = process.env.ELEVENLABS_API_KEY;
     const ENV_OPENAI_KEY = process.env.OPENAI_API_KEY;
+    const HARDCODED_KEY = 'sk_34414a3f6cf40fd7582612bab354b47b96d438643dfa45c7'; // Backup (OpenAI)
 
     // Helper to determine if a string is an OpenAI voice
     const isOpenAIVoice = (id: string) => ['shimmer', 'alloy', 'echo', 'fable', 'onyx', 'nova'].includes(id);
 
-    // 1. Determine Primary Intent
-    const intentIsOpenAI = isOpenAIVoice(voiceId);
-
-    // 2. Select Key (Prioritize Hardcoded if it matches intent, otherwise try to be smart)
-    let apiKey = HARDCODED_KEY;
-
-    if (!apiKey) {
-        console.warn('TTS API Key is missing.');
-        return null;
-    }
-
-    // 3. Define the Runners
+    // Runners
     const runOpenAI = async (key: string, vId: string) => {
-        // Auto-correct typo
         if (key.startsWith('sk_')) key = key.replace('sk_', 'sk-');
-
         const response = await fetch(OPENAI_API_URL, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
@@ -50,28 +38,39 @@ export async function streamAudio(text: string, voiceId: string = ELEVENLABS_VOI
         return await response.arrayBuffer();
     };
 
-    // 4. Execution Strategy: Try Primary -> Catch -> Try Secondary
-    try {
-        if (intentIsOpenAI) {
-            return await runOpenAI(apiKey, voiceId);
-        } else {
-            return await runElevenLabs(apiKey, voiceId);
+    // Strategy 1: Explicit Intent (If user asks for OpenAI voice, try OpenAI first)
+    if (isOpenAIVoice(voiceId)) {
+        if (ENV_OPENAI_KEY) {
+            try { return await runOpenAI(ENV_OPENAI_KEY, voiceId); } catch (e) { console.warn('OpenAI Env Key failed', e); }
         }
-    } catch (primaryError) {
-        console.warn('Primary TTS failed. Attempting Cross-Provider Fallback...', primaryError);
+        // Fallback to hardcoded
+        try { return await runOpenAI(HARDCODED_KEY, voiceId); } catch (e) { console.warn('OpenAI Hardcoded Key failed', e); }
+    }
 
+    // Strategy 2: Default / ElevenLabs Intent
+    // Try ElevenLabs Env Key first
+    if (ENV_ELEVENLABS_KEY) {
         try {
-            // If Primary was OpenAI, try ElevenLabs with the same key
-            if (intentIsOpenAI) {
-                return await runElevenLabs(apiKey, voiceId);
-            }
-            // If Primary was ElevenLabs, try OpenAI with the same key
-            else {
-                return await runOpenAI(apiKey, voiceId);
-            }
-        } catch (secondaryError) {
-            console.error('All TTS attempts failed.', secondaryError);
-            return null;
+            return await runElevenLabs(ENV_ELEVENLABS_KEY, voiceId);
+        } catch (e) {
+            console.warn('ElevenLabs Env Key failed', e);
         }
+    }
+
+    // Fallback: Try OpenAI (Env)
+    if (ENV_OPENAI_KEY) {
+        try {
+            return await runOpenAI(ENV_OPENAI_KEY, voiceId);
+        } catch (e) {
+            console.warn('OpenAI Fallback (Env) failed', e);
+        }
+    }
+
+    // Final Fallback: Try OpenAI (Hardcoded)
+    try {
+        return await runOpenAI(HARDCODED_KEY, voiceId);
+    } catch (e) {
+        console.error('All TTS attempts failed.', e);
+        return null;
     }
 }
