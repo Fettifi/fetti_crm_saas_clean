@@ -270,7 +270,7 @@ export async function getWeather(city: string): Promise<any> {
         };
     } catch (error: any) {
         console.error("Weather API Error:", error);
-        return { error: "Failed to fetch weather data." };
+        return { error: `Failed to fetch weather data: ${error.message}` };
     }
 }
 
@@ -667,16 +667,16 @@ export async function runSQL(query: string): Promise<any> {
         };
     }
 
+    let client;
     try {
         const { Client } = await import('pg');
-        const client = new Client({
+        client = new Client({
             connectionString: process.env.DATABASE_URL,
             ssl: { rejectUnauthorized: false } // Required for Supabase/Vercel
         });
 
         await client.connect();
         const res = await client.query(query);
-        await client.end();
 
         return {
             status: "SUCCESS",
@@ -684,10 +684,19 @@ export async function runSQL(query: string): Promise<any> {
             rows: res.rows
         };
     } catch (error: any) {
+        console.error("SQL Execution Failed:", error);
         return {
             status: "FAILURE",
             query: query,
             error: error.message
         };
+    } finally {
+        if (client) {
+            try {
+                await client.end();
+            } catch (e) {
+                console.warn("Failed to close DB connection:", e);
+            }
+        }
     }
 }

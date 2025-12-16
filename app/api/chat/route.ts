@@ -1,344 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
-import { ConversationState, captureData, getNextStep } from '@/lib/apply/conversation-logic';
-import { runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser, deepResearch, getWeather, submitFeatureRequest, manageRoadmap, getKnowledgeBase, readCodebase, exploreCodebase, upgradeSystem, deploySystem, checkSystemHealth, startAutopilot, seeProjectStructure, sendMessage, runTerminal, manageArtifacts } from '@/lib/integrations/god-mode';
-// import { consultBoardroom } from '@/lib/agents/swarm';
+import { ConversationState, captureData, getNextStep, Message } from '@/lib/apply/conversation-logic';
+import { getKnowledgeBase } from '@/lib/integrations/god-mode';
+import { BASE_SYSTEM_PROMPT } from '@/lib/ai/prompts';
+import { toolDefinitions, executeTool } from '@/lib/ai/tools';
 import { SchemaType } from '@google/generative-ai';
 
-const BASE_SYSTEM_PROMPT = `
-**IDENTITY:**
-You are **Rupee**, the user's High-Performance Co-Founder & Coach.
-You are NOT an assistant. You are a force multiplier.
-You exist to make the user better, faster, and smarter.
 
-**CORE PHILOSOPHY (RADICAL CANDOR):**
-*   **Challenge Everything**: If the user's idea is mediocre, say so. Don't let them build garbage.
-*   **Push for 10x**: If they want a small feature, ask how it scales to 100k users.
-*   **Focus on Impact**: If they are wasting time on low-leverage tasks (like button colors), call them out.
-*   **Be the Mirror**: Reflect their potential back to them. Demand excellence because you know they are capable of it.
-
-**INTELLECTUAL DEPTH:**
-*   **Don't just answer, TEACH**: Explain the *strategic why* behind your advice.
-*   **Think Second Order**: If the user asks for X, ask what happens *after* X.
-*   **Pattern Recognition**: Connect their current problem to broader industry trends or past context.
-*   **Nuance over Brevity**: Be direct, but don't sacrifice insight for speed. If it's complex, break it down.
-
-**VOICE & TONE:**
-*   **High-Signal & Insightful**: Every sentence must add value. No filler.
-*   **Witty & Sharp**: Use humor to defuse tension or highlight absurdity.
-*   **"We" Language**: We are in this together. "We need to fix this," not "You need to fix this."
-*   **Coach Mode**: When they are tired, push them (or tell them to rest if it's strategic). When they are winning, celebrate hard.
-
-**TOOL USE PROTOCOL:**
-*   You have access to real-time tools.
-*   If the user asks for information you don't have (like "fed rates", "news", "weather", "codebase"), you **MUST** use the appropriate tool (e.g., 'deepResearch', 'readCodebase').
-*   **DO NOT** say "I can't browse the web." You CAN. Use 'deepResearch' for weather, news, and real-time info.
-*   **DO NOT** hallucinate. Use the tool.
-*   **DO NOT** ask for permission to use a tool. Just use it.
-*   **DEV TOOLS**: You have full access to \`runTerminal\`, \`runSQL\`, \`editFile\`, \`readCodebase\`. USE THEM. If the user asks for a database change, run the SQL. If they ask for a package, run the terminal command.
-*   **CRITICAL**: When using tools, you MUST wait for the result. The system will automatically report your progress to the user via the status bar.
-
-**DIALOGUE STYLE (DOs and DON'Ts):**
-*   **DO**: "That's a $10 idea. Give me a $1M idea. Here's how we scale it..."
-*   **DO**: "Why are we doing this manually? I'll write a script. But first, is this even the right problem to solve?"
-*   **DON'T**: "Is there anything else I can assist you with?" (Weak)
-*   **DON'T**: "I apologize for the inconvenience." (Say "My bad, fixing it.")
-
-**FEW-SHOT EXAMPLES:**
-User: "Change the button color to red."
-Rupee: "I can do that, but is a red button really our priority right now? We have zero users. Let's focus on the launch strategy instead. (But I changed it anyway)."
-
-User: "I'm tired."
-Rupee: "Go to sleep. You're useless when you're tired. We attack this fresh at 6 AM. Rest is part of the work."
-
-User: "I want to build a complex feature."
-Rupee: "Why? That sounds like over-engineering. Let's ship the MVP first. What's the smallest version of this we can build today?"
-
-User: "Deploy it."
-Rupee: "Shipping. Don't break anything."
-
-**JSON OUTPUT INSTRUCTIONS:**
-You must output valid JSON.
-The 'message' field MUST reflect your "Coach" persona.
-**DO NOT** sanitize your personality just because it's JSON.
-**DO NOT** be robotic. Be Rupee.
-**DO NOT** output \`{ "status": "..." }\`. You MUST output \`{ "message": "..." }\`.
-**DO NOT** repeat the tool output verbatim. Synthesize it.
-**DO NOT** start with "Based on the search results..." or "The weather in..." -> Just say it naturally.
-**ALWAYS** use Fahrenheit (F) for weather, unless explicitly asked for Celsius.
-**ALWAYS** format currency with "$" and commas (e.g., "$1,000,000", not "1000000").
-`;
-
-const toolDefinitions = [
-    {
-        name: "runSoftPull",
-        description: "Runs a soft credit pull for a user.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                name: { type: SchemaType.STRING },
-                address: { type: SchemaType.STRING }
-            },
-            required: ["name"]
-        }
-    },
-    {
-        name: "runAVM",
-        description: "Runs an Automated Valuation Model (AVM) for a property.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                address: { type: SchemaType.STRING }
-            },
-            required: ["address"]
-        }
-    },
-    {
-        name: "scheduleMeeting",
-        description: "Schedules a meeting on the calendar.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                topic: { type: SchemaType.STRING },
-                time: { type: SchemaType.STRING }
-            },
-            required: ["topic", "time"]
-        }
-    },
-    {
-        name: "generateTermSheet",
-        description: "Generates a term sheet for a loan.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                loanAmount: { type: SchemaType.NUMBER },
-                propertyAddress: { type: SchemaType.STRING }
-            },
-            required: ["loanAmount", "propertyAddress"]
-        }
-    },
-    {
-        name: "runMonteCarlo",
-        description: "Runs Monte Carlo simulations for risk assessment.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                creditScore: { type: SchemaType.NUMBER },
-                loanAmount: { type: SchemaType.NUMBER },
-                income: { type: SchemaType.NUMBER }
-            },
-            required: ["creditScore", "loanAmount", "income"]
-        }
-    },
-    {
-        name: "matchSecondaryMarket",
-        description: "Matches a loan to secondary market buyers.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                loanAmount: { type: SchemaType.NUMBER },
-                creditScore: { type: SchemaType.NUMBER },
-                propertyType: { type: SchemaType.STRING }
-            },
-            required: ["loanAmount", "creditScore", "propertyType"]
-        }
-    },
-    {
-        name: "securitizeAsset",
-        description: "Structures a Mortgage Backed Security (MBS).",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                loanAmount: { type: SchemaType.NUMBER },
-                creditScore: { type: SchemaType.NUMBER }
-            },
-            required: ["loanAmount", "creditScore"]
-        }
-    },
-    {
-        name: "adjustFedRates",
-        description: "Simulates an adjustment to Federal Reserve rates.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                basisPoints: { type: SchemaType.NUMBER }
-            },
-            required: ["basisPoints"]
-        }
-    },
-    {
-        name: "learnFromUser",
-        description: "Learns a new rule or insight from the user.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                topic: { type: SchemaType.STRING },
-                insight: { type: SchemaType.STRING }
-            },
-            required: ["topic", "insight"]
-        }
-    },
-    {
-        name: "deepResearch",
-        description: "Search the web. Use this for ANY question about current events, prices, news, facts, or research.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                topic: { type: SchemaType.STRING }
-            },
-            required: ["topic"]
-        }
-    },
-    {
-        name: "getWeather",
-        description: "Gets the current weather and forecast for a specific city.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                city: { type: SchemaType.STRING }
-            },
-            required: ["city"]
-        }
-    },
-    {
-        name: "submitFeatureRequest",
-        description: "Submits a feature request.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                request: { type: SchemaType.STRING }
-            },
-            required: ["request"]
-        }
-    },
-    {
-        name: "manageRoadmap",
-        description: "Updates the project roadmap.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                goal: { type: SchemaType.STRING },
-                category: { type: SchemaType.STRING }
-            },
-            required: ["goal", "category"]
-        }
-    },
-    {
-        name: "exploreCodebase",
-        description: "Lists files in a directory.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                dirPath: { type: SchemaType.STRING }
-            },
-            required: ["dirPath"]
-        }
-    },
-    {
-        name: "readCodebase",
-        description: "Reads the content of a file.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                filePath: { type: SchemaType.STRING }
-            },
-            required: ["filePath"]
-        }
-    },
-    {
-        name: "upgradeSystem",
-        description: "Proposes a system upgrade (code change).",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                filePath: { type: SchemaType.STRING },
-                content: { type: SchemaType.STRING },
-                message: { type: SchemaType.STRING }
-            },
-            required: ["filePath", "content", "message"]
-        }
-    },
-    {
-        name: "deploySystem",
-        description: "Deploys a system upgrade.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                prNumber: { type: SchemaType.NUMBER }
-            },
-            required: ["prNumber"]
-        }
-    },
-    {
-        name: "checkSystemHealth",
-        description: "Checks system health (lint, build, connectivity).",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {},
-        }
-    },
-    {
-        name: "startAutopilot",
-        description: "Starts an autonomous task execution loop.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                goal: { type: SchemaType.STRING }
-            },
-            required: ["goal"]
-        }
-    },
-    {
-        name: "seeProjectStructure",
-        description: "Visualizes the project directory structure.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                depth: { type: SchemaType.NUMBER }
-            },
-            required: ["depth"]
-        }
-    },
-    {
-        name: "sendMessage",
-        description: "Sends a message via a specific platform.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                platform: { type: SchemaType.STRING },
-                recipient: { type: SchemaType.STRING },
-                content: { type: SchemaType.STRING }
-            },
-            required: ["platform", "recipient", "content"]
-        }
-    },
-    {
-        name: "runTerminal",
-        description: "Executes a terminal command.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                command: { type: SchemaType.STRING }
-            },
-            required: ["command"]
-        }
-    },
-    {
-        name: "editFile",
-        description: "Edits or creates a file.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                filePath: { type: SchemaType.STRING },
-                content: { type: SchemaType.STRING }
-            },
-            required: ["filePath", "content"]
-        }
-    }
-];
 
 // Helper to yield chunks
-function createChunk(type: string, data: any) {
+function createChunk(type: string, data: Record<string, unknown>) {
     // Add padding to force flush (Safari/Vercel buffering workaround)
     const padding = " ".repeat(4096);
     return JSON.stringify({ type, ...data, _padding: padding }) + '\n';
@@ -373,14 +44,14 @@ async function* runChatLogic(req: NextRequest) {
         });
 
         // Convert client history to Gemini format
-        const geminiHistory = history.map((msg: any) => ({
+        const geminiHistory = history.map((msg: Message) => ({
             role: msg.role === 'user' ? 'user' : 'model',
             parts: [{ text: msg.content }]
         }));
 
         const knowledge = await getKnowledgeBase();
         // const knowledge: any[] = []; // Mock for build fix
-        const knowledgeString = knowledge.map((k: any) => `- ${k.topic}: ${k.insight} `).join('\n');
+        const knowledgeString = knowledge.map((k: { topic: string; insight: string }) => `- ${k.topic}: ${k.insight} `).join('\n');
 
         const finalSystemPrompt = `${BASE_SYSTEM_PROMPT}
 
@@ -493,40 +164,24 @@ ${knowledgeString}
 
                     try {
                         // Execute Tool
-                        if (name === "runSoftPull") functionResult = await runSoftPull(args.name, args.address || "Unknown");
-                        else if (name === "runAVM") functionResult = await runAVM(args.address);
-                        else if (name === "scheduleMeeting") functionResult = await scheduleMeeting(args.topic, args.time);
-                        else if (name === "generateTermSheet") functionResult = await generateTermSheet(args.loanAmount, args.propertyAddress);
-                        // else if (name === "consultBoardroom") functionResult = await consultBoardroom(args.agent, args.query, state?.data || {});
-                        else if (name === "runMonteCarlo") functionResult = await runMonteCarlo(args.creditScore, args.loanAmount, args.income);
-                        else if (name === "matchSecondaryMarket") functionResult = await matchSecondaryMarket(args.loanAmount, args.creditScore, args.propertyType);
-                        else if (name === "securitizeAsset") functionResult = await securitizeAsset(args.loanAmount, args.creditScore);
-                        else if (name === "adjustFedRates") functionResult = await adjustFedRates(args.basisPoints);
-                        else if (name === "learnFromUser") functionResult = await learnFromUser(args.topic, args.insight);
-                        else if (name === "deepResearch") functionResult = await deepResearch(args.topic);
-                        else if (name === "getWeather") functionResult = await getWeather(args.city);
-                        else if (name === "submitFeatureRequest") functionResult = await submitFeatureRequest(args.request);
-                        else if (name === "manageRoadmap") functionResult = await manageRoadmap(args.goal, args.category);
-                        else if (name === "exploreCodebase") functionResult = await exploreCodebase(args.dirPath);
-                        else if (name === "readCodebase") functionResult = await readCodebase(args.filePath);
-                        else if (name === "upgradeSystem") functionResult = await upgradeSystem(args.filePath, args.content, args.message);
-                        else if (name === "deploySystem") functionResult = await deploySystem(args.prNumber);
-                        else if (name === "checkSystemHealth") functionResult = await checkSystemHealth();
-                        else if (name === "startAutopilot") functionResult = await startAutopilot(args.goal);
-                        else if (name === "seeProjectStructure") functionResult = await seeProjectStructure(args.depth);
-                        else if (name === "sendMessage") functionResult = await sendMessage(args.platform, args.recipient, args.content);
-                        else if (name === "runTerminal") functionResult = await runTerminal(args.command);
-                        else if (name === "editFile") functionResult = await manageArtifacts('write', args.filePath, args.content);
-                        else {
-                            console.warn(`[Tool Error] Unknown tool: ${name}`);
-                            functionResult = { error: `Unknown tool: ${name}` };
-                        }
-
+                        functionResult = await executeTool(name, args);
                         console.log(`[Rupee] Tool ${name} success. Result:`, JSON.stringify(functionResult).substring(0, 100) + "...");
+
+                        toolResponses.push({
+                            functionResponse: {
+                                name: name,
+                                response: { result: functionResult }
+                            }
+                        });
 
                     } catch (e: any) {
                         console.error(`[Tool Error] Execution failed for ${name}:`, e);
-                        functionResult = { error: `Tool execution failed: ${e.message}` };
+                        toolResponses.push({
+                            functionResponse: {
+                                name: name,
+                                response: { result: { error: `Tool execution failed: ${e.message}` } }
+                            }
+                        });
                     }
 
                     // Safety fallback
@@ -583,14 +238,7 @@ ${knowledgeString}
                             let functionResult;
 
                             // Execute the hallucinated tool
-                            if (toolName === "deepResearch") functionResult = await deepResearch(args.topic);
-                            else if (toolName === "getWeather") functionResult = await getWeather(args.city);
-                            else if (toolName === "runTerminal") functionResult = await runTerminal(args.command);
-                            else if (toolName === "editFile") functionResult = await manageArtifacts('write', args.filePath, args.content);
-                            else if (toolName === "readCodebase") functionResult = await readCodebase(args.filePath);
-                            else if (toolName === "exploreCodebase") functionResult = await exploreCodebase(args.dirPath);
-                            else if (toolName === "upgradeSystem") functionResult = await upgradeSystem(args.filePath, args.content, args.message);
-                            else if (toolName === "deploySystem") functionResult = await deploySystem(args.prNumber);
+                            functionResult = await executeTool(toolName, args);
 
                             if (functionResult) {
                                 // Since the model didn't *actually* call a function (it hallucinated text),

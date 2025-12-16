@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Headphones, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface VoiceInputProps {
     onTranscript: (text: string) => void;
@@ -84,7 +85,12 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
                 console.error('Speech recognition error', event.error);
                 if (event.error === 'not-allowed') {
                     setHandsFreeMode(false);
-                    alert('Microphone access denied.');
+                    toast.error('Microphone access denied. Please check your settings.');
+                } else if (event.error === 'no-speech') {
+                    // Ignore no-speech errors (common in silence)
+                    return;
+                } else {
+                    // toast.error(`Voice Error: ${event.error}`);
                 }
             };
 
@@ -93,12 +99,17 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
                 // Use REFS to get fresh state
                 if (handsFreeModeRef.current && !isProcessingRef.current) {
                     console.log("Hands-Free: Auto-restarting listener...");
-                    try {
-                        recognition.start();
-                        setIsListening(true);
-                    } catch (e) {
-                        // Ignore
-                    }
+                    // Add small delay to prevent rapid-fire restart loops
+                    setTimeout(() => {
+                        try {
+                            if (handsFreeModeRef.current && !isProcessingRef.current) {
+                                recognition.start();
+                                setIsListening(true);
+                            }
+                        } catch (e) {
+                            // Ignore
+                        }
+                    }, 300);
                 } else {
                     setIsListening(false);
                 }

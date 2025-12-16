@@ -68,9 +68,11 @@ export async function streamAudio(text: string, voiceId: string = ELEVENLABS_VOI
 
     // Final Fallback: Try OpenAI (Hardcoded)
     try {
+        console.log('[TTS] Attempting Final Fallback (OpenAI Hardcoded)...');
         return await runOpenAI(HARDCODED_KEY, voiceId);
-    } catch (e) {
-        console.error('All TTS attempts failed.', e);
+    } catch (e: any) {
+        console.error('[TTS CRITICAL FAILURE] All attempts failed.', e.message);
+        // Return a specific error object if possible, or let the route handle null
         return null;
     }
 }

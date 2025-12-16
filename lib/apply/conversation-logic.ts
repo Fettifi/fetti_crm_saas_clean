@@ -405,6 +405,13 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             nextStep = 'COMPLETE';
             nextMessage = { id: 'complete', role: 'system', content: "Perfect. Application submitted! Our underwriting team is reviewing your verified file right now. You'll hear from us shortly.", type: 'text' };
             break;
+
+        default:
+            // Safety Net: If we end up in an unknown state, don't loop forever.
+            console.warn(`[Conversation Logic] Unknown step: ${currentStep}. Defaulting to COMPLETE.`);
+            nextStep = 'COMPLETE';
+            nextMessage = { id: 'fallback', role: 'system', content: "I've gathered all the necessary information for now. A specialist will reach out to you shortly to finalize the details.", type: 'text' };
+            break;
     }
 
     return { nextStep, nextMessage };

@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
         const audioBuffer = await streamAudio(spokenText, voiceId);
 
         if (!audioBuffer) {
-            return NextResponse.json({ error: 'Failed to generate audio' }, { status: 500 });
+            console.error('[TTS API] Audio buffer is null. Check server logs for upstream API errors.');
+            return NextResponse.json({ error: 'Failed to generate audio. Upstream API failed.' }, { status: 500 });
         }
 
         return new NextResponse(audioBuffer, {

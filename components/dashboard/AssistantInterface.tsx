@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Loader2, X, Send, Terminal, VolumeX, Volume2, Sparkles, Paperclip } from 'lucide-react';
 import { toast } from 'sonner';
 import VoiceInput from '@/components/apply/VoiceInput';
+import { useRupeeVoice } from '@/hooks/useRupeeVoice';
 import { supabase } from '@/lib/supabaseClient';
 
 interface Message {
@@ -22,12 +23,21 @@ export default function AssistantInterface() {
     ]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
-    const [isSpeaking, setIsSpeaking] = useState(false); // Track if Rupee is talking
-    const [isMuted, setIsMuted] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
-    const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-    const [selectedVoice, setSelectedVoice] = useState<string>('');
-    const [debugStatus, setDebugStatus] = useState<string>(''); // Debugging
+
+    // Voice Hook
+    const {
+        voices,
+        selectedVoice,
+        setSelectedVoice,
+        isSpeaking,
+        isMuted,
+        setIsMuted,
+        speakText,
+        debugStatus,
+        initAudioContext
+    } = useRupeeVoice();
+
     const [chunkCount, setChunkCount] = useState(0);
     const [lastChunkType, setLastChunkType] = useState<string>('none');
     const [parseError, setParseError] = useState<string>(''); // Nuclear Option
@@ -51,118 +61,7 @@ export default function AssistantInterface() {
         scrollToBottom();
     }, [messages, isTyping, statusMessage]);
 
-    // Load Voices
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
 
-        const loadVoices = () => {
-            const available = window.speechSynthesis.getVoices();
-            setVoices(available);
-
-            // Try to restore from local storage or find best default
-            const saved = localStorage.getItem('rupee_voice');
-            if (saved) {
-                setSelectedVoice(saved);
-            } else {
-                // Default to OpenAI Shimmer (More reliable fallback)
-                setSelectedVoice('shimmer');
-            }
-        };
-
-        loadVoices();
-        window.speechSynthesis.onvoiceschanged = loadVoices;
-
-        return () => {
-            window.speechSynthesis.onvoiceschanged = null;
-        };
-    }, []);
-
-    // Text-to-Speech (Rupee Voice)
-    const speakText = async (text: string, voiceOverride?: string) => {
-        if (isMuted || typeof window === 'undefined') return;
-
-        const currentVoice = voiceOverride || selectedVoice;
-
-        // Stop any current playback
-        window.speechSynthesis.cancel();
-
-        // NEURAL TTS (ElevenLabs / OpenAI)
-        // Robust Check: ElevenLabs IDs are 20 chars, OpenAI IDs are specific names
-        const isElevenLabsId = (id: string) => id.length === 20;
-        const isOpenAIId = (id: string) => ['shimmer', 'alloy', 'echo', 'fable', 'onyx', 'nova'].includes(id);
-
-        if (isElevenLabsId(currentVoice) || isOpenAIId(currentVoice)) {
-            try {
-                setDebugStatus(`Requesting ${currentVoice}...`);
-                const response = await fetch('/api/tts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text, voiceId: currentVoice })
-                });
-
-                if (!response.ok) {
-                    const errData = await response.json().catch(() => ({}));
-                    throw new Error(errData.error || `API Error ${response.status}`);
-                }
-
-                const arrayBuffer = await response.arrayBuffer();
-
-                // Use the pre-initialized (unlocked) context if available
-                if (!audioContextRef.current) {
-                    audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-                }
-                const audioContext = audioContextRef.current;
-
-                // Ensure it's running
-                if (audioContext.state === 'suspended') {
-                    await audioContext.resume();
-                }
-
-                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-                const source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-
-                // Volume Boost (Gain Node)
-                const gainNode = audioContext.createGain();
-                gainNode.gain.value = 6.0; // Boost volume by 6.0x (High Gain)
-
-                source.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-
-                setDebugStatus('Playing Neural Audio (Max Boost)...');
-                setIsSpeaking(true);
-                source.start(0);
-                source.onended = () => setIsSpeaking(false);
-
-                setTimeout(() => setDebugStatus(''), 3000);
-                return;
-            } catch (e: any) {
-                console.warn('Neural TTS failed, falling back to browser voice.', e);
-                setDebugStatus(`Error: ${e.message}. Fallback.`);
-                addLog(`[TTS Error] ${e.message}`); // Log to debug console
-                toast.error(`Voice Error: ${e.message}. Using fallback.`); // Visible Alert
-                // Fallback to browser voice if API fails (e.g. no key)
-            }
-        } else {
-            setDebugStatus(`Using Browser Voice: ${currentVoice}`);
-            setTimeout(() => setDebugStatus(''), 3000);
-        }
-
-        // BROWSER TTS (Fallback)
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
-
-        if (currentVoice && !isElevenLabsId(currentVoice) && !isOpenAIId(currentVoice)) {
-            const voice = voices.find(v => v.name === currentVoice);
-            if (voice) utterance.voice = voice;
-        }
-
-        utterance.onstart = () => setIsSpeaking(true);
-        utterance.onend = () => setIsSpeaking(false);
-        window.speechSynthesis.speak(utterance);
-    };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -175,18 +74,7 @@ export default function AssistantInterface() {
         reader.readAsDataURL(file);
     };
 
-    // Audio Context Ref (Persistent)
-    const audioContextRef = useRef<AudioContext | null>(null);
 
-    // Initialize AudioContext on first user interaction
-    const initAudioContext = () => {
-        if (!audioContextRef.current) {
-            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        }
-        if (audioContextRef.current.state === 'suspended') {
-            audioContextRef.current.resume();
-        }
-    };
 
     // Supabase Persistence
 
