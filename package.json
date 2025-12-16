@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint --dir app --dir components --dir lib",
+    "lint": "next lint",
     "fetti:auto": "python3 fetti_doctor_wrapper.py --auto",
     "fetti:feature": "python3 fetti_feature_runner.py",
     "fetti:watch": "npx nodemon --watch app --watch components --watch lib --ext ts,tsx,js,jsx --exec \"npm run fetti:auto && npm run fetti:feature\"",
