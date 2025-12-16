@@ -7,11 +7,14 @@ export const metadata: Metadata = {
   description: "Fetti - We Do Money.",
 };
 
+import { Toaster } from 'sonner';
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body className="bg-gray-50 text-gray-900">
         {children}
+        <Toaster position="top-center" richColors />
       </body>
     </html>
   );

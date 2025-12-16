@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Send, Sparkles, Volume2, VolumeX, Paperclip, X, Loader2, Terminal } from 'lucide-react';
+import { Mic, MicOff, Headphones, Loader2, X, Send, Play, Pause, Square, Terminal, VolumeX, Volume2, Sparkles, Paperclip } from 'lucide-react';
+import { toast } from 'sonner';
 import VoiceInput from '@/components/apply/VoiceInput';
 import { supabase } from '@/lib/supabaseClient';
 
