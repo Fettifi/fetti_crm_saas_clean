@@ -12,19 +12,53 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
     const [isListening, setIsListening] = useState(false);
     const [handsFreeMode, setHandsFreeMode] = useState(false);
     const [isSupported, setIsSupported] = useState(false);
+
+    // Refs for state access inside callbacks without re-binding
     const recognitionRef = useRef<any>(null);
+    const handsFreeModeRef = useRef(handsFreeMode);
+    const isProcessingRef = useRef(isProcessing);
     const silenceTimer = useRef<NodeJS.Timeout | null>(null);
 
+    // Update refs when props/state change
+    useEffect(() => {
+        handsFreeModeRef.current = handsFreeMode;
+    }, [handsFreeMode]);
+
+    useEffect(() => {
+        isProcessingRef.current = isProcessing;
+
+        // Smart Pause Logic
+        if (recognitionRef.current) {
+            if (isProcessing) {
+                if (isListening) {
+                    console.log("VoiceInput: Pausing for AI response...");
+                    recognitionRef.current.stop();
+                    setIsListening(false);
+                }
+            } else {
+                if (handsFreeModeRef.current && !isListening) {
+                    console.log("VoiceInput: Resuming hands-free...");
+                    try {
+                        recognitionRef.current.start();
+                        setIsListening(true);
+                    } catch (e) {
+                        // Ignore if already started
+                    }
+                }
+            }
+        }
+    }, [isProcessing, isListening]); // Added isListening to ensure we don't loop, but logic handles it
+
+    // Initialize Speech Recognition (ONCE)
     useEffect(() => {
         if (typeof window !== 'undefined' && (window as any).webkitSpeechRecognition) {
             setIsSupported(true);
             const recognition = new (window as any).webkitSpeechRecognition();
-            recognition.continuous = true; // Always true for better control, we manage stops manually
+            recognition.continuous = true;
             recognition.interimResults = true;
             recognition.lang = 'en-US';
 
             recognition.onresult = (event: any) => {
-                // Clear silence timer on any speech
                 if (silenceTimer.current) clearTimeout(silenceTimer.current);
 
                 let finalTranscript = '';
@@ -39,33 +73,31 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
                     onTranscript(finalTranscript);
 
                     // If NOT hands-free, stop after one command
-                    if (!handsFreeMode) {
+                    if (!handsFreeModeRef.current) {
                         setIsListening(false);
                         recognition.stop();
                     }
                 }
-
-                // Silence Detection for Hands-Free (Optional, but good for "end of turn")
-                // For now, we rely on isFinal.
             };
 
             recognition.onerror = (event: any) => {
                 console.error('Speech recognition error', event.error);
                 if (event.error === 'not-allowed') {
-                    setHandsFreeMode(false); // Disable hands-free if denied
+                    setHandsFreeMode(false);
                     alert('Microphone access denied.');
                 }
-                // Ignore 'no-speech' and 'aborted'
             };
 
             recognition.onend = () => {
                 // Auto-restart if Hands-Free is ON and NOT processing
-                if (handsFreeMode && !isProcessing) {
-                    console.log("Hands-Free: Restarting listener...");
+                // Use REFS to get fresh state
+                if (handsFreeModeRef.current && !isProcessingRef.current) {
+                    console.log("Hands-Free: Auto-restarting listener...");
                     try {
                         recognition.start();
+                        setIsListening(true);
                     } catch (e) {
-                        // Ignore "already started" errors
+                        // Ignore
                     }
                 } else {
                     setIsListening(false);
@@ -73,46 +105,45 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
             };
 
             recognitionRef.current = recognition;
-        }
-    }, [onTranscript, handsFreeMode, isProcessing]);
 
-    // Effect: Manage Listening State based on Props & Mode
-    useEffect(() => {
-        if (!recognitionRef.current) return;
-
-        if (isProcessing) {
-            // Stop listening while AI is thinking/speaking
-            if (isListening) {
-                recognitionRef.current.stop();
-                setIsListening(false);
-            }
-        } else {
-            // Resume listening if Hands-Free is ON
-            if (handsFreeMode && !isListening) {
-                try {
-                    recognitionRef.current.start();
-                    setIsListening(true);
-                } catch (e) {
-                    // Ignore
+            // Cleanup
+            return () => {
+                if (recognitionRef.current) {
+                    recognitionRef.current.abort();
                 }
-            }
+            };
         }
-    }, [isProcessing, handsFreeMode]);
+    }, []); // Empty dependency array = Run once on mount
 
     const toggleListening = () => {
-        if (!isSupported) return;
+        if (!isSupported || !recognitionRef.current) return;
 
         if (isListening) {
             recognitionRef.current.stop();
-            setHandsFreeMode(false); // Manual stop disables hands-free
+            setHandsFreeMode(false);
         } else {
-            recognitionRef.current.start();
-            setIsListening(true);
+            try {
+                recognitionRef.current.start();
+                setIsListening(true);
+            } catch (e) {
+                console.error("Failed to start:", e);
+            }
         }
     };
 
     const toggleHandsFree = () => {
-        setHandsFreeMode(!handsFreeMode);
+        const newState = !handsFreeMode;
+        setHandsFreeMode(newState);
+
+        // If turning ON, ensure we start listening
+        if (newState && !isListening && !isProcessing) {
+            try {
+                recognitionRef.current.start();
+                setIsListening(true);
+            } catch (e) {
+                // Ignore
+            }
+        }
     };
 
     if (!isSupported) return null;
@@ -129,7 +160,11 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
                     }`}
                 title={handsFreeMode ? 'Hands-Free ON (Always Listening)' : 'Enable Hands-Free Mode'}
             >
-                <Headphones size={16} />
+                {isProcessing && handsFreeMode ? (
+                    <Loader2 size={16} className="animate-spin text-emerald-500/50" />
+                ) : (
+                    <Headphones size={16} />
+                )}
             </button>
 
             {/* Main Mic Button */}
