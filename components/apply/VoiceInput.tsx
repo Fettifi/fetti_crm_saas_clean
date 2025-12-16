@@ -118,7 +118,6 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
     if (!isSupported) return null;
 
     return (
-    return (
         <div className="flex items-center gap-2">
             {/* Hands-Free Toggle */}
             <button
@@ -146,6 +145,5 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
                 {isListening ? <MicOff size={20} /> : <Mic size={20} />}
             </button>
         </div>
-    );
     );
 }
