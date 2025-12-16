@@ -100,32 +100,62 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 })
             });
 
-            const data = await response.json();
+            if (!response.body) throw new Error("No response body");
 
-            // Construct new system message
-            const sysMsg: Message = {
-                id: Date.now().toString(),
-                role: 'system',
-                content: data.message,
-                type: data.uiType,
-                options: data.options
-            };
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
 
-            // Speak the response
-            speakText(data.message);
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
 
-            setState(prev => ({
-                ...prev,
-                step: data.nextStep,
-                data: { ...prev.data, ...data.extractedData },
-                history: [...prev.history, sysMsg]
-            }));
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
 
-            if (data.nextStep === 'COMPLETE') {
-                await submitApplication({ ...state.data, ...data.extractedData }, state.dealScore);
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        const data = JSON.parse(line);
+
+                        if (data.type === 'status') {
+                            // Optional: Show status updates in UI
+                            console.log('[Status]', data.message);
+                            // Could update a temporary "Thinking..." message here
+                        } else if (data.type === 'result') {
+                            // Final Result
+                            const sysMsg: Message = {
+                                id: Date.now().toString(),
+                                role: 'system',
+                                content: data.message,
+                                type: data.uiType,
+                                options: data.options
+                            };
+
+                            // Speak the response
+                            speakText(data.message);
+
+                            setState(prev => ({
+                                ...prev,
+                                step: data.nextStep,
+                                data: { ...prev.data, ...data.extractedData },
+                                history: [...prev.history, sysMsg]
+                            }));
+
+                            if (data.nextStep === 'COMPLETE') {
+                                await submitApplication({ ...state.data, ...data.extractedData }, state.dealScore);
+                            }
+                        } else if (data.type === 'error') {
+                            throw new Error(data.message);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing stream chunk:', e);
+                    }
+                }
             }
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('Chat error:', error);
             // Fallback error message
             const errorMsg = "I'm having trouble connecting. Please try again.";
