@@ -386,6 +386,11 @@ async function* runChatLogic(req: NextRequest) {
 
 **THE VAULT (LONG-TERM MEMORY):**
 ${knowledgeString}
+
+**MEMORY PROTOCOL:**
+*   **Remember Everything**: If the user states a preference, rule, or fact, use \`learnFromUser\` to save it.
+*   **Consolidate**: Do not create duplicate topics. If you learn something new about an existing topic (e.g., "Pricing"), update the EXISTING topic with a consolidated insight.
+*   **Be Proactive**: Don't wait for "save this". If it's important, save it.
 `;
 
         const fullHistory = [

@@ -180,19 +180,50 @@ export async function learnFromUser(topic: string, insight: string): Promise<any
     console.log(`[GodMode] Learning new rule: ${topic} - ${insight}`);
 
     try {
-        const { error } = await supabase
+        // 1. Check if topic already exists
+        const { data: existing, error: fetchError } = await supabase
             .from('rupee_memory')
-            .insert([{ topic, insight }]);
+            .select('*')
+            .eq('topic', topic)
+            .single();
 
-        if (error) throw error;
+        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "Row not found"
+            throw fetchError;
+        }
 
-        return {
-            status: "KNOWLEDGE_COMMITTED",
-            memory_bank: "The Vault (Supabase Cloud Memory)",
-            topic: topic,
-            insight: insight,
-            confirmation: `I have stored this in The Vault. Rule added: "${insight}"`
-        };
+        if (existing) {
+            // 2. Update existing memory
+            console.log(`[GodMode] Updating existing memory for topic: ${topic}`);
+            const { error } = await supabase
+                .from('rupee_memory')
+                .update({ insight: insight }) // Overwrite with latest/consolidated insight
+                .eq('id', existing.id);
+
+            if (error) throw error;
+
+            return {
+                status: "KNOWLEDGE_UPDATED",
+                memory_bank: "The Vault (Supabase Cloud Memory)",
+                topic: topic,
+                insight: insight,
+                confirmation: `I have updated your memory of "${topic}" in The Vault.`
+            };
+        } else {
+            // 3. Insert new memory
+            const { error } = await supabase
+                .from('rupee_memory')
+                .insert([{ topic, insight }]);
+
+            if (error) throw error;
+
+            return {
+                status: "KNOWLEDGE_COMMITTED",
+                memory_bank: "The Vault (Supabase Cloud Memory)",
+                topic: topic,
+                insight: insight,
+                confirmation: `I have stored this in The Vault. Rule added: "${insight}"`
+            };
+        }
     } catch (error: any) {
         console.error("Failed to learn:", error);
         return {
