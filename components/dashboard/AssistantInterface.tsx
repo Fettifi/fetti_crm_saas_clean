@@ -63,8 +63,8 @@ export default function AssistantInterface() {
             if (saved) {
                 setSelectedVoice(saved);
             } else {
-                // Default to Neural (Rachel)
-                setSelectedVoice('21m00Tcm4TlvDq8ikWAM');
+                // Default to OpenAI Shimmer (More reliable fallback)
+                setSelectedVoice('shimmer');
             }
         };
 
@@ -140,6 +140,7 @@ export default function AssistantInterface() {
                 console.warn('Neural TTS failed, falling back to browser voice.', e);
                 setDebugStatus(`Error: ${e.message}. Fallback.`);
                 addLog(`[TTS Error] ${e.message}`); // Log to debug console
+                toast.error(`Voice Error: ${e.message}. Using fallback.`); // Visible Alert
                 // Fallback to browser voice if API fails (e.g. no key)
             }
         } else {
