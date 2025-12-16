@@ -347,12 +347,17 @@ export async function manageArtifacts(action: 'read' | 'write', filename: string
         } else {
             if (!content) return { status: "FAILURE", error: "Content required for write" };
 
-            // Try local write first (for local dev)
-            try {
-                fs.writeFileSync(filePath, content);
-                return { status: "SUCCESS", message: "Artifact updated locally." };
-            } catch (writeError) {
-                console.warn("Local write failed, attempting GitHub PR...", writeError);
+            // VERCEL PRODUCTION GUARD: Skip local write, force GitHub PR
+            if (process.env.VERCEL) {
+                console.log("[GodMode] Vercel environment detected. Skipping local write, attempting GitHub PR.");
+            } else {
+                // Try local write first (for local dev)
+                try {
+                    fs.writeFileSync(filePath, content);
+                    return { status: "SUCCESS", message: "Artifact updated locally." };
+                } catch (writeError) {
+                    console.warn("Local write failed, attempting GitHub PR...", writeError);
+                }
             }
 
             // Fallback to GitHub PR (for Vercel/Production)
@@ -360,12 +365,12 @@ export async function manageArtifacts(action: 'read' | 'write', filename: string
                 const upgrade = await proposeUpgrade(filename, content, `Update ${filename}`);
                 return {
                     status: "SUCCESS",
-                    message: "Local write failed (read-only fs), so I opened a Pull Request instead.",
+                    message: "I've created a Pull Request to update this file. The changes will go live after the build completes.",
                     pr: upgrade
                 };
             }
 
-            return { status: "FAILURE", error: "Could not write file locally and GITHUB_TOKEN is missing." };
+            return { status: "FAILURE", error: "Cannot edit files in production: GITHUB_TOKEN is missing." };
         }
     } catch (error: any) {
         return { status: "FAILURE", error: error.message };
