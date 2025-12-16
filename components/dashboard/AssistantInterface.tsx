@@ -21,6 +21,7 @@ export default function AssistantInterface() {
     ]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
+    const [isSpeaking, setIsSpeaking] = useState(false); // Track if Rupee is talking
     const [isMuted, setIsMuted] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -129,7 +130,9 @@ export default function AssistantInterface() {
                 gainNode.connect(audioContext.destination);
 
                 setDebugStatus('Playing Neural Audio (Max Boost)...');
+                setIsSpeaking(true);
                 source.start(0);
+                source.onended = () => setIsSpeaking(false);
 
                 setTimeout(() => setDebugStatus(''), 3000);
                 return;
@@ -153,6 +156,8 @@ export default function AssistantInterface() {
             if (voice) utterance.voice = voice;
         }
 
+        utterance.onstart = () => setIsSpeaking(true);
+        utterance.onend = () => setIsSpeaking(false);
         window.speechSynthesis.speak(utterance);
     };
 
@@ -615,10 +620,13 @@ export default function AssistantInterface() {
             <div className="absolute bottom-6 left-0 right-0 z-[9999] flex justify-center pointer-events-none px-4">
                 <div className="w-full max-w-2xl pointer-events-auto bg-slate-950/80 backdrop-blur-xl border border-emerald-500/30 rounded-full p-2 flex items-center gap-3 shadow-[0_0_40px_rgba(16,185,129,0.15)] transition-all hover:scale-[1.01] hover:border-emerald-500/50 hover:shadow-[0_0_50px_rgba(16,185,129,0.25)] ring-1 ring-white/5">
                     <div className="relative z-10">
-                        <VoiceInput onTranscript={(text) => {
-                            setInput(text);
-                            handleSendMessage(text);
-                        }} />
+                        <VoiceInput
+                            onTranscript={(text) => {
+                                setInput(text);
+                                handleSendMessage(text);
+                            }}
+                            isProcessing={isTyping || isSpeaking}
+                        />
                     </div>
 
                     <input
