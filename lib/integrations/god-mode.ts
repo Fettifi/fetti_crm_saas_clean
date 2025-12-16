@@ -362,7 +362,15 @@ export async function manageArtifacts(action: 'read' | 'write', filename: string
 
             // Fallback to GitHub PR (for Vercel/Production)
             if (process.env.GITHUB_TOKEN) {
-                const upgrade = await proposeUpgrade(filename, content, `Update ${filename}`);
+                const upgrade: any = await proposeUpgrade(filename, content, `Update ${filename}`);
+
+                if (!upgrade.success) {
+                    return {
+                        status: "FAILURE",
+                        error: `GitHub PR Failed: ${upgrade.error}. (Check REPO_OWNER/REPO_NAME env vars)`
+                    };
+                }
+
                 return {
                     status: "SUCCESS",
                     message: "I've created a Pull Request to update this file. The changes will go live after the build completes.",

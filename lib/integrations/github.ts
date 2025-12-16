@@ -51,8 +51,8 @@ if (process.env.GITHUB_TOKEN) {
     });
 }
 
-const OWNER = process.env.REPO_OWNER || 'fetti-crm'; // Default or Env
-const REPO = process.env.REPO_NAME || 'azure-plasma'; // Default or Env
+const OWNER = process.env.REPO_OWNER || 'Fettifi'; // Corrected Default
+const REPO = process.env.REPO_NAME || 'fetti_crm_saas_clean'; // Corrected Default
 
 export async function readCode(path: string) {
     try {
