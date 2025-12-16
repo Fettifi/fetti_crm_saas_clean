@@ -378,8 +378,8 @@ async function* runChatLogic(req: NextRequest) {
             parts: [{ text: msg.content }]
         }));
 
-        // const knowledge = await getKnowledgeBase();
-        const knowledge: any[] = []; // Mock for build fix
+        const knowledge = await getKnowledgeBase();
+        // const knowledge: any[] = []; // Mock for build fix
         const knowledgeString = knowledge.map((k: any) => `- ${k.topic}: ${k.insight} `).join('\n');
 
         const finalSystemPrompt = `${BASE_SYSTEM_PROMPT}
