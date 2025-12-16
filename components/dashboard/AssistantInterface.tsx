@@ -283,6 +283,7 @@ export default function AssistantInterface() {
             const decoder = new TextDecoder();
             let accumulatedMessage = '';
             let isFirstChunk = true;
+            let buffer = '';
 
             addLog('Stream started...');
 
@@ -290,49 +291,51 @@ export default function AssistantInterface() {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value);
-                // addLog(`Chunk received (${chunk.length} bytes)`); // Too noisy
-
-                const lines = chunk.split('\n');
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
 
                 for (const line of lines) {
-                    if (line.trim().startsWith('{')) {
-                        try {
-                            const data = JSON.parse(line);
-                            if (data.type === 'status') {
-                                addLog(`[Status] ${data.message}`);
-                                setStatusMessage(data.message);
-                                setProgress(data.progress);
-                                await new Promise(r => setTimeout(r, 10)); // Allow UI to update
-                            } else if (data.type === 'debug') {
-                                addLog(`[Debug] ${data.message}`);
-                            } else if (data.type === 'result') {
-                                addLog(`[Result] "${data.message.substring(0, 50)}..."`);
-                                if (isFirstChunk) {
-                                    setMessages(prev => [...prev, {
-                                        id: Date.now().toString(),
-                                        role: 'system',
-                                        content: data.message
-                                    }]);
-                                    isFirstChunk = false;
-                                } else {
-                                    setMessages(prev => prev.map((msg, idx) => {
-                                        if (idx === prev.length - 1) {
-                                            return { ...msg, content: data.message }; // Replace for now, or append if streaming partials
-                                        }
-                                        return msg;
-                                    }));
-                                }
-                                accumulatedMessage = data.message;
-                            } else if (data.type === 'error') {
-                                addLog(`[Error] ${data.message}`);
-                                console.error("Stream Error:", data.message);
-                                setStatusMessage(`Error: ${data.message}`);
-                                setProgress(0);
+                    if (!line.trim()) continue;
+                    try {
+                        const data = JSON.parse(line);
+                        if (data.type === 'status') {
+                            addLog(`[Status] ${data.message}`);
+                            setStatusMessage(data.message);
+                            setProgress(data.progress);
+                            await new Promise(r => setTimeout(r, 10)); // Allow UI to update
+                        } else if (data.type === 'debug') {
+                            addLog(`[Debug] ${data.message}`);
+                        } else if (data.type === 'result') {
+                            addLog(`[Result] "${data.message.substring(0, 50)}..."`);
+                            if (isFirstChunk) {
+                                setMessages(prev => [...prev, {
+                                    id: Date.now().toString(),
+                                    role: 'system',
+                                    content: data.message
+                                }]);
+                                isFirstChunk = false;
+                            } else {
+                                setMessages(prev => prev.map((msg, idx) => {
+                                    if (idx === prev.length - 1) {
+                                        return { ...msg, content: data.message }; // Replace for now, or append if streaming partials
+                                    }
+                                    return msg;
+                                }));
                             }
-                        } catch (e: any) {
-                            console.warn("Failed to parse chunk:", line);
+                            accumulatedMessage = data.message;
+
+                            // Speak the final result
+                            speakText(data.message);
+
+                        } else if (data.type === 'error') {
+                            addLog(`[Error] ${data.message}`);
+                            console.error("Stream Error:", data.message);
+                            setStatusMessage(`Error: ${data.message}`);
+                            setProgress(0);
                         }
+                    } catch (e: any) {
+                        console.warn("Failed to parse chunk:", line);
                     }
                 }
             }
@@ -384,9 +387,7 @@ export default function AssistantInterface() {
                 while (!done) {
                     const { value, done: doneReading } = await reader.read();
                     done = doneReading;
-                    const chunkValue = decoder.decode(value, { stream: true });
-
-                    buffer += chunkValue;
+                    buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split('\n');
                     buffer = lines.pop() || '';
 
@@ -411,7 +412,7 @@ export default function AssistantInterface() {
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-120px)] min-h-[500px] w-full max-w-4xl mx-auto bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl relative">
+        <div className="flex flex-col h-[calc(100vh-120px)] min-h-[500px] w-full max-w-4xl mx-auto bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl relative overflow-hidden">
             {/* Background Effects */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-emerald-900/20 via-slate-950 to-slate-950 pointer-events-none rounded-3xl" />
 
@@ -610,9 +611,9 @@ export default function AssistantInterface() {
 
 
 
-            {/* Floating Antigravity Input Bar (Fixed Positioning - Nuclear Option) */}
-            <div className="fixed bottom-10 left-0 right-0 z-[9999] flex justify-center pointer-events-none px-4">
-                <div className="w-full max-w-3xl pointer-events-auto bg-slate-950/80 backdrop-blur-xl border border-emerald-500/30 rounded-full p-2 flex items-center gap-3 shadow-[0_0_40px_rgba(16,185,129,0.15)] transition-all hover:scale-[1.01] hover:border-emerald-500/50 hover:shadow-[0_0_50px_rgba(16,185,129,0.25)] ring-1 ring-white/5">
+            {/* Floating Antigravity Input Bar (Absolute Positioning - Fixes Alignment) */}
+            <div className="absolute bottom-6 left-0 right-0 z-[9999] flex justify-center pointer-events-none px-4">
+                <div className="w-full max-w-2xl pointer-events-auto bg-slate-950/80 backdrop-blur-xl border border-emerald-500/30 rounded-full p-2 flex items-center gap-3 shadow-[0_0_40px_rgba(16,185,129,0.15)] transition-all hover:scale-[1.01] hover:border-emerald-500/50 hover:shadow-[0_0_50px_rgba(16,185,129,0.25)] ring-1 ring-white/5">
                     <div className="relative z-10">
                         <VoiceInput onTranscript={(text) => {
                             setInput(text);
