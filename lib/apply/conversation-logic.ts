@@ -29,6 +29,16 @@ export interface ConversationState {
         propertyAddress?: string;
         occupancy?: 'Primary' | 'Secondary' | 'Investment';
 
+        // URLA 1003 Additional Fields
+        dob?: string;
+        ssn?: string;
+        maritalStatus?: 'Married' | 'Separated' | 'Unmarried';
+        citizenship?: 'US Citizen' | 'Permanent Resident' | 'Non-Permanent Resident';
+        currentAddress?: string;
+        yearsAtAddress?: number;
+        previousAddress?: string;
+        monthlyDebt?: number;
+
         // Employment & Income
         employerName?: string;
         position?: string;
@@ -153,7 +163,14 @@ export function validateInput(step: string, input: string): string | null {
         case 'INV_ARV':
         case 'INV_BRIDGE_AMOUNT':
         case 'MORTGAGE_LOAN_AMOUNT':
+        case 'MORTGAGE_MONTHLY_DEBT':
             if (parseNumber(input) <= 0) return "Please enter a valid amount greater than 0 (e.g., 100k, 50000).";
+            break;
+        case 'MORTGAGE_DOB':
+            if (!input.match(/^\d{2}\/\d{2}\/\d{4}$/)) return "Please enter your date of birth in MM/DD/YYYY format.";
+            break;
+        case 'MORTGAGE_SSN':
+            if (input.replace(/[^0-9]/g, '').length < 4) return "Please enter at least the last 4 digits of your SSN.";
             break;
     }
     return null;
@@ -198,6 +215,14 @@ export function captureData(step: string, input: string, data: any) {
             data.propertyVerified = true;
             // data.arv = 850000; // Could enrich here
             break;
+        case 'MORTGAGE_DOB': data.dob = input; break;
+        case 'MORTGAGE_SSN': data.ssn = input; break;
+        case 'MORTGAGE_MARITAL': data.maritalStatus = input as any; break;
+        case 'MORTGAGE_CITIZENSHIP': data.citizenship = input as any; break;
+        case 'MORTGAGE_CURRENT_ADDRESS': data.currentAddress = input; break;
+        case 'MORTGAGE_YEARS_AT_ADDRESS': data.yearsAtAddress = parseNumber(input); break;
+        case 'MORTGAGE_PREVIOUS_ADDRESS': data.previousAddress = input; break;
+        case 'MORTGAGE_MONTHLY_DEBT': data.monthlyDebt = parseNumber(input); break;
     }
 }
 
@@ -378,7 +403,52 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             nextMessage = { id: 'ask_inc', role: 'system', content: "And what is your gross monthly income?", type: 'text' };
             break;
         case 'MORTGAGE_INCOME':
-            nextStep = 'VERIFY_ASSETS'; // Use verification here too
+            nextStep = 'MORTGAGE_DOB';
+            nextMessage = { id: 'ask_dob', role: 'system', content: "Got it. What is your date of birth? (MM/DD/YYYY)", type: 'text' };
+            break;
+
+        case 'MORTGAGE_DOB':
+            nextStep = 'MORTGAGE_SSN';
+            nextMessage = { id: 'ask_ssn', role: 'system', content: "Thanks. And for compliance, what is your Social Security Number?", type: 'text' };
+            break;
+
+        case 'MORTGAGE_SSN':
+            nextStep = 'MORTGAGE_MARITAL';
+            nextMessage = { id: 'ask_marital', role: 'system', content: "What is your marital status?", type: 'options', options: ['Married', 'Separated', 'Unmarried'] };
+            break;
+
+        case 'MORTGAGE_MARITAL':
+            nextStep = 'MORTGAGE_CITIZENSHIP';
+            nextMessage = { id: 'ask_citizenship', role: 'system', content: "What is your citizenship status?", type: 'options', options: ['US Citizen', 'Permanent Resident', 'Non-Permanent Resident'] };
+            break;
+
+        case 'MORTGAGE_CITIZENSHIP':
+            nextStep = 'MORTGAGE_CURRENT_ADDRESS';
+            nextMessage = { id: 'ask_curr_addr', role: 'system', content: "What is your current home address?", type: 'text' };
+            break;
+
+        case 'MORTGAGE_CURRENT_ADDRESS':
+            nextStep = 'MORTGAGE_YEARS_AT_ADDRESS';
+            nextMessage = { id: 'ask_years_addr', role: 'system', content: "How many years have you lived there?", type: 'text' };
+            break;
+
+        case 'MORTGAGE_YEARS_AT_ADDRESS':
+            if (data.yearsAtAddress < 2) {
+                nextStep = 'MORTGAGE_PREVIOUS_ADDRESS';
+                nextMessage = { id: 'ask_prev_addr', role: 'system', content: "Since it's been less than 2 years, what was your previous address?", type: 'text' };
+            } else {
+                nextStep = 'MORTGAGE_MONTHLY_DEBT';
+                nextMessage = { id: 'ask_debt', role: 'system', content: "Almost done. What is your total monthly debt (car payments, credit cards, etc.)?", type: 'text' };
+            }
+            break;
+
+        case 'MORTGAGE_PREVIOUS_ADDRESS':
+            nextStep = 'MORTGAGE_MONTHLY_DEBT';
+            nextMessage = { id: 'ask_debt', role: 'system', content: "Thanks. What is your total monthly debt (car payments, credit cards, etc.)?", type: 'text' };
+            break;
+
+        case 'MORTGAGE_MONTHLY_DEBT':
+            nextStep = 'VERIFY_ASSETS';
             nextMessage = { id: 'verify_assets', role: 'system', content: `${ack} To finalize your pre-approval, please connect your primary bank account securely.`, type: 'verify_assets' };
             break;
 
