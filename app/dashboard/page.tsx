@@ -67,9 +67,9 @@ const TABS: { id: TabId; label: string; description: string }[] = [
   },
   {
     id: 'training',
-    label: 'My Personal Assistant',
+    label: 'Co Pilot',
     description:
-      'Your dedicated executive assistant. Teach her, ask her to research, or plan your day.',
+      'Your dedicated AI co-pilot. Teach him, ask him to research, or plan your day.',
   },
   {
     id: 'task-list',

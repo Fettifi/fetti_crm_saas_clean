@@ -27,6 +27,7 @@ PLAN = [
     ("Run lint",   ["npm", "run", "lint"]),
     ("Run tests",  ["npm", "test"]),
     ("Run build",  ["npm", "run", "build"]),
+    ("Verify 1003", ["npm", "run", "verify:1003"]),
 ]
 
 def header():

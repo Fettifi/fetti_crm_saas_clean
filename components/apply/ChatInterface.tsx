@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 import { useSearchParams } from 'next/navigation';
 import { scheduleStandardSequence, triggerBehavioralEmail } from '@/lib/automations/scheduler';
+import { useRupeeVoice } from '@/hooks/useRupeeVoice';
 
 interface ChatInterfaceProps {
     initialProduct?: string | null;
@@ -32,6 +33,14 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
     const [isTyping, setIsTyping] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
+    // Voice Hook
+    const {
+        speakText,
+        isMuted,
+        setIsMuted,
+        initAudioContext
+    } = useRupeeVoice();
+
     // Auto-scroll to bottom
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,34 +58,13 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
     }, [initialProduct, state.step]);
 
 
-    const [isMuted, setIsMuted] = useState(false);
-
-    // Text-to-Speech Logic
-    const speakText = (text: string) => {
-        if (isMuted || typeof window === 'undefined') return;
-
-        // Cancel previous speech
-        window.speechSynthesis.cancel();
-
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.95; // Slightly slower, more deliberate
-        utterance.pitch = 1.1; // Slightly higher, more feminine
-
-        // Try to find a good Female voice
-        const voices = window.speechSynthesis.getVoices();
-        const preferredVoice = voices.find(v =>
-            (v.name.includes('Female') && v.lang.includes('en-US')) ||
-            v.name.includes('Samantha') ||
-            v.name.includes('Google US English') ||
-            v.name.includes('Victoria')
-        );
-        if (preferredVoice) utterance.voice = preferredVoice;
-
-        window.speechSynthesis.speak(utterance);
-    };
+    // Text-to-Speech Logic (Legacy removed, using useRupeeVoice hook)
 
     const handleSendMessage = async (text: string, attachment?: { base64: string, mimeType: string }) => {
         if (!text.trim() && !attachment) return;
+
+        // Initialize AudioContext on user gesture
+        initAudioContext();
 
         const userMsg: Message = {
             id: Date.now().toString(),
@@ -311,13 +299,22 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                         <p className="text-xs text-slate-400">Loan Coordinator • Online</p>
                     </div>
                 </div>
-                <a
-                    href="/portal/login"
-                    target="_blank"
-                    className="text-xs text-slate-500 hover:text-emerald-500 transition-colors flex items-center gap-1"
-                >
-                    Existing User? <span className="underline">Log In</span>
-                </a>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setIsMuted(!isMuted)}
+                        className="text-slate-500 hover:text-emerald-500 transition-colors"
+                        title={isMuted ? "Unmute" : "Mute"}
+                    >
+                        {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                    </button>
+                    <a
+                        href="/portal/login"
+                        target="_blank"
+                        className="text-xs text-slate-500 hover:text-emerald-500 transition-colors flex items-center gap-1"
+                    >
+                        Existing User? <span className="underline">Log In</span>
+                    </a>
+                </div>
             </div>
 
             {/* Messages */}

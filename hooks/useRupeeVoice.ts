@@ -32,7 +32,7 @@ export function useRupeeVoice() {
             if (saved) {
                 setSelectedVoice(saved);
             } else {
-                setSelectedVoice('shimmer'); // Default
+                setSelectedVoice('NBA1cQRTWFj793Oifdaj'); // Default to Custom Neural Voice
             }
         };
 

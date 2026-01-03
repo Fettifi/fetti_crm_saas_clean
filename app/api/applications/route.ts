@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '../../../lib/supabaseClient';
+import { format1003Data } from '@/lib/apply/conversation-logic';
 
 type ApplyStep1Body = {
   applicationId?: string | null;
@@ -10,6 +11,63 @@ type ApplyStep1Body = {
     phone?: string;
   };
 };
+
+export async function GET(req: NextRequest) {
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[API][${requestId}] GET /api/applications - Start`);
+
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      console.warn(`[API][${requestId}] Missing application ID`);
+      return NextResponse.json(
+        { error: 'Missing application ID', code: 'MISSING_ID', requestId },
+        { status: 400 }
+      );
+    }
+
+    const { data: application, error } = await supabase
+      .from('applications')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error || !application) {
+      console.warn(`[API][${requestId}] Application not found: ${id}`);
+      return NextResponse.json(
+        { error: 'Application not found', code: 'NOT_FOUND', requestId },
+        { status: 404 }
+      );
+    }
+
+    let applicationData = {};
+    if (application.notes) {
+      try {
+        applicationData = JSON.parse(application.notes);
+      } catch (e) {
+        console.error(`[API][${requestId}] Error parsing application notes`, e);
+        // Continue with empty data rather than failing
+      }
+    }
+
+    const formattedData = format1003Data(applicationData);
+    console.log(`[API][${requestId}] GET /api/applications - Success`);
+
+    return NextResponse.json({
+      success: true,
+      data: formattedData,
+      requestId
+    });
+  } catch (err) {
+    console.error(`[API][${requestId}] Unexpected error in GET /api/applications`, err);
+    return NextResponse.json(
+      { error: 'Internal server error', code: 'INTERNAL_ERROR', requestId },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {

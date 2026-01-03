@@ -4,7 +4,7 @@ const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 const OPENAI_API_URL = 'https://api.openai.com/v1/audio/speech';
 
 // Default Voice IDs
-const ELEVENLABS_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel
+const ELEVENLABS_VOICE_ID = 'NBA1cQRTWFj793Oifdaj'; // Custom Voice (Rupee)
 const OPENAI_VOICE_ID = 'shimmer'; // Female, clear
 
 export async function streamAudio(text: string, voiceId: string = ELEVENLABS_VOICE_ID): Promise<ArrayBuffer | null> {

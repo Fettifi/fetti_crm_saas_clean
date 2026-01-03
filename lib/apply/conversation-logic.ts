@@ -185,10 +185,13 @@ export function captureData(step: string, input: string, data: any) {
         case 'MORTGAGE_PRODUCT': /* Handled in logic */ break;
         case 'MORTGAGE_LOAN_AMOUNT': data.purchasePrice = parseNumber(input); break; // Map to purchasePrice for now to align with DB
         case 'MORTGAGE_PROPERTY': data.propertyType = input; break;
+        case 'MORTGAGE_PROPERTY_ADDRESS': data.propertyAddress = input; break;
+        case 'MORTGAGE_OCCUPANCY': data.occupancy = input as any; break;
         case 'MORTGAGE_EMPLOYMENT': data.employerName = input; break;
         case 'MORTGAGE_INCOME': data.monthlyIncome = parseNumber(input); break;
         case 'MORTGAGE_ASSETS': data.liquidAssets = parseNumber(input); break;
         case 'MORTGAGE_DECLARATIONS': data.bankruptcy = input.toLowerCase().includes('yes'); break;
+        case 'MORTGAGE_LAWSUITS': data.lawsuits = input.toLowerCase().includes('yes'); break;
         case 'INV_PURCHASE_PRICE': data.purchasePrice = parseNumber(input); break;
         case 'INV_REHAB_BUDGET': data.rehabBudget = parseNumber(input); break;
         case 'INV_LAND_VALUE': data.purchasePrice = parseNumber(input); break; // Map Land Value to Purchase Price/Asset Value
@@ -352,8 +355,13 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
             break;
 
         case 'MORTGAGE_LOAN_AMOUNT':
+            nextStep = 'MORTGAGE_PROPERTY_ADDRESS';
+            nextMessage = { id: 'ask_prop_addr', role: 'system', content: "Got it. What is the address of the property you're looking to finance?", type: 'text' };
+            break;
+
+        case 'MORTGAGE_PROPERTY_ADDRESS':
             nextStep = 'MORTGAGE_PROPERTY';
-            nextMessage = { id: 'ask_prop', role: 'system', content: "Got it. And what type of property is this (e.g., Single Family, Condo, Multi-unit)?", type: 'text' };
+            nextMessage = { id: 'ask_prop', role: 'system', content: "Thanks. And what type of property is this (e.g., Single Family, Condo, Multi-unit)?", type: 'text' };
             break;
 
         // ... (Investment Steps) ...
@@ -395,6 +403,10 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
 
         // ... (Standard Steps) ...
         case 'MORTGAGE_PROPERTY':
+            nextStep = 'MORTGAGE_OCCUPANCY';
+            nextMessage = { id: 'ask_occ', role: 'system', content: "Got it. Will this be your primary residence, a secondary home, or an investment property?", type: 'options', options: ['Primary', 'Secondary', 'Investment'] };
+            break;
+        case 'MORTGAGE_OCCUPANCY':
             nextStep = 'MORTGAGE_EMPLOYMENT';
             nextMessage = { id: 'ask_emp', role: 'system', content: "Thanks. Now for employment info. Who is your current employer? (You can upload a W2 or Paystub if you prefer)", type: 'upload' };
             break;
@@ -456,17 +468,16 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
         case 'BUSINESS_REVENUE':
         case 'VERIFY_ASSETS': // Replaces MORTGAGE_ASSETS
         case 'MORTGAGE_ASSETS':
-            // Fast Track Check
-            if (score.probability === 'High') {
-                nextStep = 'ASK_EMAIL';
-                nextMessage = { id: 'ask_email_fast', role: 'system', content: "Your profile is verified and looks excellent. I'm fast-tracking this application. What's the best email to send the funding agreement to?", type: 'text' };
-            } else {
-                nextStep = 'MORTGAGE_DECLARATIONS';
-                nextMessage = { id: 'ask_dec', role: 'system', content: "Just a few final compliance checks. Have you declared bankruptcy in the last 7 years?", type: 'options', options: ['Yes', 'No'] };
-            }
+            nextStep = 'MORTGAGE_DECLARATIONS';
+            nextMessage = { id: 'ask_dec', role: 'system', content: "Just a few final compliance checks. Have you declared bankruptcy in the last 7 years?", type: 'options', options: ['Yes', 'No'] };
             break;
 
         case 'MORTGAGE_DECLARATIONS':
+            nextStep = 'MORTGAGE_LAWSUITS';
+            nextMessage = { id: 'ask_lawsuits', role: 'system', content: "Are you a party to a lawsuit?", type: 'options', options: ['Yes', 'No'] };
+            break;
+
+        case 'MORTGAGE_LAWSUITS':
             nextStep = 'ASK_EMAIL';
             nextMessage = { id: 'ask_email', role: 'system', content: "Understood. What's the best email address to send your application summary to?", type: 'text' };
             break;
@@ -485,4 +496,147 @@ function determineNextMove(currentStep: string, data: any, score: DealScore, las
     }
 
     return { nextStep, nextMessage };
+}
+
+/**
+ * URLA 1003 Standard Interfaces
+ */
+export interface URLA1003Section1 {
+    loanAmount: number;
+    propertyAddress: string;
+    propertyType: string;
+    occupancy: string;
+}
+
+export interface URLA1003Section2 {
+    borrower: {
+        fullName: string;
+        email: string;
+        phone: string;
+        dob: string;
+        ssn: string;
+        maritalStatus: string;
+        citizenship: string;
+    };
+}
+
+export interface URLA1003Section3 {
+    currentAddress: string;
+    yearsAtAddress: number;
+    previousAddress: string;
+}
+
+export interface URLA1003Section4 {
+    employment: {
+        employerName: string;
+        monthlyIncome: number;
+    };
+    monthlyDebt: number;
+}
+
+export interface URLA1003Section5 {
+    liquidAssets: number;
+}
+
+export interface URLA1003Section6 {
+    declarations: {
+        bankruptcy: boolean;
+        lawsuits: boolean;
+    };
+}
+
+export interface URLA1003Data {
+    section1: URLA1003Section1;
+    section2: URLA1003Section2;
+    section3: URLA1003Section3;
+    section4: URLA1003Section4;
+    section5: URLA1003Section5;
+    section6: URLA1003Section6;
+    meta: {
+        exportedAt: string;
+        version: string;
+    };
+}
+
+/**
+ * URLA1003Exporter handles the transformation and validation of application data
+ * into the standard 1003 format.
+ */
+export class URLA1003Exporter {
+    private data: ConversationState['data'];
+
+    constructor(data: ConversationState['data']) {
+        this.data = data || {};
+    }
+
+    private maskSSN(ssn?: string): string {
+        if (!ssn) return 'N/A';
+        const digits = ssn.replace(/[^0-9]/g, '');
+        return digits.length >= 4 ? `***-**-${digits.slice(-4)}` : 'N/A';
+    }
+
+    private sanitizeString(val?: string): string {
+        return val?.trim() || 'N/A';
+    }
+
+    private sanitizeNumber(val?: number): number {
+        return typeof val === 'number' ? val : 0;
+    }
+
+    public export(): URLA1003Data {
+        return {
+            section1: {
+                loanAmount: this.sanitizeNumber(this.data.purchasePrice),
+                propertyAddress: this.sanitizeString(this.data.propertyAddress),
+                propertyType: this.sanitizeString(this.data.propertyType),
+                occupancy: this.sanitizeString(this.data.occupancy),
+            },
+            section2: {
+                borrower: {
+                    fullName: this.sanitizeString(this.data.fullName),
+                    email: this.sanitizeString(this.data.email),
+                    phone: this.sanitizeString(this.data.phone),
+                    dob: this.sanitizeString(this.data.dob),
+                    ssn: this.maskSSN(this.data.ssn),
+                    maritalStatus: this.sanitizeString(this.data.maritalStatus),
+                    citizenship: this.sanitizeString(this.data.citizenship),
+                }
+            },
+            section3: {
+                currentAddress: this.sanitizeString(this.data.currentAddress),
+                yearsAtAddress: this.sanitizeNumber(this.data.yearsAtAddress),
+                previousAddress: this.sanitizeString(this.data.previousAddress),
+            },
+            section4: {
+                employment: {
+                    employerName: this.sanitizeString(this.data.employerName),
+                    monthlyIncome: this.sanitizeNumber(this.data.monthlyIncome),
+                },
+                monthlyDebt: this.sanitizeNumber(this.data.monthlyDebt),
+            },
+            section5: {
+                liquidAssets: this.sanitizeNumber(this.data.liquidAssets),
+            },
+            section6: {
+                declarations: {
+                    bankruptcy: !!this.data.bankruptcy,
+                    lawsuits: !!this.data.lawsuits,
+                }
+            },
+            meta: {
+                exportedAt: new Date().toISOString(),
+                version: '1.1.0'
+            }
+        };
+    }
+}
+
+/**
+ * Formats application data into the 1003 standard.
+ * @param data The conversation state data to format.
+ * @returns A structured URLA1003Data object.
+ */
+export function format1003Data(data: ConversationState['data']): URLA1003Data {
+    const exporter = new URLA1003Exporter(data);
+    return exporter.export();
 }

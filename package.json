@@ -10,7 +10,8 @@
     "fetti:auto": "python3 fetti_doctor_wrapper.py --auto",
     "fetti:feature": "python3 fetti_feature_runner.py",
     "fetti:watch": "npx nodemon --watch app --watch components --watch lib --ext ts,tsx,js,jsx --exec \"npm run fetti:auto && npm run fetti:feature\"",
-    "fetti:deploy": "bash scripts/fetti_deploy.sh"
+    "fetti:deploy": "bash scripts/fetti_deploy.sh",
+    "verify:1003": "npx tsx scripts/verify-1003.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
