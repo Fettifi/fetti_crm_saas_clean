@@ -1,11 +1,11 @@
+import AppLayout from "@/components/AppLayout";
+
 export default function SettingsPage() {
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      <p className="text-sm text-slate-400">
-        Workspace settings, Supabase connection, and branding live here.
-      </p>
-
+    <AppLayout
+      title="Settings"
+      description="Workspace settings, Supabase connection, and branding live here."
+    >
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-2">
         <p className="font-semibold text-slate-200">Supabase Connection</p>
         <p>
@@ -17,6 +17,6 @@ export default function SettingsPage() {
           <li>NEXT_PUBLIC_SUPABASE_ANON_KEY</li>
         </ul>
       </div>
-    </div>
+    </AppLayout>
   );
 }

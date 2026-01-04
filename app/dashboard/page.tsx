@@ -1,8 +1,6 @@
-'use client';
-
 import { useState } from 'react';
-import Sidebar from '@/components/Sidebar';
 import { usePathname } from 'next/navigation';
+import AppLayout from '@/components/AppLayout';
 import NewLeadsWidget from '@/components/dashboard/NewLeadsWidget';
 import AppsInProgressWidget from '@/components/dashboard/AppsInProgressWidget';
 import SubmittedAppsWidget from '@/components/dashboard/SubmittedAppsWidget';
@@ -67,9 +65,9 @@ const TABS: { id: TabId; label: string; description: string }[] = [
   },
   {
     id: 'training',
-    label: 'Co Pilot',
+    label: 'My Personal Assistant',
     description:
-      'Your dedicated AI co-pilot. Teach him, ask him to research, or plan your day.',
+      'Your dedicated executive assistant. Teach her, ask her to research, or plan your day.',
   },
   {
     id: 'task-list',
@@ -83,27 +81,6 @@ const TABS: { id: TabId; label: string; description: string }[] = [
       'The Master Plan. Rupee manages this vision board.',
   },
 ];
-
-function StatCard(props: {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-}) {
-  const { title, value, subtitle } = props;
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 px-5 py-4 shadow-[0_0_0_1px_rgba(15,23,42,0.7)]">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-        {title}
-      </p>
-      <div className="mt-3 flex items-baseline gap-2">
-        <span className="text-2xl font-semibold text-slate-50">{value}</span>
-      </div>
-      {subtitle && (
-        <p className="mt-2 text-[11px] text-slate-500">{subtitle}</p>
-      )}
-    </div>
-  );
-}
 
 function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
   if (activeTab === 'dashboard') {
@@ -196,34 +173,15 @@ export default function DashboardPage() {
   const pathname = usePathname();
   // Simple mapping for current path to TabId for sync
   const currentTab = TABS.find(t => pathname.includes(t.id))?.id || 'dashboard';
-
   const active = TABS.find((t) => t.id === currentTab)!;
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900 text-slate-50">
-      <Sidebar />
-
-      {/* Main content */}
-      <main className="flex flex-1 flex-col">
-        {/* Top header */}
-        <header className="border-b border-slate-800 px-6 py-4 md:px-10">
-          <div className="mx-auto max-w-6xl">
-            <h1 className="text-xl font-semibold text-slate-50 md:text-2xl">
-              {active.label}
-            </h1>
-            <p className="mt-1 max-w-xl text-xs text-slate-400 md:text-sm">
-              {active.description}
-            </p>
-          </div>
-        </header>
-
-        {/* Content */}
-        <div className="flex-1 px-4 py-6 md:px-10">
-          <div className="mx-auto max-w-6xl space-y-8">
-            <ActiveTabContent activeTab={currentTab} />
-          </div>
-        </div>
-      </main>
-    </div>
+    <AppLayout
+      title={active.label}
+      description={active.description}
+    >
+      <ActiveTabContent activeTab={currentTab} />
+    </AppLayout>
   );
 }
+
