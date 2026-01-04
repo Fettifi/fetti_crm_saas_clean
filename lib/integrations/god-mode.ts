@@ -8,7 +8,7 @@ export interface CreditReport {
     utilization: number;
 }
 
-import { readCode, proposeUpgrade, deployUpgrade, listFiles } from '@/lib/integrations/github';
+import { readCode, proposeUpgrade, deployUpgrade, listFiles } from './github';
 // const readCode = async (path: string) => ({ content: "Mock Code" });
 // const proposeUpgrade = async () => ({ pr: 123 });
 // const deployUpgrade = async () => ({ status: "Deployed" });

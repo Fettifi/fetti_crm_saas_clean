@@ -48,21 +48,24 @@ export async function streamAudio(text: string, voiceId: string = ELEVENLABS_VOI
     }
 
     // Strategy 2: Default / ElevenLabs Intent
-    // Try ElevenLabs Env Key first
     if (ENV_ELEVENLABS_KEY) {
         try {
+            console.log(`[TTS] Attempting ElevenLabs... (Voice: ${voiceId})`);
             return await runElevenLabs(ENV_ELEVENLABS_KEY, voiceId);
-        } catch (e) {
-            console.warn('ElevenLabs Env Key failed', e);
+        } catch (e: any) {
+            console.warn(`[TTS] ElevenLabs failed: ${e.message}. Falling back to OpenAI.`);
         }
+    } else {
+        console.warn('[TTS] ELEVENLABS_API_KEY is missing. Falling back to OpenAI.');
     }
 
     // Fallback: Try OpenAI (Env)
     if (ENV_OPENAI_KEY) {
         try {
+            console.log('[TTS] Attempting OpenAI fallback (Env)...');
             return await runOpenAI(ENV_OPENAI_KEY, voiceId);
-        } catch (e) {
-            console.warn('OpenAI Fallback (Env) failed', e);
+        } catch (e: any) {
+            console.warn(`[TTS] OpenAI Env fallback failed: ${e.message}`);
         }
     }
 
@@ -72,7 +75,6 @@ export async function streamAudio(text: string, voiceId: string = ELEVENLABS_VOI
         return await runOpenAI(HARDCODED_KEY, voiceId);
     } catch (e: any) {
         console.error('[TTS CRITICAL FAILURE] All attempts failed.', e.message);
-        // Return a specific error object if possible, or let the route handle null
         return null;
     }
 }

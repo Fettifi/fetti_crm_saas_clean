@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as dotenv from 'dotenv';
 import pg from 'pg';
 
-dotenv.config({ path: '.env' });
+dotenv.config({ path: '.env.local' });
 
 async function diagnose() {
     console.log("🔍 STARTING SYSTEM DIAGNOSIS 🔍\n");
@@ -11,7 +11,7 @@ async function diagnose() {
 
     // 1. Environment Variables
     console.log("--- 1. Environment Variables ---");
-    const requiredVars = ['GEMINI_API_KEY', 'TAVILY_API_KEY', 'GITHUB_TOKEN', 'DATABASE_URL'];
+    const requiredVars = ['GEMINI_API_KEY', 'TAVILY_API_KEY', 'GITHUB_TOKEN', 'DATABASE_URL', 'ELEVENLABS_API_KEY', 'OPENAI_API_KEY'];
     for (const v of requiredVars) {
         if (process.env[v]) {
             console.log(`✅ ${v}: Present`);
@@ -91,6 +91,58 @@ async function diagnose() {
         }
     } else {
         console.log("⚠️ Skipping Database test (No URL)");
+    }
+    // 6. ElevenLabs API
+    console.log("\n--- 6. ElevenLabs API Connectivity ---");
+    if (process.env.ELEVENLABS_API_KEY) {
+        try {
+            const response = await fetch("https://api.elevenlabs.io/v1/voices", {
+                headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY }
+            });
+            if (response.ok) {
+                console.log("✅ ElevenLabs: Connected");
+            } else {
+                const err = await response.json();
+                console.log(`❌ ElevenLabs Failed: ${response.status} ${err.detail?.message || response.statusText}`);
+                hasErrors = true;
+            }
+        } catch (e: any) {
+            console.log(`❌ ElevenLabs Error: ${e.message}`);
+            hasErrors = true;
+        }
+    } else {
+        console.log("❌ ElevenLabs: MISSING KEY");
+        hasErrors = true;
+    }
+
+    // 7. OpenAI TTS
+    console.log("\n--- 7. OpenAI TTS Connectivity ---");
+    if (process.env.OPENAI_API_KEY) {
+        try {
+            const response = await fetch("https://api.openai.com/v1/audio/speech", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${process.env.OPENAI_API_KEY.replace('sk_', 'sk-')}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: "tts-1",
+                    input: "ping",
+                    voice: "alloy"
+                })
+            });
+            if (response.ok) {
+                console.log("✅ OpenAI TTS: Connected");
+            } else {
+                console.log(`❌ OpenAI TTS Failed: ${response.status} ${response.statusText}`);
+                hasErrors = true;
+            }
+        } catch (e: any) {
+            console.log(`❌ OpenAI TTS Error: ${e.message}`);
+            hasErrors = true;
+        }
+    } else {
+        console.log("⚠️ Skipping OpenAI TTS test (No Key)");
     }
 
     console.log("\n--------------------------------");
