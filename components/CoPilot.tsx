@@ -20,7 +20,9 @@ export default function CoPilot() {
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -43,7 +45,7 @@ export default function CoPilot() {
     setIsTyping(true);
 
     // Mock API call
-    setTimeout(() => {
+    setTimeout(async () => {
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
@@ -52,6 +54,32 @@ export default function CoPilot() {
       };
       setMessages((prev) => [...prev, assistantMsg]);
       setIsTyping(false);
+
+      // --- Custom Voice Integration ---
+      if (!isMuted) {
+        try {
+          const res = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: assistantMsg.content }),
+          });
+
+          if (res.ok) {
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            if (audioRef.current) {
+              audioRef.current.src = url;
+              audioRef.current.play();
+            } else {
+              const audio = new Audio(url);
+              audioRef.current = audio;
+              audio.play();
+            }
+          }
+        } catch (err) {
+          console.error("Speech playback error:", err);
+        }
+      }
     }, 1000);
   }
 
@@ -65,27 +93,43 @@ export default function CoPilot() {
             Feddy Co-Pilot
           </span>
         </div>
-        <span className="text-[10px] text-slate-500 font-medium">MATRIX v1.0</span>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-slate-500 font-medium">MATRIX v1.0</span>
+          <button
+            onClick={() => setIsMuted(!isMuted)}
+            className={`transition-colors ${isMuted ? 'text-rose-500' : 'text-emerald-500'}`}
+            title={isMuted ? "Unmute Feddy" : "Mute Feddy"}
+          >
+            {isMuted ? (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.535 8.465a.75.75 0 0 1 1.06 0L22.344 11.25l2.75-2.75a.75.75 0 1 1 1.06 1.06l-2.75 2.75 2.75 2.75a.75.75 0 1 1-1.06 1.06l-2.75-2.75-2.75 2.75a.75.75 0 1 1-1.06-1.06l2.75-2.75-2.75-2.75a.75.75 0 0 1 0-1.06Z" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.535 8.465a.75.75 0 0 1 1.06 0 5.25 5.25 0 0 1 0 7.424.75.75 0 1 1-1.06-1.06 3.75 3.75 0 0 0 0-5.304.75.75 0 0 1 0-1.06Z" />
+                <path d="M21.717 5.283a.75.75 0 0 1 1.06 0 9.75 9.75 0 0 1 0 13.788.75.75 0 1 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
+              </svg>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
-      <div 
+      <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-800"
       >
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex flex-col ${
-              msg.role === "user" ? "items-end" : "items-start"
-            }`}
+            className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"
+              }`}
           >
             <div
-              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm ${
-                msg.role === "user"
-                  ? "bg-emerald-600 text-white rounded-tr-none"
-                  : "bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-none"
-              }`}
+              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm ${msg.role === "user"
+                ? "bg-emerald-600 text-white rounded-tr-none"
+                : "bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-none"
+                }`}
             >
               {msg.content}
             </div>
