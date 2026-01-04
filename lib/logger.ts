@@ -1,7 +1,16 @@
-
 import { supabase } from './supabaseClient';
 
+const LOG_THROTTLE_MS = 100;
+let lastLogTime = 0;
+
 export async function logActivity(action: string, details: any = {}) {
+    const now = Date.now();
+    if (now - lastLogTime < LOG_THROTTLE_MS) {
+        // Skip logging if too frequent to avoid rate limits
+        return;
+    }
+    lastLogTime = now;
+
     try {
         // Attempt to log to 'user_activity' table
         // Using a fire-and-forget approach to not block UI
