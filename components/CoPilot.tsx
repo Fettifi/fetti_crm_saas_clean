@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRupeeVoice } from "@/hooks/useRupeeVoice";
 
 type Message = {
   id: string;
@@ -20,9 +21,15 @@ export default function CoPilot() {
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const {
+    speakText,
+    isMuted,
+    setIsMuted,
+    initAudioContext
+  } = useRupeeVoice();
+  // const [isMuted, setIsMuted] = useState(false); // Replaced by hook
+  // const audioRef = useRef<HTMLAudioElement | null>(null); // Replaced by hook
   const scrollRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -32,6 +39,9 @@ export default function CoPilot() {
 
   async function handleSendMessage() {
     if (!input.trim()) return;
+
+    // Initialize audio context
+    initAudioContext();
 
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -44,43 +54,66 @@ export default function CoPilot() {
     setInput("");
     setIsTyping(true);
 
-    // Mock API call
-    setTimeout(async () => {
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: `I'm analyzing your request regarding "${userMsg.content}". As your Matrix Co-Pilot, I can help you automate follow-ups or analyze lead quality. What would you like to do next?`,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-      setIsTyping(false);
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          history: messages.map(m => ({ role: m.role, content: m.content })).concat({ role: 'user', content: userMsg.content }),
+          message: userMsg.content,
+          mode: 'assistant',
+          state: { step: 'GENERAL' }
+        })
+      });
 
-      // --- Custom Voice Integration ---
-      if (!isMuted) {
-        try {
-          const res = await fetch("/api/tts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: assistantMsg.content }),
-          });
+      if (!response.body) throw new Error("No response body");
 
-          if (res.ok) {
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            if (audioRef.current) {
-              audioRef.current.src = url;
-              audioRef.current.play();
-            } else {
-              const audio = new Audio(url);
-              audioRef.current = audio;
-              audio.play();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+            if (data.type === 'result') {
+              const assistantMsg: Message = {
+                id: (Date.now() + 1).toString(),
+                role: "assistant",
+                content: data.message,
+                timestamp: new Date(),
+              };
+              setMessages(prev => [...prev, assistantMsg]);
+
+              if (!isMuted) {
+                speakText(data.message);
+              }
             }
+          } catch (e) {
+            console.error('Stream parse error:', e);
           }
-        } catch (err) {
-          console.error("Speech playback error:", err);
         }
       }
-    }, 1000);
+    } catch (error) {
+      console.error("CoPilot Error:", error);
+      const errorMsg: Message = {
+        id: Date.now().toString(),
+        role: "assistant", // Keep as assistant for UI consistency or system if supported
+        content: "I'm having trouble connecting to the Matrix. Please try again.",
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setIsTyping(false);
+    }
   }
 
   return (
