@@ -1,13 +1,13 @@
 'use client';
 
-import Image from 'next/image';
 import { useState } from 'react';
+import Sidebar from '@/components/Sidebar';
+import { usePathname } from 'next/navigation';
 import NewLeadsWidget from '@/components/dashboard/NewLeadsWidget';
 import AppsInProgressWidget from '@/components/dashboard/AppsInProgressWidget';
 import SubmittedAppsWidget from '@/components/dashboard/SubmittedAppsWidget';
 import AutomationsWidget from '@/components/dashboard/AutomationsWidget';
 import ReferralStatsWidget from '@/components/dashboard/ReferralStatsWidget';
-import ChatInterface from '@/components/apply/ChatInterface';
 import AutomationHub from '@/components/dashboard/AutomationHub';
 import RoadmapView from '@/components/dashboard/RoadmapView';
 import TaskList from '@/components/dashboard/TaskList';
@@ -84,10 +84,6 @@ const TABS: { id: TabId; label: string; description: string }[] = [
   },
 ];
 
-function cx(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(' ');
-}
-
 function StatCard(props: {
   title: string;
   value: string | number;
@@ -138,8 +134,6 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
     );
   }
 
-  // Non-dashboard tabs reuse the same Matrix workspace box,
-  // but with different copy so the agent knows where to wire things.
   const tabCopy: Record<TabId, string> = {
     dashboard: '',
     leads:
@@ -199,94 +193,15 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
 }
 
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const pathname = usePathname();
+  // Simple mapping for current path to TabId for sync
+  const currentTab = TABS.find(t => pathname.includes(t.id))?.id || 'dashboard';
 
-  const active = TABS.find((t) => t.id === activeTab)!;
+  const active = TABS.find((t) => t.id === currentTab)!;
 
   return (
     <div className="flex min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900 text-slate-50">
-      {/* Sidebar – stays fixed, never navigates away */}
-      <aside className="flex w-60 flex-col border-r border-slate-900/80 bg-slate-950/95">
-        {/* Brand block */}
-        <div className="border-b border-slate-900/80 px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-emerald-500/40 bg-emerald-950/70">
-              <Image
-                src="/fetti-logo.png"
-                alt="Fetti CRM logo"
-                width={64}
-                height={64}
-                className="rounded-xl"
-              />
-            </div>
-            <div className="space-y-0.5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-400">
-                FETTI CRM
-              </p>
-              <p className="text-xs font-medium text-slate-100">
-                We Do Money · Matrix
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Sidebar nav (local tab state only) */}
-        <nav className="flex-1 space-y-1 px-3 py-3 text-sm">
-          {TABS.map((tab) => {
-            const isActive = tab.id === activeTab;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={cx(
-                  'flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition-colors',
-                  isActive
-                    ? 'bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/40'
-                    : 'text-slate-300 hover:bg-slate-900/80 hover:text-slate-50'
-                )}
-              >
-                <span>{tab.label}</span>
-                {isActive && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Matrix status footer */}
-        <div className="border-t border-slate-900/80 px-4 py-4 text-[11px] text-slate-500">
-          <div className="flex items-center gap-3 rounded-xl bg-slate-900/50 p-3 border border-slate-800">
-            <div className="h-10 w-10 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-              <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-white">Rupee</p>
-              <p className="text-xs text-emerald-400">Online & Ready</p>
-            </div>
-          </div>
-          <p className="mt-1 leading-snug mb-3">
-            Agent changes should respect this shell, sidebar, and branding.
-          </p>
-
-          <button
-            onClick={async () => {
-              const { createBrowserClient } = await import('@supabase/ssr');
-              const supabase = createBrowserClient(
-                process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-              );
-              await supabase.auth.signOut();
-              window.location.href = '/login';
-            }}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-slate-400 transition hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/50"
-          >
-            <span>Log Out</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>
-          </button>
-        </div>
-      </aside>
+      <Sidebar />
 
       {/* Main content */}
       <main className="flex flex-1 flex-col">
@@ -305,7 +220,7 @@ export default function DashboardPage() {
         {/* Content */}
         <div className="flex-1 px-4 py-6 md:px-10">
           <div className="mx-auto max-w-6xl space-y-8">
-            <ActiveTabContent activeTab={activeTab} />
+            <ActiveTabContent activeTab={currentTab} />
           </div>
         </div>
       </main>
