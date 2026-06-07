@@ -8,6 +8,7 @@ import { logActivity } from "@/lib/logger";
 const navItems = [
   { href: "/", label: "Dashboard", icon: "📊" },
   { href: "/leads", label: "Leads", icon: "📋" },
+  { href: "/agents", label: "AI Agents", icon: "🧠" },
   { href: "/pipeline", label: "Pipeline", icon: "📈" },
   { href: "/requests", label: "Requests", icon: "📥" },
   { href: "/automations", label: "Automations", icon: "⚡" },
