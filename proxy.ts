@@ -2,6 +2,16 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
+    // Apex domain (fettifi.com / www) serves the public marketing homepage;
+    // the CRM lives on app.fettifi.com. Rewrite the apex root to /home.
+    const host = (request.headers.get('host') || '').toLowerCase();
+    const isApex = host === 'fettifi.com' || host === 'www.fettifi.com';
+    if (isApex && request.nextUrl.pathname === '/') {
+        const url = request.nextUrl.clone();
+        url.pathname = '/home';
+        return NextResponse.rewrite(url);
+    }
+
     let response = NextResponse.next({
         request: {
             headers: request.headers,
