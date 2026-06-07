@@ -22,6 +22,12 @@ export async function GET(req: NextRequest) {
     const { data } = await supabaseAdmin.from("players").select("*").eq("is_owner", true).limit(1).maybeSingle();
     player = data;
   }
+  if (!player) {
+    // First-ever load: create the owner so stats + the player picker work immediately.
+    const { data } = await supabaseAdmin.from("players")
+      .insert([{ name: "You", role: "Owner / Broker", emoji: "👑", is_owner: true }]).select().single();
+    player = data;
+  }
   const isOwner = !!player?.is_owner;
 
   const { data: open } = await supabaseAdmin
