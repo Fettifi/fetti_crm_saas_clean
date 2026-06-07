@@ -18,17 +18,23 @@ export type LeadAlert = {
   score?: number | null;
   tier?: string | null;
   source?: string | null;
+  draft_reply?: string | null;   // AI-drafted first-touch message
+  auto_sent?: string[];          // channels the lead was auto-contacted on
 };
 
 function summarize(l: LeadAlert): string {
   const parts = [
     `🟢 New Fetti lead (${l.tier || "?"}, score ${l.score ?? "?"})`,
     l.full_name && `Name: ${l.full_name}`,
-    l.phone && `Phone: ${l.phone}`,
-    l.email && `Email: ${l.email}`,
+    l.phone && `📞 ${l.phone}`,
+    l.email && `✉️ ${l.email}`,
     l.loan_purpose && `Purpose: ${l.loan_purpose}`,
     l.state && `State: ${l.state}`,
     l.source && `Source: ${l.source}`,
+    l.auto_sent && l.auto_sent.length
+      ? `✅ Auto-contacted via: ${l.auto_sent.join(", ")}`
+      : `⚠️ Not auto-contacted — reply now`,
+    l.draft_reply && `\n💬 Suggested reply:\n"${l.draft_reply}"`,
   ].filter(Boolean);
   return parts.join("\n");
 }
