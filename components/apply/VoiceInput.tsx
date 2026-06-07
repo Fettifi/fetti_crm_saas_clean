@@ -83,14 +83,21 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
 
             recognition.onerror = (event: any) => {
                 console.error('Speech recognition error', event.error);
-                if (event.error === 'not-allowed') {
+                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                     setHandsFreeMode(false);
-                    toast.error('Microphone access denied. Please check your settings.');
+                    setIsListening(false);
+                    toast.error('Microphone is blocked. Click the 🔒 in your browser address bar → allow Microphone → reload. (Voice input needs Chrome, Edge, or Safari — Brave/Firefox don’t support it.)');
                 } else if (event.error === 'no-speech') {
-                    // Ignore no-speech errors (common in silence)
-                    return;
-                } else {
-                    // toast.error(`Voice Error: ${event.error}`);
+                    return; // common in silence — ignore
+                } else if (event.error === 'audio-capture') {
+                    setIsListening(false);
+                    toast.error('No microphone detected. Make sure a mic is connected and selected.');
+                } else if (event.error === 'network') {
+                    setIsListening(false);
+                    toast.error('Voice service unreachable. It needs internet and is not supported in Brave — try Chrome, Edge, or Safari.');
+                } else if (event.error !== 'aborted') {
+                    setIsListening(false);
+                    toast.error(`Voice input error: ${event.error}`);
                 }
             };
 
@@ -126,19 +133,34 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
         }
     }, []); // Empty dependency array = Run once on mount
 
-    const toggleListening = () => {
+    const toggleListening = async () => {
         if (!isSupported || !recognitionRef.current) return;
 
         if (isListening) {
             recognitionRef.current.stop();
             setHandsFreeMode(false);
-        } else {
-            try {
-                recognitionRef.current.start();
-                setIsListening(true);
-            } catch (e) {
-                console.error("Failed to start:", e);
+            return;
+        }
+
+        // Explicitly request mic permission first — gives a clear prompt and a
+        // clear failure instead of the recognizer silently doing nothing.
+        try {
+            if (navigator.mediaDevices?.getUserMedia) {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach((t) => t.stop());
             }
+        } catch (e) {
+            toast.error('Microphone access is blocked. Allow it in your browser settings (🔒 icon in the address bar) and try again.');
+            return;
+        }
+
+        try {
+            recognitionRef.current.start();
+            setIsListening(true);
+        } catch (e) {
+            console.error('Failed to start:', e);
+            // start() throws if already running — reset state safely.
+            setIsListening(false);
         }
     };
 
