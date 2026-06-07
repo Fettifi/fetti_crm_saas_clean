@@ -5,6 +5,7 @@
 // single front door for the website application form and the AI apply chat.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { notifyNewLead } from "@/lib/notify/leadAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -108,6 +109,17 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("[/api/apply] insert error:", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Speed-to-lead alert (non-blocking, all channels optional).
+    try {
+      await notifyNewLead({
+        lead_id: data.id, full_name, email: body.email, phone: body.phone,
+        state: body.state, loan_purpose: body.loan_purpose, score, tier,
+        source: row.source as string,
+      });
+    } catch (e) {
+      console.warn("[/api/apply] alert failed (lead still saved):", e);
     }
 
     return NextResponse.json(
