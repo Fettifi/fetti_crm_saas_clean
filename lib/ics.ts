@@ -11,6 +11,7 @@ export type ICSEvent = {
   end?: Date;
   description?: string;
   reminderMinutes?: number; // minutes before to alert
+  rrule?: string;           // e.g. "FREQ=DAILY" for recurring goals
 };
 
 export function buildICS(events: ICSEvent[], calName = "Fetti Quest Log"): string {
@@ -32,6 +33,7 @@ export function buildICS(events: ICSEvent[], calName = "Fetti Quest Log"): strin
     lines.push(`DTSTART:${stamp(e.start)}`);
     lines.push(`DTEND:${stamp(end)}`);
     lines.push(`SUMMARY:${esc(e.title)}`);
+    if (e.rrule) lines.push(`RRULE:${e.rrule}`);
     if (e.description) lines.push(`DESCRIPTION:${esc(e.description)}`);
     if (e.reminderMinutes && e.reminderMinutes > 0) {
       lines.push("BEGIN:VALARM", `TRIGGER:-PT${Math.round(e.reminderMinutes)}M`, "ACTION:DISPLAY", "DESCRIPTION:Reminder", "END:VALARM");

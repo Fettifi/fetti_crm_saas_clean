@@ -57,13 +57,16 @@ export async function GET(req: NextRequest) {
   const days = new Set<string>();
   let xp = 0, brain_done = 0, done_today = 0, done_week = 0;
   const today = dayStr(new Date()); const weekAgo = Date.now() - 7 * 86400000;
+  let total_done = 0;
   for (const c of mine as any[]) {
     xp += c.xp || 0;
+    const isBonus = typeof c.source === "string" && c.source.startsWith("bonus");
     if (c.source === "brain") brain_done++;
+    if (!isBonus) total_done++;
     if (c.completed_at) {
       const d = new Date(c.completed_at); days.add(dayStr(d));
-      if (dayStr(d) === today) done_today++;
-      if (d.getTime() >= weekAgo) done_week++;
+      if (!isBonus && dayStr(d) === today) done_today++;
+      if (!isBonus && d.getTime() >= weekAgo) done_week++;
     }
   }
   let bosses_won = 0;
@@ -74,7 +77,7 @@ export async function GET(req: NextRequest) {
 
   const stats = {
     ...levelInfo(xp), streak: streakFrom(days),
-    done_today, done_week, total_done: mine.length, brain_done, bosses_won,
+    done_today, done_week, total_done, brain_done, bosses_won,
     player: player ? { id: player.id, name: player.name, emoji: player.emoji, is_owner: player.is_owner } : null,
   };
   const calendar_url = await ownerCalUrl();
@@ -109,7 +112,28 @@ export async function PATCH(req: NextRequest) {
       const { data, error } = await supabaseAdmin.from("org_tasks").update(patch).eq("id", id).select().single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       await logActivity({ entity_type: "org", entity_id: id, actor: "lo", action: "task.completed", detail: { title: task.title, cadence } });
-      return NextResponse.json({ task: data });
+
+      // Combo bonus: clearing ALL goals of a cadence this period pays extra XP
+      // (once per player per period).
+      let bonus: { label: string; xp: number } | null = null;
+      if (cadence !== "once") {
+        const { data: sameCad } = await supabaseAdmin.from("org_tasks").select("last_done_at").eq("status", "open").eq("cadence", cadence);
+        const list = sameCad || [];
+        const allDone = list.length > 0 && list.every((x: any) => doneThisPeriod(cadence, x.last_done_at));
+        if (allDone) {
+          const bonusSource = `bonus:${cadence}`;
+          const { data: prior } = await supabaseAdmin.from("quest_completions").select("player_id, completed_at").eq("source", bonusSource);
+          const already = (prior || []).some((e: any) =>
+            (e.player_id === (completed_by || null) || (!e.player_id && !completed_by)) && doneThisPeriod(cadence, e.completed_at));
+          if (!already) {
+            const amt = cadence === "daily" ? 25 : cadence === "weekly" ? 50 : 100;
+            await supabaseAdmin.from("quest_completions").insert([{ task_id: null, player_id: completed_by || null, source: bonusSource, xp: amt }]);
+            bonus = { label: `All ${cadence} goals cleared!`, xp: amt };
+            await logActivity({ entity_type: "org", actor: "lo", action: "goals.cleared", detail: { cadence, bonus_xp: amt } });
+          }
+        }
+      }
+      return NextResponse.json({ task: data, bonus });
     }
 
     // reopen a one-time quest

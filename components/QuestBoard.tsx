@@ -45,6 +45,7 @@ export default function QuestBoard() {
   const [toast, setToast] = useState<string | null>(null);
   const [levelUp, setLevelUp] = useState<{ level: number; rank: string } | null>(null);
   const [bossWin, setBossWin] = useState<{ title: string; xp: number } | null>(null);
+  const [combo, setCombo] = useState<{ label: string; xp: number } | null>(null);
   const [muted, setMuted] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -148,8 +149,13 @@ export default function QuestBoard() {
     else setOpen((o) => o.map((x) => x.id === t.id ? { ...x, done_this_period: true } : x));
     setToast(`+${xpFor(t.source)} XP`); confetti(false); tone([660, 880]);
     setTimeout(() => setToast(null), 1200);
-    await fetch("/api/tasks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: t.id, status: "done", completed_by: currentId }) });
+    const r = await fetch("/api/tasks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: t.id, status: "done", completed_by: currentId }) });
+    const j = await r.json().catch(() => null);
     const s = await loadTasks(currentId); loadMeta();
+    if (j && j.bonus) {
+      setCombo(j.bonus); confetti(true); tone([523, 659, 784, 1047, 1318], 0.14);
+      setTimeout(() => setCombo(null), 2600);
+    }
     if (s && lastLevel.current !== null && s.level > lastLevel.current) {
       setLevelUp({ level: s.level, rank: s.rank }); confetti(true); tone([523, 659, 784, 1047], 0.16);
       setTimeout(() => setLevelUp(null), 2600);
@@ -232,6 +238,15 @@ export default function QuestBoard() {
             <div className="text-xs uppercase tracking-[0.3em] opacity-80">⚔️ Boss Defeated!</div>
             <div className="text-3xl font-black mt-1">{bossWin.title}</div>
             <div className="text-xl font-bold mt-1">+{bossWin.xp} XP</div>
+          </div>
+        </div>
+      )}
+      {combo && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center pointer-events-none">
+          <div className="bg-gradient-to-br from-orange-500 to-yellow-400 text-slate-950 px-10 py-7 rounded-3xl shadow-2xl text-center scale-110">
+            <div className="text-xs uppercase tracking-[0.3em] opacity-80">🔥 Combo Bonus!</div>
+            <div className="text-2xl font-black mt-1">{combo.label}</div>
+            <div className="text-xl font-extrabold mt-1">+{combo.xp} XP</div>
           </div>
         </div>
       )}
