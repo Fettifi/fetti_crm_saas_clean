@@ -27,11 +27,18 @@ export function useRupeeVoice() {
             const available = window.speechSynthesis.getVoices();
             setVoices(available);
 
+            const CUSTOM_VOICE = 'NBA1cQRTWFj793Oifdaj'; // Rupee custom ElevenLabs voice ("Pii")
+            const OPENAI_VOICES = ['shimmer', 'alloy', 'echo', 'fable', 'onyx', 'nova'];
             const saved = localStorage.getItem('rupee_voice');
-            if (saved) {
-                setSelectedVoice(saved);
+            // Honor a saved NEURAL voice (20-char ElevenLabs id or an OpenAI voice).
+            // Migrate any stale BROWSER-voice preference back to the custom voice, so
+            // Rupee speaks in the branded ElevenLabs voice by default.
+            const isNeural = !!saved && (saved.length === 20 || OPENAI_VOICES.includes(saved));
+            if (isNeural) {
+                setSelectedVoice(saved as string);
             } else {
-                setSelectedVoice('NBA1cQRTWFj793Oifdaj'); // Default to Custom Neural Voice
+                setSelectedVoice(CUSTOM_VOICE);
+                localStorage.setItem('rupee_voice', CUSTOM_VOICE);
             }
         };
 
