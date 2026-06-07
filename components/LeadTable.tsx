@@ -30,8 +30,11 @@ export default function LeadTable() {
 
       const { data, error } = await supabase
         .from("leads")
+        // NOTE: do not embed applications(...) — that table/relationship does not
+        // exist, which made the whole query fail (PGRST200) and the leads page show
+        // nothing. Select only real columns on the leads table.
         .select(
-          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, applications(notes)"
+          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source"
         )
         .order("created_at", { ascending: false })
         .limit(200);
