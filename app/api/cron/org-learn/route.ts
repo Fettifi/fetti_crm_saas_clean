@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { runOrgBrain } from "@/lib/agents/orgBrain";
+import { logActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -73,7 +74,28 @@ async function learn() {
     model: process.env.OPENAI_MODEL || "gpt-4o-mini",
   }]);
 
-  return { ok: true, summary: result.summary, north_star: result.north_star, priorities: result.priorities, metrics };
+  // Turn the brain's next-best-actions into trackable tasks. Dedup against
+  // currently-open brain tasks so a daily run doesn't pile up duplicates.
+  let tasksCreated = 0;
+  try {
+    const { data: openTasks } = await supabaseAdmin.from("org_tasks").select("dedup_key").eq("status", "open");
+    const existing = new Set((openTasks || []).map((t: any) => t.dedup_key));
+    const toInsert: any[] = [];
+    (result.priorities || []).forEach((p, idx) => {
+      const key = String(p).toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 80);
+      if (key && !existing.has(key)) {
+        existing.add(key);
+        toInsert.push({ title: String(p).slice(0, 200), source: "brain", status: "open", priority: (result.priorities.length - idx), dedup_key: key });
+      }
+    });
+    if (toInsert.length) {
+      await supabaseAdmin.from("org_tasks").insert(toInsert);
+      tasksCreated = toInsert.length;
+      await logActivity({ entity_type: "org", actor: "agent:brain", action: "tasks.created", detail: { count: tasksCreated } });
+    }
+  } catch (e) { console.warn("[org-learn] task spawn failed:", e); }
+
+  return { ok: true, summary: result.summary, north_star: result.north_star, priorities: result.priorities, tasks_created: tasksCreated, metrics };
 }
 
 export async function GET(req: NextRequest) {

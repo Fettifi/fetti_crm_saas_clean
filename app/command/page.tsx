@@ -50,9 +50,18 @@ export default function CommandPage() {
     finally { setLearning(false); }
   }
   const [thinking, setThinking] = useState(false);
+  const [tasks, setTasks] = useState<{ id: string; title: string; source: string }[]>([]);
+  async function loadTasks() {
+    const r = await fetch("/api/tasks"); const j = await r.json(); setTasks(j.open || []);
+  }
+  useEffect(() => { loadTasks(); }, []);
+  async function completeTask(id: string) {
+    setTasks((t) => t.filter((x) => x.id !== id));
+    await fetch("/api/tasks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status: "done" }) });
+  }
   async function runBrain() {
     setThinking(true);
-    try { await fetch("/api/cron/org-learn", { method: "POST" }); await load(); }
+    try { await fetch("/api/cron/org-learn", { method: "POST" }); await load(); await loadTasks(); }
     finally { setThinking(false); }
   }
 
@@ -109,12 +118,17 @@ export default function CommandPage() {
               {s.org?.summary ? (
                 <>
                   <p className="text-sm text-slate-200 mt-4">🧠 {s.org.summary}</p>
-                  {s.org.priorities.length > 0 && (
+                  {tasks.length > 0 && (
                     <div className="mt-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Next best actions</div>
-                      <ol className="list-decimal list-inside text-sm text-indigo-200/90 space-y-1">
-                        {s.org.priorities.map((x, i) => <li key={i}>{x}</li>)}
-                      </ol>
+                      <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Action items — check off as you go</div>
+                      <div className="space-y-1.5">
+                        {tasks.map((t) => (
+                          <label key={t.id} className="flex items-start gap-2 text-sm cursor-pointer group">
+                            <input type="checkbox" onChange={() => completeTask(t.id)} className="mt-0.5 accent-emerald-500" />
+                            <span className="text-indigo-200/90 group-hover:text-white">{t.title}{t.source === "brain" && <span className="ml-1 text-[10px] text-indigo-400/60">brain</span>}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {s.org.learnedAt && <div className="text-[11px] text-slate-600 mt-3">Last reasoned {new Date(s.org.learnedAt).toLocaleString()}</div>}

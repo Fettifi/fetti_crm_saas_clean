@@ -173,7 +173,14 @@ export async function POST(req: NextRequest) {
       after(async () => {
         // Open a loan file immediately — gives the borrower a custom document link
         // and seeds the checklist/compliance for this product.
-        try { await ensureLoanFileForLead(newLead); } catch (e) { console.warn("[/api/apply] loan file create failed:", e); }
+        let fileLink: string | undefined;
+        try {
+          const loanFile = await ensureLoanFileForLead(newLead);
+          if (loanFile?.share_token) {
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+            fileLink = `${appUrl}/file/${loanFile.share_token}`;
+          }
+        } catch (e) { console.warn("[/api/apply] loan file create failed:", e); }
 
         let draftReply = "";
         try {
@@ -190,7 +197,7 @@ export async function POST(req: NextRequest) {
         let autoSent: string[] = [];
         try {
           const res = await respondToLead({
-            name: full_name, email, phone, loan_purpose: body.loan_purpose, message: draftReply,
+            name: full_name, email, phone, loan_purpose: body.loan_purpose, message: draftReply, link: fileLink,
           });
           autoSent = res.sent;
         } catch (e) { console.warn("[/api/apply] auto-response failed:", e); }
