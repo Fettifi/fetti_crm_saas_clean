@@ -11,7 +11,7 @@
 // Occupancy is authoritative: if the borrower won't live there, it's an
 // investment loan — that drives product selection AND licensing (investment /
 // business loans are available in all 50 states; owner-occupied only FL/MI/CA).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, ArrowLeft, ShieldCheck } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
@@ -281,6 +281,51 @@ export default function ApplyWizard() {
   const [prod, setProd] = useState<string>("");
   const [contact, setContact] = useState<Record<string, unknown>>({});
 
+  // ---- Learning loop: telemetry + learned config -----------------------------
+  const sid = useRef<string>("");
+  const [goalOrder, setGoalOrder] = useState<string[] | null>(null);
+  const [tip, setTip] = useState<string>("");
+  useEffect(() => {
+    sid.current =
+      (typeof crypto !== "undefined" && "randomUUID" in crypto)
+        ? crypto.randomUUID()
+        : `s_${Math.random().toString(36).slice(2)}${Date.now()}`;
+    track("start", { phase: "flow" });
+    // Pull what the Application Coach has learned, and adapt this session to it.
+    fetch("/api/wizard/event")
+      .then((r) => r.json())
+      .then((d) => {
+        const c = d?.config || {};
+        if (Array.isArray(c.goal_order) && c.goal_order.length) setGoalOrder(c.goal_order);
+        if (typeof c.tip === "string") setTip(c.tip);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fire-and-forget funnel event (never blocks or breaks the UI).
+  function track(event: string, extra: Record<string, unknown> = {}) {
+    if (!sid.current) return;
+    try {
+      fetch("/api/wizard/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({ session_id: sid.current, event, ...extra }),
+      }).catch(() => {});
+    } catch { /* ignore */ }
+  }
+
+  // Goal question reordered by what actually converts (learned), base order otherwise.
+  const goalQ: Q = useMemo(() => {
+    const base = GOAL as Extract<Q, { kind: "select" }>;
+    if (!goalOrder) return base;
+    const byVal = new Map(base.options.map((o) => [o.value, o]));
+    const ordered = goalOrder.map((v) => byVal.get(v)).filter(Boolean) as Opt[];
+    for (const o of base.options) if (!ordered.includes(o)) ordered.push(o);
+    return { ...base, options: ordered };
+  }, [goalOrder]);
+
   const steps: Q[] = useMemo(() => (answers.goal ? [GOAL, ...FLOWS[answers.goal], CREDIT_Q] : [GOAL]), [answers.goal]);
   const aSteps: Q[] = useMemo(() => appSteps(answers), [answers]);
 
@@ -299,6 +344,7 @@ export default function ApplyWizard() {
     const next = { ...answers, [id]: value };
     setAnswers(next);
     setInput("");
+    track("answer", { phase: "flow", step_id: id, step_index: i, goal: next.goal, occupancy: effectiveOccupancy(next), product: next.goal ? product(next) : undefined });
     const flow = id === "goal" ? [GOAL, ...FLOWS[value], CREDIT_Q] : steps;
     if (i + 1 >= flow.length) setPhase("contact");
     else setI(i + 1);
@@ -309,6 +355,7 @@ export default function ApplyWizard() {
     const next = { ...answers, [id]: value };
     setAnswers(next);
     setInput("");
+    track("answer", { phase: "app", step_id: id, step_index: totalQualify + 1 + ai, goal: next.goal, occupancy: effectiveOccupancy(next), product: product(next) });
     if (ai + 1 >= aSteps.length) submitApplication(next);
     else setAi(ai + 1);
   }
@@ -385,6 +432,7 @@ export default function ApplyWizard() {
     try {
       const j = await post(buildPayload(answers, c));
       setLeadId(j.lead_id);
+      track("contact", { phase: "contact", goal: answers.goal, occupancy: effectiveOccupancy(answers), product: p });
       setPhase("app"); setAi(0);
     } catch (err) { setError(err instanceof Error ? err.message : "Error"); } finally { setSubmitting(false); }
   }
@@ -394,6 +442,7 @@ export default function ApplyWizard() {
     setSubmitting(true); setError(null);
     try {
       await post(buildPayload(finalAnswers, contact));
+      track("complete", { phase: "app", goal: finalAnswers.goal, occupancy: effectiveOccupancy(finalAnswers), product: product(finalAnswers) });
     } catch { /* lead already exists; non-fatal — specialist follows up */ } finally {
       setSubmitting(false); setPhase("done");
     }
@@ -476,9 +525,13 @@ export default function ApplyWizard() {
 
   // ---- FLOW (qualify) -------------------------------------------------------
   const q = steps[i];
+  const displayQ = q.id === "goal" ? goalQ : q; // apply learned goal ordering
   return (
     <Shell pct={pct} onBack={i > 0 ? back : undefined}>
-      <QuestionView q={q} input={input} setInput={setInput} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerFlow(q.id, "", q.kind) : undefined} />
+      <QuestionView q={displayQ} input={input} setInput={setInput} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerFlow(q.id, "", q.kind) : undefined} />
+      {q.id === "goal" && tip && (
+        <p className="mt-4 text-xs text-emerald-300/80 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 shrink-0" /> {tip}</p>
+      )}
     </Shell>
   );
 }

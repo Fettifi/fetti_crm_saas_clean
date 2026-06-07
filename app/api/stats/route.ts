@@ -47,6 +47,34 @@ export async function GET() {
   const { count: agentRuns } = await supabaseAdmin
     .from("lead_agents").select("*", { count: "exact", head: true });
 
+  // ---- Application Coach: what the wizard has learned + recent funnel ----
+  const { data: insight } = await supabaseAdmin
+    .from("wizard_insights")
+    .select("created_at, summary, insights, recommendations, sample")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const since14 = new Date(now - 14 * 86400000).toISOString();
+  const { data: wev } = await supabaseAdmin
+    .from("wizard_events").select("session_id, event").gte("created_at", since14).limit(20000);
+  const sset = new Map<string, { contacted: boolean; completed: boolean }>();
+  for (const e of (wev || []) as any[]) {
+    const s = sset.get(e.session_id) || { contacted: false, completed: false };
+    if (e.event === "contact") s.contacted = true;
+    if (e.event === "complete") s.completed = true;
+    sset.set(e.session_id, s);
+  }
+  const ss = [...sset.values()];
+  const wizard = {
+    sessions: ss.length,
+    contacts: ss.filter((x) => x.contacted).length,
+    completes: ss.filter((x) => x.completed).length,
+    summary: insight?.summary || null,
+    insights: (insight?.insights as string[]) || [],
+    recommendations: (insight?.recommendations as string[]) || [],
+    learnedAt: insight?.created_at || null,
+  };
+
   const topSources = Object.entries(sources).sort((a, b) => b[1] - a[1]).slice(0, 6)
     .map(([source, count]) => ({ source, count }));
 
@@ -56,5 +84,6 @@ export async function GET() {
     sources: topSources,
     partners: topPartners,
     agentRuns: agentRuns || 0,
+    wizard,
   });
 }
