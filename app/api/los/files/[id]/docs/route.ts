@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
+import { maybeAdvanceStage } from "@/lib/los";
 
 export const dynamic = "force-dynamic";
 const BUCKET = "loan-docs";
@@ -50,6 +51,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .from("loan_documents").update(patch).eq("id", b.doc_id).eq("loan_file_id", id).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     await logActivity({ entity_type: "document", entity_id: doc.id, loan_file_id: id, actor: "lo", action: "doc.reviewed", detail: { name: doc.name, status: doc.status } });
+    await maybeAdvanceStage(id);
     return NextResponse.json({ document: doc });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });

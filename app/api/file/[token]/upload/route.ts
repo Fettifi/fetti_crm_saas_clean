@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
+import { maybeAdvanceStage } from "@/lib/los";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       entity_type: "document", entity_id: doc?.id, loan_file_id: file.id, lead_id: file.lead_id,
       actor: "borrower", action: "doc.uploaded", detail: { name: doc?.name || safeName, size: upload.size },
     });
+    await maybeAdvanceStage(file.id);
     return NextResponse.json({ ok: true, document: { id: doc?.id, name: doc?.name, status: "received" } }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });

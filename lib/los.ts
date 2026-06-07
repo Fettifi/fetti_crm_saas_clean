@@ -166,6 +166,31 @@ export async function createLoanFileFromLead(lead: LoanFile): Promise<LoanFile |
   return file;
 }
 
+// Auto-advance Application -> Processing once every REQUIRED document is in.
+// Called after a borrower upload or an LO document review. Only moves the first
+// stage automatically; later stages need a human decision.
+export async function maybeAdvanceStage(loanFileId: string): Promise<void> {
+  try {
+    const { data: file } = await supabaseAdmin
+      .from("loan_files").select("id, stage, lead_id").eq("id", loanFileId).maybeSingle();
+    if (!file || file.stage !== "Application") return;
+    const { data: req } = await supabaseAdmin
+      .from("loan_documents").select("status").eq("loan_file_id", loanFileId).eq("required", true);
+    if (!req || !req.length) return;
+    const allIn = req.every((d: any) => d.status === "received" || d.status === "accepted");
+    if (!allIn) return;
+    await supabaseAdmin.from("loan_files")
+      .update({ stage: "Processing", updated_at: new Date().toISOString() }).eq("id", loanFileId);
+    await logActivity({
+      entity_type: "loan_file", entity_id: loanFileId, loan_file_id: loanFileId, lead_id: file.lead_id,
+      actor: "system", action: "stage.changed",
+      detail: { stage: "Processing", reason: "all required documents received" },
+    });
+  } catch (e) {
+    console.warn("[los] maybeAdvanceStage failed:", e);
+  }
+}
+
 // One loan file per lead. Returns the existing file or creates one.
 export async function ensureLoanFileForLead(lead: LoanFile): Promise<LoanFile | null> {
   if (!lead?.id) return null;
