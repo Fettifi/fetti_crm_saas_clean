@@ -33,6 +33,7 @@ export default function ApplyFormPage() {
       const v = fd.get(k);
       return v ? Number(String(v).replace(/[^0-9.]/g, "")) : undefined;
     };
+    const q = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
     const payload = {
       full_name: String(fd.get("full_name") || ""),
       email: String(fd.get("email") || ""),
@@ -45,7 +46,9 @@ export default function ApplyFormPage() {
       liquid_assets: num("liquid_assets"),
       notes: String(fd.get("notes") || ""),
       hp: String(fd.get("company") || ""), // honeypot
-      source: "website_form",
+      referrer: q.get("ref") || undefined, // referral partner code
+      utm_source: q.get("utm_source") || undefined,
+      source: q.get("ref") ? "referral" : "website_form",
     };
     try {
       const res = await fetch("/api/apply", {

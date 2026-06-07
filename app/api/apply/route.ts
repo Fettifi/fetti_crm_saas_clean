@@ -32,6 +32,7 @@ type Body = {
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
+  referrer?: string; // referral partner code (?ref=)
   hp?: string; // honeypot — must stay empty (bots fill it)
 };
 
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest) {
       stage: "New Lead",
       source: body.source || "website_apply",
       lead_source: body.utm_source || body.source || "website_apply",
+      referrer: body.referrer ? String(body.referrer).trim() : null,
       raw: body as unknown as object,
     };
 
