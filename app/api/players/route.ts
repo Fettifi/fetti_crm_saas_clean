@@ -3,7 +3,7 @@
 // quest completions so the leaderboard is populated from day one.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { xpFor, levelInfo } from "@/lib/game";
+import { levelInfo } from "@/lib/game";
 
 export const dynamic = "force-dynamic";
 
@@ -16,15 +16,15 @@ async function ensureOwner() {
 export async function GET() {
   await ensureOwner();
   const { data: players } = await supabaseAdmin.from("players").select("*").order("created_at");
-  const { data: doneTasks } = await supabaseAdmin
-    .from("org_tasks").select("source, completed_by").eq("status", "done").limit(5000);
+  const { data: comps } = await supabaseAdmin
+    .from("quest_completions").select("xp, player_id").limit(8000);
   const { data: bosses } = await supabaseAdmin
     .from("boss_battles").select("reward_xp, defeated_by").eq("status", "defeated");
 
   const board = (players || []).map((p: any) => {
     let xp = 0;
-    for (const t of (doneTasks || []) as any[]) {
-      if (t.completed_by === p.id || (p.is_owner && !t.completed_by)) xp += xpFor(t.source);
+    for (const c of (comps || []) as any[]) {
+      if (c.player_id === p.id || (p.is_owner && !c.player_id)) xp += c.xp || 0;
     }
     for (const b of (bosses || []) as any[]) if (b.defeated_by === p.id) xp += b.reward_xp || 0;
     return { id: p.id, name: p.name, role: p.role, emoji: p.emoji, is_owner: p.is_owner, ...levelInfo(xp) };

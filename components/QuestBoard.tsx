@@ -9,7 +9,7 @@ import {
   Brain, Loader2, Target, Skull, Crown, ChevronDown, UserPlus, Calendar, CalendarPlus, Link2,
 } from "lucide-react";
 
-type Task = { id: string; title: string; source: string; due_at?: string | null };
+type Task = { id: string; title: string; source: string; due_at?: string | null; cadence?: string; done_this_period?: boolean };
 type Stats = {
   xp: number; level: number; xpInLevel: number; xpToNext: number; levelSize: number; rank: string;
   streak: number; done_today: number; done_week: number; total_done: number; brain_done: number; bosses_won: number;
@@ -36,6 +36,7 @@ export default function QuestBoard() {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [newQuest, setNewQuest] = useState("");
+  const [cadence, setCadence] = useState("once");
   const [dueInput, setDueInput] = useState("");
   const [calUrl, setCalUrl] = useState<string | null>(null);
   const [showCal, setShowCal] = useState(false);
@@ -118,8 +119,8 @@ export default function QuestBoard() {
 
   async function addQuest(e: React.FormEvent) {
     e.preventDefault(); if (!newQuest.trim()) return;
-    const title = newQuest.trim(); const due = dueInput; setNewQuest(""); setDueInput("");
-    await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, due_at: due || undefined }) });
+    const title = newQuest.trim(); const due = dueInput; const cad = cadence; setNewQuest(""); setDueInput("");
+    await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, cadence: cad, due_at: due || undefined }) });
     loadTasks(currentId);
   }
 
@@ -140,8 +141,11 @@ export default function QuestBoard() {
   }
 
   async function complete(t: Task) {
+    if (t.done_this_period) return;
     setBusy(t.id);
-    setOpen((o) => o.filter((x) => x.id !== t.id));
+    const once = (t.cadence || "once") === "once";
+    if (once) setOpen((o) => o.filter((x) => x.id !== t.id));
+    else setOpen((o) => o.map((x) => x.id === t.id ? { ...x, done_this_period: true } : x));
     setToast(`+${xpFor(t.source)} XP`); confetti(false); tone([660, 880]);
     setTimeout(() => setToast(null), 1200);
     await fetch("/api/tasks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: t.id, status: "done", completed_by: currentId }) });
@@ -172,6 +176,35 @@ export default function QuestBoard() {
 
   const pct = Math.round((stats.xpInLevel / stats.levelSize) * 100);
   const me = stats.player;
+  const groups = [
+    { label: "Daily Goals", emoji: "🌅", items: open.filter((t) => t.cadence === "daily") },
+    { label: "Weekly Goals", emoji: "📅", items: open.filter((t) => t.cadence === "weekly") },
+    { label: "Monthly Goals", emoji: "🗓️", items: open.filter((t) => t.cadence === "monthly") },
+    { label: "Quests", emoji: "🎯", items: open.filter((t) => !t.cadence || t.cadence === "once") },
+  ];
+  const questRow = (t: Task) => {
+    const dp = t.done_this_period;
+    return (
+      <div key={t.id} className={`group flex items-center justify-between gap-3 rounded-xl px-4 py-3 transition border ${dp ? "bg-slate-900/30 border-slate-800 opacity-60" : "bg-slate-900/50 border-slate-800 hover:border-indigo-500/40"}`}>
+        <div className="flex items-start gap-3 min-w-0">
+          <button onClick={() => complete(t)} disabled={busy === t.id || dp} className={`mt-0.5 w-9 h-9 rounded-lg border-2 flex items-center justify-center shrink-0 transition ${dp ? "border-emerald-500 bg-emerald-500/20" : "border-slate-600 group-hover:border-emerald-500 hover:bg-emerald-500/20"}`}>
+            {busy === t.id ? <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> : <Check className={`w-4 h-4 ${dp ? "text-emerald-400" : "text-transparent group-hover:text-emerald-400"}`} />}
+          </button>
+          <div className="min-w-0">
+            <div className={`font-medium truncate ${dp ? "line-through text-slate-500" : ""}`}>{t.title}</div>
+            {t.source === "brain" && <div className="text-[10px] text-indigo-400/80 flex items-center gap-1"><Brain className="w-3 h-3" /> suggested by the Brain</div>}
+            {dp && <div className="text-[10px] text-emerald-400/80">✓ done this {t.cadence === "daily" ? "day" : t.cadence === "weekly" ? "week" : "month"} — resets soon</div>}
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <input type="date" value={t.due_at ? t.due_at.slice(0, 10) : ""} onChange={(e) => setDue(t.id, e.target.value)} className="bg-slate-800/60 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] text-slate-300 focus:border-emerald-500 focus:outline-none" />
+              {t.due_at && <span className={`text-[11px] ${isOverdue(t.due_at) ? "text-red-400" : "text-slate-400"}`}>{isOverdue(t.due_at) ? "⚠ overdue" : `📅 ${fmtDue(t.due_at)}`}</span>}
+              {t.due_at && <a href={gcal(t.title, t.due_at)} target="_blank" rel="noreferrer" className="text-[11px] text-indigo-400 hover:underline flex items-center gap-0.5"><CalendarPlus className="w-3 h-3" /> add to Google</a>}
+            </div>
+          </div>
+        </div>
+        <span className="shrink-0 text-xs font-bold text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 rounded-full px-2.5 py-1">+{xpFor(t.source)} XP</span>
+      </div>
+    );
+  };
   const achievements = [
     { label: "First Blood", emoji: "🩸", got: stats.total_done >= 1, desc: "Clear your first quest" },
     { label: "On Fire", emoji: "🔥", got: stats.streak >= 3, desc: "3-day streak" },
@@ -314,34 +347,28 @@ export default function QuestBoard() {
         )}
 
         <form onSubmit={addQuest} className="flex flex-wrap gap-2 mt-3">
-          <input value={newQuest} onChange={(e) => setNewQuest(e.target.value)} placeholder="Add a side quest…" className="flex-1 min-w-[200px] bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500 focus:outline-none" />
+          <input value={newQuest} onChange={(e) => setNewQuest(e.target.value)} placeholder="Add your own goal…" className="flex-1 min-w-[180px] bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500 focus:outline-none" />
+          <select value={cadence} onChange={(e) => setCadence(e.target.value)} title="Goal type" className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-300 focus:border-emerald-500 focus:outline-none">
+            <option value="once">🎯 One-time</option>
+            <option value="daily">🌅 Daily</option>
+            <option value="weekly">📅 Weekly</option>
+            <option value="monthly">🗓️ Monthly</option>
+          </select>
           <input type="date" value={dueInput} onChange={(e) => setDueInput(e.target.value)} title="Due date (optional)" className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-300 focus:border-emerald-500 focus:outline-none" />
           <button type="submit" className="bg-slate-800 hover:bg-slate-700 px-4 rounded-xl flex items-center gap-1 text-sm"><Plus className="w-4 h-4" /> Add</button>
         </form>
 
-        <div className="space-y-2.5 mt-4">
-          {open.length === 0 && <div className="text-center py-8 text-slate-500"><Sparkles className="w-8 h-8 mx-auto mb-2 text-emerald-400/60" />All quests cleared — add a side quest or let the Brain suggest your next move.</div>}
-          {open.map((t) => (
-            <div key={t.id} className="group flex items-center justify-between gap-3 bg-slate-900/50 border border-slate-800 hover:border-indigo-500/40 rounded-xl px-4 py-3 transition">
-              <div className="flex items-start gap-3 min-w-0">
-                <button onClick={() => complete(t)} disabled={busy === t.id} className="mt-0.5 w-9 h-9 rounded-lg border-2 border-slate-600 group-hover:border-emerald-500 flex items-center justify-center shrink-0 transition hover:bg-emerald-500/20">
-                  {busy === t.id ? <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> : <Check className="w-4 h-4 text-transparent group-hover:text-emerald-400" />}
-                </button>
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{t.title}</div>
-                  {t.source === "brain" && <div className="text-[10px] text-indigo-400/80 flex items-center gap-1"><Brain className="w-3 h-3" /> suggested by the Brain</div>}
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <input type="date" value={t.due_at ? t.due_at.slice(0, 10) : ""} onChange={(e) => setDue(t.id, e.target.value)}
-                      className="bg-slate-800/60 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] text-slate-300 focus:border-emerald-500 focus:outline-none" />
-                    {t.due_at && <span className={`text-[11px] ${isOverdue(t.due_at) ? "text-red-400" : "text-slate-400"}`}>{isOverdue(t.due_at) ? "⚠ overdue" : `📅 ${fmtDue(t.due_at)}`}</span>}
-                    {t.due_at && <a href={gcal(t.title, t.due_at)} target="_blank" rel="noreferrer" className="text-[11px] text-indigo-400 hover:underline flex items-center gap-0.5"><CalendarPlus className="w-3 h-3" /> add to Google</a>}
-                  </div>
-                </div>
-              </div>
-              <span className="shrink-0 text-xs font-bold text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 rounded-full px-2.5 py-1">+{xpFor(t.source)} XP</span>
-            </div>
-          ))}
-        </div>
+        {open.length === 0 && <div className="text-center py-8 text-slate-500"><Sparkles className="w-8 h-8 mx-auto mb-2 text-emerald-400/60" />No goals yet — add a daily, weekly, or monthly goal above, or let the Brain suggest your next move.</div>}
+
+        {groups.map((g) => g.items.length > 0 && (
+          <div key={g.label} className="mt-5">
+            <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+              <span>{g.emoji}</span> {g.label}
+              <span className="text-xs text-slate-500 font-normal">({g.items.filter((t) => !t.done_this_period).length} left)</span>
+            </h3>
+            <div className="space-y-2.5 mt-2">{g.items.map(questRow)}</div>
+          </div>
+        ))}
       </div>
 
       {/* LEADERBOARD */}
