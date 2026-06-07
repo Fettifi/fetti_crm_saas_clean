@@ -30,6 +30,7 @@ type Body = {
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
+  hp?: string; // honeypot — must stay empty (bots fill it)
 };
 
 function scoreLead(b: Body): { score: number; tier: "Tier 1" | "Tier 2" | "Tier 3" } {
@@ -57,12 +58,25 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as Body;
 
-    // require at least a way to contact the lead
-    if (!body.email && !body.phone) {
+    // Anti-spam honeypot: real users never see/fill this hidden field. Bots do.
+    // Return a fake success so bots don't learn they were blocked.
+    if (body.hp && String(body.hp).trim()) {
+      return NextResponse.json({ success: true, lead_id: null }, { status: 200 });
+    }
+
+    // Normalize + validate contact info.
+    const email = body.email ? String(body.email).trim().toLowerCase() : null;
+    const phoneDigits = body.phone ? String(body.phone).replace(/\D/g, "") : null;
+    const phone = phoneDigits && phoneDigits.length >= 7 ? phoneDigits : null;
+
+    if (!email && !phone) {
       return NextResponse.json(
-        { error: "Please provide at least an email or phone number." },
+        { error: "Please provide a valid email or phone number." },
         { status: 400 }
       );
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: "Please provide a valid email address." }, { status: 400 });
     }
 
     const full_name =
@@ -79,8 +93,8 @@ export async function POST(req: NextRequest) {
       full_name,
       first_name,
       last_name,
-      email: body.email ?? null,
-      phone: body.phone ?? null,
+      email,
+      phone,
       state: body.state ?? null,
       loan_purpose: body.loan_purpose ?? null,
       occupancy: body.occupancy ?? null,
@@ -100,31 +114,55 @@ export async function POST(req: NextRequest) {
       raw: body as unknown as object,
     };
 
-    const { data, error } = await supabaseAdmin
-      .from("leads")
-      .insert([row])
-      .select()
-      .single();
-
-    if (error) {
-      console.error("[/api/apply] insert error:", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    // Deduplicate: if a lead with this email or phone already exists, UPDATE it
+    // (merging new info) instead of creating a duplicate. Never reset an existing
+    // lead's pipeline stage.
+    const orParts: string[] = [];
+    if (email) orParts.push(`email.eq.${email}`);
+    if (phone) orParts.push(`phone.eq.${phone}`);
+    let existingId: string | null = null;
+    if (orParts.length) {
+      const { data: existing } = await supabaseAdmin
+        .from("leads").select("id").or(orParts.join(",")).limit(1).maybeSingle();
+      if (existing) existingId = existing.id as string;
     }
 
-    // Speed-to-lead alert (non-blocking, all channels optional).
-    try {
-      await notifyNewLead({
-        lead_id: data.id, full_name, email: body.email, phone: body.phone,
-        state: body.state, loan_purpose: body.loan_purpose, score, tier,
-        source: row.source as string,
-      });
-    } catch (e) {
-      console.warn("[/api/apply] alert failed (lead still saved):", e);
+    let data: any;
+    let error: any;
+    if (existingId) {
+      const updateRow = Object.fromEntries(
+        Object.entries(row).filter(([k, v]) => v !== null && k !== "stage" && k !== "raw")
+      );
+      ({ data, error } = await supabaseAdmin
+        .from("leads").update(updateRow).eq("id", existingId).select().single());
+    } else {
+      ({ data, error } = await supabaseAdmin
+        .from("leads").insert([row]).select().single());
+    }
+
+    if (error) {
+      console.error("[/api/apply] write error:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    const deduped = !!existingId;
+
+    // Speed-to-lead alert (non-blocking). Only alert on genuinely NEW leads so a
+    // returning applicant doesn't re-ping the team.
+    if (!deduped) {
+      try {
+        await notifyNewLead({
+          lead_id: data.id, full_name, email, phone,
+          state: body.state, loan_purpose: body.loan_purpose, score, tier,
+          source: row.source as string,
+        });
+      } catch (e) {
+        console.warn("[/api/apply] alert failed (lead still saved):", e);
+      }
     }
 
     return NextResponse.json(
-      { success: true, lead_id: data.id, score, tier },
-      { status: 201 }
+      { success: true, lead_id: data.id, score, tier, deduped },
+      { status: deduped ? 200 : 201 }
     );
   } catch (err: unknown) {
     console.error("[/api/apply] error:", err);

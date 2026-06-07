@@ -44,6 +44,7 @@ export default function ApplyFormPage() {
       credit_band: String(fd.get("credit_band") || ""),
       liquid_assets: num("liquid_assets"),
       notes: String(fd.get("notes") || ""),
+      hp: String(fd.get("company") || ""), // honeypot
       source: "website_form",
     };
     try {
@@ -100,6 +101,12 @@ export default function ApplyFormPage() {
           <p className="text-slate-400 mt-2">2 minutes. No impact to your credit to get started.</p>
         </div>
         <form onSubmit={onSubmit} className="space-y-4 bg-slate-900/40 border border-slate-800 rounded-2xl p-6">
+          {/* Honeypot: hidden from humans, bots fill it and get silently dropped. */}
+          <input
+            type="text" name="company" tabIndex={-1} autoComplete="off"
+            aria-hidden="true"
+            style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }}
+          />
           <input name="full_name" required placeholder="Full name" className={field} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <input name="email" type="email" required placeholder="Email" className={field} />

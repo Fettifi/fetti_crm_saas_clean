@@ -11,7 +11,8 @@ export async function streamAudio(text: string, voiceId: string = ELEVENLABS_VOI
     // Keys
     const ENV_ELEVENLABS_KEY = process.env.ELEVENLABS_API_KEY;
     const ENV_OPENAI_KEY = process.env.OPENAI_API_KEY;
-    const HARDCODED_KEY = 'sk_34414a3f6cf40fd7582612bab354b47b96d438643dfa45c7'; // Backup (OpenAI)
+    // SECURITY: never hardcode credentials. The OpenAI fallback uses the env var.
+    const HARDCODED_KEY = process.env.OPENAI_API_KEY || '';
 
     // Helper to determine if a string is an OpenAI voice
     const isOpenAIVoice = (id: string) => ['shimmer', 'alloy', 'echo', 'fable', 'onyx', 'nova'].includes(id);
