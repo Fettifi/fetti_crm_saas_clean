@@ -6,10 +6,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Flame, Trophy, Swords, Plus, Volume2, VolumeX, Check, Sparkles, Star, Zap,
-  Brain, Loader2, Target, Skull, Crown, ChevronDown, UserPlus,
+  Brain, Loader2, Target, Skull, Crown, ChevronDown, UserPlus, Calendar, CalendarPlus, Link2,
 } from "lucide-react";
 
-type Task = { id: string; title: string; source: string };
+type Task = { id: string; title: string; source: string; due_at?: string | null };
 type Stats = {
   xp: number; level: number; xpInLevel: number; xpToNext: number; levelSize: number; rank: string;
   streak: number; done_today: number; done_week: number; total_done: number; brain_done: number; bosses_won: number;
@@ -19,6 +19,13 @@ type Boss = { id: string; title: string; description?: string; emoji: string; ob
 type Player = { id: string; name: string; role?: string; emoji: string; is_owner: boolean; xp: number; level: number; rank: string };
 
 const xpFor = (source?: string) => 10 + (source === "brain" ? 5 : 0);
+const gcal = (title: string, dueIso: string) => {
+  const start = new Date(dueIso); const end = new Date(start.getTime() + 30 * 60000);
+  const f = (d: Date) => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("🎯 " + title)}&dates=${f(start)}/${f(end)}&details=${encodeURIComponent("Fetti Quest Log")}`;
+};
+const fmtDue = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const isOverdue = (iso: string) => new Date(iso).getTime() < Date.now();
 
 export default function QuestBoard() {
   const [open, setOpen] = useState<Task[]>([]);
@@ -29,6 +36,10 @@ export default function QuestBoard() {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [newQuest, setNewQuest] = useState("");
+  const [dueInput, setDueInput] = useState("");
+  const [calUrl, setCalUrl] = useState<string | null>(null);
+  const [showCal, setShowCal] = useState(false);
+  const [copiedCal, setCopiedCal] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [levelUp, setLevelUp] = useState<{ level: number; rank: string } | null>(null);
@@ -49,6 +60,7 @@ export default function QuestBoard() {
     if (r.ok) {
       const j = await r.json();
       setOpen(j.open); setDone(j.done); setStats(j.stats);
+      if (j.calendar_url) setCalUrl(j.calendar_url);
       if (lastLevel.current === null) lastLevel.current = j.stats.level;
       return j.stats as Stats;
     }
@@ -106,9 +118,19 @@ export default function QuestBoard() {
 
   async function addQuest(e: React.FormEvent) {
     e.preventDefault(); if (!newQuest.trim()) return;
-    const title = newQuest.trim(); setNewQuest("");
-    await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+    const title = newQuest.trim(); const due = dueInput; setNewQuest(""); setDueInput("");
+    await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, due_at: due || undefined }) });
     loadTasks(currentId);
+  }
+
+  async function setDue(id: string, due: string) {
+    setOpen((o) => o.map((t) => t.id === id ? { ...t, due_at: due || null } : t));
+    await fetch("/api/tasks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, due_at: due || null }) });
+    loadTasks(currentId);
+  }
+  function copyCal() {
+    if (!calUrl) return;
+    navigator.clipboard?.writeText(calUrl); setCopiedCal(true); setTimeout(() => setCopiedCal(false), 1500);
   }
 
   async function addTeammate(e: React.FormEvent) {
@@ -270,22 +292,50 @@ export default function QuestBoard() {
 
       {/* QUESTS */}
       <div className="mt-6">
-        <h2 className="text-lg font-bold flex items-center gap-2"><Swords className="w-5 h-5 text-indigo-400" /> Active Quests <span className="text-slate-500 text-sm font-normal">({open.length})</span></h2>
-        <form onSubmit={addQuest} className="flex gap-2 mt-3">
-          <input value={newQuest} onChange={(e) => setNewQuest(e.target.value)} placeholder="Add a side quest…" className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500 focus:outline-none" />
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold flex items-center gap-2"><Swords className="w-5 h-5 text-indigo-400" /> Active Quests <span className="text-slate-500 text-sm font-normal">({open.length})</span></h2>
+          <button onClick={() => setShowCal((v) => !v)} className="text-xs flex items-center gap-1 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg"><Calendar className="w-3.5 h-3.5" /> Connect calendar</button>
+        </div>
+
+        {showCal && (
+          <div className="mt-3 rounded-xl border border-emerald-500/30 bg-slate-900/60 p-4">
+            <div className="font-semibold flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-emerald-400" /> Subscribe to your quests</div>
+            <p className="text-xs text-slate-400 mt-1">Any quest with a due date appears on your calendar with a 1-hour reminder — and stays in sync automatically.</p>
+            <div className="flex gap-2 mt-3">
+              <input readOnly value={calUrl || "Generating…"} onFocus={(e) => e.currentTarget.select()} className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 font-mono" />
+              <button onClick={copyCal} className="bg-emerald-600/80 hover:bg-emerald-500 px-3 rounded-lg text-xs font-semibold flex items-center gap-1">{copiedCal ? <Check className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}{copiedCal ? "Copied" : "Copy"}</button>
+            </div>
+            <div className="text-[11px] text-slate-500 mt-3 space-y-1">
+              <div><b className="text-slate-400">Google:</b> Settings → Add calendar → From URL → paste.</div>
+              <div><b className="text-slate-400">Apple:</b> Calendar → File → New Calendar Subscription → paste.</div>
+              <div><b className="text-slate-400">Outlook:</b> Add calendar → Subscribe from web → paste.</div>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={addQuest} className="flex flex-wrap gap-2 mt-3">
+          <input value={newQuest} onChange={(e) => setNewQuest(e.target.value)} placeholder="Add a side quest…" className="flex-1 min-w-[200px] bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500 focus:outline-none" />
+          <input type="date" value={dueInput} onChange={(e) => setDueInput(e.target.value)} title="Due date (optional)" className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-300 focus:border-emerald-500 focus:outline-none" />
           <button type="submit" className="bg-slate-800 hover:bg-slate-700 px-4 rounded-xl flex items-center gap-1 text-sm"><Plus className="w-4 h-4" /> Add</button>
         </form>
+
         <div className="space-y-2.5 mt-4">
           {open.length === 0 && <div className="text-center py-8 text-slate-500"><Sparkles className="w-8 h-8 mx-auto mb-2 text-emerald-400/60" />All quests cleared — add a side quest or let the Brain suggest your next move.</div>}
           {open.map((t) => (
             <div key={t.id} className="group flex items-center justify-between gap-3 bg-slate-900/50 border border-slate-800 hover:border-indigo-500/40 rounded-xl px-4 py-3 transition">
-              <div className="flex items-center gap-3 min-w-0">
-                <button onClick={() => complete(t)} disabled={busy === t.id} className="w-9 h-9 rounded-lg border-2 border-slate-600 group-hover:border-emerald-500 flex items-center justify-center shrink-0 transition hover:bg-emerald-500/20">
+              <div className="flex items-start gap-3 min-w-0">
+                <button onClick={() => complete(t)} disabled={busy === t.id} className="mt-0.5 w-9 h-9 rounded-lg border-2 border-slate-600 group-hover:border-emerald-500 flex items-center justify-center shrink-0 transition hover:bg-emerald-500/20">
                   {busy === t.id ? <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> : <Check className="w-4 h-4 text-transparent group-hover:text-emerald-400" />}
                 </button>
                 <div className="min-w-0">
                   <div className="font-medium truncate">{t.title}</div>
                   {t.source === "brain" && <div className="text-[10px] text-indigo-400/80 flex items-center gap-1"><Brain className="w-3 h-3" /> suggested by the Brain</div>}
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <input type="date" value={t.due_at ? t.due_at.slice(0, 10) : ""} onChange={(e) => setDue(t.id, e.target.value)}
+                      className="bg-slate-800/60 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] text-slate-300 focus:border-emerald-500 focus:outline-none" />
+                    {t.due_at && <span className={`text-[11px] ${isOverdue(t.due_at) ? "text-red-400" : "text-slate-400"}`}>{isOverdue(t.due_at) ? "⚠ overdue" : `📅 ${fmtDue(t.due_at)}`}</span>}
+                    {t.due_at && <a href={gcal(t.title, t.due_at)} target="_blank" rel="noreferrer" className="text-[11px] text-indigo-400 hover:underline flex items-center gap-0.5"><CalendarPlus className="w-3 h-3" /> add to Google</a>}
+                  </div>
                 </div>
               </div>
               <span className="shrink-0 text-xs font-bold text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 rounded-full px-2.5 py-1">+{xpFor(t.source)} XP</span>
