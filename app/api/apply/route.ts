@@ -3,9 +3,11 @@
 // safely bypasses Row-Level Security — the browser must NOT insert into `leads`
 // directly (that's why public submissions were being rejected). This is the
 // single front door for the website application form and the AI apply chat.
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
+import { getAgent } from "@/lib/agents/agents";
+import { runAgent } from "@/lib/agents/runner";
 
 export const dynamic = "force-dynamic";
 
@@ -146,18 +148,34 @@ export async function POST(req: NextRequest) {
     }
     const deduped = !!existingId;
 
-    // Speed-to-lead alert (non-blocking). Only alert on genuinely NEW leads so a
-    // returning applicant doesn't re-ping the team.
+    // For genuinely NEW leads: alert the team AND auto-run the early-stage agents
+    // (Capture + Qualify) so the lead lands pre-enriched and pre-screened. Done
+    // via after() so none of it delays the applicant's response.
     if (!deduped) {
-      try {
-        await notifyNewLead({
-          lead_id: data.id, full_name, email, phone,
-          state: body.state, loan_purpose: body.loan_purpose, score, tier,
-          source: row.source as string,
-        });
-      } catch (e) {
-        console.warn("[/api/apply] alert failed (lead still saved):", e);
-      }
+      const newLead = data;
+      after(async () => {
+        try {
+          await notifyNewLead({
+            lead_id: newLead.id, full_name, email, phone,
+            state: body.state, loan_purpose: body.loan_purpose, score, tier,
+            source: row.source as string,
+          });
+        } catch (e) {
+          console.warn("[/api/apply] alert failed (lead still saved):", e);
+        }
+        for (const stage of ["capture", "qualify"] as const) {
+          try {
+            const agent = getAgent(stage);
+            if (!agent) continue;
+            const result = await runAgent(agent, newLead);
+            await supabaseAdmin.from("lead_agents").insert([
+              { lead_id: newLead.id, stage, summary: result.summary, output_json: result.output },
+            ]);
+          } catch (e) {
+            console.warn(`[/api/apply] auto-agent ${stage} failed:`, e);
+          }
+        }
+      });
     }
 
     return NextResponse.json(
