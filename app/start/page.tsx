@@ -20,7 +20,13 @@ const POINTS = [
   "A real specialist follows up — no call-center runaround",
 ];
 
-export default function StartPage() {
+export default async function StartPage({
+  searchParams,
+}: { searchParams: Promise<Record<string, string>> }) {
+  const sp = await searchParams;
+  const ref = sp?.ref ? `?ref=${encodeURIComponent(sp.ref)}` : "";
+  const applyHref = `/apply/form${ref}`;
+  const chatHref = `/apply${ref}`;
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       {/* Hero */}
@@ -35,13 +41,13 @@ export default function StartPage() {
         </p>
         <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
           <Link
-            href="/apply/form"
+            href={applyHref}
             className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-8 py-4 rounded-full text-lg"
           >
             Get pre-qualified →
           </Link>
           <Link
-            href="/apply"
+            href={chatHref}
             className="border border-slate-700 hover:border-emerald-500/50 text-slate-200 px-8 py-4 rounded-full text-lg"
           >
             Chat with our AI loan coordinator

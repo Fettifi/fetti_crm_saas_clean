@@ -10,6 +10,7 @@ const navItems = [
   { href: "/leads", label: "Leads", icon: "📋" },
   { href: "/agents", label: "AI Agents", icon: "🧠" },
   { href: "/pipeline", label: "Pipeline", icon: "📈" },
+  { href: "/partners", label: "Referral Partners", icon: "🤝" },
   { href: "/requests", label: "Requests", icon: "📥" },
   { href: "/automations", label: "Automations", icon: "⚡" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
