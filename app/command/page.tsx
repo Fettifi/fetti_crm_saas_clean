@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, Trophy, Brain } from "lucide-react";
+import { Loader2, RefreshCw, Trophy, Brain, Target } from "lucide-react";
 
 type Stats = {
   leads: { today: number; week: number; total: number; tier1: number; tier2: number; tier3: number };
@@ -12,6 +12,12 @@ type Stats = {
   wizard?: {
     sessions: number; contacts: number; completes: number;
     summary: string | null; insights: string[]; recommendations: string[]; learnedAt: string | null;
+  };
+  org?: {
+    summary: string | null;
+    north_star: { label: string; target: number; current: number; progress_pct: number; on_track: boolean } | null;
+    insights: string[]; priorities: string[]; learnedAt: string | null;
+    los: { total: number; active: number; funded: number; pipeline: Record<string, number> };
   };
 };
 
@@ -43,6 +49,12 @@ export default function CommandPage() {
     try { await fetch("/api/cron/wizard-learn", { method: "POST" }); await load(); }
     finally { setLearning(false); }
   }
+  const [thinking, setThinking] = useState(false);
+  async function runBrain() {
+    setThinking(true);
+    try { await fetch("/api/cron/org-learn", { method: "POST" }); await load(); }
+    finally { setThinking(false); }
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
@@ -61,7 +73,58 @@ export default function CommandPage() {
 
         {s && (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            {/* Enterprise Brain — the whole company toward one goal */}
+            <div className="bg-gradient-to-br from-indigo-600/15 to-slate-900/0 border border-indigo-500/30 rounded-2xl p-5 mt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Target className="w-5 h-5 text-indigo-400" />
+                  <span className="font-semibold">Enterprise Brain</span>
+                  <span className="text-xs text-slate-500">learns from every action · one goal</span>
+                </div>
+                <button onClick={runBrain} disabled={thinking}
+                  className="flex items-center gap-2 text-xs bg-indigo-600/80 hover:bg-indigo-500 disabled:opacity-50 px-3 py-1.5 rounded-lg">
+                  {thinking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+                  {thinking ? "Thinking…" : "Think now"}
+                </button>
+              </div>
+
+              {s.org?.north_star && (
+                <div className="mt-4">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-300">🎯 {s.org.north_star.label}</span>
+                    <span className={s.org.north_star.on_track ? "text-emerald-400" : "text-amber-400"}>
+                      {s.org.north_star.current}/{s.org.north_star.target} · {Math.round(s.org.north_star.progress_pct)}%
+                    </span>
+                  </div>
+                  <div className="h-2.5 bg-slate-800 rounded mt-1.5"><div className={`h-2.5 rounded ${s.org.north_star.on_track ? "bg-emerald-500" : "bg-indigo-500"}`} style={{ width: `${Math.min(100, s.org.north_star.progress_pct)}%` }} /></div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-3 mt-4">
+                <div className="bg-slate-950/40 rounded-xl p-3 text-center"><div className="text-2xl font-bold">{s.org?.los.active ?? 0}</div><div className="text-[11px] text-slate-500">active loan files</div></div>
+                <div className="bg-slate-950/40 rounded-xl p-3 text-center"><div className="text-2xl font-bold text-emerald-400">{s.org?.los.funded ?? 0}</div><div className="text-[11px] text-slate-500">funded</div></div>
+                <div className="bg-slate-950/40 rounded-xl p-3 text-center"><div className="text-2xl font-bold">{s.org?.los.total ?? 0}</div><div className="text-[11px] text-slate-500">total files</div></div>
+              </div>
+
+              {s.org?.summary ? (
+                <>
+                  <p className="text-sm text-slate-200 mt-4">🧠 {s.org.summary}</p>
+                  {s.org.priorities.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Next best actions</div>
+                      <ol className="list-decimal list-inside text-sm text-indigo-200/90 space-y-1">
+                        {s.org.priorities.map((x, i) => <li key={i}>{x}</li>)}
+                      </ol>
+                    </div>
+                  )}
+                  {s.org.learnedAt && <div className="text-[11px] text-slate-600 mt-3">Last reasoned {new Date(s.org.learnedAt).toLocaleString()}</div>}
+                </>
+              ) : (
+                <p className="text-sm text-slate-500 mt-4">The brain learns from every lead, message, agent run, and document across the CRM — then tells the team the highest-leverage next moves toward {s.org?.north_star?.target ?? 20} funded loans/month. Hit “Think now” once you have activity.</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
               <Stat label="New leads today" value={s.leads.today} />
               <Stat label="This week" value={s.leads.week} />
               <Stat label="Total leads" value={s.leads.total} />

@@ -9,6 +9,8 @@ import { notifyNewLead } from "@/lib/notify/leadAlert";
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { getAgent } from "@/lib/agents/agents";
 import { runAgent } from "@/lib/agents/runner";
+import { logActivity } from "@/lib/activity";
+import { ensureLoanFileForLead } from "@/lib/los";
 
 export const dynamic = "force-dynamic";
 
@@ -157,9 +159,22 @@ export async function POST(req: NextRequest) {
     //   2. AUTO-RESPOND to the lead instantly (email/SMS) — speed-to-lead
     //   3. Alert the team (with the draft + what was auto-sent)
     //   4. Qualify agent pre-screens
+    // Log the intake either way so the enterprise brain sees all activity.
+    after(async () => {
+      await logActivity({
+        entity_type: "lead", entity_id: data.id, lead_id: data.id, actor: "system",
+        action: deduped ? "lead.updated" : "lead.created",
+        detail: { source: row.source, tier, score, product: body.loan_purpose },
+      });
+    });
+
     if (!deduped) {
       const newLead = data;
       after(async () => {
+        // Open a loan file immediately — gives the borrower a custom document link
+        // and seeds the checklist/compliance for this product.
+        try { await ensureLoanFileForLead(newLead); } catch (e) { console.warn("[/api/apply] loan file create failed:", e); }
+
         let draftReply = "";
         try {
           const cap = getAgent("capture");
