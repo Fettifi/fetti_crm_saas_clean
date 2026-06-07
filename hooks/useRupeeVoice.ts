@@ -12,7 +12,7 @@ export function useRupeeVoice() {
     const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
     const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
     const gainNodeRef = useRef<GainNode | null>(null);
-    const VOICE_GAIN = 6.0; // amplify ElevenLabs well above 100% (1.0 = normal)
+    const VOICE_GAIN = 12.0; // amplify ElevenLabs hard; the limiter keeps it clean
 
     // Kept for compatibility (callers invoke initAudioContext on send).
     const initAudioContext = () => {
@@ -55,11 +55,11 @@ export function useRupeeVoice() {
                     gainNodeRef.current.gain.value = VOICE_GAIN;
                     // Limiter so a high gain is LOUD but doesn't clip/distort.
                     const comp = ctx.createDynamicsCompressor();
-                    comp.threshold.value = -6;
-                    comp.knee.value = 6;
-                    comp.ratio.value = 12;
-                    comp.attack.value = 0.003;
-                    comp.release.value = 0.25;
+                    comp.threshold.value = -1.5; // ceiling near full-scale = louder peaks
+                    comp.knee.value = 3;
+                    comp.ratio.value = 20;       // brick-wall limit so it stays clean
+                    comp.attack.value = 0.002;
+                    comp.release.value = 0.2;
                     mediaSourceRef.current.connect(gainNodeRef.current);
                     gainNodeRef.current.connect(comp);
                     comp.connect(ctx.destination);
