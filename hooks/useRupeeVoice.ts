@@ -8,6 +8,7 @@ export function useRupeeVoice() {
     const [debugStatus, setDebugStatus] = useState<string>('');
 
     const audioContextRef = useRef<AudioContext | null>(null);
+    const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
 
     // Initialize AudioContext
     const initAudioContext = () => {
@@ -18,6 +19,38 @@ export function useRupeeVoice() {
             audioContextRef.current.resume();
         }
     };
+
+    // Unlock a REUSABLE <audio> element on the first user interaction (clicking
+    // the mic counts). Safari blocks audio.play() that isn't tied to a gesture —
+    // which is why the ElevenLabs voice worked when typing (a click) but not from
+    // the mic transcript (a speech-recognition callback, no gesture). Priming this
+    // element inside a real gesture lets ALL later TTS play through it.
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const audio = new Audio();
+        audio.preload = 'auto';
+        htmlAudioRef.current = audio;
+        const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+        const unlock = () => {
+            const a = htmlAudioRef.current;
+            if (!a) return;
+            try {
+                a.src = SILENT;
+                a.play().then(() => a.pause()).catch(() => {});
+            } catch { /* noop */ }
+            window.removeEventListener('pointerdown', unlock);
+            window.removeEventListener('keydown', unlock);
+            window.removeEventListener('touchstart', unlock);
+        };
+        window.addEventListener('pointerdown', unlock);
+        window.addEventListener('keydown', unlock);
+        window.addEventListener('touchstart', unlock);
+        return () => {
+            window.removeEventListener('pointerdown', unlock);
+            window.removeEventListener('keydown', unlock);
+            window.removeEventListener('touchstart', unlock);
+        };
+    }, []);
 
     // Load Voices
     useEffect(() => {
@@ -81,13 +114,12 @@ export function useRupeeVoice() {
 
                 const arrayBuffer = await response.arrayBuffer();
 
-                // Play via a plain HTML5 Audio element. Safari blocks/suspends the
-                // Web Audio API (AudioContext) outside a direct user gesture, which
-                // made neural audio throw and silently fall back to the browser
-                // voice. A Blob URL + Audio() plays reliably across browsers.
+                // Reuse the gesture-unlocked <audio> element so playback works even
+                // when triggered from the mic transcript (no fresh user gesture).
                 const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
                 const url = URL.createObjectURL(blob);
-                const audio = new Audio(url);
+                const audio = htmlAudioRef.current || new Audio();
+                audio.src = url;
                 audio.volume = 1.0;
 
                 setDebugStatus('Playing neural voice...');
