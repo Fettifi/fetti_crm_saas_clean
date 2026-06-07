@@ -133,7 +133,7 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
         }
     }, []); // Empty dependency array = Run once on mount
 
-    const toggleListening = async () => {
+    const toggleListening = () => {
         if (!isSupported || !recognitionRef.current) return;
 
         if (isListening) {
@@ -142,25 +142,17 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
             return;
         }
 
-        // Explicitly request mic permission first — gives a clear prompt and a
-        // clear failure instead of the recognizer silently doing nothing.
-        try {
-            if (navigator.mediaDevices?.getUserMedia) {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                stream.getTracks().forEach((t) => t.stop());
-            }
-        } catch (e) {
-            toast.error('Microphone access is blocked. Allow it in your browser settings (🔒 icon in the address bar) and try again.');
-            return;
-        }
-
+        // IMPORTANT (Safari): start() must be called SYNCHRONOUSLY inside the
+        // click gesture. Do NOT await anything before this — the browser prompts
+        // for mic permission on its own, and onerror surfaces any denial.
         try {
             recognitionRef.current.start();
             setIsListening(true);
         } catch (e) {
             console.error('Failed to start:', e);
-            // start() throws if already running — reset state safely.
+            // start() throws if already running — reset and retry once.
             setIsListening(false);
+            try { recognitionRef.current.stop(); } catch { /* noop */ }
         }
     };
 
