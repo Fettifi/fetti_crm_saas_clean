@@ -81,8 +81,22 @@ export async function proxy(request: NextRequest) {
         }
     }
 
-    const protectedRoutes = ['/leads', '/pipeline', '/settings', '/training', '/team']
-    const isProtectedRoute = protectedRoutes.some(route => request.nextUrl.pathname.startsWith(route))
+    const path = request.nextUrl.pathname
+
+    // Sensitive internal DATA APIs — return 401 (not a redirect) when unauthed.
+    // Public APIs (apply, file portal, wizard, cron, sms) are NOT listed and stay open.
+    const apiProtected = ['/api/los', '/api/stats', '/api/tasks']
+    if (apiProtected.some(route => path.startsWith(route)) && !session) {
+        return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    }
+
+    // Internal CRM pages — require login. Public marketing/borrower pages
+    // (/home, /apply, /quote, /start, /lending, /file, /portal, /privacy, /terms) are NOT listed.
+    const protectedRoutes = [
+        '/leads', '/pipeline', '/settings', '/training', '/team',
+        '/command', '/los', '/agents', '/partners', '/requests', '/automations', '/task-list', '/roadmap', '/dashboard',
+    ]
+    const isProtectedRoute = protectedRoutes.some(route => path.startsWith(route))
 
     // If accessing protected route without session, redirect to login
     if (isProtectedRoute && !session) {
@@ -113,5 +127,9 @@ export const config = {
          * - portal (Client Portal - has its own auth logic)
          */
         '/((?!_next/static|_next/image|favicon.ico|api|portal).*)',
+        // Sensitive internal data APIs are protected explicitly (others stay open).
+        '/api/los/:path*',
+        '/api/stats/:path*',
+        '/api/tasks/:path*',
     ],
 }
