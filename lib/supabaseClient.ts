@@ -1,4 +1,5 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -8,7 +9,11 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 let client: SupabaseClient;
 
 if (supabaseUrl && supabaseAnonKey) {
-  client = createClient(supabaseUrl, supabaseAnonKey);
+  // Use the SSR browser client (cookie-based) so this shares the SAME session as
+  // the login page (which also uses createBrowserClient). With plain createClient
+  // the logged-in session wasn't visible here, so RLS-protected reads (e.g. leads)
+  // returned empty even though the user was authenticated -> "No leads yet".
+  client = createBrowserClient(supabaseUrl, supabaseAnonKey) as unknown as SupabaseClient;
 } else {
   console.warn("Supabase environment variables missing. Using mock client.");
   // Create a proxy that logs warnings for any property access
