@@ -10,6 +10,9 @@ export function useRupeeVoice() {
 
     const audioContextRef = useRef<AudioContext | null>(null);
     const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
+    const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+    const gainNodeRef = useRef<GainNode | null>(null);
+    const VOICE_GAIN = 2.8; // amplify ElevenLabs above 100% (1.0 = normal)
 
     // Kept for compatibility (callers invoke initAudioContext on send).
     const initAudioContext = () => {
@@ -40,7 +43,25 @@ export function useRupeeVoice() {
             try {
                 a.src = SILENT;
                 const p = a.play();
-                if (p) p.then(() => { a.pause(); unlocked = true; }).catch(() => {});
+                if (p) p.then(() => {
+                    a.pause();
+                    // Build the gain-boost graph INSIDE the gesture so it's audible
+                    // on Safari: <audio> -> MediaElementSource -> Gain(>1) -> output.
+                    try {
+                        const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+                        if (!audioContextRef.current) audioContextRef.current = new Ctx();
+                        const ctx = audioContextRef.current;
+                        if (ctx.state === 'suspended') ctx.resume();
+                        if (!mediaSourceRef.current) {
+                            mediaSourceRef.current = ctx.createMediaElementSource(a);
+                            gainNodeRef.current = ctx.createGain();
+                            gainNodeRef.current.gain.value = VOICE_GAIN;
+                            mediaSourceRef.current.connect(gainNodeRef.current);
+                            gainNodeRef.current.connect(ctx.destination);
+                        }
+                    } catch (err) { console.warn('voice gain graph unavailable:', err); }
+                    unlocked = true;
+                }).catch(() => {});
             } catch { /* noop */ }
         };
         window.addEventListener('pointerdown', unlock);
@@ -131,6 +152,12 @@ export function useRupeeVoice() {
                 audio.volume = 1.0;
                 audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(url); };
                 audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); };
+
+                // If the element is routed through the gain graph, the context must
+                // be running or it will be silent. Resume it (no-op if not routed).
+                try {
+                    if (audioContextRef.current?.state === 'suspended') await audioContextRef.current.resume();
+                } catch { /* noop */ }
 
                 setDebugStatus('Playing neural voice...');
                 setIsSpeaking(true);
