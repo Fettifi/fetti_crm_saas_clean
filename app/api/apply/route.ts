@@ -191,6 +191,7 @@ export async function POST(req: NextRequest) {
             await supabaseAdmin.from("lead_agents").insert([
               { lead_id: newLead.id, stage: "capture", summary: r.summary, output_json: r.output },
             ]);
+            await logActivity({ entity_type: "agent", entity_id: newLead.id, lead_id: newLead.id, actor: "agent:capture", action: "agent.ran", detail: { stage: "capture", summary: r.summary } });
           }
         } catch (e) { console.warn("[/api/apply] capture agent failed:", e); }
 
@@ -210,15 +211,20 @@ export async function POST(req: NextRequest) {
           });
         } catch (e) { console.warn("[/api/apply] alert failed:", e); }
 
-        try {
-          const q = getAgent("qualify");
-          if (q) {
-            const r = await runAgent(q, newLead);
+        // Run the rest of the 5-agent pipeline automatically on every new lead:
+        // Qualify -> Structure -> Process -> Close. Each advises (humans decide),
+        // records its output, and logs activity for the enterprise brain.
+        for (const stage of ["qualify", "structure", "process", "close"] as const) {
+          try {
+            const agent = getAgent(stage);
+            if (!agent) continue;
+            const r = await runAgent(agent, newLead);
             await supabaseAdmin.from("lead_agents").insert([
-              { lead_id: newLead.id, stage: "qualify", summary: r.summary, output_json: r.output },
+              { lead_id: newLead.id, stage, summary: r.summary, output_json: r.output },
             ]);
-          }
-        } catch (e) { console.warn("[/api/apply] qualify agent failed:", e); }
+            await logActivity({ entity_type: "agent", entity_id: newLead.id, lead_id: newLead.id, actor: `agent:${stage}`, action: "agent.ran", detail: { stage, summary: r.summary } });
+          } catch (e) { console.warn(`[/api/apply] ${stage} agent failed:`, e); }
+        }
       });
     }
 
