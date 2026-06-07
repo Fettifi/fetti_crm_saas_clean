@@ -205,6 +205,9 @@ function product(a: Answers): string {
 function appSteps(a: Answers): Q[] {
   const purchase = a.goal === "buy" || a.invest_action === "purchase" || a.goal === "flip";
   const consumer = isConsumer(a);
+  // DSCR loans qualify on the PROPERTY's rental income, not the borrower's — so
+  // we never ask for personal employment/income. We ask projected rent instead.
+  const dscr = product(a).toLowerCase().includes("dscr");
   const steps: Q[] = [];
   // Borrower (URLA §1)
   steps.push({ id: "dob", kind: "date", prompt: "Quick one — when's your birthday? 🎂", sub: "We use it to match you to the best programs.", optional: true });
@@ -227,18 +230,23 @@ function appSteps(a: Answers): Q[] {
   steps.push({ id: "years_at_address", kind: "select", prompt: "How long at your current place?", options: [
     { value: "<2", label: "Less than 2 years" }, { value: "2+", label: "2+ years" },
   ] });
-  // Employment & income (URLA §1c / §1d)
-  steps.push({ id: "employment_status", kind: "select", prompt: "How do you earn your income?", options: [
-    { value: "Employed", label: "Employed (W-2)", emoji: "💼" }, { value: "Self-Employed", label: "Self-employed / business owner", emoji: "🧑‍💻" },
-    { value: "Retired", label: "Retired", emoji: "🌅" }, { value: "Other", label: "Other" },
-  ] });
-  steps.push({ id: "employer", kind: "text", prompt: "Who do you work for?", sub: "Your employer or business name.", placeholder: "Employer / business", optional: true });
-  steps.push({ id: "job_title", kind: "text", prompt: "What's your role?", placeholder: "Job title", optional: true });
-  steps.push({ id: "years_employed", kind: "select", prompt: "How long in this line of work?", options: [
-    { value: "<2", label: "Less than 2 years" }, { value: "2+", label: "2+ years" },
-  ] });
-  steps.push({ id: "monthly_income", kind: "number", prompt: "About what's your monthly income, before taxes?", sub: "Best estimate — we verify later.", placeholder: "Gross monthly income ($)", optional: true });
-  steps.push({ id: "other_income", kind: "number", prompt: "Any other monthly income?", sub: "Rentals, side business, support, etc. Skip if none.", placeholder: "Other monthly income ($)", optional: true });
+  if (dscr) {
+    // DSCR = no personal-income docs. Qualify on the property's cash flow.
+    steps.push({ id: "rent_income", kind: "number", prompt: "What's the expected monthly rent?", sub: "This is what qualifies a DSCR loan — no pay stubs or tax returns needed. A market estimate is fine.", placeholder: "Monthly rent ($)", optional: true });
+  } else {
+    // Employment & income (URLA §1c / §1d)
+    steps.push({ id: "employment_status", kind: "select", prompt: "How do you earn your income?", options: [
+      { value: "Employed", label: "Employed (W-2)", emoji: "💼" }, { value: "Self-Employed", label: "Self-employed / business owner", emoji: "🧑‍💻" },
+      { value: "Retired", label: "Retired", emoji: "🌅" }, { value: "Other", label: "Other" },
+    ] });
+    steps.push({ id: "employer", kind: "text", prompt: "Who do you work for?", sub: "Your employer or business name.", placeholder: "Employer / business", optional: true });
+    steps.push({ id: "job_title", kind: "text", prompt: "What's your role?", placeholder: "Job title", optional: true });
+    steps.push({ id: "years_employed", kind: "select", prompt: "How long in this line of work?", options: [
+      { value: "<2", label: "Less than 2 years" }, { value: "2+", label: "2+ years" },
+    ] });
+    steps.push({ id: "monthly_income", kind: "number", prompt: "About what's your monthly income, before taxes?", sub: "Best estimate — we verify later.", placeholder: "Gross monthly income ($)", optional: true });
+    steps.push({ id: "other_income", kind: "number", prompt: "Any other monthly income?", sub: "Rentals, side business, support, etc. Skip if none.", placeholder: "Other monthly income ($)", optional: true });
+  }
   // Assets (URLA §2)
   steps.push({ id: "liquid_assets", kind: "number", prompt: "Roughly how much do you have saved or invested?", sub: "Checking, savings, 401k/IRA — helps us show what you qualify for.", placeholder: "Total assets ($)", optional: true });
   if (purchase && consumer) {
@@ -317,16 +325,20 @@ export default function ApplyWizard() {
     const qs = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
     const occ = effectiveOccupancy(a);
     const p = product(a);
-    const monthly = a.monthly_income ? Number(a.monthly_income) : undefined;
+    const dscr = p.toLowerCase().includes("dscr");
+    // DSCR qualifies on property cash flow — never report borrower personal income.
+    const monthly = !dscr && a.monthly_income ? Number(a.monthly_income) : undefined;
     const propType = a.prop_type || (a.goal === "buy" ? "Residential" : undefined);
     // A readable 1003 summary that updates on the lead (notes survives dedup-merge).
     const lines: string[] = [`Product: ${p}`, `Goal: ${a.goal}`, `Occupancy: ${occ || "—"} (${isInvestment(a) ? "INVESTMENT — all 50 states" : "consumer — FL/MI/CA"})`];
+    if (dscr) lines.push("Qualification: DSCR (property cash flow — no personal income)");
     const add = (label: string, v?: string) => { if (v) lines.push(`${label}: ${v}`); };
     add("DOB", a.dob); add("Citizenship", a.citizenship); add("Marital", a.marital); add("Dependents", a.dependents);
     add("Owns/Rents", a.own_or_rent); add("Current housing pmt", a.housing_payment && `$${a.housing_payment}/mo`);
     add("Yrs at address", a.years_at_address); add("Employment", a.employment_status); add("Employer", a.employer); add("Title", a.job_title);
     add("Yrs in field", a.years_employed); add("Gross monthly income", monthly ? `$${monthly}` : undefined);
-    add("Other monthly income", a.other_income && `$${a.other_income}`); add("Liquid assets", a.liquid_assets && `$${a.liquid_assets}`);
+    add("Projected monthly rent", a.rent_income && `$${a.rent_income}`);
+    add("Other monthly income", !dscr && a.other_income ? `$${a.other_income}` : undefined); add("Liquid assets", a.liquid_assets && `$${a.liquid_assets}`);
     add("Down pmt source", a.down_payment_source); add("Owns other RE", a.own_other_property);
     add("BK/Foreclosure 7yr", a.bk_fc); add("Property address", a.property_address);
     add("VA/Military", a.military); add("First-time buyer", a.firsttime); add("Rental type", a.rental_type); add("Experience", a.experience);
