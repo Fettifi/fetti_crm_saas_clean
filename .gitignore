@@ -6,3 +6,4 @@ node_modules/
 fetti_last_errors.json
 .env*.local
 .env
+public/*.pdf
