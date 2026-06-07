@@ -17,26 +17,41 @@ async function learn() {
   // ---- Funnel from wizard_events ----
   const { data: events } = await supabaseAdmin
     .from("wizard_events")
-    .select("session_id, event, phase, step_id, step_index, goal, product")
+    .select("session_id, event, phase, step_id, step_index, goal, product, meta")
     .gte("created_at", sinceISO)
     .limit(20000);
   const evs = events || [];
 
-  type S = { goal?: string; product?: string; started: boolean; contacted: boolean; completed: boolean; lastStep: string; maxIdx: number };
+  type S = { goal?: string; product?: string; started: boolean; contacted: boolean; completed: boolean; lastStep: string; maxIdx: number; obstacles: Set<string> };
   const sessions = new Map<string, S>();
   const stepReach: Record<string, number> = {}; // answers per step_id (drop-off shape)
   for (const e of evs as any[]) {
-    const s = sessions.get(e.session_id) || { started: false, contacted: false, completed: false, lastStep: "", maxIdx: -1 };
+    const s = sessions.get(e.session_id) || { started: false, contacted: false, completed: false, lastStep: "", maxIdx: -1, obstacles: new Set<string>() };
     if (e.goal) s.goal = e.goal;
     if (e.product) s.product = e.product;
     if (e.event === "start") s.started = true;
     if (e.event === "contact") s.contacted = true;
     if (e.event === "complete") s.completed = true;
+    if (e.event === "objection" && e.meta?.obstacle) s.obstacles.add(String(e.meta.obstacle));
     if (e.event === "answer" && e.step_id) {
       stepReach[e.step_id] = (stepReach[e.step_id] || 0) + 1;
       if (typeof e.step_index === "number" && e.step_index > s.maxIdx) { s.maxIdx = e.step_index; s.lastStep = e.step_id; }
     }
     sessions.set(e.session_id, s);
+  }
+
+  // Objections: how often each obstacle was shown, and whether those borrowers
+  // continued to contact. Low continue-rate = a rebuttal worth improving.
+  const objections: Record<string, { shown: number; continued: number; continue_rate: number }> = {};
+  for (const s of sessions.values()) {
+    for (const o of s.obstacles) {
+      const row = objections[o] || { shown: 0, continued: 0, continue_rate: 0 };
+      row.shown++; if (s.contacted) row.continued++;
+      objections[o] = row;
+    }
+  }
+  for (const k of Object.keys(objections)) {
+    const r = objections[k]; r.continue_rate = r.shown ? +(r.continued / r.shown).toFixed(3) : 0;
   }
   const all = [...sessions.values()];
   const starts = all.filter((s) => s.started).length || all.length;
@@ -62,6 +77,7 @@ async function learn() {
     answers_per_step: stepReach,
     pre_contact_dropoff_by_step: lastStepDrop,
     by_goal: byGoal,
+    objections,
   };
 
   // ---- Outcomes from leads (wizard-sourced) ----

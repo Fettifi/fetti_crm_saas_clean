@@ -18,8 +18,16 @@ export type OptimizerOutput = {
   summary: string;
   insights: string[];          // cumulative lessons (carry forward what still holds)
   recommendations: string[];   // concrete suggestions for the human team
-  config: { goal_order?: string[]; tip?: string }; // applied live by the wizard
+  config: {
+    goal_order?: string[];
+    tip?: string;
+    rebuttals?: Record<string, string>; // learned objection-handling copy per obstacle
+  };
 };
+
+// Friction points the wizard coaches borrowers through. The optimizer learns
+// better rebuttal copy for these from real drop-off; keys MUST match the wizard.
+const OBSTACLE_KEYS = ["low_credit", "building_credit", "low_down", "self_employed", "past_bk_fc", "first_flip", "not_62", "high_balance"];
 
 const SYSTEM = `You are the "Application Coach" for Fetti Financial Services — a learning agent that
 optimizes a conversational mortgage application wizard. Goal: maximize completed, high-quality
@@ -30,10 +38,27 @@ The wizard starts by asking the applicant's GOAL, one of these exact values:
 Occupancy is the key driver: if a borrower won't live there it's an investment/business loan.
 DSCR loans must NOT ask for personal income.
 
-You are given: a FUNNEL summary (where people drop off, completion rate, by goal/product),
+A core job of the wizard is OBJECTION HANDLING: when a borrower picks an answer that makes people
+feel disqualified, the wizard shows a short coaching message that reframes the obstacle and offers
+an ALTERNATIVE STRATEGY, so they stay engaged instead of dropping. The obstacle keys are:
+- low_credit: credit under 620
+- building_credit: credit 620-659
+- low_down: little/no down payment
+- self_employed: self-employed income
+- past_bk_fc: bankruptcy/foreclosure in last 7 years
+- first_flip: first-time fix & flip / investor
+- not_62: wants a reverse mortgage but is under 62
+- high_balance: owes a lot relative to property value (low equity)
+Each rebuttal must be encouraging, specific, suggest a concrete alternative path (e.g. FHA to 580,
+$0-down VA/USDA, down payment assistance, bank-statement/non-QM loans, seasoning timelines,
+HELOC/cash-out instead of reverse), compliant, and NEVER promise approval or rates.
+
+You are given: a FUNNEL summary (where people drop off, completion rate, by goal/product, and
+OBJECTIONS — how often each obstacle was shown and whether those borrowers continued to contact),
 OUTCOMES (lead tier mix by product/goal/occupancy), and PRIOR_INSIGHTS (lessons you banked in
 earlier runs). LEARN cumulatively: keep prior insights that still hold, drop ones the new data
-contradicts, add new ones. Be specific and data-grounded; if the sample is tiny, say so and stay
+contradicts, add new ones. Pay special attention to obstacles with low continue-rates — improve
+those rebuttals. Be specific and data-grounded; if the sample is tiny, say so and stay
 conservative. Never invent rates, approvals, or guarantees.
 
 Output ONLY valid JSON:
@@ -43,7 +68,8 @@ Output ONLY valid JSON:
   "recommendations": string[],             // concrete changes for the team (<=6)
   "config": {
     "goal_order": string[],                // the 7 goal values reordered best-converting first (use ONLY the allowed values)
-    "tip": string                          // <=90 chars reassuring/social-proof line to show under the first question; compliant, no promises
+    "tip": string,                         // <=90 chars reassuring/social-proof line to show under the first question; compliant, no promises
+    "rebuttals": { [obstacleKey]: string } // improved coaching copy (<=240 chars each) for the obstacle keys above that need it most
   }
 }`;
 
@@ -94,7 +120,20 @@ Return ONLY the JSON for your schema.`;
     : [];
   const goal_order = [...new Set(order)];
   for (const g of allowed) if (!goal_order.includes(g)) goal_order.push(g); // ensure all present
-  out.config = { goal_order, tip: typeof out.config?.tip === "string" ? out.config.tip.slice(0, 120) : undefined };
+  // Keep only known obstacle keys with non-empty string copy, trimmed to length.
+  const rebuttals: Record<string, string> = {};
+  const rb = out.config?.rebuttals;
+  if (rb && typeof rb === "object") {
+    for (const k of OBSTACLE_KEYS) {
+      const v = (rb as Record<string, unknown>)[k];
+      if (typeof v === "string" && v.trim()) rebuttals[k] = v.trim().slice(0, 240);
+    }
+  }
+  out.config = {
+    goal_order,
+    tip: typeof out.config?.tip === "string" ? out.config.tip.slice(0, 120) : undefined,
+    rebuttals,
+  };
   out.insights = Array.isArray(out.insights) ? out.insights.slice(0, 8) : [];
   out.recommendations = Array.isArray(out.recommendations) ? out.recommendations.slice(0, 6) : [];
   out.summary = typeof out.summary === "string" ? out.summary : "Application Coach run complete.";

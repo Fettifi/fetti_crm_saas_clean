@@ -13,7 +13,7 @@
 // business loans are available in all 50 states; owner-occupied only FL/MI/CA).
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, ArrowLeft, ShieldCheck } from "lucide-react";
+import { CheckCircle2, ArrowLeft, ShieldCheck, Lightbulb } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
 
 type Opt = { value: string; label: string; emoji?: string; hint?: string };
@@ -138,6 +138,36 @@ const FLOWS: Record<string, Q[]> = {
 const CONSUMER_GOALS = ["buy", "refi", "equity", "reverse"];
 const CREDIT_Q: Q = { id: "credit", kind: "select", prompt: "Roughly, how's your credit?", sub: "An estimate is fine — no credit pull to get started.", options: CREDIT };
 
+// ---- Objection handling -----------------------------------------------------
+// When a borrower picks an answer that often makes people feel disqualified, we
+// don't let them stall — we coach them with an alternative strategy and keep them
+// moving. These defaults are the floor; the Application Coach LEARNS better copy
+// per obstacle from real drop-off and overrides them via config.rebuttals.
+const DEFAULT_REBUTTALS: Record<string, string> = {
+  low_credit: "Credit under 620 is very workable — FHA goes to 580 and we have flexible programs. Plenty of clients raise their score fast once we show them how. Let's keep going and I'll find real options for you. 💪",
+  building_credit: "Scores in the 620s open up plenty of programs — this won't hold you back. Let's keep going.",
+  low_down: "Little to put down? No problem — FHA needs just 3.5%, VA/USDA can be $0, and you may qualify for down payment assistance. Let's find what fits. 🙌",
+  self_employed: "Self-employed? We have bank-statement and P&L programs — no tax returns required. You're in great company here.",
+  past_bk_fc: "A past bankruptcy or foreclosure doesn't disqualify you — there are seasoning windows and non-QM paths. Let's map your timeline together.",
+  first_flip: "First project? We fund first-time investors with the right deal and a solid plan. Let's structure it together. 🚀",
+  not_62: "Not 62 yet? A HELOC or cash-out refinance can unlock your equity now — let's look at those instead.",
+  high_balance: "Owe a lot relative to the value? There are still options — and improving your equity is a strategy we can plan toward. Let's keep going.",
+};
+
+// Returns an obstacle key if this answer is a known friction point, else null.
+function detectObstacle(id: string, value: string, a: Answers): string | null {
+  if (id === "credit" && value === "600") return "low_credit";
+  if (id === "credit" && value === "640") return "building_credit";
+  if (id === "down" && value === "lt3") return "low_down";
+  if (id === "employment_status" && value === "Self-Employed") return "self_employed";
+  if (id === "bk_fc" && value === "yes") return "past_bk_fc";
+  if (id === "experience" && value === "0") return "first_flip";
+  if (id === "age62" && value === "no") return "not_62";
+  // Low-equity refinance/equity: owe >= 85% of value.
+  if (id === "loan_amount_requested" && a.property_value && Number(value) >= 0.85 * Number(a.property_value)) return "high_balance";
+  return null;
+}
+
 // ---- Occupancy is authoritative ---------------------------------------------
 // Resolve the borrower's intended occupancy from whichever question captured it,
 // defaulting sensibly per goal. This decides investment-vs-consumer everywhere.
@@ -200,7 +230,7 @@ function product(a: Answers): string {
     return a.equity_type === "Home Equity Loan" ? `${prefix}Home Equity Loan` : `${prefix}HELOC`;
   }
   if (g === "business") return a.biz_type || "Business Loan";
-  if (g === "reverse") return "Reverse Mortgage (HECM)";
+  if (g === "reverse") return a.age62 === "no" ? "Home Equity (HELOC / Cash-Out Refinance)" : "Reverse Mortgage (HECM)";
   return "Mortgage Inquiry";
 }
 
@@ -294,6 +324,10 @@ export default function ApplyWizard() {
   const sid = useRef<string>("");
   const [goalOrder, setGoalOrder] = useState<string[] | null>(null);
   const [tip, setTip] = useState<string>("");
+  const [rebuttals, setRebuttals] = useState<Record<string, string>>({});
+  // Objection-handling interstitial: the coaching message + the deferred advance.
+  const [coach, setCoach] = useState<{ key: string; message: string } | null>(null);
+  const advanceRef = useRef<null | (() => void)>(null);
   useEffect(() => {
     sid.current =
       (typeof crypto !== "undefined" && "randomUUID" in crypto)
@@ -307,6 +341,7 @@ export default function ApplyWizard() {
         const c = d?.config || {};
         if (Array.isArray(c.goal_order) && c.goal_order.length) setGoalOrder(c.goal_order);
         if (typeof c.tip === "string") setTip(c.tip);
+        if (c.rebuttals && typeof c.rebuttals === "object") setRebuttals(c.rebuttals);
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -348,6 +383,24 @@ export default function ApplyWizard() {
     grandTotal;
   const pct = Math.round((done / grandTotal) * 100);
 
+  // Show the coaching interstitial for an obstacle, deferring `advance` until the
+  // borrower taps "Keep going". Falls back to default copy if nothing learned yet.
+  function maybeCoach(id: string, value: string, next: Answers, phaseName: string, advance: () => void): boolean {
+    const key = detectObstacle(id, value, next);
+    if (!key) return false;
+    const message = rebuttals[key] || DEFAULT_REBUTTALS[key];
+    advanceRef.current = advance;
+    setCoach({ key, message });
+    track("objection", { phase: phaseName, step_id: id, goal: next.goal, occupancy: effectiveOccupancy(next), product: product(next), meta: { obstacle: key } });
+    return true;
+  }
+  function continueCoach() {
+    const go = advanceRef.current;
+    advanceRef.current = null;
+    setCoach(null);
+    if (go) go();
+  }
+
   function answerFlow(id: string, raw: string, kind: Q["kind"]) {
     const value = kind === "number" ? raw.replace(/[^0-9.]/g, "") : raw;
     const next = { ...answers, [id]: value };
@@ -355,8 +408,8 @@ export default function ApplyWizard() {
     setInput("");
     track("answer", { phase: "flow", step_id: id, step_index: i, goal: next.goal, occupancy: effectiveOccupancy(next), product: next.goal ? product(next) : undefined });
     const flow = id === "goal" ? [GOAL, ...FLOWS[value], CREDIT_Q] : steps;
-    if (i + 1 >= flow.length) setPhase("contact");
-    else setI(i + 1);
+    const advance = () => { if (i + 1 >= flow.length) setPhase("contact"); else setI(i + 1); };
+    if (!maybeCoach(id, value, next, "flow", advance)) advance();
   }
 
   function answerApp(id: string, raw: string, kind: Q["kind"]) {
@@ -365,8 +418,8 @@ export default function ApplyWizard() {
     setAnswers(next);
     setInput("");
     track("answer", { phase: "app", step_id: id, step_index: totalQualify + 1 + ai, goal: next.goal, occupancy: effectiveOccupancy(next), product: product(next) });
-    if (ai + 1 >= aSteps.length) submitApplication(next);
-    else setAi(ai + 1);
+    const advance = () => { if (ai + 1 >= aSteps.length) submitApplication(next); else setAi(ai + 1); };
+    if (!maybeCoach(id, value, next, "app", advance)) advance();
   }
 
   function back() {
@@ -475,6 +528,22 @@ export default function ApplyWizard() {
             </Link>
           )}
         </div>
+      </Shell>
+    );
+  }
+
+  // ---- COACH (objection handling — keep them engaged) -----------------------
+  if (coach) {
+    return (
+      <Shell pct={pct} onBack={() => { advanceRef.current = null; setCoach(null); }}>
+        <div className="rounded-2xl bg-gradient-to-b from-emerald-500/15 to-slate-900/0 border border-emerald-500/30 p-6">
+          <div className="flex items-center gap-2 text-emerald-300 font-semibold"><Lightbulb className="w-5 h-5" /> Good news — there's a path here</div>
+          <p className="text-slate-100 text-lg leading-relaxed mt-3">{coach.message}</p>
+        </div>
+        <button onClick={continueCoach} className="w-full mt-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 rounded-full">
+          Keep going →
+        </button>
+        <p className="text-center text-xs text-slate-500 mt-3">No obligation — we'll show you real options either way.</p>
       </Shell>
     );
   }
