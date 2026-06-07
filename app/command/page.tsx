@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, Trophy } from "lucide-react";
+import { Loader2, RefreshCw, Trophy, Brain } from "lucide-react";
 
 type Stats = {
   leads: { today: number; week: number; total: number; tier1: number; tier2: number; tier3: number };
@@ -9,6 +9,10 @@ type Stats = {
   sources: { source: string; count: number }[];
   partners: { name: string; code: string; leads: number; tier1: number }[];
   agentRuns: number;
+  wizard?: {
+    sessions: number; contacts: number; completes: number;
+    summary: string | null; insights: string[]; recommendations: string[]; learnedAt: string | null;
+  };
 };
 
 function Stat({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
@@ -25,6 +29,7 @@ export default function CommandPage() {
   const [s, setS] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [learning, setLearning] = useState(false);
   async function load() {
     setLoading(true);
     const res = await fetch("/api/stats");
@@ -32,6 +37,12 @@ export default function CommandPage() {
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  async function runCoach() {
+    setLearning(true);
+    try { await fetch("/api/cron/wizard-learn", { method: "POST" }); await load(); }
+    finally { setLearning(false); }
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
@@ -99,6 +110,64 @@ export default function CommandPage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Application Coach — the learning agent behind the wizard */}
+            <div className="bg-slate-900/40 border border-indigo-500/30 rounded-2xl p-5 mt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Brain className="w-5 h-5 text-indigo-400" />
+                  <span className="font-semibold">Application Coach</span>
+                  <span className="text-xs text-slate-500">learns from the wizard</span>
+                </div>
+                <button onClick={runCoach} disabled={learning}
+                  className="flex items-center gap-2 text-xs bg-indigo-600/80 hover:bg-indigo-500 disabled:opacity-50 px-3 py-1.5 rounded-lg">
+                  {learning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+                  {learning ? "Learning…" : "Run now"}
+                </button>
+              </div>
+
+              {s.wizard && (
+                <div className="grid grid-cols-3 gap-3 mt-4">
+                  <div className="bg-slate-950/40 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-bold">{s.wizard.sessions}</div>
+                    <div className="text-[11px] text-slate-500">sessions (14d)</div>
+                  </div>
+                  <div className="bg-slate-950/40 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-bold text-emerald-400">{s.wizard.contacts}</div>
+                    <div className="text-[11px] text-slate-500">reached contact</div>
+                  </div>
+                  <div className="bg-slate-950/40 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-bold text-emerald-400">{s.wizard.completes}</div>
+                    <div className="text-[11px] text-slate-500">completed 1003</div>
+                  </div>
+                </div>
+              )}
+
+              {s.wizard?.summary ? (
+                <>
+                  <p className="text-sm text-slate-200 mt-4">🧠 {s.wizard.summary}</p>
+                  {s.wizard.insights.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">What it has learned</div>
+                      <ul className="list-disc list-inside text-sm text-slate-300 space-y-1">
+                        {s.wizard.insights.map((x, i) => <li key={i}>{x}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {s.wizard.recommendations.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Recommended changes</div>
+                      <ul className="list-disc list-inside text-sm text-amber-300/90 space-y-1">
+                        {s.wizard.recommendations.map((x, i) => <li key={i}>{x}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {s.wizard.learnedAt && <div className="text-[11px] text-slate-600 mt-3">Last learned {new Date(s.wizard.learnedAt).toLocaleString()}</div>}
+                </>
+              ) : (
+                <p className="text-sm text-slate-500 mt-4">No lessons yet — the Coach learns automatically each day once applicants start flowing through the wizard, and reorders questions + tips to lift completions. Hit “Run now” once you have a few sessions.</p>
+              )}
             </div>
           </>
         )}
