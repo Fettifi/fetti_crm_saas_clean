@@ -11,11 +11,17 @@ export function needsWebSearch(message: string): boolean {
 }
 
 export async function searchWeb(query: string): Promise<SearchResult[]> {
+    // Provider priority: Serper (Google, pay-as-you-go, unlimited) > Tavily > free DuckDuckGo.
+    if (process.env.SERPER_API_KEY) {
+        try { return await searchSerper(query); }
+        catch (e) { console.error("Serper failed, falling back:", e); }
+    }
+
     const apiKey = process.env.TAVILY_API_KEY;
 
     if (!apiKey) {
-        // No Tavily key — use the free, no-key DuckDuckGo backend so Rupee still
-        // has real internet access. (Add TAVILY_API_KEY for higher-quality results.)
+        // No keyed provider — use the free, no-key DuckDuckGo backend so Rupee
+        // still has real internet access.
         return await searchDuckDuckGo(query);
     }
 
@@ -68,6 +74,46 @@ export async function searchWeb(query: string): Promise<SearchResult[]> {
         console.error("Search failed:", error);
         // Fall back to free search if Tavily errors out.
         return await searchDuckDuckGo(query);
+    }
+}
+
+// Serper.dev — Google search results, pay-as-you-go (effectively unlimited).
+async function searchSerper(query: string): Promise<SearchResult[]> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+        const res = await fetch("https://google.serper.dev/search", {
+            method: "POST",
+            headers: {
+                "X-API-KEY": process.env.SERPER_API_KEY as string,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ q: query, num: 6 }),
+            signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (!res.ok) throw new Error(`Serper API error: ${res.status}`);
+        const data = await res.json();
+        const results: SearchResult[] = [];
+        if (data.answerBox) {
+            const ab = data.answerBox;
+            const content = ab.answer || ab.snippet || ab.snippetHighlighted?.join(" ") || "";
+            if (content) results.push({ title: ab.title || "Direct Answer", url: ab.link || "", content });
+        }
+        if (data.knowledgeGraph?.description) {
+            results.push({
+                title: data.knowledgeGraph.title || "Knowledge",
+                url: data.knowledgeGraph.descriptionLink || "",
+                content: data.knowledgeGraph.description,
+            });
+        }
+        for (const o of (data.organic || [])) {
+            if (results.length >= 6) break;
+            results.push({ title: o.title || "Result", url: o.link || "", content: o.snippet || "" });
+        }
+        return results.length ? results : [{ title: "No results", url: "", content: `No results for "${query}".` }];
+    } finally {
+        clearTimeout(timeoutId);
     }
 }
 
