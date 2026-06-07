@@ -107,7 +107,11 @@ export default function QuotePage() {
               <button type="submit" disabled={submitting} className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 font-bold py-3 rounded-full">
                 {submitting ? "Submitting…" : "Unlock my full quote →"}
               </button>
-              <p className="text-xs text-slate-500 text-center">Estimate only — not a commitment to lend. A specialist will confirm exact terms.</p>
+              <p className="text-xs text-slate-500 text-center">
+                Estimate only — not a commitment to lend. By submitting, you agree Fetti Financial
+                Services may contact you by phone, email &amp; text (SMS), including automated, at the
+                number provided. Consent isn&apos;t required to buy. Msg &amp; data rates may apply; reply STOP to opt out.
+              </p>
             </form>
           </div>
         )}

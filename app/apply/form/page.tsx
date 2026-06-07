@@ -146,7 +146,10 @@ export default function ApplyFormPage() {
             {submitting ? "Submitting…" : "Submit application"}
           </button>
           <p className="text-xs text-slate-500 text-center">
-            By submitting you agree to be contacted by Fetti Financial Services about your inquiry.
+            By submitting, you agree that Fetti Financial Services may contact you about your
+            inquiry by phone, email, and text message (SMS) at the number provided, including via
+            automated technology. Consent is not a condition of any service. Msg &amp; data rates
+            may apply; reply STOP to opt out, HELP for help.
           </p>
         </form>
       </div>
