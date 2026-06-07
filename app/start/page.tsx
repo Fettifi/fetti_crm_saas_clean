@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CheckCircle2, Zap, Building2, TrendingUp } from "lucide-react";
+import { LICENSING_NOTE } from "@/lib/legal";
 
 export const metadata = {
   title: "Investment Property & Fix-and-Flip Financing | Fetti Financial Services",
@@ -92,9 +93,8 @@ export default async function StartPage({
         </Link>
       </section>
 
-      <footer className="border-t border-slate-900 py-8 text-center text-slate-600 text-xs px-6">
-        © Fetti Financial Services. Equal Housing Opportunity. This is an advertisement, not a
-        commitment to lend. All loans subject to credit approval and program guidelines.
+      <footer className="border-t border-slate-900 py-8 text-center text-slate-600 text-xs px-6 max-w-3xl mx-auto">
+        {LICENSING_NOTE}
       </footer>
     </div>
   );

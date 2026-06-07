@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Building2, TrendingUp, Zap, Home as HomeIcon, Landmark, CheckCircle2 } from "lucide-react";
+import { LICENSING_NOTE } from "@/lib/legal";
 
 export const metadata = {
   title: "Fetti Financial Services | Investor & Real Estate Financing",
@@ -113,7 +114,7 @@ export default function MarketingHome() {
           <Link href="/apply/form" className="hover:text-slate-300">Apply</Link>
         </div>
         © Fetti Financial Services LLC · 5757 W Century Blvd, Suite 700, Los Angeles, CA 90045 · info@fettifi.com<br />
-        Equal Housing Opportunity. This is an advertisement, not a commitment to lend. All loans subject to credit approval and program guidelines.
+        {LICENSING_NOTE}
       </footer>
     </div>
   );

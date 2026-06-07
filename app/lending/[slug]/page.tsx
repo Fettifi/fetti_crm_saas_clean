@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
+import { LICENSING_NOTE } from "@/lib/legal";
 
 // Owned-channel SEO pages: one indexable page per product × state so Fetti ranks
 // organically for high-intent investor-lending searches and owns those leads.
@@ -115,9 +116,8 @@ export default async function LendingPage({
         </Link>
       </section>
 
-      <footer className="border-t border-slate-900 py-8 text-center text-slate-600 text-xs px-6">
-        © Fetti Financial Services. Equal Housing Opportunity. This is an advertisement, not a commitment to lend.
-        Loans subject to credit approval and program guidelines. Not available in all areas.
+      <footer className="border-t border-slate-900 py-8 text-center text-slate-600 text-xs px-6 max-w-3xl mx-auto">
+        {LICENSING_NOTE}
       </footer>
     </div>
   );

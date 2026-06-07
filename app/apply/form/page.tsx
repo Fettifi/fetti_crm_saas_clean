@@ -6,6 +6,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Shield, CheckCircle2 } from "lucide-react";
+import { LICENSING_SHORT } from "@/lib/legal";
 
 const PURPOSES = [
   "Purchase",
@@ -151,6 +152,7 @@ export default function ApplyFormPage() {
             automated technology. Consent is not a condition of any service. Msg &amp; data rates
             may apply; reply STOP to opt out, HELP for help.
           </p>
+          <p className="text-[10px] text-slate-600 text-center">{LICENSING_SHORT}</p>
         </form>
       </div>
     </div>
