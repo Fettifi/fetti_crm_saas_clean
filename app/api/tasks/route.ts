@@ -1,15 +1,29 @@
-// Org tasks — the Enterprise Brain's next-best-actions as trackable to-dos.
-// GET: open tasks (+ a few recently completed). PATCH { id, status }: complete/reopen.
+// Org tasks (quests) for the gamified Quest Log.
+// GET ?player=<id>: open + recently-cleared quests, plus that player's game stats
+//   (XP from their cleared quests + bosses they defeated, level, streak).
+// PATCH { id, status, completed_by }: complete/reopen a quest.
+// POST { title }: add a side quest.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
+import { xpFor, levelInfo, dayStr, streakFrom } from "@/lib/game";
 
 export const dynamic = "force-dynamic";
 
-// XP reward per task — brain-suggested quests are worth a little more.
-export const xpFor = (source?: string) => 10 + (source === "brain" ? 5 : 0);
+export async function GET(req: NextRequest) {
+  const playerId = req.nextUrl.searchParams.get("player");
+  // Resolve the acting player (default to the owner).
+  let player: any = null;
+  if (playerId) {
+    const { data } = await supabaseAdmin.from("players").select("*").eq("id", playerId).maybeSingle();
+    player = data;
+  }
+  if (!player) {
+    const { data } = await supabaseAdmin.from("players").select("*").eq("is_owner", true).limit(1).maybeSingle();
+    player = data;
+  }
+  const isOwner = !!player?.is_owner;
 
-export async function GET() {
   const { data: open } = await supabaseAdmin
     .from("org_tasks").select("*").eq("status", "open")
     .order("priority", { ascending: false }).order("created_at", { ascending: false }).limit(50);
@@ -17,49 +31,51 @@ export async function GET() {
     .from("org_tasks").select("*").eq("status", "done")
     .order("completed_at", { ascending: false }).limit(12);
 
-  // ---- Game stats (XP / level / streak) computed from completed quests ----
-  const { data: allDone } = await supabaseAdmin
-    .from("org_tasks").select("completed_at, source").eq("status", "done").limit(5000);
-  const dayStr = (d: Date) => d.toISOString().slice(0, 10);
-  const today = dayStr(new Date());
-  const weekAgo = Date.now() - 7 * 86400000;
+  // This player's cleared quests (owner also inherits legacy unattributed ones).
+  const { data: myDone } = await supabaseAdmin
+    .from("org_tasks").select("completed_at, source, completed_by").eq("status", "done").limit(5000);
+  const mine = (myDone || []).filter((t: any) =>
+    player && (t.completed_by === player.id || (isOwner && !t.completed_by)));
+
   const days = new Set<string>();
   let xp = 0, brain_done = 0, done_today = 0, done_week = 0;
-  for (const t of (allDone || []) as any[]) {
+  const today = dayStr(new Date());
+  const weekAgo = Date.now() - 7 * 86400000;
+  for (const t of mine as any[]) {
     xp += xpFor(t.source);
     if (t.source === "brain") brain_done++;
     if (t.completed_at) {
-      const d = new Date(t.completed_at);
-      days.add(dayStr(d));
+      const d = new Date(t.completed_at); days.add(dayStr(d));
       if (dayStr(d) === today) done_today++;
       if (d.getTime() >= weekAgo) done_week++;
     }
   }
-  // Streak: consecutive days up to today (with a 1-day grace so it only breaks
-  // after a full missed day).
-  let streak = 0;
-  const cursor = new Date();
-  if (!days.has(dayStr(cursor))) cursor.setUTCDate(cursor.getUTCDate() - 1);
-  while (days.has(dayStr(cursor))) { streak++; cursor.setUTCDate(cursor.getUTCDate() - 1); }
-
-  const levelSize = 100;
-  const level = Math.floor(xp / levelSize) + 1;
-  const xpInLevel = xp % levelSize;
-  const RANKS = ["Rookie", "Hustler", "Closer", "Rainmaker", "Mogul", "Legend"];
-  const rank = RANKS[Math.min(RANKS.length - 1, Math.floor((level - 1) / 3))];
+  // Bonus XP from boss battles this player defeated.
+  let bosses_won = 0;
+  if (player) {
+    const { data: bosses } = await supabaseAdmin
+      .from("boss_battles").select("reward_xp").eq("status", "defeated").eq("defeated_by", player.id);
+    for (const b of (bosses || []) as any[]) { xp += b.reward_xp || 0; bosses_won++; }
+  }
 
   const stats = {
-    xp, level, xpInLevel, xpToNext: levelSize - xpInLevel, levelSize, rank,
-    streak, done_today, done_week, total_done: (allDone || []).length, brain_done,
+    ...levelInfo(xp),
+    streak: streakFrom(days),
+    done_today, done_week, total_done: mine.length, brain_done, bosses_won,
+    player: player ? { id: player.id, name: player.name, emoji: player.emoji, is_owner: player.is_owner } : null,
   };
   return NextResponse.json({ open: open || [], done: done || [], stats });
 }
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { id, status } = await req.json();
+    const { id, status, completed_by } = await req.json();
     if (!id || !["open", "done"].includes(status)) return NextResponse.json({ error: "id + valid status required" }, { status: 400 });
-    const patch: Record<string, unknown> = { status, completed_at: status === "done" ? new Date().toISOString() : null };
+    const patch: Record<string, unknown> = {
+      status,
+      completed_at: status === "done" ? new Date().toISOString() : null,
+      completed_by: status === "done" ? (completed_by || null) : null,
+    };
     const { data, error } = await supabaseAdmin.from("org_tasks").update(patch).eq("id", id).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     await logActivity({ entity_type: "org", entity_id: id, actor: "lo", action: status === "done" ? "task.completed" : "task.reopened", detail: { title: data.title } });
@@ -69,7 +85,6 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-// Optional: let an LO add their own task.
 export async function POST(req: NextRequest) {
   try {
     const { title, detail } = await req.json();
