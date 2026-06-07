@@ -12,7 +12,7 @@ export function useRupeeVoice() {
     const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
     const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
     const gainNodeRef = useRef<GainNode | null>(null);
-    const VOICE_GAIN = 2.8; // amplify ElevenLabs above 100% (1.0 = normal)
+    const VOICE_GAIN = 6.0; // amplify ElevenLabs well above 100% (1.0 = normal)
 
     // Kept for compatibility (callers invoke initAudioContext on send).
     const initAudioContext = () => {
