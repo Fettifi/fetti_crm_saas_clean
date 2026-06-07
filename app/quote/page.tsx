@@ -7,12 +7,13 @@ import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 
 const PRODUCTS = [
+  { key: "Home Purchase", ltv: 0.95 },
+  { key: "Refinance", ltv: 0.8 },
   { key: "DSCR Rental", ltv: 0.78 },
   { key: "Fix and Flip", ltv: 0.85 },
   { key: "Hard Money", ltv: 0.7 },
   { key: "Bridge", ltv: 0.75 },
-  { key: "Purchase", ltv: 0.8 },
-  { key: "Refinance", ltv: 0.75 },
+  { key: "Commercial Real Estate", ltv: 0.7 },
 ];
 const CREDIT = ["740+", "700-739", "660-699", "620-659", "Below 620"];
 const fmt = (n: number) => "$" + Math.round(n).toLocaleString();

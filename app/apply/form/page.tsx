@@ -9,13 +9,16 @@ import { Shield, CheckCircle2 } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
 
 const PURPOSES = [
-  "Purchase",
+  "Home Purchase",
   "Refinance",
   "Cash-Out Refinance",
   "DSCR Rental",
   "Fix and Flip",
   "Hard Money / Bridge",
   "Construction",
+  "Commercial Real Estate",
+  "Business / Working Capital Loan",
+  "SBA Loan",
 ];
 const STATES = ["CA", "FL", "MI", "OH", "TX", "AZ", "GA", "NV", "WA", "Other"];
 const CREDIT = ["720+", "700-719", "680-699", "650-679", "Below 650", "Not sure"];
