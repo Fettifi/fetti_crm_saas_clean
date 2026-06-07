@@ -1,13 +1,13 @@
 import AppLayout from "@/components/AppLayout";
-import TaskList from "@/components/dashboard/TaskList";
+import QuestBoard from "@/components/QuestBoard";
 
 export default function TaskListPage() {
-    return (
-        <AppLayout
-            title="Task List"
-            description="Manage your daily tasks and to-dos."
-        >
-            <TaskList />
-        </AppLayout>
-    );
+  return (
+    <AppLayout
+      title="🎮 Quest Log"
+      description="Clear quests, earn XP, level up, and keep your streak alive."
+    >
+      <QuestBoard />
+    </AppLayout>
+  );
 }

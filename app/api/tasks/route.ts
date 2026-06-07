@@ -6,14 +6,53 @@ import { logActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
+// XP reward per task — brain-suggested quests are worth a little more.
+export const xpFor = (source?: string) => 10 + (source === "brain" ? 5 : 0);
+
 export async function GET() {
   const { data: open } = await supabaseAdmin
     .from("org_tasks").select("*").eq("status", "open")
     .order("priority", { ascending: false }).order("created_at", { ascending: false }).limit(50);
   const { data: done } = await supabaseAdmin
     .from("org_tasks").select("*").eq("status", "done")
-    .order("completed_at", { ascending: false }).limit(10);
-  return NextResponse.json({ open: open || [], done: done || [] });
+    .order("completed_at", { ascending: false }).limit(12);
+
+  // ---- Game stats (XP / level / streak) computed from completed quests ----
+  const { data: allDone } = await supabaseAdmin
+    .from("org_tasks").select("completed_at, source").eq("status", "done").limit(5000);
+  const dayStr = (d: Date) => d.toISOString().slice(0, 10);
+  const today = dayStr(new Date());
+  const weekAgo = Date.now() - 7 * 86400000;
+  const days = new Set<string>();
+  let xp = 0, brain_done = 0, done_today = 0, done_week = 0;
+  for (const t of (allDone || []) as any[]) {
+    xp += xpFor(t.source);
+    if (t.source === "brain") brain_done++;
+    if (t.completed_at) {
+      const d = new Date(t.completed_at);
+      days.add(dayStr(d));
+      if (dayStr(d) === today) done_today++;
+      if (d.getTime() >= weekAgo) done_week++;
+    }
+  }
+  // Streak: consecutive days up to today (with a 1-day grace so it only breaks
+  // after a full missed day).
+  let streak = 0;
+  const cursor = new Date();
+  if (!days.has(dayStr(cursor))) cursor.setUTCDate(cursor.getUTCDate() - 1);
+  while (days.has(dayStr(cursor))) { streak++; cursor.setUTCDate(cursor.getUTCDate() - 1); }
+
+  const levelSize = 100;
+  const level = Math.floor(xp / levelSize) + 1;
+  const xpInLevel = xp % levelSize;
+  const RANKS = ["Rookie", "Hustler", "Closer", "Rainmaker", "Mogul", "Legend"];
+  const rank = RANKS[Math.min(RANKS.length - 1, Math.floor((level - 1) / 3))];
+
+  const stats = {
+    xp, level, xpInLevel, xpToNext: levelSize - xpInLevel, levelSize, rank,
+    streak, done_today, done_week, total_done: (allDone || []).length, brain_done,
+  };
+  return NextResponse.json({ open: open || [], done: done || [], stats });
 }
 
 export async function PATCH(req: NextRequest) {
