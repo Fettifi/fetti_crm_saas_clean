@@ -1,8 +1,8 @@
 // Org tasks (quests) for the gamified Quest Log.
-// GET ?player=<id>: open + recently-cleared quests, plus that player's game stats
-//   (XP from their cleared quests + bosses they defeated, level, streak).
-// PATCH { id, status, completed_by }: complete/reopen a quest.
-// POST { title }: add a side quest.
+// GET ?player=<id>: open + recently-cleared quests, that player's game stats, and
+//   the user's calendar subscription URL.
+// PATCH { id, status?, completed_by?, due_at? }: complete/reopen or set a due date.
+// POST { title, due_at? }: add a side quest.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
@@ -10,9 +10,33 @@ import { xpFor, levelInfo, dayStr, streakFrom } from "@/lib/game";
 
 export const dynamic = "force-dynamic";
 
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+const randomToken = () =>
+  (typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "")
+    : Math.random().toString(16).slice(2) + Date.now().toString(16)).slice(0, 28);
+
+// Normalize a date input ("YYYY-MM-DD" or ISO) to an ISO timestamp (9am if date-only).
+function toIso(due?: string | null): string | null {
+  if (!due) return null;
+  const s = String(due);
+  const d = new Date(s.length === 10 ? `${s}T09:00:00` : s);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+async function ownerCalUrl(): Promise<string | null> {
+  const { data: owner } = await supabaseAdmin.from("players").select("id, cal_token").eq("is_owner", true).limit(1).maybeSingle();
+  if (!owner) return null;
+  let token = owner.cal_token;
+  if (!token) {
+    token = randomToken();
+    await supabaseAdmin.from("players").update({ cal_token: token }).eq("id", owner.id);
+  }
+  return `${APP_URL}/api/calendar/feed?token=${token}`;
+}
+
 export async function GET(req: NextRequest) {
   const playerId = req.nextUrl.searchParams.get("player");
-  // Resolve the acting player (default to the owner).
   let player: any = null;
   if (playerId) {
     const { data } = await supabaseAdmin.from("players").select("*").eq("id", playerId).maybeSingle();
@@ -23,7 +47,6 @@ export async function GET(req: NextRequest) {
     player = data;
   }
   if (!player) {
-    // First-ever load: create the owner so stats + the player picker work immediately.
     const { data } = await supabaseAdmin.from("players")
       .insert([{ name: "You", role: "Owner / Broker", emoji: "👑", is_owner: true }]).select().single();
     player = data;
@@ -37,7 +60,6 @@ export async function GET(req: NextRequest) {
     .from("org_tasks").select("*").eq("status", "done")
     .order("completed_at", { ascending: false }).limit(12);
 
-  // This player's cleared quests (owner also inherits legacy unattributed ones).
   const { data: myDone } = await supabaseAdmin
     .from("org_tasks").select("completed_at, source, completed_by").eq("status", "done").limit(5000);
   const mine = (myDone || []).filter((t: any) =>
@@ -56,7 +78,6 @@ export async function GET(req: NextRequest) {
       if (d.getTime() >= weekAgo) done_week++;
     }
   }
-  // Bonus XP from boss battles this player defeated.
   let bosses_won = 0;
   if (player) {
     const { data: bosses } = await supabaseAdmin
@@ -70,13 +91,24 @@ export async function GET(req: NextRequest) {
     done_today, done_week, total_done: mine.length, brain_done, bosses_won,
     player: player ? { id: player.id, name: player.name, emoji: player.emoji, is_owner: player.is_owner } : null,
   };
-  return NextResponse.json({ open: open || [], done: done || [], stats });
+  const calendar_url = await ownerCalUrl();
+  return NextResponse.json({ open: open || [], done: done || [], stats, calendar_url });
 }
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { id, status, completed_by } = await req.json();
-    if (!id || !["open", "done"].includes(status)) return NextResponse.json({ error: "id + valid status required" }, { status: 400 });
+    const { id, status, completed_by, due_at } = await req.json();
+    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+    // Due-date-only update (no status change).
+    if (status === undefined && due_at !== undefined) {
+      const { data, error } = await supabaseAdmin.from("org_tasks")
+        .update({ due_at: toIso(due_at) }).eq("id", id).select().single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ task: data });
+    }
+
+    if (!["open", "done"].includes(status)) return NextResponse.json({ error: "valid status required" }, { status: 400 });
     const patch: Record<string, unknown> = {
       status,
       completed_at: status === "done" ? new Date().toISOString() : null,
@@ -93,11 +125,11 @@ export async function PATCH(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { title, detail } = await req.json();
+    const { title, detail, due_at } = await req.json();
     if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
     const dedup_key = String(title).toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 80);
     const { data, error } = await supabaseAdmin.from("org_tasks")
-      .insert([{ title: String(title).slice(0, 200), detail: detail || null, source: "manual", status: "open", dedup_key }]).select().single();
+      .insert([{ title: String(title).slice(0, 200), detail: detail || null, source: "manual", status: "open", dedup_key, due_at: toIso(due_at) }]).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ task: data }, { status: 201 });
   } catch (e) {
