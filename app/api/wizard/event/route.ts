@@ -8,7 +8,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 
 export const dynamic = "force-dynamic";
 
-const EVENTS = new Set(["start", "answer", "contact", "complete"]);
+const EVENTS = new Set(["start", "answer", "contact", "complete", "objection"]);
 
 export async function POST(req: NextRequest) {
   try {
