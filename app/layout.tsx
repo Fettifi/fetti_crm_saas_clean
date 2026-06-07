@@ -8,11 +8,13 @@ export const metadata: Metadata = {
 };
 
 import { Toaster } from 'sonner';
+import TrackingPixels from '@/components/TrackingPixels';
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body className="bg-gray-50 text-gray-900">
+        <TrackingPixels />
         {children}
         <Toaster position="top-center" richColors />
       </body>

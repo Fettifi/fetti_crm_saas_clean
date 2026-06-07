@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, ArrowLeft, ShieldCheck, Lightbulb } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
+import { trackLead } from "@/lib/track";
 
 type Opt = { value: string; label: string; emoji?: string; hint?: string };
 type Q =
@@ -494,6 +495,7 @@ export default function ApplyWizard() {
     try {
       const j = await post(buildPayload(answers, c));
       setLeadId(j.lead_id);
+      trackLead(answers.loan_amount_requested ? Number(answers.loan_amount_requested) : undefined); // ad conversion
       track("contact", { phase: "contact", goal: answers.goal, occupancy: effectiveOccupancy(answers), product: p });
       setPhase("app"); setAi(0);
     } catch (err) { setError(err instanceof Error ? err.message : "Error"); } finally { setSubmitting(false); }
