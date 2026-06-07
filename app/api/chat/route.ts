@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
 import { detectMemoryIntent, rememberFact } from '@/lib/memory';
+import { searchWeb, needsWebSearch } from '@/lib/integrations/search';
 import { ConversationState, captureData, getNextStep, Message } from '@/lib/apply/conversation-logic';
 import { getKnowledgeBase } from '@/lib/integrations/god-mode';
 import { BASE_SYSTEM_PROMPT } from '@/lib/ai/prompts';
@@ -45,6 +46,20 @@ async function* runChatLogic(req: NextRequest) {
             try { await rememberFact(memoryToSave); } catch (e) { console.warn('[memory] save error', e); }
         }
 
+        // Live internet access: if the question needs current/web info, search the
+        // web NOW and inject the results into Rupee's context (deterministic — the
+        // OpenAI brain doesn't auto-call the search tool).
+        let webResults = '';
+        if (needsWebSearch(lastUserMessage)) {
+            try {
+                yield createChunk('status', { message: 'Searching the web...', progress: 15 });
+                const results = await searchWeb(lastUserMessage);
+                webResults = results.slice(0, 5)
+                    .map((r: any, i: number) => `(${i + 1}) ${r.title}${r.url ? ` [${r.url}]` : ''}: ${r.content}`)
+                    .join('\n');
+            } catch (e) { console.warn('[web] search error', e); }
+        }
+
         // 1. Initial Status (with padding for Safari buffering)
         yield createChunk('status', {
             message: "Thinking...",
@@ -62,8 +77,12 @@ async function* runChatLogic(req: NextRequest) {
         // const knowledge: any[] = []; // Mock for build fix
         const knowledgeString = knowledge.map((k: { topic: string; insight: string }) => `- ${k.topic}: ${k.insight} `).join('\n');
 
-        const finalSystemPrompt = `${BASE_SYSTEM_PROMPT}
+        const webBlock = webResults
+            ? `\n\n**LIVE WEB SEARCH RESULTS** (already fetched from the internet for the user's question). DO NOT call deepResearch, search, or any tool — the results are RIGHT HERE. Answer the user directly in plain language using these, and mention the info is current:\n${webResults}\n`
+            : '';
 
+        const finalSystemPrompt = `${BASE_SYSTEM_PROMPT}
+${webBlock}
 **THE VAULT (LONG-TERM MEMORY):**
 ${knowledgeString}
 
@@ -98,6 +117,9 @@ ${knowledgeString}
             let systemInstruction = lastUserMessage;
             if (memoryToSave) {
                 systemInstruction += "\n\n(SYSTEM: You just permanently saved this to The Vault, your long-term memory. Briefly and warmly confirm to the user that you'll remember it forever.)";
+            }
+            if (webResults) {
+                systemInstruction += "\n\n(SYSTEM: Live web search results are already provided in your context. Answer the user directly using them in plain natural language. Do NOT output any function/tool call such as deepResearch or search — tools are disabled; just give the answer.)";
             }
 
             // DEV CONSOLE OVERRIDE: Rupee Dev Core (Still needs explicit instruction as it's a mode switch)
