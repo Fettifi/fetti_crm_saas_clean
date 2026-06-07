@@ -38,31 +38,35 @@ export function useRupeeVoice() {
         let unlocked = false;
         const unlock = () => {
             if (unlocked) return;
+            unlocked = true;
             const a = htmlAudioRef.current;
             if (!a) return;
+            // Build the gain-boost graph SYNCHRONOUSLY in the gesture (NOT inside a
+            // play() callback, which may never fire on Safari — that's why the boost
+            // wasn't applying). <audio> -> MediaElementSource -> Gain(>1) -> output.
             try {
-                a.src = SILENT;
-                const p = a.play();
-                if (p) p.then(() => {
-                    a.pause();
-                    // Build the gain-boost graph INSIDE the gesture so it's audible
-                    // on Safari: <audio> -> MediaElementSource -> Gain(>1) -> output.
-                    try {
-                        const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-                        if (!audioContextRef.current) audioContextRef.current = new Ctx();
-                        const ctx = audioContextRef.current;
-                        if (ctx.state === 'suspended') ctx.resume();
-                        if (!mediaSourceRef.current) {
-                            mediaSourceRef.current = ctx.createMediaElementSource(a);
-                            gainNodeRef.current = ctx.createGain();
-                            gainNodeRef.current.gain.value = VOICE_GAIN;
-                            mediaSourceRef.current.connect(gainNodeRef.current);
-                            gainNodeRef.current.connect(ctx.destination);
-                        }
-                    } catch (err) { console.warn('voice gain graph unavailable:', err); }
-                    unlocked = true;
-                }).catch(() => {});
-            } catch { /* noop */ }
+                const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+                if (!audioContextRef.current) audioContextRef.current = new Ctx();
+                const ctx = audioContextRef.current;
+                ctx.resume();
+                if (!mediaSourceRef.current) {
+                    mediaSourceRef.current = ctx.createMediaElementSource(a);
+                    gainNodeRef.current = ctx.createGain();
+                    gainNodeRef.current.gain.value = VOICE_GAIN;
+                    // Limiter so a high gain is LOUD but doesn't clip/distort.
+                    const comp = ctx.createDynamicsCompressor();
+                    comp.threshold.value = -6;
+                    comp.knee.value = 6;
+                    comp.ratio.value = 12;
+                    comp.attack.value = 0.003;
+                    comp.release.value = 0.25;
+                    mediaSourceRef.current.connect(gainNodeRef.current);
+                    gainNodeRef.current.connect(comp);
+                    comp.connect(ctx.destination);
+                }
+            } catch (err) { console.warn('voice gain graph unavailable:', err); }
+            // Prime the element too (best-effort).
+            try { a.src = SILENT; const p = a.play(); if (p) p.then(() => a.pause()).catch(() => {}); } catch { /* noop */ }
         };
         window.addEventListener('pointerdown', unlock);
         window.addEventListener('keydown', unlock);
