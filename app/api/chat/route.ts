@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { model } from '@/lib/gemini';
+import { detectMemoryIntent, rememberFact } from '@/lib/memory';
 import { ConversationState, captureData, getNextStep, Message } from '@/lib/apply/conversation-logic';
 import { getKnowledgeBase } from '@/lib/integrations/god-mode';
 import { BASE_SYSTEM_PROMPT } from '@/lib/ai/prompts';
@@ -34,6 +35,14 @@ async function* runChatLogic(req: NextRequest) {
 
         if (!lastUserMessage) {
             throw new Error("No message content found in history or request body.");
+        }
+
+        // Persistent memory: if the user asks Rupee to remember something, save it
+        // to The Vault NOW (deterministic — does not depend on the model calling a
+        // tool). It is then recalled into her context on every future message.
+        const memoryToSave = detectMemoryIntent(lastUserMessage);
+        if (memoryToSave) {
+            try { await rememberFact(memoryToSave); } catch (e) { console.warn('[memory] save error', e); }
         }
 
         // 1. Initial Status (with padding for Safari buffering)
@@ -87,6 +96,9 @@ ${knowledgeString}
             // Unified System Instruction: Co-Founder + Dev Capabilities
             // REMOVED: Repetitive system injection. We trust the BASE_SYSTEM_PROMPT in history.
             let systemInstruction = lastUserMessage;
+            if (memoryToSave) {
+                systemInstruction += "\n\n(SYSTEM: You just permanently saved this to The Vault, your long-term memory. Briefly and warmly confirm to the user that you'll remember it forever.)";
+            }
 
             // DEV CONSOLE OVERRIDE: Rupee Dev Core (Still needs explicit instruction as it's a mode switch)
             if (mode === 'dev_console') {

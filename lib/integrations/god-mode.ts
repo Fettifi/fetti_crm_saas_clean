@@ -1,5 +1,6 @@
 // God Mode Integrations (Simulated)
 import { supabase } from '@/lib/supabaseClient';
+import { supabaseAdmin } from '@/lib/supabaseAdminClient';
 
 export interface CreditReport {
     score: number;
@@ -162,7 +163,7 @@ export async function adjustFedRates(basisPoints: number): Promise<any> {
 
 export async function getKnowledgeBase(): Promise<{ topic: string, insight: string }[]> {
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('rupee_memory')
             .select('topic, insight');
 
@@ -181,7 +182,7 @@ export async function learnFromUser(topic: string, insight: string): Promise<any
 
     try {
         // 1. Check if topic already exists
-        const { data: existing, error: fetchError } = await supabase
+        const { data: existing, error: fetchError } = await supabaseAdmin
             .from('rupee_memory')
             .select('*')
             .eq('topic', topic)
@@ -194,7 +195,7 @@ export async function learnFromUser(topic: string, insight: string): Promise<any
         if (existing) {
             // 2. Update existing memory
             console.log(`[GodMode] Updating existing memory for topic: ${topic}`);
-            const { error } = await supabase
+            const { error } = await supabaseAdmin
                 .from('rupee_memory')
                 .update({ insight: insight }) // Overwrite with latest/consolidated insight
                 .eq('id', existing.id);
@@ -210,7 +211,7 @@ export async function learnFromUser(topic: string, insight: string): Promise<any
             };
         } else {
             // 3. Insert new memory
-            const { error } = await supabase
+            const { error } = await supabaseAdmin
                 .from('rupee_memory')
                 .insert([{ topic, insight }]);
 
