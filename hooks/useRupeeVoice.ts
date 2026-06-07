@@ -8,9 +8,8 @@ export function useRupeeVoice() {
     const [debugStatus, setDebugStatus] = useState<string>('');
 
     const audioContextRef = useRef<AudioContext | null>(null);
-    const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
 
-    // Initialize AudioContext
+    // Initialize/resume the Web Audio context.
     const initAudioContext = () => {
         if (!audioContextRef.current) {
             audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -20,35 +19,32 @@ export function useRupeeVoice() {
         }
     };
 
-    // Unlock a REUSABLE <audio> element on the first user interaction (clicking
-    // the mic counts). Safari blocks audio.play() that isn't tied to a gesture —
-    // which is why the ElevenLabs voice worked when typing (a click) but not from
-    // the mic transcript (a speech-recognition callback, no gesture). Priming this
-    // element inside a real gesture lets ALL later TTS play through it.
+    // Resume the Web Audio context on EVERY user interaction (clicking the mic
+    // counts). Web Audio is NOT subject to Safari's per-site "Stop Media with
+    // Sound" auto-play policy once the context is running — unlike <audio>.play(),
+    // which Safari blocks when called from the mic's speech-recognition callback
+    // (no fresh gesture). This is what makes mic-triggered ElevenLabs replies
+    // actually play on Mac Safari. We keep the listeners (not one-shot) because
+    // Safari can re-suspend the context after idle.
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        const audio = new Audio();
-        audio.preload = 'auto';
-        htmlAudioRef.current = audio;
-        const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-        const unlock = () => {
-            const a = htmlAudioRef.current;
-            if (!a) return;
+        const resume = () => {
             try {
-                a.src = SILENT;
-                a.play().then(() => a.pause()).catch(() => {});
+                if (!audioContextRef.current) {
+                    audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+                }
+                if (audioContextRef.current.state === 'suspended') {
+                    audioContextRef.current.resume();
+                }
             } catch { /* noop */ }
-            window.removeEventListener('pointerdown', unlock);
-            window.removeEventListener('keydown', unlock);
-            window.removeEventListener('touchstart', unlock);
         };
-        window.addEventListener('pointerdown', unlock);
-        window.addEventListener('keydown', unlock);
-        window.addEventListener('touchstart', unlock);
+        window.addEventListener('pointerdown', resume);
+        window.addEventListener('keydown', resume);
+        window.addEventListener('touchstart', resume);
         return () => {
-            window.removeEventListener('pointerdown', unlock);
-            window.removeEventListener('keydown', unlock);
-            window.removeEventListener('touchstart', unlock);
+            window.removeEventListener('pointerdown', resume);
+            window.removeEventListener('keydown', resume);
+            window.removeEventListener('touchstart', resume);
         };
     }, []);
 
@@ -114,25 +110,29 @@ export function useRupeeVoice() {
 
                 const arrayBuffer = await response.arrayBuffer();
 
-                // Reuse the gesture-unlocked <audio> element so playback works even
-                // when triggered from the mic transcript (no fresh user gesture).
-                const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
-                const url = URL.createObjectURL(blob);
-                const audio = htmlAudioRef.current || new Audio();
-                audio.src = url;
-                audio.volume = 1.0;
+                // Play through the Web Audio context (resumed on the user's first
+                // interaction). Web Audio bypasses Safari's <audio> auto-play policy,
+                // so this works even when triggered by the mic transcript callback.
+                if (!audioContextRef.current) {
+                    audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+                }
+                const ctx = audioContextRef.current;
+                if (ctx.state === 'suspended') {
+                    try { await ctx.resume(); } catch { /* noop */ }
+                }
+
+                const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                const source = ctx.createBufferSource();
+                source.buffer = audioBuffer;
+                const gainNode = ctx.createGain();
+                gainNode.gain.value = 2.5; // modest boost; ElevenLabs is a bit quiet
+                source.connect(gainNode);
+                gainNode.connect(ctx.destination);
 
                 setDebugStatus('Playing neural voice...');
                 setIsSpeaking(true);
-                audio.onended = () => {
-                    setIsSpeaking(false);
-                    URL.revokeObjectURL(url);
-                };
-                audio.onerror = () => {
-                    setIsSpeaking(false);
-                    URL.revokeObjectURL(url);
-                };
-                await audio.play(); // throws if autoplay blocked -> caught -> browser fallback
+                source.onended = () => setIsSpeaking(false);
+                source.start(0);
 
                 setTimeout(() => setDebugStatus(''), 3000);
                 return;
