@@ -5,6 +5,7 @@
 // in the CRM (source: instant_quote), carrying any ?ref referral code.
 import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
+import { trackLead } from "@/lib/track";
 
 const PRODUCTS = [
   { key: "Home Purchase", ltv: 0.95 },
@@ -56,6 +57,7 @@ export default function QuotePage() {
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Something went wrong.");
+      trackLead(estimate?.amount); // ad conversion event
       setDone(true);
     } catch (e) { setErr(e instanceof Error ? e.message : "Error"); } finally { setSubmitting(false); }
   }
