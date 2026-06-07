@@ -75,6 +75,27 @@ export async function GET() {
     learnedAt: insight?.created_at || null,
   };
 
+  // ---- Enterprise Brain + LOS snapshot ----
+  const { data: orgRow } = await supabaseAdmin
+    .from("org_insights").select("created_at, summary, north_star, insights, priorities")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const { data: lf } = await supabaseAdmin.from("loan_files").select("stage, status").limit(5000);
+  const pipeline: Record<string, number> = {};
+  let activeFiles = 0, fundedFiles = 0;
+  for (const f of (lf || []) as any[]) {
+    pipeline[f.stage] = (pipeline[f.stage] || 0) + 1;
+    if (f.status === "active") activeFiles++;
+    if (f.stage === "Funded") fundedFiles++;
+  }
+  const org = {
+    summary: orgRow?.summary || null,
+    north_star: orgRow?.north_star || null,
+    insights: (orgRow?.insights as string[]) || [],
+    priorities: (orgRow?.priorities as string[]) || [],
+    learnedAt: orgRow?.created_at || null,
+    los: { total: (lf || []).length, active: activeFiles, funded: fundedFiles, pipeline },
+  };
+
   const topSources = Object.entries(sources).sort((a, b) => b[1] - a[1]).slice(0, 6)
     .map(([source, count]) => ({ source, count }));
 
@@ -85,5 +106,6 @@ export async function GET() {
     partners: topPartners,
     agentRuns: agentRuns || 0,
     wizard,
+    org,
   });
 }

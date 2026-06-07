@@ -10,6 +10,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: "📊" },
   { href: "/leads", label: "Leads", icon: "📋" },
   { href: "/agents", label: "AI Agents", icon: "🧠" },
+  { href: "/los", label: "Loan Files (LOS)", icon: "📁" },
   { href: "/pipeline", label: "Pipeline", icon: "📈" },
   { href: "/partners", label: "Referral Partners", icon: "🤝" },
   { href: "/requests", label: "Requests", icon: "📥" },

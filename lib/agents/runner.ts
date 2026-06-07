@@ -1,4 +1,5 @@
 import { AgentDef } from "@/lib/agents/agents";
+import { BRAND_BRIEF } from "@/lib/brand";
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
@@ -22,7 +23,7 @@ export async function runAgent(agent: AgentDef, lead: Record<string, any>): Prom
   if (!key) throw new Error("OPENAI_API_KEY not configured");
 
   const messages = [
-    { role: "system", content: agent.system },
+    { role: "system", content: `${BRAND_BRIEF}\n\n${agent.system}` },
     {
       role: "user",
       content:
