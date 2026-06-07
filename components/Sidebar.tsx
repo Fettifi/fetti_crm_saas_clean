@@ -11,6 +11,7 @@ const navItems = [
   { href: "/leads", label: "Leads", icon: "📋" },
   { href: "/agents", label: "AI Agents", icon: "🧠" },
   { href: "/growth", label: "Lead-Gen Launchpad", icon: "🚀" },
+  { href: "/content", label: "Content Studio", icon: "🎬" },
   { href: "/los", label: "Loan Files (LOS)", icon: "📁" },
   { href: "/pipeline", label: "Pipeline", icon: "📈" },
   { href: "/partners", label: "Referral Partners", icon: "🤝" },

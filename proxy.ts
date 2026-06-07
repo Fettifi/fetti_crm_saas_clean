@@ -85,7 +85,7 @@ export async function proxy(request: NextRequest) {
 
     // Sensitive internal DATA APIs — return 401 (not a redirect) when unauthed.
     // Public APIs (apply, file portal, wizard, cron, sms) are NOT listed and stay open.
-    const apiProtected = ['/api/los', '/api/stats', '/api/tasks', '/api/players', '/api/bosses', '/api/growth/generate']
+    const apiProtected = ['/api/los', '/api/stats', '/api/tasks', '/api/players', '/api/bosses', '/api/growth/generate', '/api/content']
     if (apiProtected.some(route => path.startsWith(route)) && !session) {
         return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
     }
@@ -94,7 +94,7 @@ export async function proxy(request: NextRequest) {
     // (/home, /apply, /quote, /start, /lending, /file, /portal, /privacy, /terms) are NOT listed.
     const protectedRoutes = [
         '/leads', '/pipeline', '/settings', '/training', '/team',
-        '/command', '/los', '/agents', '/partners', '/requests', '/automations', '/task-list', '/roadmap', '/dashboard', '/growth',
+        '/command', '/los', '/agents', '/partners', '/requests', '/automations', '/task-list', '/roadmap', '/dashboard', '/growth', '/content',
     ]
     const isProtectedRoute = protectedRoutes.some(route => path.startsWith(route))
 
@@ -134,5 +134,6 @@ export const config = {
         '/api/players/:path*',
         '/api/bosses/:path*',
         '/api/growth/generate/:path*',
+        '/api/content/:path*',
     ],
 }

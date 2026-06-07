@@ -6,6 +6,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "hgnpxdivozbmjagmshda.supabase.co" },
+    ],
+  },
   // Pin the workspace root to THIS project. Without this, a stray
   // package-lock.json in the home directory makes Next treat ~/ as the root
   // and try to compile unrelated files (e.g. ~/.gemini/...), breaking the build.
