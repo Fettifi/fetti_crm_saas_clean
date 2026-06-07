@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
 
 export function useRupeeVoice() {
     const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -102,24 +101,30 @@ export function useRupeeVoice() {
                 setTimeout(() => setDebugStatus(''), 3000);
                 return;
             } catch (e: any) {
-                console.warn('Neural TTS failed, falling back to browser voice.', e);
-                setDebugStatus(`Error: ${e.message}. Fallback.`);
-                toast.error(`Voice Error: ${e.message}. Using fallback.`);
+                // Neural TTS not configured (no ElevenLabs/OpenAI key) or upstream failed.
+                // Fall back to the free, built-in browser voice silently — no scary toast.
+                console.warn('Neural TTS unavailable, using browser voice.', e);
+                setDebugStatus('Using browser voice');
+                setTimeout(() => setDebugStatus(''), 2000);
             }
         } else {
             setDebugStatus(`Using Browser Voice: ${currentVoice}`);
             setTimeout(() => setDebugStatus(''), 3000);
         }
 
-        // BROWSER TTS (Fallback)
+        // BROWSER TTS (Fallback) — always works, no API key needed.
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
 
-        if (currentVoice && !isElevenLabsId(currentVoice) && !isOpenAIId(currentVoice)) {
-            const voice = voices.find(v => v.name === currentVoice);
-            if (voice) utterance.voice = voice;
-        }
+        const named = (currentVoice && !isElevenLabsId(currentVoice) && !isOpenAIId(currentVoice))
+            ? voices.find(v => v.name === currentVoice)
+            : undefined;
+        // When falling back from a neural voice id, pick a pleasant English voice.
+        const chosen = named
+            || voices.find(v => /en[-_]US/i.test(v.lang) && /(Samantha|Google US English|Aria|Jenny|Natural|Zira)/i.test(v.name))
+            || voices.find(v => /^en/i.test(v.lang));
+        if (chosen) utterance.voice = chosen;
 
         utterance.onstart = () => setIsSpeaking(true);
         utterance.onend = () => setIsSpeaking(false);
