@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
+import { respondToLead } from "@/lib/notify/leadResponder";
 import { getAgent } from "@/lib/agents/agents";
 import { runAgent } from "@/lib/agents/runner";
 
@@ -150,33 +151,52 @@ export async function POST(req: NextRequest) {
     }
     const deduped = !!existingId;
 
-    // For genuinely NEW leads: alert the team AND auto-run the early-stage agents
-    // (Capture + Qualify) so the lead lands pre-enriched and pre-screened. Done
-    // via after() so none of it delays the applicant's response.
+    // For genuinely NEW leads, all post-response (after()) so the applicant's
+    // submit stays instant:
+    //   1. Capture agent drafts a personalized first-touch message
+    //   2. AUTO-RESPOND to the lead instantly (email/SMS) — speed-to-lead
+    //   3. Alert the team (with the draft + what was auto-sent)
+    //   4. Qualify agent pre-screens
     if (!deduped) {
       const newLead = data;
       after(async () => {
+        let draftReply = "";
+        try {
+          const cap = getAgent("capture");
+          if (cap) {
+            const r = await runAgent(cap, newLead);
+            draftReply = (r.output?.first_touch_message as string) || "";
+            await supabaseAdmin.from("lead_agents").insert([
+              { lead_id: newLead.id, stage: "capture", summary: r.summary, output_json: r.output },
+            ]);
+          }
+        } catch (e) { console.warn("[/api/apply] capture agent failed:", e); }
+
+        let autoSent: string[] = [];
+        try {
+          const res = await respondToLead({
+            name: full_name, email, phone, loan_purpose: body.loan_purpose, message: draftReply,
+          });
+          autoSent = res.sent;
+        } catch (e) { console.warn("[/api/apply] auto-response failed:", e); }
+
         try {
           await notifyNewLead({
             lead_id: newLead.id, full_name, email, phone,
             state: body.state, loan_purpose: body.loan_purpose, score, tier,
-            source: row.source as string,
+            source: row.source as string, draft_reply: draftReply, auto_sent: autoSent,
           });
-        } catch (e) {
-          console.warn("[/api/apply] alert failed (lead still saved):", e);
-        }
-        for (const stage of ["capture", "qualify"] as const) {
-          try {
-            const agent = getAgent(stage);
-            if (!agent) continue;
-            const result = await runAgent(agent, newLead);
+        } catch (e) { console.warn("[/api/apply] alert failed:", e); }
+
+        try {
+          const q = getAgent("qualify");
+          if (q) {
+            const r = await runAgent(q, newLead);
             await supabaseAdmin.from("lead_agents").insert([
-              { lead_id: newLead.id, stage, summary: result.summary, output_json: result.output },
+              { lead_id: newLead.id, stage: "qualify", summary: r.summary, output_json: r.output },
             ]);
-          } catch (e) {
-            console.warn(`[/api/apply] auto-agent ${stage} failed:`, e);
           }
-        }
+        } catch (e) { console.warn("[/api/apply] qualify agent failed:", e); }
       });
     }
 
