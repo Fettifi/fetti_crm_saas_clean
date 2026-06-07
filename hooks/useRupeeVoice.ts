@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 export function useRupeeVoice() {
     const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
     const [selectedVoice, setSelectedVoice] = useState<string>('');
+    const selectedVoiceRef = useRef<string>('');
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [debugStatus, setDebugStatus] = useState<string>('');
@@ -63,12 +64,10 @@ export function useRupeeVoice() {
             // Migrate any stale BROWSER-voice preference back to the custom voice, so
             // Rupee speaks in the branded ElevenLabs voice by default.
             const isNeural = !!saved && (saved.length === 20 || OPENAI_VOICES.includes(saved));
-            if (isNeural) {
-                setSelectedVoice(saved as string);
-            } else {
-                setSelectedVoice(CUSTOM_VOICE);
-                localStorage.setItem('rupee_voice', CUSTOM_VOICE);
-            }
+            const resolved = isNeural ? (saved as string) : CUSTOM_VOICE;
+            setSelectedVoice(resolved);
+            selectedVoiceRef.current = resolved; // keep ref current for stale-closure callers (mic)
+            if (!isNeural) localStorage.setItem('rupee_voice', CUSTOM_VOICE);
         };
 
         loadVoices();
@@ -82,10 +81,17 @@ export function useRupeeVoice() {
         };
     }, []);
 
+    // Keep the ref in sync with any external change (e.g. the dashboard selector).
+    useEffect(() => {
+        if (selectedVoice) selectedVoiceRef.current = selectedVoice;
+    }, [selectedVoice]);
+
     const speakText = async (text: string, voiceOverride?: string) => {
         if (isMuted || typeof window === 'undefined') return;
 
-        const currentVoice = voiceOverride || selectedVoice;
+        // Read from the ref so callers with a stale closure (e.g. the mic's
+        // recognition handler bound on mount) still get the CURRENT voice.
+        const currentVoice = voiceOverride || selectedVoiceRef.current || selectedVoice;
 
         // Stop any current playback
         window.speechSynthesis.cancel();

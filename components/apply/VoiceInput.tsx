@@ -20,6 +20,13 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
     const isProcessingRef = useRef(isProcessing);
     const silenceTimer = useRef<NodeJS.Timeout | null>(null);
 
+    // The recognition handler is bound ONCE on mount, so it would capture the
+    // first render's onTranscript (and everything it closes over, incl. the not-
+    // yet-loaded selected voice). Route through a ref so the mic always calls the
+    // LATEST handler — this is what makes mic replies use the live ElevenLabs voice.
+    const onTranscriptRef = useRef(onTranscript);
+    useEffect(() => { onTranscriptRef.current = onTranscript; }, [onTranscript]);
+
     // Update refs when props/state change
     useEffect(() => {
         handsFreeModeRef.current = handsFreeMode;
@@ -71,7 +78,7 @@ export default function VoiceInput({ onTranscript, isProcessing = false }: Voice
 
                 if (finalTranscript.trim()) {
                     console.log("Voice Input Final:", finalTranscript);
-                    onTranscript(finalTranscript);
+                    onTranscriptRef.current(finalTranscript);
 
                     // If NOT hands-free, stop after one command
                     if (!handsFreeModeRef.current) {
