@@ -3,5 +3,8 @@
     "framework": "nextjs",
     "buildCommand": "npm run build",
     "outputDirectory": ".next",
-    "ignoreCommand": "bash -c 'if [ \"$VERCEL_ENV\" == \"production\" ]; then exit 1; else exit 0; fi'"
+    "ignoreCommand": "bash -c 'if [ \"$VERCEL_ENV\" == \"production\" ]; then exit 1; else exit 0; fi'",
+    "crons": [
+        { "path": "/api/cron/nurture", "schedule": "0 16 * * *" }
+    ]
 }
