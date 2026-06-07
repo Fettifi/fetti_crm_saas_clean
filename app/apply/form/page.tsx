@@ -63,9 +63,9 @@ const FLOWS: Record<string, Q[]> = {
     { id: "firsttime", kind: "select", prompt: "Is this your first home purchase?", options: [
       { value: "yes", label: "Yes — first time", emoji: "✨" }, { value: "no", label: "I've owned before", emoji: "🔑" },
     ] },
-    { id: "down", kind: "select", prompt: "How much can you put down?", options: [
-      { value: "lt3", label: "Little to none", hint: "FHA/VA/USDA options" },
-      { value: "3to10", label: "3–10%" }, { value: "10to20", label: "10–20%" }, { value: "20p", label: "20%+" },
+    { id: "down", kind: "select", prompt: "How much can you put down?", sub: "Little saved? You may qualify for down payment assistance.", options: [
+      { value: "lt3", label: "Little to none", hint: "FHA/VA/USDA + down payment assistance" },
+      { value: "3to10", label: "3–10%", hint: "Assistance programs may help" }, { value: "10to20", label: "10–20%" }, { value: "20p", label: "20%+" },
     ] },
     { id: "property_value", kind: "number", prompt: "About what price range?", sub: "A rough number is fine.", placeholder: "Home price ($)" },
   ],
@@ -170,11 +170,15 @@ function product(a: Answers): string {
   const big = a.property_value && Number(a.property_value) >= 1000000;
   if (g === "buy") {
     if (investor) return a.rental_type === "str" ? "Short-Term Rental (Airbnb) DSCR" : "DSCR Purchase";
-    if (a.military === "yes") return "VA Purchase";
-    if (a.down === "lt3") return "FHA Purchase";
-    if (big) return "Jumbo Purchase";
-    if (a.firsttime === "yes") return "First-Time Homebuyer (Conventional)";
-    return "Conventional Purchase";
+    let base: string;
+    if (a.military === "yes") base = "VA Purchase";
+    else if (a.down === "lt3") base = "FHA Purchase";
+    else if (big) base = "Jumbo Purchase";
+    else if (a.firsttime === "yes") base = "First-Time Homebuyer (Conventional)";
+    else base = "Conventional Purchase";
+    // Down payment assistance pairs with FHA/Conventional owner-occupied loans.
+    if (a.dpa === "yes" && /FHA|Conventional|First-Time/.test(base)) base += " + Down Payment Assistance";
+    return base;
   }
   if (g === "refi") {
     if (investor) return a.refi_goal === "cash" || a.refi_goal === "both" ? "DSCR Cash-Out Refinance" : "DSCR Rate & Term Refinance";
@@ -250,9 +254,14 @@ function appSteps(a: Answers): Q[] {
   // Assets (URLA §2)
   steps.push({ id: "liquid_assets", kind: "number", prompt: "Roughly how much do you have saved or invested?", sub: "Checking, savings, 401k/IRA — helps us show what you qualify for.", placeholder: "Total assets ($)", optional: true });
   if (purchase && consumer) {
+    // Offer down payment assistance — only meaningful for owner-occupied buyers.
+    steps.push({ id: "dpa", kind: "select", prompt: "Want help covering your down payment?", sub: "You may qualify for down payment assistance — grants or low-interest 'silent second' loans that cut the cash you need to close.", options: [
+      { value: "yes", label: "Yes — show me assistance options", emoji: "🙌" },
+      { value: "no", label: "No, I've got it covered", emoji: "👍" },
+    ] });
     steps.push({ id: "down_payment_source", kind: "select", prompt: "Where will your down payment come from?", options: [
       { value: "Savings", label: "My savings", emoji: "🏦" }, { value: "Gift", label: "Gift from family", emoji: "🎁" },
-      { value: "Sale of Property", label: "Selling a property", emoji: "🏡" }, { value: "Other", label: "Other" },
+      { value: "Sale of Property", label: "Selling a property", emoji: "🏡" }, { value: "Assistance Program", label: "A down payment assistance program", emoji: "🙌" }, { value: "Other", label: "Other" },
     ] });
   }
   steps.push({ id: "own_other_property", kind: "select", prompt: "Do you own any other real estate?", options: [
@@ -386,7 +395,7 @@ export default function ApplyWizard() {
     add("Yrs in field", a.years_employed); add("Gross monthly income", monthly ? `$${monthly}` : undefined);
     add("Projected monthly rent", a.rent_income && `$${a.rent_income}`);
     add("Other monthly income", !dscr && a.other_income ? `$${a.other_income}` : undefined); add("Liquid assets", a.liquid_assets && `$${a.liquid_assets}`);
-    add("Down pmt source", a.down_payment_source); add("Owns other RE", a.own_other_property);
+    add("Down pmt source", a.down_payment_source); add("Down payment assistance", a.dpa === "yes" ? "INTERESTED" : undefined); add("Owns other RE", a.own_other_property);
     add("BK/Foreclosure 7yr", a.bk_fc); add("Property address", a.property_address);
     add("VA/Military", a.military); add("First-time buyer", a.firsttime); add("Rental type", a.rental_type); add("Experience", a.experience);
     return {
