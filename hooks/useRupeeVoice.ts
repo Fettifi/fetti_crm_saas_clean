@@ -81,29 +81,26 @@ export function useRupeeVoice() {
 
                 const arrayBuffer = await response.arrayBuffer();
 
-                if (!audioContextRef.current) {
-                    audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-                }
-                const audioContext = audioContextRef.current;
+                // Play via a plain HTML5 Audio element. Safari blocks/suspends the
+                // Web Audio API (AudioContext) outside a direct user gesture, which
+                // made neural audio throw and silently fall back to the browser
+                // voice. A Blob URL + Audio() plays reliably across browsers.
+                const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                audio.volume = 1.0;
 
-                if (audioContext.state === 'suspended') {
-                    await audioContext.resume();
-                }
-
-                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                const source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-
-                const gainNode = audioContext.createGain();
-                gainNode.gain.value = 6.0; // Boost volume
-
-                source.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-
-                setDebugStatus('Playing Neural Audio (Max Boost)...');
+                setDebugStatus('Playing neural voice...');
                 setIsSpeaking(true);
-                source.start(0);
-                source.onended = () => setIsSpeaking(false);
+                audio.onended = () => {
+                    setIsSpeaking(false);
+                    URL.revokeObjectURL(url);
+                };
+                audio.onerror = () => {
+                    setIsSpeaking(false);
+                    URL.revokeObjectURL(url);
+                };
+                await audio.play(); // throws if autoplay blocked -> caught -> browser fallback
 
                 setTimeout(() => setDebugStatus(''), 3000);
                 return;
