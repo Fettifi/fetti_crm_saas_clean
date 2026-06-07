@@ -11,6 +11,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE}/start`, lastModified: now, changeFrequency: "weekly", priority: 1 },
     { url: `${BASE}/quote`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${BASE}/apply`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${BASE}/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${BASE}/terms`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
   ];
   const lending: MetadataRoute.Sitemap = [];
   for (const p of PRODUCTS) for (const s of STATES) {
