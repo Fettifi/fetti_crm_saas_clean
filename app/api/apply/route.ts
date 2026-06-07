@@ -13,6 +13,9 @@ import { logActivity } from "@/lib/activity";
 import { ensureLoanFileForLead } from "@/lib/los";
 
 export const dynamic = "force-dynamic";
+// The full 5-agent pipeline runs post-response via after(); give the function
+// enough headroom for those sequential OpenAI calls to finish.
+export const maxDuration = 60;
 
 type Body = {
   full_name?: string;
