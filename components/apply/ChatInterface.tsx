@@ -211,51 +211,45 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
 
             console.log("Submitting application for:", data.email);
 
-            // 1. Create Lead
-            const { data: leadData, error: leadError } = await supabase
-                .from("leads")
-                .insert([{
-                    first_name: data.fullName?.split(' ')[0] || 'Unknown',
-                    last_name: data.fullName?.split(' ').slice(1).join(' ') || '',
+            // 1. Create Lead via server endpoint (service-role insert; bypasses RLS).
+            //    The browser cannot insert into `leads` directly (RLS denies it),
+            //    so submissions go through /api/apply which scores + persists.
+            const d = data as any;
+            const applyRes = await fetch('/api/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    full_name: data.fullName,
                     email: data.email,
-                    status: 'New',
+                    phone: data.phone,
+                    state: d.state,
+                    loan_purpose: d.loanType || d.product,
+                    property_value: data.purchasePrice,
+                    loan_amount_requested: data.purchasePrice,
+                    credit_score: data.creditScore,
+                    notes: [data.propertyAddress, JSON.stringify(data)].filter(Boolean).join(' | '),
                     source: 'AI_Chat_Apply',
-                    utm_source: searchParams.get('utm_source'),
-                    utm_medium: searchParams.get('utm_medium'),
-                    utm_campaign: searchParams.get('utm_campaign'),
-                }])
-                .select()
-                .single();
+                    utm_source: searchParams.get('utm_source') || undefined,
+                    utm_medium: searchParams.get('utm_medium') || undefined,
+                    utm_campaign: searchParams.get('utm_campaign') || undefined,
+                }),
+            });
+            const applyJson = await applyRes.json();
+            if (!applyRes.ok) throw new Error(applyJson.error || 'Could not submit application');
+            const leadData = { id: applyJson.lead_id as string };
 
-            if (leadError) {
-                console.error("Lead creation error:", leadError);
-                throw leadError;
-            }
-
-            if (leadError) throw leadError;
-
-            // 2. Create Application
+            // 2. Trigger automations (non-fatal — a saved lead must never be lost
+            //    just because SMS/email integrations aren't configured yet).
             if (leadData) {
-                const { error: appError } = await supabase
-                    .from("applications")
-                    .insert([{
-                        lead_id: leadData.id,
-                        status: 'Draft',
-                        loan_amount: data.purchasePrice || 0, // Fallback to purchasePrice
-                        property_address: data.propertyAddress,
-                        notes: JSON.stringify(data)
-                    }]);
-
-                if (appError) throw appError;
-
-                // 3. Trigger Automations
-                await scheduleStandardSequence(leadData.id);
-
-                if (score.probability === 'High') {
-                    await triggerBehavioralEmail(leadData.id, 'FAST_TRACK');
+                try {
+                    await scheduleStandardSequence(leadData.id);
+                    if (score.probability === 'High') {
+                        await triggerBehavioralEmail(leadData.id, 'FAST_TRACK');
+                    }
+                    await triggerBehavioralEmail(leadData.id, 'REFERRAL_REWARD');
+                } catch (autoErr) {
+                    console.warn('Automation step skipped (integration not configured):', autoErr);
                 }
-
-                await triggerBehavioralEmail(leadData.id, 'REFERRAL_REWARD');
 
                 // Save leadId to state for ReferralWidget
                 setState(prev => ({ ...prev, data: { ...prev.data, leadId: leadData.id } }));
