@@ -16,11 +16,12 @@ import Link from "next/link";
 import { CheckCircle2, ArrowLeft, ShieldCheck, Lightbulb } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
 import { trackLead } from "@/lib/track";
+import AddressInput from "@/components/AddressInput";
 
 type Opt = { value: string; label: string; emoji?: string; hint?: string };
 type Q =
   | { id: string; kind: "select"; prompt: string; sub?: string; options: Opt[] }
-  | { id: string; kind: "number" | "text" | "date"; prompt: string; sub?: string; placeholder?: string; optional?: boolean };
+  | { id: string; kind: "number" | "text" | "date" | "address"; prompt: string; sub?: string; placeholder?: string; optional?: boolean };
 
 type Answers = Record<string, string>;
 
@@ -303,7 +304,7 @@ function appSteps(a: Answers): Q[] {
     { value: "no", label: "Nope, all good", emoji: "✅" }, { value: "yes", label: "Yes, within 7 years" },
   ] });
   // Property (URLA §4)
-  steps.push({ id: "property_address", kind: "text", prompt: purchase ? "What's the property address?" : "What's the property address?", sub: purchase ? "Already have one in mind? If you're still shopping, just say 'shopping.'" : "The address we're financing.", placeholder: "Property address", optional: true });
+  steps.push({ id: "property_address", kind: "address", prompt: "What's the property address?", sub: purchase ? "Already have one? We'll verify it. Still shopping? Just skip." : "The address we're financing — we'll verify it.", placeholder: "Property address", optional: true });
   return steps;
 }
 
@@ -632,6 +633,14 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip }: {
               {o.hint && <span className="block text-xs text-slate-500 mt-0.5">{o.hint}</span>}
             </button>
           ))}
+        </div>
+      )}
+      {q.kind === "address" && (
+        <div className="mt-5">
+          <AddressInput value={input} onChange={setInput} placeholder={q.placeholder} />
+          <button disabled={!input} onClick={() => onAnswer(input)}
+            className="w-full mt-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-bold py-3 rounded-full">Continue →</button>
+          {onSkip && <button onClick={onSkip} className="w-full mt-2 text-slate-500 hover:text-slate-300 text-sm">Skip for now</button>}
         </div>
       )}
       {(q.kind === "number" || q.kind === "text" || q.kind === "date") && (
