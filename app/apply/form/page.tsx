@@ -458,6 +458,7 @@ export default function ApplyWizard() {
       loan_purpose: p,
       occupancy: occ || undefined,
       property_type: propType,
+      property_address: a.property_address || undefined,
       property_value: a.property_value ? Number(a.property_value) : undefined,
       loan_amount_requested: a.loan_amount_requested ? Number(a.loan_amount_requested) : undefined,
       credit_score: a.credit && a.credit !== "0" ? Number(a.credit) : undefined,

@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { trackLead } from "@/lib/track";
+import AddressInput from "@/components/AddressInput";
 
 const PRODUCTS = [
   { key: "Home Purchase", ltv: 0.95 },
@@ -27,6 +28,7 @@ export default function QuotePage() {
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [addr, setAddr] = useState("");
 
   function calc() {
     const pv = Number(String(value).replace(/[^0-9.]/g, ""));
@@ -50,6 +52,7 @@ export default function QuotePage() {
           full_name: fd.get("full_name"), email: fd.get("email"), phone: fd.get("phone"),
           loan_purpose: purpose, property_value: Number(String(value).replace(/[^0-9.]/g, "")),
           credit_band: credit, source: "instant_quote",
+          property_address: addr || undefined,
           referrer: q.get("ref") || undefined,
           notes: `Instant-quote: est. ${fmt(estimate!.amount)} @ ${(estimate!.ltv * 100).toFixed(0)}% LTV`,
           hp: String(fd.get("company") || ""),
@@ -106,6 +109,7 @@ export default function QuotePage() {
               <input name="full_name" required placeholder="Full name" className={field} />
               <input name="email" type="email" required placeholder="Email" className={field} />
               <input name="phone" required placeholder="Phone" className={field} />
+              <AddressInput value={addr} onChange={setAddr} placeholder="Property address (optional)" />
               {err && <p className="text-red-400 text-sm">{err}</p>}
               <button type="submit" disabled={submitting} className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 font-bold py-3 rounded-full">
                 {submitting ? "Submitting…" : "Unlock my full quote →"}
