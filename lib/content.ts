@@ -67,9 +67,11 @@ export async function generateBatch(topic = ""): Promise<Record<string, unknown>
   const posts = await generatePosts(4, topic);
   const today = new Date().toISOString().slice(0, 10);
   const rows: Record<string, unknown>[] = [];
+  // NOTE: every row must have the SAME keys (PostgREST bulk-insert rule), so
+  // reel rows carry image_url: null too.
   posts.slice(0, 3).forEach((p) => rows.push({
     platform: "all", type: "reel", hook: p.hook, script: p.script, caption: p.caption, hashtags: p.hashtags,
-    status: "queued", scheduled_for: today, source: "auto",
+    image_url: null, status: "queued", scheduled_for: today, source: "auto",
   }));
   const imgPost = posts[3] || posts[0];
   if (imgPost) {
