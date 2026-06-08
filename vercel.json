@@ -9,6 +9,7 @@
         { "path": "/api/cron/wizard-learn", "schedule": "0 17 * * *" },
         { "path": "/api/cron/org-learn", "schedule": "0 18 * * *" },
         { "path": "/api/cron/content", "schedule": "0 13 * * *" },
-        { "path": "/api/cron/doctor", "schedule": "0 */6 * * *" }
+        { "path": "/api/cron/doctor", "schedule": "0 */6 * * *" },
+        { "path": "/api/cron/heal", "schedule": "30 * * * *" }
     ]
 }
