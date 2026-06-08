@@ -3,6 +3,9 @@
 // is configured (META_ACCESS_TOKEN + META_IG_USER_ID + META_PAGE_ID), no app
 // review needed for your own accounts. TikTok requires an approved Content
 // Posting app, so it's reported as "needs connection" until that's set up.
+import { cfg } from "@/lib/settings";
+import { healMetaToken } from "@/lib/metaHeal";
+
 const GRAPH = "https://graph.facebook.com/v21.0";
 
 type Post = { type?: string; caption?: string; hashtags?: string; image_url?: string | null };
@@ -48,9 +51,12 @@ async function fbText(pageId: string, token: string, message: string) {
 }
 
 export async function publishPost(post: Post): Promise<PublishResult> {
-  const token = process.env.META_ACCESS_TOKEN;
-  const igUser = process.env.META_IG_USER_ID;
-  const pageId = process.env.META_PAGE_ID;
+  // Self-heal the token first (validate / auto-refresh) so a stale token never
+  // causes a failed post when it could have been fixed automatically.
+  try { await healMetaToken(); } catch { /* non-fatal */ }
+  const token = await cfg("META_ACCESS_TOKEN");
+  const igUser = await cfg("META_IG_USER_ID");
+  const pageId = await cfg("META_PAGE_ID");
   const channels: PublishResult["channels"] = [];
   const caption = fullCaption(post);
 

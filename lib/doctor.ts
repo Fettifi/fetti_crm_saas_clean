@@ -4,6 +4,7 @@
 // and verifies the lead funnel can write. Stores a report and alerts on trouble.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { generateBatch } from "@/lib/content";
+import { healMetaToken } from "@/lib/metaHeal";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
@@ -71,15 +72,13 @@ export async function runDoctor(): Promise<{ status: string; checks: Check[]; re
   const optEnv = ["RESEND_API_KEY", "TWILIO_AUTH_TOKEN", "LEAD_NOTIFY_WEBHOOK", "META_ACCESS_TOKEN", "NEXT_PUBLIC_META_PIXEL_ID", "NEXT_PUBLIC_TIKTOK_PIXEL_ID"];
   for (const k of optEnv) add(`env:${k}`, !!process.env[k], "info", process.env[k] ? "set" : "not set");
 
-  // 6b) Meta (Facebook) auto-post connection — verify the token still works.
-  if (process.env.META_ACCESS_TOKEN && process.env.META_PAGE_ID) {
-    try {
-      const r = await fetch(`https://graph.facebook.com/v21.0/${process.env.META_PAGE_ID}?fields=name&access_token=${process.env.META_ACCESS_TOKEN}`, { signal: AbortSignal.timeout(8000) });
-      const j = await r.json();
-      const ok = r.ok && !!j.name;
-      add("meta_facebook_connection", ok, "warn", ok ? `connected: ${j.name}` : `token issue: ${j?.error?.message || "failed"} — reconnect in Content Studio`);
-    } catch (e) { add("meta_facebook_connection", false, "warn", e instanceof Error ? e.message : "error"); }
-  } else add("meta_facebook_connection", true, "info", "not configured");
+  // 6b) Meta (Facebook) auto-post — SELF-HEAL: validate + auto-refresh the token.
+  try {
+    const heal = await healMetaToken();
+    if (heal.status === "healed") repairs.push({ name: "meta_token", detail: heal.detail });
+    const ok = heal.status === "healthy" || heal.status === "healed" || heal.status === "not_configured";
+    add("meta_facebook_connection", ok, heal.status === "needs_reauth" ? "warn" : "info", `${heal.status}: ${heal.detail}`);
+  } catch (e) { add("meta_facebook_connection", false, "warn", e instanceof Error ? e.message : "error"); }
 
   // 7) Public pages serving
   for (const p of ["/", "/apply/form", "/home", "/quote", "/links"]) {
