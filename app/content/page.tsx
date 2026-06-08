@@ -32,10 +32,28 @@ export default function ContentStudio() {
     try { await fetch("/api/content", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); await load(); }
     finally { setGen(false); }
   }
+  const [pub, setPub] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
   async function setStatus(id: string, status: string) {
     setQueued((q) => q.filter((p) => p.id !== id));
     await fetch("/api/content", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
     if (status === "posted") setPostedCount((c) => c + 1);
+  }
+  async function approve(id: string) {
+    setPub(id);
+    try {
+      const r = await fetch("/api/content/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      const j = await r.json();
+      if (j.connected) {
+        const ok = (j.channels || []).filter((c: any) => c.ok).map((c: any) => c.platform);
+        setFlash(ok.length ? `✅ Published to ${ok.join(", ")}` : `⚠️ ${(j.channels || [])[0]?.detail || "Publish failed"}`);
+      } else {
+        setFlash("Marked posted. Connect Meta (in Settings) to auto-publish next time.");
+      }
+      setQueued((q) => q.filter((p) => p.id !== id));
+      setPostedCount((c) => c + 1);
+      setTimeout(() => setFlash(null), 4000);
+    } finally { setPub(null); }
   }
 
   return (
@@ -54,6 +72,7 @@ export default function ContentStudio() {
           </div>
         </div>
 
+        {flash && <div className="mt-4 rounded-lg bg-slate-900 border border-emerald-500/30 px-4 py-2 text-sm text-emerald-300">{flash}</div>}
         {loading && <div className="text-slate-500 mt-10 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>}
         {!loading && queued.length === 0 && (
           <div className="text-center py-16 text-slate-500">
@@ -82,10 +101,13 @@ export default function ContentStudio() {
               <div className="text-sm text-slate-300 mt-2 whitespace-pre-wrap">{p.caption}</div>
               <div className="text-[11px] text-emerald-400/80 mt-1">{p.hashtags}</div>
 
-              <div className="flex items-center gap-2 mt-4">
+              <div className="flex items-center gap-2 mt-4 flex-wrap">
+                <button onClick={() => approve(p.id)} disabled={pub === p.id} className="text-xs px-3 py-1.5 rounded-md bg-emerald-600/90 hover:bg-emerald-500 disabled:opacity-50 font-semibold flex items-center gap-1">
+                  {pub === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "✅"} Approve &amp; Publish
+                </button>
                 <CopyBtn text={`${p.caption}\n\n${p.hashtags}`} />
-                <button onClick={() => setStatus(p.id, "posted")} className="text-xs px-3 py-1 rounded-md bg-emerald-600/80 hover:bg-emerald-500 font-semibold">Mark posted ✓</button>
-                <button onClick={() => setStatus(p.id, "skipped")} className="text-xs px-3 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-400">Skip</button>
+                <button onClick={() => setStatus(p.id, "posted")} className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300">Mark posted</button>
+                <button onClick={() => setStatus(p.id, "skipped")} className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-400">Skip</button>
               </div>
             </div>
           ))}
