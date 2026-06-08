@@ -3,7 +3,7 @@
 // Public, printable mortgage pre-approval letter (shareable token link).
 // Branded with the Fetti logo and tuned to print on a single US-Letter sheet.
 import { use, useEffect, useState } from "react";
-import { Printer, Loader2 } from "lucide-react";
+import { Printer, Loader2, Download } from "lucide-react";
 import { LICENSING_NOTE } from "@/lib/legal";
 
 type Letter = {
@@ -46,9 +46,12 @@ export default function LetterPage({ params }: { params: Promise<{ token: string
       `}</style>
 
       <div className="max-w-[760px] mx-auto">
-        <div className="flex justify-end mb-3 print-hide">
-          <button onClick={() => window.print()} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">
-            <Printer className="w-4 h-4" /> Print / Save as PDF
+        <div className="flex justify-end gap-2 mb-3 print-hide">
+          <a href={`/api/letter/${token}/pdf`} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+            <Download className="w-4 h-4" /> Download PDF
+          </a>
+          <button onClick={() => window.print()} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+            <Printer className="w-4 h-4" /> Print
           </button>
         </div>
 
