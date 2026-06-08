@@ -4,6 +4,7 @@
 // from a loan file or enter manually), then share/print the letter.
 import { useEffect, useState } from "react";
 import { FileCheck2, Loader2, Copy, Check, ExternalLink, Plus, Ban } from "lucide-react";
+import AddressInput from "@/components/AddressInput";
 
 type PA = { id: string; letter_number: string; share_token: string; borrower_name: string; loan_type?: string; loan_amount?: number; status: string; expires_on?: string; created_at: string };
 type LoanFile = { id: string; lead_id?: string; borrower_name: string; product?: string; occupancy?: string; property_address?: string; property_value?: number; loan_amount?: number };
@@ -105,7 +106,7 @@ export default function PreApprovals() {
             <div><label className="text-xs text-slate-500">Estimated rate</label><input value={f.interest_rate} onChange={(e) => set("interest_rate", e.target.value)} placeholder="e.g. 6.5% (or leave blank)" className={field} /></div>
             <div><label className="text-xs text-slate-500">Expires on</label><input type="date" value={f.expires_on} onChange={(e) => set("expires_on", e.target.value)} placeholder="defaults to 60 days" className={field} /></div>
           </div>
-          <div><label className="text-xs text-slate-500">Property address</label><input value={f.property_address} onChange={(e) => set("property_address", e.target.value)} placeholder="To be determined" className={field} /></div>
+          <div><label className="text-xs text-slate-500">Property address</label><AddressInput value={f.property_address} onChange={(v) => set("property_address", v)} placeholder="To be determined" /></div>
           <div><label className="text-xs text-slate-500">Conditions</label><textarea value={f.conditions} onChange={(e) => set("conditions", e.target.value)} rows={2} className={field} /></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-slate-500">Loan officer name</label><input value={f.officer_name} onChange={(e) => set("officer_name", e.target.value)} className={field} /></div>

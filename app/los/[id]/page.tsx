@@ -77,6 +77,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
             <h1 className="text-2xl font-bold">{file.borrower_name || "Borrower"}</h1>
             <div className="text-sm text-slate-400 mt-1 font-mono">{file.file_number} · {file.product || "—"}{file.occupancy ? ` · ${file.occupancy}` : ""}</div>
             <div className="text-sm text-slate-500 mt-1">{[file.email, file.phone, file.property_address, file.state].filter(Boolean).join(" · ")}</div>
+            {file.property_address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(file.property_address)}`} target="_blank" rel="noreferrer" className="text-xs text-emerald-400 hover:underline">🗺️ View property on map</a>}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={copyLink} className="flex items-center gap-2 text-sm bg-emerald-600/80 hover:bg-emerald-500 px-3 py-2 rounded-lg">
