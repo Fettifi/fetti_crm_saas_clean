@@ -3,7 +3,7 @@
 // Pre-Approvals: issue branded, compliant mortgage pre-approval letters (pull
 // from a loan file or enter manually), then share/print the letter.
 import { useEffect, useState } from "react";
-import { FileCheck2, Loader2, Copy, Check, ExternalLink, Plus, Ban } from "lucide-react";
+import { FileCheck2, Loader2, Copy, Check, ExternalLink, Plus, Ban, Download } from "lucide-react";
 import AddressInput from "@/components/AddressInput";
 
 type PA = { id: string; letter_number: string; share_token: string; borrower_name: string; loan_type?: string; loan_amount?: number; status: string; expires_on?: string; created_at: string };
@@ -78,6 +78,7 @@ export default function PreApprovals() {
             <div className="font-semibold">✅ Letter issued — {justIssued.letter_number}</div>
             <div className="flex gap-2 mt-2">
               <a href={`/letter/${justIssued.share_token}`} target="_blank" rel="noreferrer" className="text-sm bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg flex items-center gap-1"><ExternalLink className="w-3.5 h-3.5" /> Open letter</a>
+              <a href={`/api/letter/${justIssued.share_token}/pdf`} className="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-1"><Download className="w-3.5 h-3.5" /> PDF</a>
               <button onClick={() => copyLink(justIssued.share_token)} className="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-1">{copied === justIssued.share_token ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />} Copy link</button>
             </div>
           </div>
@@ -130,6 +131,7 @@ export default function PreApprovals() {
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <a href={`/letter/${p.share_token}`} target="_blank" rel="noreferrer" className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 flex items-center gap-1"><ExternalLink className="w-3.5 h-3.5" /> View</a>
+                <a href={`/api/letter/${p.share_token}/pdf`} title="Download PDF" className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 flex items-center"><Download className="w-3.5 h-3.5" /></a>
                 <button onClick={() => copyLink(p.share_token)} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">{copied === p.share_token ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}</button>
                 {p.status !== "void" && <button onClick={() => voidLetter(p.id)} title="Void" className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-red-900/60 text-slate-400"><Ban className="w-3.5 h-3.5" /></button>}
               </div>
