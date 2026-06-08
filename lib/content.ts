@@ -45,14 +45,15 @@ export async function generateImage(): Promise<string | null> {
   try {
     const res = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: "dall-e-3", prompt, size: "1024x1024", n: 1 }),
+      body: JSON.stringify({ model: "gpt-image-1", prompt, size: "1024x1024", n: 1, quality: "medium" }),
     });
     const j = await res.json();
     if (!res.ok) { console.warn("[content] image gen:", j?.error?.message); return null; }
-    const url = j.data?.[0]?.url;
-    if (!url) return null;
-    const img = await fetch(url);
-    const buf = Buffer.from(await img.arrayBuffer());
+    // gpt-image-1 returns base64; tolerate a url response too.
+    const d = j.data?.[0] || {};
+    const buf = d.b64_json ? Buffer.from(d.b64_json, "base64")
+      : d.url ? Buffer.from(await (await fetch(d.url)).arrayBuffer()) : null;
+    if (!buf) return null;
     const path = `auto/${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`;
     const { error } = await supabaseAdmin.storage.from("content").upload(path, buf, { contentType: "image/png", upsert: false });
     if (error) { console.warn("[content] upload:", error.message); return null; }
