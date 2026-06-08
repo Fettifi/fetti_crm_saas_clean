@@ -27,6 +27,7 @@ type Body = {
   loan_purpose?: string;
   occupancy?: string;
   property_type?: string;
+  property_address?: string;
   property_value?: number;
   loan_amount_requested?: number;
   credit_band?: string;
@@ -108,6 +109,7 @@ export async function POST(req: NextRequest) {
       loan_purpose: body.loan_purpose ?? null,
       occupancy: body.occupancy ?? null,
       property_type: body.property_type ?? null,
+      property_address: body.property_address ?? null,
       property_value: body.property_value ?? null,
       loan_amount_requested: body.loan_amount_requested ?? null,
       credit_band: body.credit_band ?? null,
