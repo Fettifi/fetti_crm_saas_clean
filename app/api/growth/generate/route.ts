@@ -31,7 +31,10 @@ Output ONLY valid JSON: { "posts": [ { "hook": string, "script": string, "captio
     const j = await res.json();
     if (!res.ok) return NextResponse.json({ error: j?.error?.message || "OpenAI error" }, { status: 500 });
     const out = JSON.parse(j.choices?.[0]?.message?.content ?? "{}");
-    return NextResponse.json({ posts: Array.isArray(out.posts) ? out.posts.slice(0, 5) : [] });
+    const posts = (Array.isArray(out.posts) ? out.posts.slice(0, 5) : []).map((p: any) => ({
+      ...p, hashtags: Array.isArray(p.hashtags) ? p.hashtags.join(" ") : String(p.hashtags || ""),
+    }));
+    return NextResponse.json({ posts });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }

@@ -25,7 +25,7 @@ function Links() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 text-white px-5 py-12">
       <div className="max-w-md mx-auto text-center">
-        <div className="text-emerald-400 font-extrabold text-2xl">Fetti<span className="text-white"> Financial</span></div>
+        <div className="text-emerald-400 font-extrabold text-2xl">Fetti<span className="text-white"> Financial</span><sup className="text-[0.55em] align-top opacity-70">™</sup></div>
         <p className="text-slate-300 mt-2">Home loans, investment & business loans — fast, licensed, no pressure.</p>
         <div className="space-y-3 mt-8">
           {CTAS.map((c) => (

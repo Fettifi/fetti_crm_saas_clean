@@ -50,7 +50,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="max-w-2xl mx-auto px-4 py-10">
-        <div className="text-emerald-400 font-extrabold text-lg">Fetti<span className="text-white"> Financial</span></div>
+        <div className="text-emerald-400 font-extrabold text-lg">Fetti<span className="text-white"> Financial</span><sup className="text-[0.55em] align-top opacity-70">™</sup></div>
         <h1 className="text-2xl font-bold mt-4">Welcome{file.borrower_name ? `, ${file.borrower_name.split(" ")[0]}` : ""} 👋</h1>
         <p className="text-slate-400 mt-1">Your secure loan file · <span className="font-mono text-slate-300">{file.file_number}</span></p>
 
