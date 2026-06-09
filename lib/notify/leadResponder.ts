@@ -32,7 +32,7 @@ async function emailLead(l: LeadContact, body: string) {
     body: JSON.stringify({
       from,
       to: [l.email],
-      subject: "Your Fetti Financial inquiry — next steps",
+      subject: "Your Fetti Financial Services LLC inquiry — next steps",
       html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5">${body.replace(/\n/g, "<br>")}${button}</div>`,
     }),
   });

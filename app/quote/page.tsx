@@ -116,7 +116,7 @@ export default function QuotePage() {
               </button>
               <p className="text-xs text-slate-500 text-center">
                 Estimate only — not a commitment to lend. By submitting, you agree Fetti Financial
-                Services may contact you by phone, email &amp; text (SMS), including automated, at the
+                Services LLC may contact you by phone, email &amp; text (SMS), including automated, at the
                 number provided. Consent isn&apos;t required to buy. Msg &amp; data rates may apply; reply STOP to opt out.
               </p>
             </form>
