@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Home as HomeIcon, RefreshCw, Building2, TrendingUp, Zap, Briefcase, Landmark, CheckCircle2 } from "lucide-react";
+import { Home as HomeIcon, RefreshCw, Building2, TrendingUp, Zap, Briefcase, Landmark, CheckCircle2, ArrowRight } from "lucide-react";
 import { LICENSING_NOTE } from "@/lib/legal";
 
 export const metadata = {
@@ -15,8 +15,8 @@ const CATEGORIES = [
     tag: "Owner-occupied · FL, MI, CA",
     blurb: "Buy or refinance the home you live in.",
     items: [
-      { icon: HomeIcon, name: "Home Purchase", desc: "Conventional, FHA & VA options for primary residences." },
-      { icon: RefreshCw, name: "Refinance & Cash-Out", desc: "Lower your rate or tap equity in your home." },
+      { icon: HomeIcon, name: "Home Purchase", desc: "Conventional, FHA & VA options for primary residences.", slug: "home-purchase-loans" },
+      { icon: RefreshCw, name: "Refinance & Cash-Out", desc: "Lower your rate or tap equity in your home.", slug: "refinance-loans" },
     ],
   },
   {
@@ -24,9 +24,9 @@ const CATEGORIES = [
     tag: "All 50 states",
     blurb: "Financing built for real estate investors.",
     items: [
-      { icon: Building2, name: "DSCR Rental Loans", desc: "Qualify on the property's cash flow — no W-2 needed." },
-      { icon: TrendingUp, name: "Fix & Flip", desc: "Purchase + rehab funding to move fast on deals." },
-      { icon: Zap, name: "Bridge / Hard Money", desc: "Close in days when timing matters." },
+      { icon: Building2, name: "DSCR Rental Loans", desc: "Qualify on the property's cash flow — no W-2 needed.", slug: "dscr-loans" },
+      { icon: TrendingUp, name: "Fix & Flip", desc: "Purchase + rehab funding to move fast on deals.", slug: "fix-and-flip-loans" },
+      { icon: Zap, name: "Bridge / Hard Money", desc: "Close in days when timing matters.", slug: "hard-money-loans" },
     ],
   },
   {
@@ -34,17 +34,24 @@ const CATEGORIES = [
     tag: "All 50 states",
     blurb: "Capital to start, run, and grow your business.",
     items: [
-      { icon: Briefcase, name: "Working Capital & Term Loans", desc: "Flexible funding for operations and growth." },
-      { icon: Landmark, name: "Commercial Real Estate & SBA", desc: "Owner-user, investment CRE, and SBA programs." },
+      { icon: Briefcase, name: "Working Capital & Term Loans", desc: "Flexible funding for operations and growth.", slug: "business-loans" },
+      { icon: Landmark, name: "Commercial Real Estate & SBA", desc: "Owner-user, investment CRE, and SBA programs.", slug: "commercial-real-estate-loans" },
     ],
   },
 ];
+
+// Every product links to its expanded info page (Florida is licensed for all
+// programs); each of those pages funnels to the application.
+const FEATURED_STATE = "florida";
 
 export default function MarketingHome() {
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <header className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
-        <div className="text-xl font-extrabold">Fetti<span className="text-emerald-400"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
+        <div className="flex items-center gap-2.5">
+          <img src="/fetti-emblem.png" alt="Fetti Financial Services LLC logo" width={40} height={40} className="w-10 h-10" />
+          <div className="text-xl font-extrabold">Fetti<span className="text-emerald-400"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
+        </div>
         <nav className="flex items-center gap-3 text-sm">
           <Link href="/quote" className="text-slate-300 hover:text-white hidden sm:inline">Instant Quote</Link>
           <Link href="/apply/form" className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold px-4 py-2 rounded-full">Apply</Link>
@@ -52,7 +59,8 @@ export default function MarketingHome() {
       </header>
 
       {/* Hero */}
-      <section className="max-w-5xl mx-auto px-6 pt-12 pb-12 text-center">
+      <section className="max-w-5xl mx-auto px-6 pt-10 pb-12 text-center">
+        <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={200} height={183} className="w-40 sm:w-48 mx-auto mb-6" />
         <p className="text-emerald-400 font-mono text-sm mb-3">Home · Investment · Business financing</p>
         <h1 className="text-4xl md:text-6xl font-extrabold leading-tight">
           Get funded — <span className="text-emerald-400">whatever you're financing.</span>
@@ -79,11 +87,13 @@ export default function MarketingHome() {
             <p className="text-slate-400 text-sm mb-4">{cat.blurb}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {cat.items.map((p) => (
-                <div key={p.name} className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5">
+                <Link key={p.name} href={`/lending/${p.slug}-${FEATURED_STATE}`}
+                  className="group block bg-slate-900/50 border border-slate-800 hover:border-emerald-500/60 hover:bg-slate-900 rounded-2xl p-5 transition">
                   <p.icon className="w-7 h-7 text-emerald-400 mb-2" />
-                  <h3 className="font-bold">{p.name}</h3>
+                  <h3 className="font-bold flex items-center justify-between">{p.name}<ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition" /></h3>
                   <p className="text-slate-400 mt-1 text-sm">{p.desc}</p>
-                </div>
+                  <span className="text-emerald-400 text-xs font-semibold mt-3 inline-block opacity-0 group-hover:opacity-100 transition">Learn more →</span>
+                </Link>
               ))}
             </div>
           </div>
