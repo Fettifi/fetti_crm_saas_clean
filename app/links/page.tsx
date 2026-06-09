@@ -23,30 +23,35 @@ function Links() {
     return `?${p.toString()}`;
   };
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 text-white px-5 py-12">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50/70 to-white text-slate-900 px-5 py-12">
       <div className="max-w-md mx-auto text-center">
-        <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={190} height={174} className="w-44 mx-auto" />
-        <img src="/cedi-512.png" alt="Cedi the Fetti owl mascot" width={56} height={56} className="w-14 h-14 mx-auto -mt-1 opacity-90" />
-        <p className="text-slate-300 mt-2">Home loans, investment & business loans — fast, licensed, no pressure.</p>
+        <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={200} height={183} className="w-44 mx-auto" />
+        <p className="text-xl font-black tracking-tight text-slate-900 -mt-1">
+          We <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">DO</span> Money<span className="text-emerald-600">!</span>
+        </p>
+        <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={56} height={56} className="w-14 h-14 mx-auto mt-3" />
+        <p className="text-slate-600 mt-2">Home loans, investment & business loans — fast, licensed, no pressure.</p>
         <div className="space-y-3 mt-8">
           {CTAS.map((c) => (
             <Link key={c.label} href={`${c.href}${q(c.goal ? { goal: c.goal } : {})}`}
-              className="flex items-center gap-3 bg-slate-900/70 border border-slate-800 hover:border-emerald-500/60 rounded-2xl px-5 py-4 text-left transition">
-              <c.icon className="w-6 h-6 text-emerald-400 shrink-0" />
+              className="flex items-center gap-3 bg-white border border-slate-200 shadow-sm hover:border-emerald-300 hover:shadow-md hover:-translate-y-0.5 rounded-2xl px-5 py-4 text-left transition">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 ring-1 ring-emerald-100 shrink-0">
+                <c.icon className="w-5 h-5 text-emerald-600" />
+              </span>
               <div className="flex-1">
-                <div className="font-semibold">{c.label}</div>
-                <div className="text-xs text-slate-400">{c.sub}</div>
+                <div className="font-semibold text-slate-900">{c.label}</div>
+                <div className="text-xs text-slate-500">{c.sub}</div>
               </div>
-              <ArrowRight className="w-5 h-5 text-slate-500" />
+              <ArrowRight className="w-5 h-5 text-slate-300" />
             </Link>
           ))}
         </div>
-        <p className="text-[10px] text-slate-600 mt-8">{LICENSING_SHORT}</p>
+        <p className="text-[10px] text-slate-400 mt-8">{LICENSING_SHORT}</p>
       </div>
     </div>
   );
 }
 
 export default function LinksPage() {
-  return <Suspense fallback={<div className="min-h-screen bg-slate-950" />}><Links /></Suspense>;
+  return <Suspense fallback={<div className="min-h-screen bg-white" />}><Links /></Suspense>;
 }

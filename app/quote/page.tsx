@@ -65,19 +65,19 @@ export default function QuotePage() {
     } catch (e) { setErr(e instanceof Error ? e.message : "Error"); } finally { setSubmitting(false); }
   }
 
-  const field = "w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none";
+  const field = "w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none";
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white py-12 px-4">
+    <div className="min-h-screen bg-white text-slate-900 py-12 px-4">
       <div className="max-w-lg mx-auto">
         <div className="text-center mb-8">
-          <p className="text-emerald-400 font-mono text-sm">Fetti Financial Services</p>
+          <p className="text-emerald-600 font-mono text-sm">Fetti Financial Services</p>
           <h1 className="text-3xl font-bold mt-1">What can you qualify for?</h1>
-          <p className="text-slate-400 mt-2">Instant estimate. No credit pull.</p>
+          <p className="text-slate-500 mt-2">Instant estimate. No credit pull.</p>
         </div>
 
         {!estimate && (
-          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 space-y-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
             <select value={purpose} onChange={(e) => setPurpose(e.target.value)} className={field}>
               {PRODUCTS.map((p) => <option key={p.key}>{p.key}</option>)}
             </select>
@@ -86,22 +86,22 @@ export default function QuotePage() {
               {CREDIT.map((c) => <option key={c}>{c}</option>)}
             </select>
             {err && <p className="text-red-400 text-sm">{err}</p>}
-            <button onClick={calc} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 rounded-full">
+            <button onClick={calc} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-full">
               See my estimate →
             </button>
           </div>
         )}
 
         {estimate && !done && (
-          <div className="bg-slate-900/40 border border-emerald-500/30 rounded-2xl p-6">
-            <div className="text-center pb-4 border-b border-slate-800">
-              <div className="text-slate-400 text-sm">Estimated loan amount</div>
-              <div className="text-4xl font-extrabold text-emerald-400 mt-1">{fmt(estimate.amount)}</div>
-              <div className="text-slate-400 text-sm mt-2">
+          <div className="bg-white border border-emerald-200 rounded-2xl p-6">
+            <div className="text-center pb-4 border-b border-slate-200">
+              <div className="text-slate-500 text-sm">Estimated loan amount</div>
+              <div className="text-4xl font-extrabold text-emerald-600 mt-1">{fmt(estimate.amount)}</div>
+              <div className="text-slate-500 text-sm mt-2">
                 ~{(estimate.ltv * 100).toFixed(0)}% LTV · est. {fmt(estimate.down)} down
               </div>
             </div>
-            <p className="text-center text-slate-200 font-medium mt-4">
+            <p className="text-center text-slate-700 font-medium mt-4">
               Enter your info to unlock full terms & get a real quote from a specialist:
             </p>
             <form onSubmit={capture} className="space-y-3 mt-4">
@@ -111,10 +111,10 @@ export default function QuotePage() {
               <input name="phone" required placeholder="Phone" className={field} />
               <AddressInput value={addr} onChange={setAddr} placeholder="Property address (optional)" />
               {err && <p className="text-red-400 text-sm">{err}</p>}
-              <button type="submit" disabled={submitting} className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 font-bold py-3 rounded-full">
+              <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3 rounded-full">
                 {submitting ? "Submitting…" : "Unlock my full quote →"}
               </button>
-              <p className="text-xs text-slate-500 text-center">
+              <p className="text-xs text-slate-400 text-center">
                 Estimate only — not a commitment to lend. By submitting, you agree Fetti Financial
                 Services LLC may contact you by phone, email &amp; text (SMS), including automated, at the
                 number provided. Consent isn&apos;t required to buy. Msg &amp; data rates may apply; reply STOP to opt out.
@@ -124,11 +124,11 @@ export default function QuotePage() {
         )}
 
         {done && (
-          <div className="bg-slate-900/60 border border-emerald-500/30 rounded-2xl p-8 text-center">
-            <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto mb-4" />
+          <div className="bg-white border border-emerald-200 rounded-2xl p-8 text-center">
+            <CheckCircle2 className="w-14 h-14 text-emerald-600 mx-auto mb-4" />
             <h2 className="text-2xl font-bold">You're in!</h2>
-            <p className="text-slate-300 mt-2">
-              Your estimated loan amount is <span className="text-emerald-400 font-bold">{fmt(estimate!.amount)}</span>.
+            <p className="text-slate-600 mt-2">
+              Your estimated loan amount is <span className="text-emerald-600 font-bold">{fmt(estimate!.amount)}</span>.
               A Fetti specialist will reach out shortly with your exact terms.
             </p>
           </div>

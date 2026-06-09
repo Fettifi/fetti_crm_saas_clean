@@ -308,7 +308,7 @@ function appSteps(a: Answers): Q[] {
   return steps;
 }
 
-const field = "w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none";
+const field = "w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none";
 
 export default function ApplyWizard() {
   const [answers, setAnswers] = useState<Answers>({});
@@ -519,15 +519,15 @@ export default function ApplyWizard() {
     return (
       <Shell pct={100}>
         <div className="text-center">
-          <CheckCircle2 className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
+          <CheckCircle2 className="w-16 h-16 text-emerald-600 mx-auto mb-4" />
           <h1 className="text-2xl font-bold">You're all set! 🎉</h1>
-          <p className="text-slate-300 mt-3">
-            Based on everything you shared, a <span className="text-emerald-400 font-semibold">{prod || "loan"}</span> looks
+          <p className="text-slate-600 mt-3">
+            Based on everything you shared, a <span className="text-emerald-600 font-semibold">{prod || "loan"}</span> looks
             like a strong fit — and your application is essentially done. A Fetti specialist will reach out shortly to confirm
             your numbers and send next steps.
           </p>
           {leadId && (
-            <Link href={`/portal/${leadId}`} className="inline-block mt-7 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-8 py-3 rounded-full">
+            <Link href={`/portal/${leadId}`} className="inline-block mt-7 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-full">
               Track my application
             </Link>
           )}
@@ -540,14 +540,14 @@ export default function ApplyWizard() {
   if (coach) {
     return (
       <Shell pct={pct} onBack={() => { advanceRef.current = null; setCoach(null); }}>
-        <div className="rounded-2xl bg-gradient-to-b from-emerald-500/15 to-slate-900/0 border border-emerald-500/30 p-6">
-          <div className="flex items-center gap-2 text-emerald-300 font-semibold"><Lightbulb className="w-5 h-5" /> Good news — there's a path here</div>
+        <div className="rounded-2xl bg-gradient-to-b from-emerald-500/15 to-white/0 border border-emerald-200 p-6">
+          <div className="flex items-center gap-2 text-emerald-700 font-semibold"><Lightbulb className="w-5 h-5" /> Good news — there's a path here</div>
           <p className="text-slate-100 text-lg leading-relaxed mt-3">{coach.message}</p>
         </div>
-        <button onClick={continueCoach} className="w-full mt-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 rounded-full">
+        <button onClick={continueCoach} className="w-full mt-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-full">
           Keep going →
         </button>
-        <p className="text-center text-xs text-slate-500 mt-3">No obligation — we'll show you real options either way.</p>
+        <p className="text-center text-xs text-slate-400 mt-3">No obligation — we'll show you real options either way.</p>
       </Shell>
     );
   }
@@ -557,7 +557,7 @@ export default function ApplyWizard() {
     return (
       <Shell pct={pct} onBack={back}>
         <h1 className="text-2xl font-bold">Where should we send your options?</h1>
-        <p className="text-slate-400 mt-1 text-sm">No impact to your credit. A real specialist follows up fast.</p>
+        <p className="text-slate-500 mt-1 text-sm">No impact to your credit. A real specialist follows up fast.</p>
         <form onSubmit={submitContact} className="space-y-3 mt-5">
           <input type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: "absolute", left: "-9999px" }} />
           <input name="full_name" required placeholder="Full name" className={field} />
@@ -572,17 +572,17 @@ export default function ApplyWizard() {
           {isConsumer(answers) ? (
             <p className="text-[11px] text-amber-400/80">Owner-occupied home loans are offered in FL, MI &amp; CA. Other states: we'll connect you with the right option.</p>
           ) : (
-            <p className="text-[11px] text-emerald-400/80">Investment &amp; business-purpose loans are available in all 50 states.</p>
+            <p className="text-[11px] text-emerald-600/80">Investment &amp; business-purpose loans are available in all 50 states.</p>
           )}
           {error && <p className="text-red-400 text-sm">{error}</p>}
-          <button type="submit" disabled={submitting} className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 font-bold py-3 rounded-full">
+          <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3 rounded-full">
             {submitting ? "Submitting…" : "See my options →"}
           </button>
-          <p className="text-[11px] text-slate-500 text-center">
+          <p className="text-[11px] text-slate-400 text-center">
             By submitting, you agree Fetti Financial Services may contact you by phone, email &amp; text (SMS),
             including automated, at the number provided. Consent isn't required to buy. Msg &amp; data rates may apply; reply STOP to opt out.
           </p>
-          <p className="text-[10px] text-slate-600 text-center">{LICENSING_SHORT}</p>
+          <p className="text-[10px] text-slate-400 text-center">{LICENSING_SHORT}</p>
         </form>
       </Shell>
     );
@@ -594,13 +594,13 @@ export default function ApplyWizard() {
     return (
       <Shell pct={pct} onBack={back}>
         {ai === 0 && (
-          <div className="mb-4 flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-3 py-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <p className="text-xs text-emerald-300">Nice — you pre-qualify! A few quick details and your pre-approval is ready.</p>
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <p className="text-xs text-emerald-700">Nice — you pre-qualify! A few quick details and your pre-approval is ready.</p>
           </div>
         )}
         <QuestionView q={q} input={input} setInput={setInput} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerApp(q.id, "", q.kind) : undefined} />
-        {submitting && <p className="text-slate-500 text-sm mt-4">Saving…</p>}
+        {submitting && <p className="text-slate-400 text-sm mt-4">Saving…</p>}
       </Shell>
     );
   }
@@ -612,7 +612,7 @@ export default function ApplyWizard() {
     <Shell pct={pct} onBack={i > 0 ? back : undefined}>
       <QuestionView q={displayQ} input={input} setInput={setInput} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerFlow(q.id, "", q.kind) : undefined} />
       {q.id === "goal" && tip && (
-        <p className="mt-4 text-xs text-emerald-300/80 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 shrink-0" /> {tip}</p>
+        <p className="mt-4 text-xs text-emerald-700/80 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 shrink-0" /> {tip}</p>
       )}
     </Shell>
   );
@@ -624,14 +624,14 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip }: {
   return (
     <>
       <h1 className="text-2xl font-bold">{q.prompt}</h1>
-      {q.sub && <p className="text-slate-400 mt-1 text-sm">{q.sub}</p>}
+      {q.sub && <p className="text-slate-500 mt-1 text-sm">{q.sub}</p>}
       {q.kind === "select" && (
         <div className="grid grid-cols-1 gap-2.5 mt-5">
           {q.options.map((o) => (
             <button key={o.value} onClick={() => onAnswer(o.value)}
-              className="text-left bg-slate-900/60 border border-slate-800 hover:border-emerald-500/60 hover:bg-slate-900 rounded-xl px-4 py-3.5 transition">
+              className="text-left bg-white border border-slate-200 hover:border-emerald-300 hover:bg-slate-50 rounded-xl px-4 py-3.5 transition">
               <span className="font-medium">{o.emoji ? `${o.emoji} ` : ""}{o.label}</span>
-              {o.hint && <span className="block text-xs text-slate-500 mt-0.5">{o.hint}</span>}
+              {o.hint && <span className="block text-xs text-slate-400 mt-0.5">{o.hint}</span>}
             </button>
           ))}
         </div>
@@ -640,8 +640,8 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip }: {
         <div className="mt-5">
           <AddressInput value={input} onChange={setInput} placeholder={q.placeholder} />
           <button disabled={!input} onClick={() => onAnswer(input)}
-            className="w-full mt-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-bold py-3 rounded-full">Continue →</button>
-          {onSkip && <button onClick={onSkip} className="w-full mt-2 text-slate-500 hover:text-slate-300 text-sm">Skip for now</button>}
+            className="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold py-3 rounded-full">Continue →</button>
+          {onSkip && <button onClick={onSkip} className="w-full mt-2 text-slate-400 hover:text-slate-600 text-sm">Skip for now</button>}
         </div>
       )}
       {(q.kind === "number" || q.kind === "text" || q.kind === "date") && (
@@ -657,9 +657,9 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip }: {
             onKeyDown={(e) => { if (e.key === "Enter" && input) onAnswer(input); }}
           />
           <button disabled={!input} onClick={() => onAnswer(input)}
-            className="w-full mt-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-bold py-3 rounded-full">Continue →</button>
+            className="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold py-3 rounded-full">Continue →</button>
           {onSkip && (
-            <button onClick={onSkip} className="w-full mt-2 text-slate-500 hover:text-slate-300 text-sm">Skip for now</button>
+            <button onClick={onSkip} className="w-full mt-2 text-slate-400 hover:text-slate-600 text-sm">Skip for now</button>
           )}
         </div>
       )}
@@ -669,16 +669,16 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip }: {
 
 function Shell({ children, pct, onBack }: { children: React.ReactNode; pct: number; onBack?: () => void }) {
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col">
-      <div className="h-1.5 bg-slate-900"><div className="h-1.5 bg-emerald-500 transition-all" style={{ width: `${pct}%` }} /></div>
+    <div className="min-h-screen bg-white text-slate-900 flex flex-col">
+      <div className="h-1.5 bg-slate-50"><div className="h-1.5 bg-emerald-600 transition-all" style={{ width: `${pct}%` }} /></div>
       <div className="flex-1 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-lg">
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2">
               <img src="/fetti-emblem.png" alt="Fetti Financial Services LLC logo" width={34} height={34} className="w-[34px] h-[34px]" />
-              <div className="text-emerald-400 font-extrabold">Fetti<span className="text-white"> Financial Services</span> <span className="text-white/60 text-[0.7em] font-bold align-middle">LLC</span></div>
+              <div className="text-emerald-600 font-extrabold">Fetti<span className="text-slate-900"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
             </div>
-            {onBack && <button onClick={onBack} className="text-slate-500 hover:text-white text-sm flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Back</button>}
+            {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-900 text-sm flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Back</button>}
           </div>
           {children}
         </div>

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
-import { LICENSING_NOTE } from "@/lib/legal";
+import { SiteHeader } from "@/components/SiteHeader";
+import { SiteFooter } from "@/components/SiteFooter";
 
 // Only the combos in generateStaticParams are valid — any other slug (e.g. a
 // consumer mortgage in an unlicensed state) returns a true 404, never content.
@@ -129,45 +130,45 @@ export default async function LendingPage({
   const apply = `/apply/form${sp.ref ? `?ref=${encodeURIComponent(sp.ref)}` : ""}`;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <section className="max-w-3xl mx-auto px-6 pt-16 pb-8">
-        <p className="text-emerald-400 font-mono text-sm">Fetti Financial Services</p>
-        <h1 className="text-4xl font-extrabold mt-2">{prod.label} in {state}</h1>
-        <p className="text-slate-300 text-lg mt-4">{prod.blurb}</p>
-        <Link href={apply} className="inline-block mt-6 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-8 py-4 rounded-full text-lg">
+    <div className="min-h-screen bg-white text-slate-900">
+      <SiteHeader />
+      <section className="max-w-3xl mx-auto px-6 pt-14 pb-8">
+        <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={64} height={64} className="w-16 h-16 mb-3" />
+        <p className="text-emerald-600 font-mono text-sm">Cedi presents · Fetti Financial Services LLC</p>
+        <h1 className="text-4xl font-extrabold mt-2 text-slate-900">{prod.label} in {state}</h1>
+        <p className="text-slate-600 text-lg mt-4">{prod.blurb}</p>
+        <Link href={apply} className="inline-block mt-6 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full text-lg shadow-lg shadow-emerald-600/25 transition">
           Get pre-qualified →
         </Link>
         <p className="text-slate-500 text-xs mt-3">No impact to your credit to get started.</p>
       </section>
 
       <section className="max-w-3xl mx-auto px-6 py-8">
-        <h2 className="text-2xl font-bold mb-4">Why borrowers in {state} choose Fetti for {prod.label.toLowerCase()}</h2>
+        <h2 className="text-2xl font-bold mb-4 text-slate-900">Why borrowers in {state} choose Fetti for {prod.label.toLowerCase()}</h2>
         <div className="space-y-3">
           {prod.bullets.map((b) => (
             <div key={b} className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 mt-0.5 shrink-0" />
-              <span className="text-slate-200">{b}</span>
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
+              <span className="text-slate-700">{b}</span>
             </div>
           ))}
         </div>
       </section>
 
       <section className="max-w-3xl mx-auto px-6 py-8">
-        <h2 className="text-2xl font-bold mb-3">How it works</h2>
-        <ol className="list-decimal list-inside text-slate-300 space-y-2">
+        <h2 className="text-2xl font-bold mb-3 text-slate-900">How it works</h2>
+        <ol className="list-decimal list-inside text-slate-600 space-y-2">
           <li>Tell us about your deal — 2 minutes, no credit impact.</li>
           <li>We match you to the right {prod.label.toLowerCase()} structure for {state}.</li>
           <li>A specialist reaches out fast with your options.</li>
           <li>Close and fund your deal.</li>
         </ol>
-        <Link href={apply} className="inline-block mt-7 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-8 py-4 rounded-full">
+        <Link href={apply} className="inline-block mt-7 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full shadow-lg shadow-emerald-600/25 transition">
           Start my application →
         </Link>
       </section>
 
-      <footer className="border-t border-slate-900 py-8 text-center text-slate-600 text-xs px-6 max-w-3xl mx-auto">
-        {LICENSING_NOTE}
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
