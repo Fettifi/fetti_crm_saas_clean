@@ -45,7 +45,8 @@ export async function generateImage(): Promise<string | null> {
   try {
     const res = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: "gpt-image-1", prompt, size: "1024x1024", n: 1, quality: "medium" }),
+      // JPEG so the image is Instagram-compatible (IG Content Publishing rejects PNG).
+      body: JSON.stringify({ model: "gpt-image-1", prompt, size: "1024x1024", n: 1, quality: "medium", output_format: "jpeg" }),
     });
     const j = await res.json();
     if (!res.ok) { console.warn("[content] image gen:", j?.error?.message); return null; }
@@ -54,8 +55,8 @@ export async function generateImage(): Promise<string | null> {
     const buf = d.b64_json ? Buffer.from(d.b64_json, "base64")
       : d.url ? Buffer.from(await (await fetch(d.url)).arrayBuffer()) : null;
     if (!buf) return null;
-    const path = `auto/${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`;
-    const { error } = await supabaseAdmin.storage.from("content").upload(path, buf, { contentType: "image/png", upsert: false });
+    const path = `auto/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
+    const { error } = await supabaseAdmin.storage.from("content").upload(path, buf, { contentType: "image/jpeg", upsert: false });
     if (error) { console.warn("[content] upload:", error.message); return null; }
     return supabaseAdmin.storage.from("content").getPublicUrl(path).data.publicUrl;
   } catch (e) { console.warn("[content] image error:", e); return null; }
