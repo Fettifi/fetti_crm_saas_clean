@@ -5,13 +5,16 @@
 // Posting app, so it's reported as "needs connection" until that's set up.
 import { cfg } from "@/lib/settings";
 import { healMetaToken } from "@/lib/metaHeal";
+import { SOCIAL_DISCLOSURE } from "@/lib/legal";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
 type Post = { type?: string; caption?: string; hashtags?: string; image_url?: string | null };
 export type PublishResult = { connected: boolean; channels: { platform: string; ok: boolean; detail: string }[] };
 
-const fullCaption = (p: Post) => [p.caption, p.hashtags].filter(Boolean).join("\n\n");
+// Every caption carries the required mortgage-advertising disclosure (NMLS, EHO,
+// not-a-commitment) — appended here so no post can go out without it.
+const fullCaption = (p: Post) => [p.caption, p.hashtags, SOCIAL_DISCLOSURE].filter(Boolean).join("\n\n");
 
 async function igPublish(igUserId: string, token: string, imageUrl: string, caption: string) {
   // 1) create media container

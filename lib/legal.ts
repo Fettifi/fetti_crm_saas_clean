@@ -6,3 +6,10 @@ export const LICENSING_NOTE =
 
 export const LICENSING_SHORT =
   "NMLS #2267023 · CA #60DBO-153798. Owner-occupied mortgages: FL, MI & CA. Investment & business loans: all 50 states.";
+
+// Mandatory advertising disclosure appended to EVERY social post / caption so
+// each one is compliant: licensee name, NMLS ID, Equal Housing, advertisement
+// notice, and the standard "not a commitment to lend / subject to credit
+// approval" disclaimer. Required on mortgage advertising (NMLS / Reg Z / Reg N).
+export const SOCIAL_DISCLOSURE =
+  "—\nFetti Financial Services LLC | NMLS #2267023 | Equal Housing Opportunity 🏠\nThis is an advertisement, not a commitment to lend. All loans subject to credit approval & program guidelines; rates/terms may change. NMLS Consumer Access: nmlsconsumeraccess.org";

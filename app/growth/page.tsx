@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { Copy, Check, Sparkles, Loader2, Megaphone, Share2, Users, Send, Search, DollarSign, LinkIcon } from "lucide-react";
 import { LINKS, BUDGET, GOOGLE_ADS, META_ADS, SOCIAL, REFERRAL, OUTREACH, SEO_TITLES } from "@/lib/growth-content";
+import { SOCIAL_DISCLOSURE } from "@/lib/legal";
 
 function Copyable({ text, label, className = "" }: { text: string; label?: string; className?: string }) {
   const [done, setDone] = useState(false);
@@ -127,7 +128,7 @@ export default function GrowthHub() {
                 <div className="text-slate-400 text-xs mt-1"><b>Script:</b> {p.script}</div>
                 <div className="text-slate-300 text-xs mt-1"><b>Caption:</b> {p.caption}</div>
                 <div className="text-emerald-400/80 text-[11px] mt-1">{p.hashtags}</div>
-                <Copyable text={`${p.caption}\n\n${p.hashtags}`} label="Copy caption" className="mt-2" />
+                <Copyable text={`${p.caption}\n\n${p.hashtags}\n\n${SOCIAL_DISCLOSURE}`} label="Copy caption" className="mt-2" />
               </Block>
             ))}
           </div>
