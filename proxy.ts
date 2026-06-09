@@ -5,6 +5,11 @@ export async function proxy(request: NextRequest) {
     // Apex domain (fettifi.com / www) serves the public marketing homepage;
     // the CRM lives on app.fettifi.com. Rewrite the apex root to /home.
     const host = (request.headers.get('host') || '').toLowerCase();
+    // Canonical host is the bare apex (fettifi.com). Permanently redirect www ->
+    // apex so SEO authority consolidates on one domain (no duplicate content).
+    if (host === 'www.fettifi.com') {
+        return NextResponse.redirect(`https://fettifi.com${request.nextUrl.pathname}${request.nextUrl.search}`, 308);
+    }
     const isApex = host === 'fettifi.com' || host === 'www.fettifi.com';
     if (isApex && request.nextUrl.pathname === '/') {
         const url = request.nextUrl.clone();
