@@ -37,7 +37,7 @@ export const GOOGLE_ADS = {
       name: "Investor / DSCR (all 50 states)",
       keywords: ["dscr loan", "dscr loan {state}", "rental property loan", "no income verification mortgage", "airbnb loan", "fix and flip loan", "hard money lender near me"],
       negatives: ["jobs", "calculator", "free", "rates today", "definition"],
-      headlines: ["DSCR Loans — Qualify on Rent", "No Tax Returns. Rental Income Only", "Fund Your Next Rental Fast", "Investor Loans in All 50 States", "Fetti Financial — DSCR Experts"],
+      headlines: ["DSCR Loans — Qualify on Rent", "No Tax Returns. Rental Income Only", "Fund Your Next Rental Fast", "Investor Loans in All 50 States", "Fetti Financial Services LLC — DSCR Experts"],
       descriptions: ["DSCR, fix & flip, and bridge loans — close in days, not months. Get your custom quote.", "Qualify on the property's cash flow, not pay stubs. Start your free quote now."],
     },
     {
@@ -89,8 +89,8 @@ export const REFERRAL = {
     subject: "Quick partnership idea — fast loans for your buyers",
     body: `Hi {first} — I'm with ${BRAND.company} (NMLS #${BRAND.nmls}). I help your buyers close fast — FHA/VA/first-time, plus DSCR & fix-and-flip for the investors.\n\nI'd love to be your go-to lender. I send updates on every file, respond in minutes, and your clients get a smooth close. Want to send me your next pre-qual and see how I work?\n\nHere's a link you can give clients to get started: {link}\n\n— {you}, ${BRAND.company}`,
   },
-  sms: `Hi {first}, it's {you} with Fetti Financial. I close your buyers fast (FHA/VA + investor loans) and keep you updated on every file. Send me your next deal? Clients can start here: {link}`,
-  dm: `Hey {first}! Love your listings in {area}. I'm a mortgage broker (Fetti Financial) — fast pre-approvals + investor loans. Open to teaming up so your buyers close smoothly? I send a tracked link your clients can use anytime.`,
+  sms: `Hi {first}, it's {you} with Fetti Financial Services LLC. I close your buyers fast (FHA/VA + investor loans) and keep you updated on every file. Send me your next deal? Clients can start here: {link}`,
+  dm: `Hey {first}! Love your listings in {area}. I'm a mortgage broker with Fetti Financial Services LLC — fast pre-approvals + investor loans. Open to teaming up so your buyers close smoothly? I send a tracked link your clients can use anytime.`,
 };
 
 // ---- Direct / reactivation outreach ----

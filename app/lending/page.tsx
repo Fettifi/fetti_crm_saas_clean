@@ -5,7 +5,7 @@ import { LICENSING_NOTE } from "@/lib/legal";
 export const metadata = {
   title: "Loan Programs | Fetti Financial Services",
   description:
-    "Explore Fetti Financial loan programs — home purchase & refinance, DSCR & rental, fix & flip, hard money, bridge, commercial real estate, SBA and business loans.",
+    "Explore Fetti Financial Services LLC loan programs — home purchase & refinance, DSCR & rental, fix & flip, hard money, bridge, commercial real estate, SBA and business loans.",
   alternates: { canonical: "https://app.fettifi.com/lending" },
 };
 
@@ -49,9 +49,8 @@ export default function LendingIndex() {
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <header className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
-        <Link href="/home" className="flex items-center gap-2">
-          <img src="/cedi-mark.png" alt="Cedi — Fetti Financial mascot" width={36} height={36} className="w-9 h-9" />
-          <div className="text-xl font-extrabold">Fetti<span className="text-emerald-400"> Financial</span><sup className="text-[0.55em] align-top opacity-70">™</sup></div>
+        <Link href="/home">
+          <div className="text-xl font-extrabold">Fetti<span className="text-emerald-400"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
         </Link>
         <nav className="flex items-center gap-3 text-sm">
           <Link href="/quote" className="text-slate-300 hover:text-white hidden sm:inline">Instant Quote</Link>
