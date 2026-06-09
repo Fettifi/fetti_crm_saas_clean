@@ -47,7 +47,13 @@ Output ONLY JSON: { "posts": [ { "hook", "script", "caption", "hashtags" } ] } w
   const j = await res.json();
   if (!res.ok) throw new Error(j?.error?.message || "OpenAI error");
   const out = JSON.parse(j.choices?.[0]?.message?.content ?? "{}");
-  return Array.isArray(out.posts) ? out.posts.slice(0, n) : [];
+  const posts = Array.isArray(out.posts) ? out.posts.slice(0, n) : [];
+  // Normalize hashtags to a clean space-separated string (models sometimes return an array).
+  return posts.map((p: any) => ({
+    ...p,
+    hashtags: Array.isArray(p.hashtags) ? p.hashtags.join(" ") : String(p.hashtags || ""),
+    caption: String(p.caption || ""), hook: String(p.hook || ""), script: String(p.script || ""),
+  }));
 }
 
 const IMAGE_CONCEPTS = [

@@ -674,7 +674,7 @@ function Shell({ children, pct, onBack }: { children: React.ReactNode; pct: numb
       <div className="flex-1 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-lg">
           <div className="flex items-center justify-between mb-5">
-            <div className="text-emerald-400 font-extrabold">Fetti<span className="text-white"> Financial</span></div>
+            <div className="text-emerald-400 font-extrabold">Fetti<span className="text-white"> Financial</span><sup className="text-[0.55em] align-top opacity-70">™</sup></div>
             {onBack && <button onClick={onBack} className="text-slate-500 hover:text-white text-sm flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Back</button>}
           </div>
           {children}

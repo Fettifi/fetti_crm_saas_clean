@@ -24,7 +24,16 @@ async function igPublish(igUserId: string, token: string, imageUrl: string, capt
   });
   const cj = await create.json();
   if (!create.ok || !cj.id) throw new Error(cj?.error?.message || "IG container failed");
-  // 2) publish
+  // 2) wait for the container to finish processing (avoids "Media ID not available")
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 2500));
+    try {
+      const st = await (await fetch(`${GRAPH}/${cj.id}?fields=status_code&access_token=${token}`)).json();
+      if (st.status_code === "FINISHED") break;
+      if (st.status_code === "ERROR") throw new Error("IG media processing error");
+    } catch { /* keep waiting */ }
+  }
+  // 3) publish
   const pub = await fetch(`${GRAPH}/${igUserId}/media_publish`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ creation_id: cj.id, access_token: token }),
