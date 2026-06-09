@@ -1,7 +1,7 @@
 // Auto content engine: generates ready-to-post social content — Reel scripts +
 // captions + hashtags, plus an AI-generated image — for the Content Studio queue.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { BRAND_BRIEF } from "@/lib/brand";
+import { BRAND_BRIEF, CONTENT_PERSONALITY } from "@/lib/brand";
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
@@ -11,34 +11,18 @@ export async function generatePosts(n: number, topic = ""): Promise<Post[]> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY not configured");
   const system = `${BRAND_BRIEF}
-You are an elite short-form content strategist for a premium mortgage brokerage. You craft scroll-stopping,
-genuinely VALUABLE Instagram/Facebook posts that build authority and convert — the kind a top 1% loan officer
-would post.
 
-AUDIENCE (vary across these): first-time & move-up home buyers (FHA/VA/USDA/conventional, down payment
-assistance), real estate investors (DSCR, fix & flip, BRRRR, short-term rentals), the self-employed
-(bank-statement / P&L loans), and homeowners (cash-out, HELOC).
+${CONTENT_PERSONALITY}
 
-QUALITY BAR — every post must:
-- Open with a HOOK that stops the scroll in <2 seconds (a bold question, a myth, a surprising number, a
-  "POV", or a specific pain point). No generic openers.
-- Teach ONE concrete, specific, useful thing (a real number, a little-known program, a step, a mistake to
-  avoid). Make the viewer smarter in 15 seconds.
-- Sound human, confident, and warm — not salesy, not corporate. Short punchy sentences.
-- End with a soft, natural CTA ("Comment [WORD]", "Save this", "DM me", or "Link in bio").
-- Be COMPLIANT: never promise approval, never quote a specific interest rate, never guarantee outcomes,
-  no "lowest rate" claims. (A licensing disclosure is auto-appended later — do not write one.)
-
-Vary the format and topic across the set — no two posts should feel similar.
-
-Output ONLY JSON: { "posts": [ { "hook", "script", "caption", "hashtags" } ] } with exactly ${n} posts.
-- hook: the on-screen / first-line hook (<= 12 words)
-- script: a tight shot-by-shot or talking-points script for a 15–30s Reel
-- caption: a polished, engaging caption (2–5 short lines) with a clear CTA — NO disclosure text
-- hashtags: 5–8 relevant, high-intent hashtags (mix niche + broad)`;
+OUTPUT FORMAT — return ONLY JSON: { "posts": [ { "hook", "script", "caption", "hashtags" } ] } with exactly ${n} posts.
+- hook: the on-screen / first-line hook (<= 12 words) — the scroll-stopper
+- script: a tight shot-by-shot / talking-points script for a 20–60s Reel (CNBC-meets-TikTok pacing)
+- caption: a polished caption following HOOK → VALUE → CTA (2–5 short lines). Include the rotating CTA. NO disclosure text.
+- hashtags: 5–8 high-intent hashtags (mix niche + broad)
+Across the ${n} posts: hit DIFFERENT content pillars and ROTATE the CTA — no repeated CTA, no two posts that feel alike.`;
   const user = topic
-    ? `Create ${n} premium, curated posts on this theme: ${topic}. Make each distinct and genuinely valuable.`
-    : `Create ${n} premium, curated posts — each on a DIFFERENT topic spanning buyers, investors, and the self-employed. Distinct hooks, real value, varied formats.`;
+    ? `Create ${n} posts on this theme: ${topic}. Each distinct, each passing the Fetti Content Test (≥4 of 5).`
+    : `Create ${n} posts — each on a DIFFERENT content pillar (home buying, investing, wealth building, market intel, success stories). Distinct hooks, real teaching value, rotated CTAs, all passing the Fetti Content Test.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({ model: MODEL, temperature: 0.9, max_tokens: 1200, response_format: { type: "json_object" },
@@ -65,6 +49,9 @@ const IMAGE_CONCEPTS = [
   "Elegant flat-lay: brass house keys on a clean contract beside a small architectural model home and a cup of coffee, soft daylight, lifestyle brand photography, NO text, no words",
   "Warm interior photo of a beautifully staged modern living room with large windows and natural light, inviting and aspirational, real-estate magazine quality, NO text, no words",
   "A happy family with kids playing in the front yard of a charming home on a sunny day, candid and heartfelt, premium lifestyle photography, NO text, no words",
+  "Premium fintech aesthetic: a sleek modern workspace with a laptop showing clean financial charts, minimalist desk, soft directional light, private-equity / fintech brand feeling, sophisticated and tech-forward, NO text, no words",
+  "Luxury real-estate investment vibe: keys and a sleek black card resting on the marble countertop of a high-end modern kitchen, shallow depth of field, editorial, aspirational wealth-building aesthetic, NO text, no words",
+  "A polished young investor in smart-casual attire standing confidently on the balcony of a modern high-rise overlooking a city skyline at dusk, cinematic, ambitious and premium, NO text, no words",
 ];
 
 // Generate an on-brand image (no text — caption carries the message) and store it
