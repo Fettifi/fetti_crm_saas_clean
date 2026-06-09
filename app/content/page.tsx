@@ -21,9 +21,11 @@ export default function ContentStudio() {
   const [loading, setLoading] = useState(true);
   const [gen, setGen] = useState(false);
 
+  const [meta, setMeta] = useState<any>(null);
   async function load() {
     const r = await fetch("/api/content"); const j = await r.json();
     setQueued(j.queued || []); setPostedCount((j.posted || []).length); setLoading(false);
+    fetch("/api/meta/status").then((x) => x.json()).then(setMeta).catch(() => {});
   }
   useEffect(() => { load(); }, []);
 
@@ -71,6 +73,19 @@ export default function ContentStudio() {
             </button>
           </div>
         </div>
+
+        {/* Channel connection status */}
+        {meta && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-slate-500">Auto-post channels:</span>
+            <span className={`px-2.5 py-1 rounded-full border ${meta.facebook?.connected ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/40 bg-amber-500/10 text-amber-300"}`}>
+              📘 Facebook {meta.facebook?.connected ? `✓ ${meta.facebook?.page || ""}` : "— reconnect"}
+            </span>
+            <span className={`px-2.5 py-1 rounded-full border ${meta.instagram?.canPublish ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-slate-700 bg-slate-900 text-slate-400"}`}>
+              📸 Instagram {meta.instagram?.canPublish ? `✓ @${meta.instagram?.username || ""}` : meta.instagram?.linked ? "— linked, needs publish permission" : "— not connected"}
+            </span>
+          </div>
+        )}
 
         {flash && <div className="mt-4 rounded-lg bg-slate-900 border border-emerald-500/30 px-4 py-2 text-sm text-emerald-300">{flash}</div>}
         {loading && <div className="text-slate-500 mt-10 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>}
