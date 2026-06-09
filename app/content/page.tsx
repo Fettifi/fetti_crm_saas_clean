@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Loader2, Sparkles, Copy, Check, Download, RefreshCw, CalendarClock } from "lucide-react";
+import { SOCIAL_DISCLOSURE } from "@/lib/legal";
 
 type Post = { id: string; type: string; hook: string; script: string; caption: string; hashtags: string; image_url?: string; status: string; created_at: string };
 
@@ -115,12 +116,13 @@ export default function ContentStudio() {
               {p.script && p.type !== "image" && <div className="text-xs text-slate-400 mt-1"><b>Script:</b> {p.script}</div>}
               <div className="text-sm text-slate-300 mt-2 whitespace-pre-wrap">{p.caption}</div>
               <div className="text-[11px] text-emerald-400/80 mt-1">{p.hashtags}</div>
+              <div className="text-[10px] text-slate-500 mt-2 whitespace-pre-wrap border-t border-slate-800 pt-2">✓ NMLS compliance disclosure auto-added to every post:{"\n"}{SOCIAL_DISCLOSURE.replace(/^—\n/, "")}</div>
 
               <div className="flex items-center gap-2 mt-4 flex-wrap">
                 <button onClick={() => approve(p.id)} disabled={pub === p.id} className="text-xs px-3 py-1.5 rounded-md bg-emerald-600/90 hover:bg-emerald-500 disabled:opacity-50 font-semibold flex items-center gap-1">
                   {pub === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "✅"} Approve &amp; Publish
                 </button>
-                <CopyBtn text={`${p.caption}\n\n${p.hashtags}`} />
+                <CopyBtn text={`${p.caption}\n\n${p.hashtags}\n\n${SOCIAL_DISCLOSURE}`} />
                 <button onClick={() => setStatus(p.id, "posted")} className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300">Mark posted</button>
                 <button onClick={() => setStatus(p.id, "skipped")} className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-400">Skip</button>
               </div>
