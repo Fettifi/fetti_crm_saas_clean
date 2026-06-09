@@ -93,7 +93,10 @@ export default function MarketingHome() {
         </div>
 
         <div className="max-w-5xl mx-auto px-6 pt-20 pb-20 text-center">
-          <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={150} height={137} className="w-32 sm:w-36 mx-auto mb-7 drop-shadow-2xl" />
+          <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={150} height={137} className="w-32 sm:w-36 mx-auto mb-5 drop-shadow-2xl" />
+          <p className="mb-6 text-2xl sm:text-3xl font-black tracking-tight">
+            We <span className="bg-gradient-to-r from-emerald-300 to-teal-300 bg-clip-text text-transparent">DO</span> Money<span className="text-emerald-400">!</span>
+          </p>
           <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-xs font-medium text-emerald-300">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Licensed mortgage brokerage · NMLS #2267023
@@ -242,7 +245,10 @@ export default function MarketingHome() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
             <div className="flex items-center gap-2.5">
               <img src="/fetti-emblem.png" alt="Fetti Financial Services LLC logo" width={32} height={32} className="w-8 h-8" />
-              <span className="font-extrabold tracking-tight">Fetti<span className="text-emerald-400"> Financial Services</span> <span className="text-slate-500 text-[0.7em] font-bold align-middle">LLC</span></span>
+              <div className="leading-tight">
+                <span className="font-extrabold tracking-tight">Fetti<span className="text-emerald-400"> Financial Services</span> <span className="text-slate-500 text-[0.7em] font-bold align-middle">LLC</span></span>
+                <p className="text-xs font-bold text-emerald-400/80">We DO Money!</p>
+              </div>
             </div>
             <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-400">
               <Link href="/lending" className="hover:text-white transition">Programs</Link>
