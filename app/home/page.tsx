@@ -91,7 +91,7 @@ export default function MarketingHome() {
         </div>
 
         <div className="max-w-5xl mx-auto px-6 pt-20 pb-20 text-center">
-          <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={150} height={137} className="w-32 sm:w-36 mx-auto mb-5" />
+          <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={320} height={293} className="w-56 sm:w-72 lg:w-80 mx-auto mb-6 drop-shadow-sm" />
           <p className="mb-6 text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
             We <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">DO</span> Money<span className="text-emerald-600">!</span>
           </p>
@@ -138,7 +138,8 @@ export default function MarketingHome() {
       {/* ---------- Programs ---------- */}
       <section className="max-w-7xl mx-auto px-6 py-16">
         <div className="text-center max-w-2xl mx-auto mb-12">
-          <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Lending programs</p>
+          <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={72} height={72} className="w-16 h-16 mx-auto mb-3" />
+          <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Cedi presents · Lending programs</p>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Financing for every objective</h2>
           <p className="text-slate-500 mt-3">Tap any program to see details — every page leads straight to a fast pre-qualification.</p>
         </div>
@@ -172,7 +173,11 @@ export default function MarketingHome() {
       <section className="relative py-20 border-y border-slate-200 bg-slate-50">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center max-w-2xl mx-auto mb-14">
-            <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">How it works</p>
+            <div className="relative inline-block mb-3">
+              <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={80} height={80} className="w-20 h-20 mx-auto" />
+              <span className="absolute -right-2 -top-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 shadow">Hoo knows!</span>
+            </div>
+            <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Cedi explains · How it works</p>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">From inquiry to funded — fast</h2>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
@@ -196,7 +201,10 @@ export default function MarketingHome() {
       <section className="max-w-6xl mx-auto px-6 py-20">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <div>
-            <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Why Fetti</p>
+            <div className="flex items-center gap-3 mb-4">
+              <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={64} height={64} className="w-16 h-16" />
+              <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest">Why Fetti · straight from Cedi</p>
+            </div>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-slate-900">A brokerage that moves like a fintech, advises like a partner.</h2>
             <p className="text-slate-500 mt-4 leading-relaxed">
               We pair institutional-grade programs with a team that actually picks up the phone — so you get
