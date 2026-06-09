@@ -49,7 +49,8 @@ export default function LendingIndex() {
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <header className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
-        <Link href="/home">
+        <Link href="/home" className="flex items-center gap-2.5">
+          <img src="/fetti-emblem.png" alt="Fetti Financial Services LLC logo" width={40} height={40} className="w-10 h-10" />
           <div className="text-xl font-extrabold">Fetti<span className="text-emerald-400"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
         </Link>
         <nav className="flex items-center gap-3 text-sm">

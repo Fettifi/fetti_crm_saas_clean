@@ -25,8 +25,8 @@ function Links() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 text-white px-5 py-12">
       <div className="max-w-md mx-auto text-center">
-        <div className="text-emerald-400 font-extrabold text-2xl">Fetti<span className="text-white"> Financial Services</span> <span className="text-white/60 text-[0.7em] font-bold align-middle">LLC</span></div>
-        <img src="/cedi-512.png" alt="Cedi the Fetti owl mascot" width={64} height={64} className="w-16 h-16 mx-auto mt-3 opacity-90" />
+        <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={190} height={174} className="w-44 mx-auto" />
+        <img src="/cedi-512.png" alt="Cedi the Fetti owl mascot" width={56} height={56} className="w-14 h-14 mx-auto -mt-1 opacity-90" />
         <p className="text-slate-300 mt-2">Home loans, investment & business loans — fast, licensed, no pressure.</p>
         <div className="space-y-3 mt-8">
           {CTAS.map((c) => (
