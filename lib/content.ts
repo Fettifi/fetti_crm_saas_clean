@@ -2,6 +2,27 @@
 // captions + hashtags, plus an AI-generated image — for the Content Studio queue.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { BRAND_BRIEF, CONTENT_PERSONALITY } from "@/lib/brand";
+import { CEDI_BADGE_B64 } from "@/lib/cediBadge";
+
+// Brand a generated campaign image with the Cedi mascot in the bottom-right
+// corner. Best-effort: if compositing fails, returns the original bytes.
+async function brandWithCedi(jpeg: Buffer): Promise<Buffer> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const meta = await sharp(jpeg).metadata();
+    const W = meta.width || 1024;
+    const H = meta.height || 1024;
+    const badgeW = Math.round(W * 0.22);
+    const margin = Math.round(W * 0.035);
+    const badge = await sharp(Buffer.from(CEDI_BADGE_B64, "base64")).resize(badgeW).png().toBuffer();
+    return await sharp(jpeg)
+      .composite([{ input: badge, left: Math.max(0, W - badgeW - margin), top: Math.max(0, H - badgeW - margin) }])
+      .jpeg({ quality: 90 })
+      .toBuffer();
+  } catch {
+    return jpeg;
+  }
+}
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
@@ -70,9 +91,11 @@ export async function generateImage(): Promise<string | null> {
     if (!res.ok) { console.warn("[content] image gen:", j?.error?.message); return null; }
     // gpt-image-1 returns base64; tolerate a url response too.
     const d = j.data?.[0] || {};
-    const buf = d.b64_json ? Buffer.from(d.b64_json, "base64")
+    const raw = d.b64_json ? Buffer.from(d.b64_json, "base64")
       : d.url ? Buffer.from(await (await fetch(d.url)).arrayBuffer()) : null;
-    if (!buf) return null;
+    if (!raw) return null;
+    // Brand the campaign image with the Cedi mascot badge (bottom-right).
+    const buf = await brandWithCedi(raw);
     const path = `auto/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
     const { error } = await supabaseAdmin.storage.from("content").upload(path, buf, { contentType: "image/jpeg", upsert: false });
     if (error) { console.warn("[content] upload:", error.message); return null; }
