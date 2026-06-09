@@ -23,12 +23,49 @@ export default function ContentStudio() {
   const [gen, setGen] = useState(false);
 
   const [meta, setMeta] = useState<any>(null);
+  const [tt, setTt] = useState<any>(null);
   async function load() {
     const r = await fetch("/api/content"); const j = await r.json();
     setQueued(j.queued || []); setPostedCount((j.posted || []).length); setLoading(false);
     fetch("/api/meta/status").then((x) => x.json()).then(setMeta).catch(() => {});
+    fetch("/api/tiktok/status").then((x) => x.json()).then(setTt).catch(() => {});
   }
   useEffect(() => { load(); }, []);
+
+  // Surface the TikTok OAuth result (redirected back with ?tiktok=…).
+  const [ttFlash, setTtFlash] = useState<string | null>(null);
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get("tiktok");
+    if (!v) return;
+    const m: Record<string, string> = { connected: "✅ TikTok connected!", error: "TikTok connection was cancelled.", badstate: "TikTok connect expired — try again.", fail: "TikTok connection failed — try again." };
+    setTtFlash(m[v] || null);
+    window.history.replaceState({}, "", "/content");
+    setTimeout(() => setTtFlash(null), 5000);
+  }, []);
+
+  // --- TikTok video composer (you record the video, we post it) ---
+  const [ttFile, setTtFile] = useState<File | null>(null);
+  const [ttCaption, setTtCaption] = useState("");
+  const [ttBusy, setTtBusy] = useState(false);
+  const [ttMsg, setTtMsg] = useState<string | null>(null);
+  async function postToTikTok() {
+    if (!ttFile) { setTtMsg("Pick your recorded video file first."); return; }
+    setTtBusy(true); setTtMsg("Uploading video…");
+    try {
+      const up = await fetch("/api/content/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: ttFile.name }) });
+      const uj = await up.json();
+      if (!up.ok) throw new Error(uj.error || "Could not start upload");
+      const put = await fetch(uj.signedUrl, { method: "PUT", headers: { "Content-Type": ttFile.type || "video/mp4", "x-upsert": "true" }, body: ttFile });
+      if (!put.ok) throw new Error("Video upload failed");
+      setTtMsg("Posting to TikTok…");
+      const pr = await fetch("/api/tiktok/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoUrl: uj.publicUrl, caption: ttCaption }) });
+      const pj = await pr.json();
+      if (!pr.ok || !pj.ok) throw new Error(pj.error || "Publish failed");
+      setTtMsg("✅ Sent to TikTok! Check your TikTok app.");
+      setTtFile(null); setTtCaption("");
+    } catch (e) { setTtMsg("⚠️ " + (e instanceof Error ? e.message : "error")); }
+    finally { setTtBusy(false); }
+  }
 
   async function generate() {
     setGen(true);
@@ -85,6 +122,51 @@ export default function ContentStudio() {
             <span className={`px-2.5 py-1 rounded-full border ${meta.instagram?.canPublish ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-slate-700 bg-slate-900 text-slate-400"}`}>
               📸 Instagram {meta.instagram?.canPublish ? `✓ @${meta.instagram?.username || ""}` : meta.instagram?.linked ? "— linked, needs publish permission" : "— not connected"}
             </span>
+            <span className={`px-2.5 py-1 rounded-full border ${tt?.connected ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-slate-700 bg-slate-900 text-slate-400"}`}>
+              🎵 TikTok {tt?.connected ? `✓ ${tt?.username || "connected"}` : tt?.configured ? "— connect account" : "— not set up"}
+            </span>
+          </div>
+        )}
+
+        {ttFlash && <div className="mt-3 rounded-lg bg-slate-900 border border-emerald-500/30 px-4 py-2 text-sm text-emerald-300">{ttFlash}</div>}
+
+        {/* TikTok composer — you record the video, we post it to TikTok */}
+        {tt && (
+          <div className="mt-4 bg-slate-900/50 border border-slate-800 rounded-2xl p-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🎵</span>
+                <div>
+                  <div className="font-semibold text-sm">TikTok</div>
+                  <div className="text-[11px] text-slate-400">{tt.detail || "Record a video from a script below, then post it here."}</div>
+                </div>
+              </div>
+              {!tt.connected && (
+                <a href="/api/tiktok/auth" className="text-xs px-3 py-1.5 rounded-md bg-fuchsia-600/90 hover:bg-fuchsia-500 font-semibold">
+                  {tt.configured ? "Connect TikTok" : "Set up TikTok"}
+                </a>
+              )}
+            </div>
+            {tt.connected && (
+              <div className="mt-4 space-y-3">
+                <textarea value={ttCaption} onChange={(e) => setTtCaption(e.target.value)} rows={3}
+                  placeholder="Caption (paste a caption from a queued post, or write your own)…"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm" />
+                <div className="flex items-center gap-3 flex-wrap">
+                  <label className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 cursor-pointer">
+                    {ttFile ? `🎬 ${ttFile.name.slice(0, 28)}` : "Choose video file"}
+                    <input type="file" accept="video/*" className="hidden" onChange={(e) => setTtFile(e.target.files?.[0] || null)} />
+                  </label>
+                  <button onClick={postToTikTok} disabled={ttBusy || !ttFile}
+                    className="text-xs px-3 py-1.5 rounded-md bg-fuchsia-600/90 hover:bg-fuchsia-500 disabled:opacity-50 font-semibold flex items-center gap-1">
+                    {ttBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "🎵"} Post to TikTok
+                  </button>
+                  {!tt.canPublish && <span className="text-[11px] text-amber-400">App pending audit — posts go out private until TikTok approves.</span>}
+                </div>
+                {ttMsg && <div className="text-xs text-slate-300">{ttMsg}</div>}
+                <div className="text-[10px] text-slate-500">✓ NMLS compliance disclosure is auto-added to the TikTok caption.</div>
+              </div>
+            )}
           </div>
         )}
 
@@ -123,6 +205,10 @@ export default function ContentStudio() {
                   {pub === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "✅"} Approve &amp; Publish
                 </button>
                 <CopyBtn text={`${p.caption}\n\n${p.hashtags}\n\n${SOCIAL_DISCLOSURE}`} />
+                {tt?.connected && p.type !== "image" && (
+                  <button onClick={() => { setTtCaption(`${p.caption}\n\n${p.hashtags}`); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                    className="text-xs px-3 py-1.5 rounded-md bg-fuchsia-600/20 hover:bg-fuchsia-600/40 text-fuchsia-300">🎵 Use for TikTok</button>
+                )}
                 <button onClick={() => setStatus(p.id, "posted")} className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300">Mark posted</button>
                 <button onClick={() => setStatus(p.id, "skipped")} className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-400">Skip</button>
               </div>
