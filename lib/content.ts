@@ -11,11 +11,34 @@ export async function generatePosts(n: number, topic = ""): Promise<Post[]> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY not configured");
   const system = `${BRAND_BRIEF}
-You write short-form video (Instagram Reels / TikTok) scripts for a mortgage broker.
-Audience: home buyers (FHA/VA/first-time), real estate investors (DSCR, fix & flip), the self-employed.
-Hooks must stop the scroll in 2 seconds. Punchy, concrete, compliant — never promise approval or rates.
-Always drive to "link in bio." Output ONLY JSON: { "posts": [ { "hook", "script", "caption", "hashtags" } ] } with exactly ${n} posts.`;
-  const user = topic ? `Theme: ${topic}. ${n} fresh posts.` : `${n} fresh, varied posts across buyers, investors, and self-employed.`;
+You are an elite short-form content strategist for a premium mortgage brokerage. You craft scroll-stopping,
+genuinely VALUABLE Instagram/Facebook posts that build authority and convert — the kind a top 1% loan officer
+would post.
+
+AUDIENCE (vary across these): first-time & move-up home buyers (FHA/VA/USDA/conventional, down payment
+assistance), real estate investors (DSCR, fix & flip, BRRRR, short-term rentals), the self-employed
+(bank-statement / P&L loans), and homeowners (cash-out, HELOC).
+
+QUALITY BAR — every post must:
+- Open with a HOOK that stops the scroll in <2 seconds (a bold question, a myth, a surprising number, a
+  "POV", or a specific pain point). No generic openers.
+- Teach ONE concrete, specific, useful thing (a real number, a little-known program, a step, a mistake to
+  avoid). Make the viewer smarter in 15 seconds.
+- Sound human, confident, and warm — not salesy, not corporate. Short punchy sentences.
+- End with a soft, natural CTA ("Comment [WORD]", "Save this", "DM me", or "Link in bio").
+- Be COMPLIANT: never promise approval, never quote a specific interest rate, never guarantee outcomes,
+  no "lowest rate" claims. (A licensing disclosure is auto-appended later — do not write one.)
+
+Vary the format and topic across the set — no two posts should feel similar.
+
+Output ONLY JSON: { "posts": [ { "hook", "script", "caption", "hashtags" } ] } with exactly ${n} posts.
+- hook: the on-screen / first-line hook (<= 12 words)
+- script: a tight shot-by-shot or talking-points script for a 15–30s Reel
+- caption: a polished, engaging caption (2–5 short lines) with a clear CTA — NO disclosure text
+- hashtags: 5–8 relevant, high-intent hashtags (mix niche + broad)`;
+  const user = topic
+    ? `Create ${n} premium, curated posts on this theme: ${topic}. Make each distinct and genuinely valuable.`
+    : `Create ${n} premium, curated posts — each on a DIFFERENT topic spanning buyers, investors, and the self-employed. Distinct hooks, real value, varied formats.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({ model: MODEL, temperature: 0.9, max_tokens: 1200, response_format: { type: "json_object" },
@@ -28,12 +51,14 @@ Always drive to "link in bio." Output ONLY JSON: { "posts": [ { "hook", "script"
 }
 
 const IMAGE_CONCEPTS = [
-  "Bright modern single-family home exterior at golden hour, welcoming front porch, real estate photography, vibrant, NO text, no words, no letters",
-  "Happy diverse young couple holding house keys in front of their new home, candid, warm natural light, NO text, no words",
-  "Stylish modern rental apartment building, clear blue sky, professional real estate photo, NO text, no words",
-  "Confident entrepreneur reviewing documents with a laptop at a bright modern desk, warm tone, NO text, no words",
-  "Aerial view of a sunny suburban neighborhood with attractive homes, professional drone photo, NO text, no words",
-  "Keys on a contract next to a small model house on a clean desk, soft daylight, NO text, no words",
+  "Editorial real-estate photograph: a stunning modern luxury home exterior at golden hour, manicured landscaping, warm glowing windows, shot on a 35mm lens, magazine quality, cinematic, NO text, no words, no letters",
+  "Candid lifestyle photo: a joyful diverse young couple laughing while holding house keys in front of their new home, natural sunlight, shallow depth of field, premium real-estate brand aesthetic, NO text, no words",
+  "Architectural photograph of a sleek contemporary multi-unit rental building, blue-hour sky, clean lines, professional commercial real-estate photography, NO text, no words",
+  "A confident, well-dressed entrepreneur reviewing plans on a tablet in a bright modern home office, warm natural light, aspirational, NO text, no words",
+  "Cinematic aerial drone shot of an upscale sunny suburban neighborhood with beautiful homes and tree-lined streets, crisp and vibrant, NO text, no words",
+  "Elegant flat-lay: brass house keys on a clean contract beside a small architectural model home and a cup of coffee, soft daylight, lifestyle brand photography, NO text, no words",
+  "Warm interior photo of a beautifully staged modern living room with large windows and natural light, inviting and aspirational, real-estate magazine quality, NO text, no words",
+  "A happy family with kids playing in the front yard of a charming home on a sunny day, candid and heartfelt, premium lifestyle photography, NO text, no words",
 ];
 
 // Generate an on-brand image (no text — caption carries the message) and store it
