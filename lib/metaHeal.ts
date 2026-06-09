@@ -63,6 +63,44 @@ export async function healMetaToken(): Promise<HealResult> {
   return { status: "needs_reauth", detail: "token invalid and no usable user token to refresh — one Meta reconnect needed", daysLeft };
 }
 
+// Full connection status for the UI: is Facebook posting connected, is Instagram
+// linked + publishable. Auto-stores the IG account id when it becomes publishable
+// so posting wires itself up.
+export async function metaConnectionStatus() {
+  const appId = await cfg("META_APP_ID");
+  const secret = await cfg("META_APP_SECRET");
+  const pageId = await cfg("META_PAGE_ID");
+  const token = await cfg("META_ACCESS_TOKEN");
+  const out: any = {
+    facebook: { connected: false, page: null as string | null, detail: "not configured" },
+    instagram: { linked: false, canPublish: false, username: null as string | null },
+  };
+  if (!token || !pageId) return out;
+
+  try {
+    const r = await fetch(`${GRAPH}/${pageId}?fields=name,instagram_business_account{id,username}&access_token=${token}`, { signal: AbortSignal.timeout(8000) });
+    const j = await r.json();
+    if (j?.name) { out.facebook.connected = true; out.facebook.page = j.name; out.facebook.detail = "connected"; }
+    else out.facebook.detail = j?.error?.message || "token issue";
+    const ig = j?.instagram_business_account;
+    if (ig?.id) { out.instagram.linked = true; out.instagram.username = ig.username || null; out.instagram.accountId = ig.id; }
+  } catch { out.facebook.detail = "error reaching Meta"; }
+
+  if (appId && secret) {
+    try {
+      const d = await debugToken(token, appId, secret);
+      out.facebook.connected = out.facebook.connected && !!d.is_valid;
+      const scopes: string[] = d.scopes || [];
+      out.instagram.canPublish = out.instagram.linked && scopes.includes("instagram_content_publish");
+      // Self-wire: once IG is publishable, store its id so posts go to IG too.
+      if (out.instagram.canPublish && out.instagram.accountId) {
+        await setSetting("META_IG_USER_ID", out.instagram.accountId);
+      }
+    } catch { /* */ }
+  }
+  return out;
+}
+
 // Accept a fresh user token (e.g. pasted once) and immediately mint + store a
 // page token from it. After this, the system self-refreshes on its own.
 export async function ingestUserToken(userToken: string): Promise<HealResult> {
