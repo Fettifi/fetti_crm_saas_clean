@@ -55,8 +55,16 @@ export async function publishPost(post: Post): Promise<PublishResult> {
   // causes a failed post when it could have been fixed automatically.
   try { await healMetaToken(); } catch { /* non-fatal */ }
   const token = await cfg("META_ACCESS_TOKEN");
-  const igUser = await cfg("META_IG_USER_ID");
   const pageId = await cfg("META_PAGE_ID");
+  // Always use the Instagram account currently CONNECTED TO THE PAGE (that's the
+  // only one publishable via the page token). Self-corrects once IG is linked.
+  let igUser = await cfg("META_IG_USER_ID");
+  if (token && pageId) {
+    try {
+      const pg = await (await fetch(`${GRAPH}/${pageId}?fields=instagram_business_account&access_token=${token}`)).json();
+      igUser = pg?.instagram_business_account?.id || null;
+    } catch { /* keep stored */ }
+  }
   const channels: PublishResult["channels"] = [];
   const caption = fullCaption(post);
 
