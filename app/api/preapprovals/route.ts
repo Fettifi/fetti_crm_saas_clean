@@ -4,6 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { BRAND } from "@/lib/brand";
+import { buildPreApprovalPdf } from "@/lib/preapprovalPdf";
+import { sendPreapprovalEmails } from "@/lib/notify/sendPreapproval";
+
+const validEmail = (e: any) => typeof e === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 
 export const dynamic = "force-dynamic";
 
@@ -58,16 +62,29 @@ export async function POST(req: NextRequest) {
       officer_nmls: b.officer_nmls ? String(b.officer_nmls).trim() : BRAND.nmls,
       status: "issued",
       expires_on: expires,
+      // Both optional — only fill what the LO entered.
+      borrower_email: validEmail(b.borrower_email) ? String(b.borrower_email).trim().toLowerCase() : null,
+      agent_email: validEmail(b.agent_email) ? String(b.agent_email).trim().toLowerCase() : null,
     };
     const { data, error } = await supabaseAdmin.from("preapprovals").insert([row]).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+    // Auto-email the PDF to whichever recipients were provided.
+    let emailed: string[] = [];
+    if (data.borrower_email || data.agent_email) {
+      try {
+        const pdf = await buildPreApprovalPdf(data);
+        emailed = await sendPreapprovalEmails(data, pdf, { borrower_email: data.borrower_email, agent_email: data.agent_email });
+        if (emailed.length) await supabaseAdmin.from("preapprovals").update({ emailed_to: emailed }).eq("id", data.id);
+      } catch (e) { console.warn("[preapproval] email failed:", e); }
+    }
+
     await logActivity({
       entity_type: "preapproval", entity_id: data.id, lead_id: data.lead_id, loan_file_id: data.loan_file_id,
       actor: "lo", action: "preapproval.issued",
-      detail: { letter_number: data.letter_number, borrower: data.borrower_name, amount: loan },
+      detail: { letter_number: data.letter_number, borrower: data.borrower_name, amount: loan, emailed },
     });
-    return NextResponse.json({ preapproval: data }, { status: 201 });
+    return NextResponse.json({ preapproval: data, emailed }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }
