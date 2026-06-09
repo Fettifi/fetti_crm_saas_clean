@@ -85,7 +85,7 @@ export async function proxy(request: NextRequest) {
 
     // Sensitive internal DATA APIs — return 401 (not a redirect) when unauthed.
     // Public APIs (apply, file portal, wizard, cron, sms) are NOT listed and stay open.
-    const apiProtected = ['/api/los', '/api/stats', '/api/tasks', '/api/players', '/api/bosses', '/api/growth/generate', '/api/content', '/api/doctor', '/api/preapprovals']
+    const apiProtected = ['/api/los', '/api/stats', '/api/tasks', '/api/players', '/api/bosses', '/api/growth/generate', '/api/content', '/api/doctor', '/api/preapprovals', '/api/tiktok/publish']
     if (apiProtected.some(route => path.startsWith(route)) && !session) {
         return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
     }
@@ -137,5 +137,6 @@ export const config = {
         '/api/content/:path*',
         '/api/doctor/:path*',
         '/api/preapprovals/:path*',
+        '/api/tiktok/publish/:path*',
     ],
 }
