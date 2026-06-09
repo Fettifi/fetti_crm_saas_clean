@@ -44,7 +44,10 @@ export default function MarketingHome() {
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <header className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
-        <div className="text-xl font-extrabold">Fetti<span className="text-emerald-400"> Financial</span><sup className="text-[0.55em] align-top opacity-70">™</sup></div>
+        <div className="flex items-center gap-2">
+          <img src="/cedi-mark.png" alt="Cedi — Fetti Financial mascot" width={36} height={36} className="w-9 h-9" />
+          <div className="text-xl font-extrabold">Fetti<span className="text-emerald-400"> Financial</span><sup className="text-[0.55em] align-top opacity-70">™</sup></div>
+        </div>
         <nav className="flex items-center gap-3 text-sm">
           <Link href="/quote" className="text-slate-300 hover:text-white hidden sm:inline">Instant Quote</Link>
           <Link href="/apply/form" className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold px-4 py-2 rounded-full">Apply</Link>
