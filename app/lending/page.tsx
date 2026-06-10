@@ -6,7 +6,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 export const metadata = {
   title: "Loan Programs | Fetti Financial Services",
   description:
-    "Explore Fetti Financial Services LLC loan programs — home purchase & refinance, DSCR & rental, fix & flip, hard money, bridge, commercial real estate, SBA and business loans.",
+    "Explore Fetti Financial Services LLC loan programs. Home purchase & refinance, DSCR & rental, fix & flip, hard money, bridge, commercial real estate, SBA and business loans.",
   alternates: { canonical: "https://app.fettifi.com/lending" },
 };
 
@@ -26,7 +26,7 @@ const GROUPS: { title: string; tag: string; products: { slug: string; label: str
     title: "Investment Loans",
     tag: "All 50 states",
     products: [
-      { slug: "dscr-loans", label: "DSCR Loans", blurb: "Qualify on rental cash flow — no W-2 or tax returns." },
+      { slug: "dscr-loans", label: "DSCR Loans", blurb: "Qualify on rental cash flow. No W-2 or tax returns." },
       { slug: "fix-and-flip-loans", label: "Fix & Flip Loans", blurb: "Purchase + rehab funding to move fast on deals." },
       { slug: "hard-money-loans", label: "Hard Money Loans", blurb: "Asset-based financing that closes in days." },
       { slug: "bridge-loans", label: "Bridge Loans", blurb: "Short-term capital between deals." },
@@ -52,11 +52,11 @@ export default function LendingIndex() {
       <SiteHeader />
 
       <section className="max-w-5xl mx-auto px-6 pt-14 pb-8 text-center">
-        <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={72} height={72} className="w-16 h-16 mx-auto mb-3" />
+        <img src="/cedi-512.png" alt="Cedi. The all-knowing Fetti owl" width={72} height={72} className="w-16 h-16 mx-auto mb-3" />
         <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Cedi presents · Programs</p>
         <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900">Loan programs for every goal</h1>
         <p className="text-slate-600 text-lg mt-4 max-w-2xl mx-auto">
-          Home, investment, and business financing — all under one roof. As a <span className="font-semibold text-slate-700">lender and a broker</span>, we fund directly or shop dozens of lenders for your best fit. Pick a program, or get pre-qualified in minutes.
+          Home, investment, and business financing. All under one roof. As a <span className="font-semibold text-slate-700">lender and a broker</span>, we fund directly or shop dozens of lenders for your best fit. Pick a program, or get pre-qualified in minutes.
         </p>
       </section>
 
