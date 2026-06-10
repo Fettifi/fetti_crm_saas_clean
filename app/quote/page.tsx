@@ -7,6 +7,7 @@ import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { trackLead } from "@/lib/track";
 import AddressInput from "@/components/AddressInput";
+import { CediBubble } from "@/components/CediBubble";
 
 const PRODUCTS = [
   { key: "Home Purchase", ltv: 0.95 },
@@ -74,6 +75,7 @@ export default function QuotePage() {
           <p className="text-emerald-600 font-mono text-sm">Fetti Financial Services</p>
           <h1 className="text-3xl font-bold mt-1">What can you qualify for?</h1>
           <p className="text-slate-500 mt-2">Instant estimate. No credit pull.</p>
+          <CediBubble center size={52} className="mt-5">Run the numbers — I&apos;ll show you what we can do. Easy, no stress. 😎</CediBubble>
         </div>
 
         {!estimate && (

@@ -17,6 +17,7 @@ import { CheckCircle2, ArrowLeft, ShieldCheck, Lightbulb } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
 import { trackLead } from "@/lib/track";
 import AddressInput from "@/components/AddressInput";
+import { CediBubble } from "@/components/CediBubble";
 
 type Opt = { value: string; label: string; emoji?: string; hint?: string };
 type Q =
@@ -526,6 +527,7 @@ export default function ApplyWizard() {
             like a strong fit — and your application is essentially done. A Fetti specialist will reach out shortly to confirm
             your numbers and send next steps.
           </p>
+          <CediBubble center size={56} className="mt-6">We got it from here. Sit back — I&apos;ll make sure your file moves. 🌴</CediBubble>
           {leadId && (
             <Link href={`/portal/${leadId}`} className="inline-block mt-7 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-full">
               Track my application
@@ -558,6 +560,7 @@ export default function ApplyWizard() {
       <Shell pct={pct} onBack={back}>
         <h1 className="text-2xl font-bold">Where should we send your options?</h1>
         <p className="text-slate-500 mt-1 text-sm">No impact to your credit. A real specialist follows up fast.</p>
+        <CediBubble size={48} className="mt-4">Almost there — drop your info and I&apos;ll get your options moving. 😎</CediBubble>
         <form onSubmit={submitContact} className="space-y-3 mt-5">
           <input type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: "absolute", left: "-9999px" }} />
           <input name="full_name" required placeholder="Full name" className={field} />
