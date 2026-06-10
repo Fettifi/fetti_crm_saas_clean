@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, ArrowLeft, ShieldCheck, Lightbulb } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
-import { trackLead } from "@/lib/track";
+import { trackLead, trackApplication } from "@/lib/track";
 import AddressInput from "@/components/AddressInput";
 import { CediBubble } from "@/components/CediBubble";
 
@@ -26,7 +26,7 @@ type Q =
 
 type Answers = Record<string, string>;
 
-const STATES = ["CA", "FL", "MI", "TX", "AZ", "GA", "NV", "OH", "WA", "CO", "Other"];
+const STATES = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC"];
 const CREDIT: Opt[] = [
   { value: "760", label: "Excellent (740+)" },
   { value: "720", label: "Good (700-739)" },
@@ -471,6 +471,10 @@ export default function ApplyWizard() {
       utm_medium: qs.get("utm_medium") || undefined,
       utm_campaign: qs.get("utm_campaign") || undefined,
       source: qs.get("ref") ? "referral" : "wizard",
+      // TCPA/CAN-SPAM consent record: submitting the contact form is the agreement.
+      consent: true,
+      consent_at: new Date().toISOString(),
+      consent_text: "By submitting, borrower agreed Fetti Financial Services may contact by phone, email & text (SMS), including automated. Consent not required to buy. STOP to opt out.",
     };
   }
 
@@ -509,6 +513,7 @@ export default function ApplyWizard() {
     setSubmitting(true); setError(null);
     try {
       await post(buildPayload(finalAnswers, contact));
+      trackApplication(finalAnswers.loan_amount_requested ? Number(finalAnswers.loan_amount_requested) : undefined); // completed-1003 conversion
       track("complete", { phase: "app", goal: finalAnswers.goal, occupancy: effectiveOccupancy(finalAnswers), product: product(finalAnswers) });
     } catch { /* lead already exists; non-fatal. Specialist follows up */ } finally {
       setSubmitting(false); setPhase("done");
