@@ -4,6 +4,7 @@ import {
   CheckCircle2, ArrowRight, ShieldCheck, Clock, Headphones, Sparkles, BadgeCheck, Lock,
 } from "lucide-react";
 import { LICENSING_NOTE } from "@/lib/legal";
+import { CediBubble } from "@/components/CediBubble";
 
 export const metadata = {
   title: "Fetti Financial Services LLC | Home, Investment & Business Lending",
@@ -120,6 +121,9 @@ export default function MarketingHome() {
             <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Equal Housing Opportunity</span>
             <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Investment & business loans in all 50 states</span>
           </div>
+          <CediBubble center size={64} className="mt-10">
+            Hoo&apos;s ready to get funded? I&apos;m <span className="font-bold text-slate-900">Cedi</span> — straight outta LA, and I find your money. Easy, no stress. 😎
+          </CediBubble>
         </div>
 
         {/* stats bar */}
@@ -138,8 +142,8 @@ export default function MarketingHome() {
       {/* ---------- Programs ---------- */}
       <section className="max-w-7xl mx-auto px-6 py-16">
         <div className="text-center max-w-2xl mx-auto mb-12">
-          <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={72} height={72} className="w-16 h-16 mx-auto mb-3" />
-          <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Cedi presents · Lending programs</p>
+          <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-4">Lending programs</p>
+          <CediBubble center className="mb-5">Whatever the move, I&apos;ve got a play for it. Pick yours. 🦉</CediBubble>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Financing for every objective</h2>
           <p className="text-slate-500 mt-3">Tap any program to see details — every page leads straight to a fast pre-qualification.</p>
         </div>
@@ -173,11 +177,8 @@ export default function MarketingHome() {
       <section className="relative py-20 border-y border-slate-200 bg-slate-50">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center max-w-2xl mx-auto mb-14">
-            <div className="relative inline-block mb-3">
-              <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={80} height={80} className="w-20 h-20 mx-auto" />
-              <span className="absolute -right-2 -top-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 shadow">Hoo knows!</span>
-            </div>
-            <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Cedi explains · How it works</p>
+            <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-4">How it works</p>
+            <CediBubble center className="mb-5">Three steps and you&apos;re funded. Eyes open — I&apos;ll guide you, all day. 🌴</CediBubble>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">From inquiry to funded — fast</h2>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
@@ -201,10 +202,8 @@ export default function MarketingHome() {
       <section className="max-w-6xl mx-auto px-6 py-20">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <div>
-            <div className="flex items-center gap-3 mb-4">
-              <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={64} height={64} className="w-16 h-16" />
-              <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest">Why Fetti · straight from Cedi</p>
-            </div>
+            <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-4">Why Fetti</p>
+            <CediBubble className="mb-5">I don&apos;t miss. Here&apos;s why folks roll with Fetti — straight from me. 🦉</CediBubble>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-slate-900">A brokerage that moves like a fintech, advises like a partner.</h2>
             <p className="text-slate-500 mt-4 leading-relaxed">
               We pair institutional-grade programs with a team that actually picks up the phone — so you get
@@ -242,6 +241,7 @@ export default function MarketingHome() {
               Instant quote
             </Link>
           </div>
+          <CediBubble center size={64} className="mt-12">Sun&apos;s out, money&apos;s out. Let&apos;s ride. 🏝️</CediBubble>
         </div>
       </section>
 
