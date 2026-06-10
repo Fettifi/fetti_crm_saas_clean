@@ -80,7 +80,7 @@ const WHY = [
   { icon: ShieldCheck, title: "Compliance in our DNA", desc: "Shaped by years in heavily-regulated industries. We do it right. Every file, every time." },
   { icon: Rocket, title: "California-fast", desc: "Bridge and hard-money options close in days. Pre-qualification takes minutes." },
   { icon: Scale, title: "We work for you", desc: "Lender and broker both. Our job is your best option, not a bank's quota." },
-  { icon: HeartHandshake, title: "We get you", desc: "Built by people who've been the founder and the everyday grinder. We respect what you need." },
+  { icon: HeartHandshake, title: "We get you", desc: "Built by people who've been the operator and the everyday grinder. We respect what you need." },
 ];
 
 const FAQ = [
@@ -147,7 +147,7 @@ export default function MarketingHome() {
             <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Equal Housing Opportunity</span>
           </div>
           <CediBubble center size={64} className="mt-10">
-            Hoo&apos;s ready to get funded? I&apos;m <span className="font-bold text-slate-900">Cedi</span>. Straight outta LA, and I find your money. Easy, no stress. 😎
+            Hoo&apos;s ready to get funded? I&apos;m <span className="font-bold text-slate-900">Mark</span>. Straight outta LA, and I find your money. Easy, no stress. 😎
           </CediBubble>
           <div className="mt-4 flex justify-center"><CediVoice /></div>
         </div>
@@ -256,13 +256,13 @@ export default function MarketingHome() {
       <section className="max-w-5xl mx-auto px-6 py-20">
         <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-emerald-50 to-white p-8 sm:p-12 shadow-sm">
           <div className="flex items-center gap-2 text-emerald-600 font-mono text-xs uppercase tracking-widest mb-5">
-            <Award className="w-4 h-4" /> Founder-led
+            <Award className="w-4 h-4" /> Experience-led
           </div>
           <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-slate-900 leading-tight">
             Built by people who&apos;ve been there.
           </h2>
           <p className="text-slate-600 mt-5 text-lg leading-relaxed max-w-3xl">
-            Our founder spent years helping build and scale companies. From a billion-dollar energy enterprise to
+            We&apos;ve spent years helping build and scale companies. From a billion-dollar energy enterprise to
             businesses that went public. In some of the most heavily-regulated industries around. The lesson that
             stuck: do right by people, and do it by the book. So compliance and discipline aren&apos;t talking
             points here. They&apos;re just how we work.
@@ -271,7 +271,7 @@ export default function MarketingHome() {
             And having been on both sides. The entrepreneur chasing the next deal and the everyday grind toward a
             home. We get what you actually need: straight answers, real speed, and no games.
           </p>
-          <p className="mt-6 font-bold text-slate-900">Ramon Dent, Founder &amp; CEO</p>
+          <p className="mt-6 font-semibold text-slate-700">Decades of combined experience. One standard: do it right.</p>
           <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-500">
             <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-emerald-600" /> Compliance-first by design</span>
             <span className="inline-flex items-center gap-1.5"><Scale className="w-4 h-4 text-emerald-600" /> Your side of the table</span>
@@ -337,7 +337,7 @@ export default function MarketingHome() {
         <div className="max-w-3xl mx-auto px-6">
           <div className="text-center mb-12">
             <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Straight answers</p>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Questions? Cedi&apos;s got you.</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Questions? Mark&apos;s got you.</h2>
           </div>
           <div className="space-y-3">
             {FAQ.map((f) => (

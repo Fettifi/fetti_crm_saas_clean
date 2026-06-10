@@ -133,7 +133,7 @@ export default async function LendingPage({
     <div className="min-h-screen bg-white text-slate-900">
       <SiteHeader />
       <section className="max-w-3xl mx-auto px-6 pt-14 pb-8">
-        <img src="/cedi-512.png" alt="Cedi. The all-knowing Fetti owl" width={64} height={64} className="w-16 h-16 mb-3" />
+        <img src="/cedi-512.png" alt="Mark. The all-knowing Fetti owl" width={64} height={64} className="w-16 h-16 mb-3" />
         <p className="text-emerald-600 font-mono text-sm">Lender &amp; broker · Fetti Financial Services LLC</p>
         <h1 className="text-4xl font-extrabold mt-2 text-slate-900">{prod.label} in {state}</h1>
         <p className="text-slate-600 text-lg mt-4">{prod.blurb}</p>

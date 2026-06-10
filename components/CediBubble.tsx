@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-// Cedi the spokes-owl, talking. A speech bubble in his voice. California cool,
+// Mark the spokes-owl, talking. A speech bubble in his voice. California cool,
 // shades on. Use across the site so the mascot has a real personality.
 export function CediBubble({
   children, size = 56, center = false, className = "",
@@ -9,7 +9,7 @@ export function CediBubble({
     <div className={`flex w-full max-w-full items-end gap-2 sm:gap-3 ${center ? "justify-center" : ""} ${className}`}>
       <img
         src="/cedi-512.png"
-        alt="Cedi. The all-knowing Fetti owl"
+        alt="Mark. The all-knowing Fetti owl"
         width={size}
         height={size}
         style={{ width: size, height: size }}
