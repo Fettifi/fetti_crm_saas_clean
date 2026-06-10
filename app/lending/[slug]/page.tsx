@@ -134,9 +134,10 @@ export default async function LendingPage({
       <SiteHeader />
       <section className="max-w-3xl mx-auto px-6 pt-14 pb-8">
         <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={64} height={64} className="w-16 h-16 mb-3" />
-        <p className="text-emerald-600 font-mono text-sm">Cedi presents · Fetti Financial Services LLC</p>
+        <p className="text-emerald-600 font-mono text-sm">Lender &amp; broker · Fetti Financial Services LLC</p>
         <h1 className="text-4xl font-extrabold mt-2 text-slate-900">{prod.label} in {state}</h1>
         <p className="text-slate-600 text-lg mt-4">{prod.blurb}</p>
+        <p className="text-slate-500 text-sm mt-3">We fund directly or shop dozens of lenders — whichever gets you the best {prod.label.toLowerCase()}.</p>
         <Link href={apply} className="inline-block mt-6 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full text-lg shadow-lg shadow-emerald-600/25 transition">
           Get pre-qualified →
         </Link>

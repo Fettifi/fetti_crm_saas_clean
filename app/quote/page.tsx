@@ -72,7 +72,7 @@ export default function QuotePage() {
     <div className="min-h-screen bg-white text-slate-900 py-12 px-4">
       <div className="max-w-lg mx-auto">
         <div className="text-center mb-8">
-          <p className="text-emerald-600 font-mono text-sm">Fetti Financial Services</p>
+          <p className="text-emerald-600 font-mono text-sm">Lender &amp; broker · Fetti Financial Services</p>
           <h1 className="text-3xl font-bold mt-1">What can you qualify for?</h1>
           <p className="text-slate-500 mt-2">Instant estimate. No credit pull.</p>
           <CediBubble center size={52} className="mt-5">Run the numbers — I&apos;ll show you what we can do. Easy, no stress. 😎</CediBubble>
