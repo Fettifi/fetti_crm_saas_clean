@@ -24,11 +24,13 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [copied, setCopied] = useState(false);
   const [newDoc, setNewDoc] = useState("");
   const [saving, setSaving] = useState(false);
+  const [mismo, setMismo] = useState<{ completeness: { missing: string[]; present: string[]; pct: number }; urla: any } | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/los/files/${id}`);
     if (res.ok) { const j = await res.json(); setFile(j.file); setDocs(j.documents); setActivity(j.activity); }
     setLoading(false);
+    try { const r = await fetch(`/api/los/export?file=${id}&report=1`); if (r.ok) setMismo(await r.json()); } catch {}
   }, [id]);
   useEffect(() => { load(); }, [load]);
 
@@ -142,6 +144,42 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
             </div>
             {file.lead_id && <Link href={`/agents?lead=${file.lead_id}`} className="block mt-4 text-xs text-emerald-400 hover:underline">Run AI agents on this file →</Link>}
           </div>
+        </div>
+
+        {/* 1003 / MISMO export */}
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="text-xs uppercase tracking-wide text-slate-500">1003 / URLA · MISMO 3.4 export</div>
+            <a href={`/api/los/export?file=${id}`} download
+              className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 px-3 py-1.5 rounded-lg">⬇ Download MISMO 3.4 XML</a>
+          </div>
+          {mismo ? (
+            <>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div className="h-full bg-emerald-500" style={{ width: `${mismo.completeness.pct}%` }} />
+                </div>
+                <span className="text-sm text-slate-300 font-semibold">{mismo.completeness.pct}% complete</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <div className="text-xs text-emerald-400 mb-1">Captured ({mismo.completeness.present.length})</div>
+                  <ul className="text-sm text-slate-300 space-y-0.5">
+                    {mismo.completeness.present.map((p) => <li key={p}>✓ {p}</li>)}
+                  </ul>
+                </div>
+                <div>
+                  <div className="text-xs text-amber-400 mb-1">Missing for a complete file ({mismo.completeness.missing.length})</div>
+                  {mismo.completeness.missing.length ? (
+                    <ul className="text-sm text-amber-300/90 space-y-0.5">
+                      {mismo.completeness.missing.map((p) => <li key={p}>• {p}</li>)}
+                    </ul>
+                  ) : <div className="text-sm text-emerald-400">Nothing missing — ready to export.</div>}
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 mt-3">The XML includes everything captured. Missing items still export as empty MISMO elements; fill them on the application to complete the file.</p>
+            </>
+          ) : <div className="text-slate-600 text-sm">Building 1003 view…</div>}
         </div>
 
         {/* Activity */}
