@@ -3,9 +3,9 @@
 // Structured 1003 / URLA editor. The loan officer (or borrower, via a future
 // portal link) completes the full application here. Saves to leads.raw.urla as
 // structured data so the MISMO 3.4 export is complete and import-ready.
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Plus, Trash2, Save, Download } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Trash2, Save, Download, FileUp } from "lucide-react";
 
 function getAt(o: any, path: string) { return path.split(".").reduce((a, k) => (a == null ? undefined : a[k]), o); }
 function setAt(o: any, path: string, val: any) {
@@ -34,6 +34,20 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
   const [pct, setPct] = useState<number | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [bi, setBi] = useState(0);
+  const [ocr, setOcr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function autofillFromDoc(f: File) {
+    setOcr("Reading " + f.name + "…");
+    try {
+      const fd = new FormData(); fd.append("doc", f);
+      const r = await fetch(`/api/los/extract?file=${id}`, { method: "POST", body: fd });
+      const j = await r.json();
+      if (r.ok) { await load(); setOcr(`✓ Filled from ${j.docType || "document"}.`); }
+      else setOcr("⚠️ " + (j.error || "Couldn't read it."));
+    } catch { setOcr("⚠️ Upload failed."); }
+    setTimeout(() => setOcr(null), 5000);
+  }
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/los/urla?file=${id}`);
@@ -90,6 +104,16 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
             <div className="text-sm text-slate-500">Complete the application. Saves as structured data for a clean MISMO 3.4 export.</div>
           </div>
           {pct != null && <span className="text-sm font-semibold text-emerald-400 shrink-0">{pct}% complete</span>}
+        </div>
+
+        {/* AI document auto-fill */}
+        <div className="bg-gradient-to-br from-emerald-950/40 to-slate-900/40 border border-emerald-800/40 rounded-2xl p-4 mb-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm text-slate-300">📎 <span className="font-semibold text-emerald-300">AI auto-fill:</span> drop a paystub, W2, bank statement, or ID and Claude reads it into the 1003.</div>
+          <div className="flex items-center gap-3">
+            {ocr && <span className="text-xs text-slate-400">{ocr}</span>}
+            <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) autofillFromDoc(f); e.currentTarget.value = ""; }} />
+            <button onClick={() => fileRef.current?.click()} className="text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg flex items-center gap-1.5"><FileUp className="w-4 h-4" /> Upload document</button>
+          </div>
         </div>
 
         <div className="space-y-4">
