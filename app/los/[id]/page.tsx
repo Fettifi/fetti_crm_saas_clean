@@ -27,6 +27,20 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [mismo, setMismo] = useState<{ completeness: { missing: string[]; present: string[]; pct: number }; metrics: any; urla: any } | null>(null);
   const [uw, setUw] = useState<any>(null);
   const [uwLoading, setUwLoading] = useState(false);
+  const [credit, setCredit] = useState<any>(null);
+  const [creditLoading, setCreditLoading] = useState(false);
+
+  const loadCredit = useCallback(async () => {
+    try { const r = await fetch(`/api/los/credit?file=${id}`); if (r.ok) setCredit(await r.json()); } catch {}
+  }, [id]);
+  useEffect(() => { loadCredit(); }, [loadCredit]);
+
+  async function pullCredit() {
+    setCreditLoading(true);
+    try { const r = await fetch(`/api/los/credit?file=${id}`, { method: "POST" }); const j = await r.json(); setCredit((c: any) => ({ ...c, ...j, lastError: r.ok ? null : (j.error || j.note) })); if (r.ok) await load(); }
+    catch { setCredit((c: any) => ({ ...c, lastError: "Connection error." })); }
+    setCreditLoading(false);
+  }
 
   async function runUnderwrite() {
     setUwLoading(true);
@@ -209,6 +223,36 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
               <p className="text-xs text-slate-600 mt-3">The XML includes everything captured. Missing items still export as empty MISMO elements; fill them on the application to complete the file.</p>
             </>
           ) : <div className="text-slate-600 text-sm">Building 1003 view…</div>}
+        </div>
+
+        {/* Credit (Credco) */}
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Credit · Credco tri-merge</div>
+            <button onClick={pullCredit} disabled={creditLoading || !credit?.ready?.ready}
+              className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              {creditLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}{creditLoading ? "Pulling…" : "Pull credit"}
+            </button>
+          </div>
+          {credit?.credit?.scores?.length ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {credit.credit.scores.map((s: any, i: number) => (
+                <div key={i} className="bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-1.5 text-center">
+                  <div className="text-[10px] uppercase text-slate-500">{s.bureau}</div>
+                  <div className="text-lg font-bold text-emerald-300">{s.score ?? "—"}</div>
+                </div>
+              ))}
+              {credit.credit.representativeScore && <div className="text-sm text-slate-300">Representative: <span className="font-bold text-emerald-300">{credit.credit.representativeScore}</span></div>}
+              <div className="text-xs text-slate-600 w-full">Pulled {credit.credit.pulledAt ? new Date(credit.credit.pulledAt).toLocaleString() : ""}{credit.addedLiabilities ? ` · ${credit.addedLiabilities} tradelines → liabilities` : ""}</div>
+            </div>
+          ) : credit && credit.configured === false ? (
+            <div className="text-sm text-amber-300/90">Credco isn&apos;t connected yet. Add <span className="font-mono text-xs">{(credit.neededEnv || []).join(", ")}</span> to Vercel env (CERT endpoint first) and send Ramon the Credco integration guide to finalize.</div>
+          ) : credit && !credit.ready?.ready ? (
+            <div className="text-sm text-slate-400">Need before a pull: {(credit.ready?.missing || []).join(", ")}. Complete the 1003.</div>
+          ) : (
+            <div className="text-sm text-slate-500">Ready to pull. {credit?.lastError ? <span className="text-amber-300">{credit.lastError}</span> : ""}</div>
+          )}
+          {credit?.lastError && credit?.credit && <div className="text-xs text-amber-300 mt-2">{credit.lastError}</div>}
         </div>
 
         {/* AI Underwriter */}
