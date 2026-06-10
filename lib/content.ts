@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { BRAND_BRIEF, CONTENT_PERSONALITY, CEDI_PERSONA } from "@/lib/brand";
 import { CEDI_BADGE_B64 } from "@/lib/cediBadge";
 
-// Brand a generated campaign image with the Cedi mascot in the bottom-right
+// Brand a generated campaign image with the Mark mascot in the bottom-right
 // corner. Best-effort: if compositing fails, returns the original bytes.
 async function brandWithCedi(jpeg: Buffer): Promise<Buffer> {
   try {
@@ -37,7 +37,7 @@ ${CONTENT_PERSONALITY}
 
 ${CEDI_PERSONA}
 
-CRITICAL — VOICE: Write EVERY post in Cedi's first-person voice (Fetti's LA spokes-owl). Cedi is the
+CRITICAL — VOICE: Write EVERY post in Mark's first-person voice (Fetti's LA spokes-owl). Mark is the
 one talking and teaching: California-cool, confident, witty, a little swagger, warm. Use his cadence and
 sprinkle his flavor ("Hoo", "eyes open", "easy money, no stress", "sun's out money's out", "we DO money")
 without overdoing it — the value/teaching must still land. Stay fully compliant (no rate or approval promises).
@@ -101,7 +101,7 @@ export async function generateImage(): Promise<string | null> {
     const raw = d.b64_json ? Buffer.from(d.b64_json, "base64")
       : d.url ? Buffer.from(await (await fetch(d.url)).arrayBuffer()) : null;
     if (!raw) return null;
-    // Brand the campaign image with the Cedi mascot badge (bottom-right).
+    // Brand the campaign image with the Mark mascot badge (bottom-right).
     const buf = await brandWithCedi(raw);
     const path = `auto/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
     const { error } = await supabaseAdmin.storage.from("content").upload(path, buf, { contentType: "image/jpeg", upsert: false });
