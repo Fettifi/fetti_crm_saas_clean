@@ -83,6 +83,7 @@ export interface UrlaLoan {
 export interface UrlaOriginator {
   name?: string; nmls?: string; company?: string; companyNmls?: string;
   phone?: string; email?: string; stateLicense?: string;
+  companyAddress?: UrlaAddress;
 }
 
 export interface Urla {
@@ -163,9 +164,11 @@ function mapCitizenship(s?: string): string | undefined {
 export const DEFAULT_ORIGINATOR: UrlaOriginator = {
   name: "Ramon Dent",
   nmls: "2235992",
-  company: "Fetti Financial Services LLC",
+  email: "ramon@fettifi.com",
+  company: "FETTI FINANCIAL SERVICES LLC",
   companyNmls: "2267023",
-  stateLicense: "CA #60DBO-153798",
+  stateLicense: "CA#60DBO-153798",
+  companyAddress: { street: "5757 W CENTURY BLVD", city: "LOS ANGELES", state: "CA", zip: "90045", country: "US" },
 };
 
 export function assembleUrla(lead: any, loanFile?: any): Urla {
