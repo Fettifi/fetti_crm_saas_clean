@@ -24,7 +24,16 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [copied, setCopied] = useState(false);
   const [newDoc, setNewDoc] = useState("");
   const [saving, setSaving] = useState(false);
-  const [mismo, setMismo] = useState<{ completeness: { missing: string[]; present: string[]; pct: number }; urla: any } | null>(null);
+  const [mismo, setMismo] = useState<{ completeness: { missing: string[]; present: string[]; pct: number }; metrics: any; urla: any } | null>(null);
+  const [uw, setUw] = useState<any>(null);
+  const [uwLoading, setUwLoading] = useState(false);
+
+  async function runUnderwrite() {
+    setUwLoading(true);
+    try { const r = await fetch(`/api/los/underwrite?file=${id}`, { method: "POST" }); const j = await r.json(); if (r.ok) setUw(j.analysis); else setUw({ summary: "⚠️ " + (j.error || "Failed."), eligibilityRead: "Insufficient data", strengths: [], risks: [], conditions: [] }); } catch { setUw({ summary: "⚠️ Connection error.", strengths: [], risks: [], conditions: [] }); }
+    setUwLoading(false);
+  }
+  const fmtMoney = (n?: number) => n == null ? "—" : "$" + Math.round(n).toLocaleString();
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/los/files/${id}`);
@@ -158,6 +167,23 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
           </div>
           {mismo ? (
             <>
+              {mismo.metrics && (
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
+                  {[
+                    ["Income/mo", fmtMoney(mismo.metrics.monthlyIncome)],
+                    ["Loan", fmtMoney(mismo.metrics.amount)],
+                    ["Value", fmtMoney(mismo.metrics.value)],
+                    ["LTV", mismo.metrics.ltv != null ? mismo.metrics.ltv + "%" : "—"],
+                    [mismo.metrics.isInvestment ? "DSCR" : "DTI", mismo.metrics.isInvestment ? (mismo.metrics.dscr ?? "—") : (mismo.metrics.backDti != null ? mismo.metrics.backDti + "%" : "—")],
+                    ["P&I est.", fmtMoney(mismo.metrics.pi)],
+                  ].map(([k, v]) => (
+                    <div key={k as string} className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1.5 text-center">
+                      <div className="text-[10px] uppercase text-slate-500">{k}</div>
+                      <div className="text-sm font-semibold text-slate-200">{v}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex items-center gap-3 mb-3">
                 <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
                   <div className="h-full bg-emerald-500" style={{ width: `${mismo.completeness.pct}%` }} />
@@ -183,6 +209,33 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
               <p className="text-xs text-slate-600 mt-3">The XML includes everything captured. Missing items still export as empty MISMO elements; fill them on the application to complete the file.</p>
             </>
           ) : <div className="text-slate-600 text-sm">Building 1003 view…</div>}
+        </div>
+
+        {/* AI Underwriter */}
+        <div className="bg-gradient-to-br from-emerald-950/40 to-slate-900/40 border border-emerald-800/40 rounded-2xl p-5 mt-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="text-xs uppercase tracking-wide text-emerald-400">🧠 AI Underwriter</div>
+            <button onClick={runUnderwrite} disabled={uwLoading}
+              className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              {uwLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}{uwLoading ? "Reading the file…" : uw ? "Re-run" : "Run AI Underwriter"}
+            </button>
+          </div>
+          {!uw && !uwLoading && <div className="text-slate-500 text-sm">Claude reads the full 1003 + metrics and returns an underwriting read: strengths, risks, conditions, and an eligibility call. Not a credit decision.</div>}
+          {uw && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-bold px-2 py-1 rounded-full ${/strong/i.test(uw.eligibilityRead) ? "bg-emerald-500/20 text-emerald-300" : /conditions/i.test(uw.eligibilityRead) ? "bg-amber-500/20 text-amber-300" : "bg-slate-700 text-slate-300"}`}>{uw.eligibilityRead || "—"}</span>
+              </div>
+              <p className="text-sm text-slate-200 leading-relaxed">{uw.summary}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {!!(uw.strengths || []).length && <div><div className="text-xs text-emerald-400 mb-1">Strengths</div><ul className="text-sm text-slate-300 space-y-0.5">{uw.strengths.map((s: string, i: number) => <li key={i}>✓ {s}</li>)}</ul></div>}
+                {!!(uw.risks || []).length && <div><div className="text-xs text-amber-400 mb-1">Risks</div><ul className="text-sm text-amber-200/90 space-y-0.5">{uw.risks.map((s: string, i: number) => <li key={i}>• {s}</li>)}</ul></div>}
+              </div>
+              {!!(uw.conditions || []).length && <div><div className="text-xs text-sky-400 mb-1">Suggested conditions</div><ul className="text-sm text-slate-300 space-y-0.5">{uw.conditions.map((s: string, i: number) => <li key={i}>☐ {s}</li>)}</ul></div>}
+              {uw.incomeAnalysis && <div><div className="text-xs text-slate-500 mb-1">Income analysis</div><p className="text-sm text-slate-300">{uw.incomeAnalysis}</p></div>}
+              {uw.keyRatios && <div className="text-xs text-slate-500">{uw.keyRatios}</div>}
+            </div>
+          )}
         </div>
 
         {/* Activity */}

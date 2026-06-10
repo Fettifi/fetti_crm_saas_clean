@@ -33,6 +33,7 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
   const [saving, setSaving] = useState(false);
   const [pct, setPct] = useState<number | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [bi, setBi] = useState(0);
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/los/urla?file=${id}`);
@@ -92,43 +93,57 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
         </div>
 
         <div className="space-y-4">
-          <Card title="Borrower">
-            <Txt label="First name" path="borrowers.0.firstName" />
-            <Txt label="Last name" path="borrowers.0.lastName" />
-            <Txt label="SSN" path="borrowers.0.ssn" />
-            <Txt label="Date of birth" path="borrowers.0.dob" type="date" />
-            <Sel label="Citizenship" path="borrowers.0.citizenship" opts={[["", "—"], ...CITIZEN]} />
-            <Sel label="Marital status" path="borrowers.0.maritalStatus" opts={[["", "—"], "Married", "Separated", "Unmarried"]} />
-            <Txt label="Dependents" path="borrowers.0.dependentsCount" type="number" />
-            <Txt label="Email" path="borrowers.0.email" />
-            <Txt label="Cell phone" path="borrowers.0.cellPhone" />
+          {/* Borrower switcher (co-borrowers) */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {(u.borrowers || [{}]).map((bb: any, i: number) => (
+              <button key={i} onClick={() => setBi(i)}
+                className={`text-sm px-3 py-1.5 rounded-full ${bi === i ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 hover:bg-slate-700 text-slate-300"}`}>
+                {i === 0 ? "Borrower" : "Co-borrower"} {(bb.firstName || bb.lastName) ? `· ${bb.firstName || ""} ${bb.lastName || ""}`.trim() : i > 0 ? `#${i + 1}` : ""}
+              </button>
+            ))}
+            <button onClick={() => { const arr = u.borrowers || []; set("borrowers", [...arr, {}]); setBi(arr.length); }}
+              className="text-xs flex items-center gap-1 text-emerald-400 hover:text-emerald-300 px-2 py-1.5"><Plus className="w-3 h-3" /> Add co-borrower</button>
+            {bi > 0 && <button onClick={() => { set("borrowers", (u.borrowers || []).filter((_: any, idx: number) => idx !== bi)); setBi(0); }}
+              className="text-xs flex items-center gap-1 text-slate-500 hover:text-red-400 px-2 py-1.5"><Trash2 className="w-3 h-3" /> Remove</button>}
+          </div>
+
+          <Card title={bi === 0 ? "Borrower" : `Co-borrower #${bi + 1}`}>
+            <Txt label="First name" path={`borrowers.${bi}.firstName`} />
+            <Txt label="Last name" path={`borrowers.${bi}.lastName`} />
+            <Txt label="SSN" path={`borrowers.${bi}.ssn`} />
+            <Txt label="Date of birth" path={`borrowers.${bi}.dob`} type="date" />
+            <Sel label="Citizenship" path={`borrowers.${bi}.citizenship`} opts={[["", "—"], ...CITIZEN]} />
+            <Sel label="Marital status" path={`borrowers.${bi}.maritalStatus`} opts={[["", "—"], "Married", "Separated", "Unmarried"]} />
+            <Txt label="Dependents" path={`borrowers.${bi}.dependentsCount`} type="number" />
+            <Txt label="Email" path={`borrowers.${bi}.email`} />
+            <Txt label="Cell phone" path={`borrowers.${bi}.cellPhone`} />
           </Card>
 
           <Card title="Current residence">
-            <Txt label="Street" path="borrowers.0.currentAddress.street" />
-            <Txt label="City" path="borrowers.0.currentAddress.city" />
-            <Txt label="State" path="borrowers.0.currentAddress.state" />
-            <Txt label="ZIP" path="borrowers.0.currentAddress.zip" />
-            <Sel label="Own or rent" path="borrowers.0.housingStatus" opts={[["", "—"], "Own", "Rent", ["NoPrimaryHousingExpense", "No primary expense"]]} />
-            <Txt label="Monthly housing $" path="borrowers.0.monthlyHousingExpense" money />
-            <Txt label="Years at address" path="borrowers.0.yearsAtAddress" type="number" />
+            <Txt label="Street" path={`borrowers.${bi}.currentAddress.street`} />
+            <Txt label="City" path={`borrowers.${bi}.currentAddress.city`} />
+            <Txt label="State" path={`borrowers.${bi}.currentAddress.state`} />
+            <Txt label="ZIP" path={`borrowers.${bi}.currentAddress.zip`} />
+            <Sel label="Own or rent" path={`borrowers.${bi}.housingStatus`} opts={[["", "—"], "Own", "Rent", ["NoPrimaryHousingExpense", "No primary expense"]]} />
+            <Txt label="Monthly housing $" path={`borrowers.${bi}.monthlyHousingExpense`} money />
+            <Txt label="Years at address" path={`borrowers.${bi}.yearsAtAddress`} type="number" />
           </Card>
 
           <Card title="Employment">
-            <Txt label="Employer name" path="borrowers.0.employment.employerName" />
-            <Txt label="Position / title" path="borrowers.0.employment.position" />
-            <Txt label="Start date" path="borrowers.0.employment.startDate" type="date" />
-            <Txt label="Employer phone" path="borrowers.0.employment.employerPhone" />
-            <Txt label="Years in line of work" path="borrowers.0.employment.yearsInLineOfWork" type="number" />
-            <div className="flex items-end pb-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-emerald-500" checked={!!getAt(u, "borrowers.0.employment.selfEmployed")} onChange={(e) => set("borrowers.0.employment.selfEmployed", e.target.checked)} /> Self-employed</label></div>
+            <Txt label="Employer name" path={`borrowers.${bi}.employment.employerName`} />
+            <Txt label="Position / title" path={`borrowers.${bi}.employment.position`} />
+            <Txt label="Start date" path={`borrowers.${bi}.employment.startDate`} type="date" />
+            <Txt label="Employer phone" path={`borrowers.${bi}.employment.employerPhone`} />
+            <Txt label="Years in line of work" path={`borrowers.${bi}.employment.yearsInLineOfWork`} type="number" />
+            <div className="flex items-end pb-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-emerald-500" checked={!!getAt(u, `borrowers.${bi}.employment.selfEmployed`)} onChange={(e) => set(`borrowers.${bi}.employment.selfEmployed`, e.target.checked)} /> Self-employed</label></div>
           </Card>
 
           <Card title="Monthly income">
-            <Txt label="Base" path="borrowers.0.income.base" money />
-            <Txt label="Overtime" path="borrowers.0.income.overtime" money />
-            <Txt label="Bonus" path="borrowers.0.income.bonus" money />
-            <Txt label="Commission" path="borrowers.0.income.commission" money />
-            <Txt label="Other" path="borrowers.0.income.other" money />
+            <Txt label="Base" path={`borrowers.${bi}.income.base`} money />
+            <Txt label="Overtime" path={`borrowers.${bi}.income.overtime`} money />
+            <Txt label="Bonus" path={`borrowers.${bi}.income.bonus`} money />
+            <Txt label="Commission" path={`borrowers.${bi}.income.commission`} money />
+            <Txt label="Other" path={`borrowers.${bi}.income.other`} money />
           </Card>
 
           <Card title="Subject property & loan">
@@ -187,12 +202,14 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
               <button onClick={() => addItem("reo")} className="text-xs flex items-center gap-1 text-emerald-400 hover:text-emerald-300"><Plus className="w-3 h-3" /> Add</button></div>
             <div className="space-y-2">
               {(u.reo || []).map((_: any, i: number) => (
-                <div key={i} className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
-                  <Txt label="Property address" path={`reo.${i}.address`} />
+                <div key={i} className="grid grid-cols-2 sm:grid-cols-7 gap-2 items-end border-b border-slate-800/40 pb-2">
+                  <Txt label="Street" path={`reo.${i}.address.street`} />
+                  <Txt label="City" path={`reo.${i}.address.city`} />
+                  <Txt label="State" path={`reo.${i}.address.state`} />
+                  <Txt label="ZIP" path={`reo.${i}.address.zip`} />
                   <Txt label="Value $" path={`reo.${i}.presentValue`} money />
                   <Txt label="Rent $/mo" path={`reo.${i}.monthlyRentalIncome`} money />
-                  <Txt label="Mortgage $/mo" path={`reo.${i}.monthlyMortgage`} money />
-                  <button onClick={() => delItem("reo", i)} className="text-slate-500 hover:text-red-400 pb-2"><Trash2 className="w-4 h-4" /></button>
+                  <div className="flex items-end gap-1"><div className="flex-1"><Txt label="Mtg $/mo" path={`reo.${i}.monthlyMortgage`} money /></div><button onClick={() => delItem("reo", i)} className="text-slate-500 hover:text-red-400 pb-2"><Trash2 className="w-4 h-4" /></button></div>
                 </div>
               ))}
               {!(u.reo || []).length && <div className="text-slate-600 text-sm">No other properties.</div>}

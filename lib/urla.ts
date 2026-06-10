@@ -249,6 +249,35 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
   };
 }
 
+// Underwriting math derived from the application — the numbers an LO/UW lives on.
+export function computeLoanMetrics(u: Urla) {
+  const borrowerIncome = (u.borrowers || []).reduce((s, b) => {
+    const i = b.income || {};
+    const parts = (i.base || 0) + (i.overtime || 0) + (i.bonus || 0) + (i.commission || 0) + (i.other || 0);
+    return s + (parts || i.total || 0);
+  }, 0);
+  const rental = u.property?.expectedMonthlyRentalIncome || 0;
+  const monthlyIncome = borrowerIncome + rental;
+  const value = u.property?.presentValue || 0;
+  const amount = u.loan?.amount || 0;
+  const ltv = value ? (amount / value) * 100 : undefined;
+  let pi: number | undefined;
+  const rate = u.loan?.noteRatePercent, term = u.loan?.termMonths || 360;
+  if (amount && rate) { const r = rate / 100 / 12; pi = r ? (amount * r * Math.pow(1 + r, term)) / (Math.pow(1 + r, term) - 1) : amount / term; }
+  const liabilities = (u.liabilities || []).reduce((s, l) => s + (l.monthlyPayment || 0), 0);
+  const housing = pi ?? (u.borrowers?.[0]?.monthlyHousingExpense || 0);
+  const frontDti = monthlyIncome && housing ? (housing / monthlyIncome) * 100 : undefined;
+  const backDti = monthlyIncome ? ((housing + liabilities) / monthlyIncome) * 100 : undefined;
+  const isInvestment = u.property?.occupancy === "Investment";
+  const dscr = isInvestment && pi && rental ? rental / pi : undefined;
+  const round = (n?: number, d = 1) => (n === undefined ? undefined : Math.round(n * 10 ** d) / 10 ** d);
+  return {
+    monthlyIncome: round(monthlyIncome, 0), borrowerIncome: round(borrowerIncome, 0), rental: round(rental, 0),
+    value, amount, ltv: round(ltv), pi: round(pi, 0), liabilities: round(liabilities, 0),
+    frontDti: round(frontDti), backDti: round(backDti), dscr: round(dscr, 2), isInvestment,
+  };
+}
+
 // What's still required for a complete, importable 1003 / MISMO file.
 export function urlaCompleteness(u: Urla): { missing: string[]; present: string[]; pct: number } {
   const b = u.borrowers[0] || {};

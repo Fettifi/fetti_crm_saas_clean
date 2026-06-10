@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { assembleUrla, urlaCompleteness, type Urla } from "@/lib/urla";
+import { assembleUrla, urlaCompleteness, computeLoanMetrics, type Urla } from "@/lib/urla";
 import { buildMismo34 } from "@/lib/mismo";
 
 // MISMO 3.4 (ULAD / URLA) export. Auth-gated via the /api/los matcher in proxy.ts.
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     const urla = assembleUrla(lead, loanFile);
 
     if (wantReport) {
-      return NextResponse.json({ completeness: urlaCompleteness(urla), urla: maskUrla(urla) });
+      return NextResponse.json({ completeness: urlaCompleteness(urla), metrics: computeLoanMetrics(urla), urla: maskUrla(urla) });
     }
 
     const xml = buildMismo34(urla);
