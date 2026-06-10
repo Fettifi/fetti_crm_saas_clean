@@ -11,7 +11,7 @@ import { CediVoice } from "@/components/CediVoice";
 export const metadata = {
   title: "Fetti Financial Services LLC | Home, Investment & Business Lending",
   description:
-    "Fetti Financial Services LLC — a licensed mortgage brokerage (NMLS #2267023). We're not a bank; we shop dozens of lenders to fund your home, investment, or business loan fast. Pre-qualify in 2 minutes, no credit impact.",
+    "Fetti Financial Services LLC — a licensed mortgage lender & broker (NMLS #2267023). We lend directly and shop dozens of lenders to fund your home, investment, or business loan fast. Pre-qualify in 2 minutes, no credit impact.",
   alternates: { canonical: "https://fettifi.com" },
 };
 
@@ -57,7 +57,7 @@ const STATS = [
 
 // The bank-vs-broker contrast — the core differentiator vs Chase / BofA / Wells / Rocket.
 const BANK_VS = [
-  { them: "Sells you one menu — their own products", us: "Shops a wide network of lenders for your best fit" },
+  { them: "Sells you one menu — their own products", us: "Lends direct or shops a wide network — your best fit wins" },
   { them: "Works for the bank's shareholders", us: "Works for you — we win when you do" },
   { them: "Branch hours, hold music, hand-offs", us: "One specialist, your phone, California-fast" },
   { them: "Take-it-or-leave-it on rate & terms", us: "Programs matched to your exact scenario" },
@@ -79,12 +79,12 @@ const STEPS = [
 const WHY = [
   { icon: ShieldCheck, title: "Compliance in our DNA", desc: "Shaped by years in heavily-regulated industries. We do it right — every file, every time." },
   { icon: Rocket, title: "California-fast", desc: "Bridge and hard-money options close in days. Pre-qualification takes minutes." },
-  { icon: Scale, title: "We work for you", desc: "As a broker, our job is your best option — not a bank's quota." },
+  { icon: Scale, title: "We work for you", desc: "Lender and broker both — our job is your best option, not a bank's quota." },
   { icon: HeartHandshake, title: "We get you", desc: "Built by people who've been the founder and the everyday grinder. We respect what you need." },
 ];
 
 const FAQ = [
-  { q: "Are you a lender or a broker?", a: "We're a licensed mortgage brokerage (NMLS #2267023) — and that works in your favor. Instead of one bank's menu, we shop a wide network of lenders to match you with the right program. You get the options; we do the legwork." },
+  { q: "Are you a lender or a broker?", a: "Both — and that's the advantage. We're a licensed mortgage lender and broker (NMLS #2267023). When funding your loan ourselves is the fastest, cleanest path, we do it. When shopping a wide lender network gets you a better fit, we broker it. You win either way — we do the legwork." },
   { q: "Will getting started affect my credit?", a: "No. Pre-qualifying takes about two minutes with no hard credit pull. We only move forward when you're ready." },
   { q: "How fast can I close?", a: "It depends on the loan, but we move fast — bridge and hard-money options can close in days, and we keep you posted at every step. All loans are subject to credit approval and program guidelines." },
   { q: "What states do you cover?", a: "Owner-occupied home loans in Florida, Michigan, and California. Investment and business-purpose loans (DSCR, fix & flip, bridge, hard money, and business loans) are available in all 50 states." },
@@ -124,14 +124,14 @@ export default function MarketingHome() {
           </p>
           <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-xs font-medium text-emerald-700">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Licensed mortgage brokerage · NMLS #2267023
+            Licensed mortgage lender &amp; broker · NMLS #2267023
           </span>
           <h1 className="mt-7 text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.05] text-slate-900">
             The loan the banks{" "}
             <span className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent">won&apos;t shop for you.</span>
           </h1>
           <p className="mt-6 text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            We&apos;re a brokerage, not a bank — so you bring the goal and <span className="font-semibold text-slate-800">we handle the rest</span>: shopping dozens of lenders, doing the legwork, and guiding you to your best option for home, investment, and business loans. Start in two minutes. No credit impact.
+            We&apos;re a <span className="font-semibold text-slate-800">lender and a broker</span> — so you bring the goal and we handle the rest: funding it ourselves when that&apos;s fastest, or shopping dozens of lenders when that fits better. Either way, we find your best option for home, investment, and business loans. Start in two minutes. No credit impact.
           </p>
           <div className="mt-9 flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/apply/form" className="group inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">
@@ -170,7 +170,7 @@ export default function MarketingHome() {
         <div className="text-center max-w-2xl mx-auto mb-12">
           <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">The Fetti advantage</p>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">A bank shows you one option. We find your best one.</h2>
-          <p className="text-slate-500 mt-3">Big banks can only offer their own loans. As a broker, we put a whole market to work for you.</p>
+          <p className="text-slate-500 mt-3">Big banks only push their own loans. We do both — fund directly when that&apos;s fastest, and broker the whole market when that fits you better.</p>
         </div>
         <div className="grid md:grid-cols-2 gap-5 max-w-4xl mx-auto">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-7">
@@ -185,7 +185,7 @@ export default function MarketingHome() {
           </div>
           <div className="rounded-2xl border-2 border-emerald-300 bg-white p-7 shadow-lg shadow-emerald-600/5 relative">
             <span className="absolute -top-3 left-7 rounded-full bg-emerald-600 text-white text-xs font-bold px-3 py-1 shadow">Fetti</span>
-            <div className="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-4">Fetti, your broker</div>
+            <div className="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-4">Fetti — lender + broker</div>
             <ul className="space-y-3">
               {BANK_VS.map((r) => (
                 <li key={r.us} className="flex items-start gap-3 text-slate-800">
