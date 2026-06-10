@@ -18,10 +18,29 @@ export default function PricingPage() {
   const [filtered, setFiltered] = useState(0);
   const [comparing, setComparing] = useState(false);
 
+  // Wholesale lender directory
+  const [dir, setDir] = useState<any[]>([]);
+  const [lf, setLf] = useState<any>({ name: "", submissionEmail: "", portalUrl: "", aeEmail: "", loanTypes: "", states: "" });
+
   const load = useCallback(async () => {
     const r = await fetch("/api/pricing"); if (r.ok) { const j = await r.json(); setLenders(j.lenders || []); setTotal(j.total || 0); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  const loadDir = useCallback(async () => {
+    const r = await fetch("/api/pricing/lenders"); if (r.ok) { const j = await r.json(); setDir(j.lenders || []); }
+  }, []);
+  useEffect(() => { load(); loadDir(); }, [load, loadDir]);
+
+  async function saveLender() {
+    if (!lf.name.trim()) { alert("Lender name required."); return; }
+    const lender = { id: lf.id, name: lf.name.trim(), submissionEmail: lf.submissionEmail.trim() || undefined, portalUrl: lf.portalUrl.trim() || undefined, aeEmail: lf.aeEmail.trim() || undefined,
+      loanTypes: lf.loanTypes ? lf.loanTypes.split(",").map((s: string) => s.trim()).filter(Boolean) : undefined,
+      states: lf.states ? lf.states.split(",").map((s: string) => s.trim().toUpperCase()).filter(Boolean) : undefined };
+    await fetch("/api/pricing/lenders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lender }) });
+    setLf({ name: "", submissionEmail: "", portalUrl: "", aeEmail: "", loanTypes: "", states: "" });
+    await loadDir();
+  }
+  async function delLender(id: string, name: string) { if (!confirm(`Remove ${name}?`)) return; await fetch(`/api/pricing/lenders?id=${id}`, { method: "DELETE" }); await loadDir(); }
+  function editLender(l: any) { setLf({ id: l.id, name: l.name, submissionEmail: l.submissionEmail || "", portalUrl: l.portalUrl || "", aeEmail: l.aeEmail || "", loanTypes: (l.loanTypes || []).join(", "), states: (l.states || []).join(", ") }); window.scrollTo({ top: 0, behavior: "smooth" }); }
 
   async function ingest(f: File) {
     if (!lenderName.trim()) { alert("Enter the lender name first."); return; }
@@ -87,6 +106,36 @@ export default function PricingPage() {
                 ))}
               </div>
             ) : <div className="text-slate-600 text-sm">No rate sheets yet. Add one to start comparing.</div>}
+          </div>
+        </div>
+
+        {/* Wholesale lender directory */}
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4">
+          <div className="text-xs uppercase tracking-wide text-emerald-400 mb-3">My wholesale lenders ({dir.length}) — these show up everywhere you price &amp; submit</div>
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 items-end mb-3">
+            <div><label className="text-xs text-slate-400 block mb-1">{lf.id ? "Editing" : "Lender name"}</label><input value={lf.name} onChange={(e) => setLf({ ...lf, name: e.target.value })} className={`${inp} w-full`} placeholder="TheLender" /></div>
+            <div><label className="text-xs text-slate-400 block mb-1">Submission email</label><input value={lf.submissionEmail} onChange={(e) => setLf({ ...lf, submissionEmail: e.target.value })} className={`${inp} w-full`} placeholder="submit@lender.com" /></div>
+            <div><label className="text-xs text-slate-400 block mb-1">Portal URL</label><input value={lf.portalUrl} onChange={(e) => setLf({ ...lf, portalUrl: e.target.value })} className={`${inp} w-full`} placeholder="https://tpo…" /></div>
+            <div><label className="text-xs text-slate-400 block mb-1">AE email</label><input value={lf.aeEmail} onChange={(e) => setLf({ ...lf, aeEmail: e.target.value })} className={`${inp} w-full`} /></div>
+            <div><label className="text-xs text-slate-400 block mb-1">Loan types</label><input value={lf.loanTypes} onChange={(e) => setLf({ ...lf, loanTypes: e.target.value })} className={`${inp} w-full`} placeholder="DSCR, Conventional" /></div>
+            <div className="flex gap-1"><div className="flex-1"><label className="text-xs text-slate-400 block mb-1">States</label><input value={lf.states} onChange={(e) => setLf({ ...lf, states: e.target.value })} className={`${inp} w-full`} placeholder="CA, FL" /></div></div>
+          </div>
+          <button onClick={saveLender} className="text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg">{lf.id ? "Save lender" : "Add lender"}</button>
+          <div className="mt-3 space-y-1.5">
+            {dir.map((l) => (
+              <div key={l.id} className="flex items-center justify-between border-b border-slate-800/50 pb-1.5 text-sm">
+                <div className="min-w-0">
+                  <span className="font-medium">{l.name}</span>
+                  <span className="text-xs text-slate-500"> · {l.submissionEmail || "no submit email"}{l.loanTypes?.length ? ` · ${l.loanTypes.join("/")}` : ""}{l.states?.length ? ` · ${l.states.join(",")}` : " · all states"}</span>
+                  {l.portalUrl && <a href={l.portalUrl} target="_blank" rel="noreferrer" className="text-xs text-emerald-400 hover:underline ml-2">portal ↗</a>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => editLender(l)} className="text-xs text-slate-400 hover:text-white">edit</button>
+                  <button onClick={() => delLender(l.id, l.name)} className="text-slate-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              </div>
+            ))}
+            {!dir.length && <div className="text-slate-600 text-sm">Add the wholesale lenders you're approved with. They'll appear on every loan file's "Submit to lender" panel.</div>}
           </div>
         </div>
 

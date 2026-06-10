@@ -29,6 +29,21 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [uwLoading, setUwLoading] = useState(false);
   const [credit, setCredit] = useState<any>(null);
   const [creditLoading, setCreditLoading] = useState(false);
+  const [dirLenders, setDirLenders] = useState<any[]>([]);
+  const [submitState, setSubmitState] = useState<{ id?: string; msg?: string; ok?: boolean }>({});
+
+  useEffect(() => { (async () => { try { const r = await fetch("/api/pricing/lenders"); if (r.ok) { const j = await r.json(); setDirLenders((j.lenders || []).filter((l: any) => l.active !== false)); } } catch {} })(); }, []);
+
+  async function submitToLender(l: any) {
+    if (!confirm(`Send this file to ${l.name}${l.submissionEmail ? ` (${l.submissionEmail})` : ""}? This emails the MISMO 3.4 file.`)) return;
+    setSubmitState({ id: l.id, msg: "Sending…" });
+    try {
+      const r = await fetch(`/api/los/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: id, lenderId: l.id }) });
+      const j = await r.json();
+      if (r.ok) { setSubmitState({ id: l.id, ok: true, msg: `✓ Sent to ${j.to}` }); await load(); }
+      else setSubmitState({ id: l.id, ok: false, msg: "⚠️ " + (j.error || "Failed") });
+    } catch { setSubmitState({ id: l.id, ok: false, msg: "⚠️ Connection error" }); }
+  }
 
   const loadCredit = useCallback(async () => {
     try { const r = await fetch(`/api/los/credit?file=${id}`); if (r.ok) setCredit(await r.json()); } catch {}
@@ -223,6 +238,33 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
               <p className="text-xs text-slate-600 mt-3">The XML includes everything captured. Missing items still export as empty MISMO elements; fill them on the application to complete the file.</p>
             </>
           ) : <div className="text-slate-600 text-sm">Building 1003 view…</div>}
+        </div>
+
+        {/* Submit to a wholesale lender */}
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Submit to a wholesale lender</div>
+            <Link href="/pricing" className="text-xs text-emerald-400 hover:underline">Manage lenders →</Link>
+          </div>
+          {dirLenders.length ? (
+            <div className="space-y-1.5">
+              {dirLenders.map((l) => (
+                <div key={l.id} className="flex items-center justify-between gap-2 border-b border-slate-800/50 pb-1.5">
+                  <div className="min-w-0">
+                    <span className="font-medium">{l.name}</span>
+                    <span className="text-xs text-slate-500"> · {l.submissionEmail || "no submit email"}{l.loanTypes?.length ? ` · ${l.loanTypes.join("/")}` : ""}</span>
+                    {submitState.id === l.id && <span className={`text-xs ml-2 ${submitState.ok ? "text-emerald-400" : submitState.ok === false ? "text-amber-300" : "text-slate-400"}`}>{submitState.msg}</span>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {l.portalUrl && <a href={l.portalUrl} target="_blank" rel="noreferrer" className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">Portal ↗</a>}
+                    <button onClick={() => submitToLender(l)} disabled={submitState.id === l.id && submitState.msg === "Sending…"} className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50">Send file</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-slate-500">No lenders yet. <Link href="/pricing" className="text-emerald-400 hover:underline">Add your wholesale lenders →</Link></div>
+          )}
         </div>
 
         {/* Credit (Credco) */}
