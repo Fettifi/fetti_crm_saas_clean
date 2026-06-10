@@ -6,6 +6,7 @@ import { logActivity } from "@/lib/logger";
 
 // Nav items matching the specialized screenshot
 const navItems = [
+  { href: "/rupee", label: "Rupee (AI Co-Founder)", icon: "🦉" },
   { href: "/command", label: "Command Center", icon: "⚡" },
   { href: "/", label: "Dashboard", icon: "📊" },
   { href: "/leads", label: "Leads", icon: "📋" },
