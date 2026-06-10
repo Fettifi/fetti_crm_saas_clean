@@ -131,7 +131,7 @@ export default function MarketingHome() {
             <span className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent">won&apos;t shop for you.</span>
           </h1>
           <p className="mt-6 text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            We&apos;re a brokerage, not a bank — so we shop dozens of lenders to find <span className="font-semibold text-slate-800">your</span> best option for home, investment, and business loans. Pre-qualify in two minutes. No credit impact.
+            We&apos;re a brokerage, not a bank — so you bring the goal and <span className="font-semibold text-slate-800">we handle the rest</span>: shopping dozens of lenders, doing the legwork, and guiding you to your best option for home, investment, and business loans. Start in two minutes. No credit impact.
           </p>
           <div className="mt-9 flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/apply/form" className="group inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">
@@ -285,7 +285,7 @@ export default function MarketingHome() {
           <div className="text-center max-w-2xl mx-auto mb-14">
             <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-4">How it works</p>
             <CediBubble center className="mb-5">Three steps and you&apos;re funded. Eyes open — I&apos;ll guide you, all day. 🌴</CediBubble>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">From inquiry to funded — fast</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">We take you from hello to funded</h2>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
             {STEPS.map((s) => (
@@ -312,8 +312,8 @@ export default function MarketingHome() {
             <CediBubble className="mb-5">I don&apos;t miss. Here&apos;s why folks roll with Fetti — straight from me. 🦉</CediBubble>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-slate-900">A brokerage that moves like a fintech, advises like a partner.</h2>
             <p className="text-slate-500 mt-4 leading-relaxed">
-              Institutional-grade programs, operator-grade discipline, and a team that actually picks up the phone —
-              so you get the right loan, structured well, and closed fast.
+              Institutional-grade programs, operator-grade discipline, and a team that actually picks up the phone.
+              We carry the load — shopping, structuring, and guiding — so you get the right loan, closed fast, without the stress.
             </p>
             <Link href="/apply/form" className="mt-7 inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-7 py-3.5 rounded-full transition shadow-lg shadow-emerald-600/25">
               Start my application <ArrowRight className="w-4 h-4" />
@@ -359,7 +359,7 @@ export default function MarketingHome() {
         </div>
         <div className="max-w-3xl mx-auto px-6 py-24 text-center">
           <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900">Ready to get funded?</h2>
-          <p className="text-slate-600 mt-4 text-lg">Two minutes to pre-qualify. A specialist reaches out fast — no pressure, no credit impact to start.</p>
+          <p className="text-slate-600 mt-4 text-lg">You start; we take it from there. A specialist reaches out fast and handles the rest — no pressure, no credit impact to start.</p>
           <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/apply/form" className="inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-10 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">
               Get pre-qualified <ArrowRight className="w-5 h-5" />
