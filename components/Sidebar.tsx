@@ -15,6 +15,7 @@ const navItems = [
   { href: "/content", label: "Content Studio", icon: "🎬" },
   { href: "/doctor", label: "CRM Doctor", icon: "🩺" },
   { href: "/los", label: "Loan Files (LOS)", icon: "📁" },
+  { href: "/pricing", label: "Pricing Comparison", icon: "💲" },
   { href: "/preapprovals", label: "Pre-Approvals", icon: "📝" },
   { href: "/pipeline", label: "Pipeline", icon: "📈" },
   { href: "/partners", label: "Referral Partners", icon: "🤝" },
