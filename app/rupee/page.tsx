@@ -26,6 +26,8 @@ export default function RupeePage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const ttsQueueRef = useRef<string[]>([]);
+  const playingRef = useRef(false);
 
   // restore / persist the thread
   useEffect(() => {
@@ -42,22 +44,49 @@ export default function RupeePage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  async function speak(text: string) {
-    if (!voiceOn || !text) return;
+  const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}️‍]/gu;
+
+  // Stop any speech in progress and clear the queue (barge-in).
+  function stopSpeech() {
+    ttsQueueRef.current = [];
+    playingRef.current = false;
+    if (audioRef.current) { try { audioRef.current.pause(); } catch {} audioRef.current = null; }
+  }
+
+  // Play queued speech chunks one after another, fetching each as it's needed.
+  async function playQueue() {
+    if (playingRef.current) return;
+    const next = ttsQueueRef.current.shift();
+    if (!next) return;
+    playingRef.current = true;
     try {
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.slice(0, 800), voiceId: RUPEE_VOICE }),
+        body: JSON.stringify({ text: next.slice(0, 800), voiceId: RUPEE_VOICE }),
       });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      if (audioRef.current) { audioRef.current.pause(); }
-      const a = new Audio(url);
-      audioRef.current = a;
-      a.play().catch(() => {});
+      if (res.ok) {
+        const blob = await res.blob();
+        const a = new Audio(URL.createObjectURL(blob));
+        audioRef.current = a;
+        const advance = () => { playingRef.current = false; playQueue(); };
+        a.onended = advance;
+        a.onerror = advance;
+        a.play().catch(advance);
+        return;
+      }
     } catch {}
+    playingRef.current = false;
+    playQueue();
+  }
+
+  // Queue a chunk of text to be spoken (emojis/markdown stripped for the ear).
+  function enqueueSpeech(text: string) {
+    if (!voiceOn) return;
+    const clean = text.replace(/[*_`#>~]/g, "").replace(EMOJI, "").replace(/\s+/g, " ").trim();
+    if (!clean) return;
+    ttsQueueRef.current.push(clean);
+    if (!playingRef.current) playQueue();
   }
 
   async function send(text: string) {
@@ -68,6 +97,7 @@ export default function RupeePage() {
     setMessages(history);
     setBusy(true);
     setStatus("Thinking…");
+    stopSpeech();
 
     try {
       const res = await fetch("/api/chat", {
@@ -83,6 +113,19 @@ export default function RupeePage() {
       let finalText = "";
       let streamed = "";
       let draftStarted = false;
+      let spokenCursor = 0;
+
+      // Speak complete sentences as they finish streaming; on the final flush,
+      // speak whatever's left even without terminal punctuation.
+      const flushSentences = (final: boolean) => {
+        const pending = streamed.slice(spokenCursor);
+        if (!pending) return;
+        if (final) { enqueueSpeech(pending); spokenCursor += pending.length; return; }
+        const m = pending.match(/^[\s\S]*[.!?…](?=\s)/);
+        if (!m) return;
+        enqueueSpeech(m[0]);
+        spokenCursor += m[0].length;
+      };
 
       const handle = (evt: any) => {
         if (evt.type === "token") {
@@ -95,6 +138,7 @@ export default function RupeePage() {
           } else {
             setMessages((m) => { const c = m.slice(); c[c.length - 1] = { role: "assistant", content: streamed }; return c; });
           }
+          flushSentences(false);
         } else if (evt.type === "status") {
           if (!draftStarted) setStatus(evt.message || "Working…");
         } else if (evt.type === "result") {
@@ -126,7 +170,8 @@ export default function RupeePage() {
         else c.push({ role: "assistant", content: reply });
         return c;
       });
-      speak(reply);
+      if (draftStarted) flushSentences(true);
+      else enqueueSpeech(reply);
     } catch (e: any) {
       setMessages((m) => [...m, { role: "assistant", content: "⚠️ " + (e?.message || "Connection error.") }]);
     } finally {
@@ -142,6 +187,7 @@ export default function RupeePage() {
       return;
     }
     try {
+      stopSpeech(); // barge-in: hush her the moment you start talking
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const rec = new MediaRecorder(stream);
       recRef.current = rec;
@@ -187,7 +233,7 @@ export default function RupeePage() {
             <div className="font-bold leading-tight">Rupee</div>
             <div className="text-xs text-slate-500 truncate">{status || "Your AI co-founder · strategist · oracle"}</div>
           </div>
-          <button onClick={() => setVoiceOn((v) => !v)} title="Toggle voice"
+          <button onClick={() => setVoiceOn((v) => { if (v) stopSpeech(); return !v; })} title="Toggle voice"
             className={`rounded-full px-3 py-1.5 text-sm font-semibold border transition ${voiceOn ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-300"}`}>
             {voiceOn ? "🔊 Voice" : "🔈 Muted"}
           </button>
