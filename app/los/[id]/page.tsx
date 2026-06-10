@@ -31,6 +31,21 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [creditLoading, setCreditLoading] = useState(false);
   const [dirLenders, setDirLenders] = useState<any[]>([]);
   const [submitState, setSubmitState] = useState<{ id?: string; msg?: string; ok?: boolean }>({});
+  const [priceRows, setPriceRows] = useState<any[] | null>(null);
+  const [pricing, setPricing] = useState(false);
+
+  async function priceLoan() {
+    setPricing(true);
+    const u = mismo?.urla || {};
+    const scenario = {
+      loanAmount: u.loan?.amount, propertyValue: u.property?.presentValue,
+      fico: credit?.credit?.representativeScore || undefined,
+      occupancy: u.property?.occupancy, purpose: u.loan?.purpose, loanType: u.loan?.loanType,
+      state: u.property?.address?.state,
+    };
+    try { const r = await fetch("/api/pricing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "compare", scenario }) }); const j = await r.json(); setPriceRows(j.results || []); } catch { setPriceRows([]); }
+    setPricing(false);
+  }
 
   useEffect(() => { (async () => { try { const r = await fetch("/api/pricing/lenders"); if (r.ok) { const j = await r.json(); setDirLenders((j.lenders || []).filter((l: any) => l.active !== false)); } } catch {} })(); }, []);
 
@@ -238,6 +253,39 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
               <p className="text-xs text-slate-600 mt-3">The XML includes everything captured. Missing items still export as empty MISMO elements; fill them on the application to complete the file.</p>
             </>
           ) : <div className="text-slate-600 text-sm">Building 1003 view…</div>}
+        </div>
+
+        {/* Price across lenders */}
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Price this loan across lenders</div>
+            <button onClick={priceLoan} disabled={pricing} className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              {pricing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}{pricing ? "Pricing…" : "Price across lenders"}
+            </button>
+          </div>
+          {priceRows === null ? (
+            <div className="text-sm text-slate-500">Uses this file&apos;s loan amount, value, FICO, occupancy, purpose &amp; state against your uploaded rate sheets. <Link href="/pricing" className="text-emerald-400 hover:underline">Manage rate sheets →</Link></div>
+          ) : priceRows.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-slate-500 text-left"><tr><th className="py-1">#</th><th>Lender</th><th>Product</th><th>Rate</th><th>Price</th><th>P&amp;I</th></tr></thead>
+                <tbody>
+                  {priceRows.map((r, i) => (
+                    <tr key={r.id} className={`border-t border-slate-800/50 ${i === 0 ? "bg-emerald-500/10" : ""}`}>
+                      <td className="py-2 text-slate-500">{i + 1}</td>
+                      <td className="font-medium">{r.lenderName}</td>
+                      <td className="text-slate-300">{r.productName}{r.loanType ? ` · ${r.loanType}` : ""}</td>
+                      <td className="font-bold text-emerald-300">{r.noteRate != null ? r.noteRate.toFixed(3) + "%" : "—"}</td>
+                      <td className="text-slate-300">{r.pricePercent != null ? r.pricePercent.toFixed(3) : "—"}</td>
+                      <td className="text-slate-300">{r.monthlyPI != null ? "$" + Math.round(r.monthlyPI).toLocaleString() : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-sm text-slate-500">No eligible products. Add rate sheets on the <Link href="/pricing" className="text-emerald-400 hover:underline">Pricing page</Link>, or loosen the 1003.</div>
+          )}
         </div>
 
         {/* Submit to a wholesale lender */}
