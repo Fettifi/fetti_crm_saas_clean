@@ -165,11 +165,16 @@ export async function POST(req: NextRequest) {
     //   3. Alert the team (with the draft + what was auto-sent)
     //   4. Qualify agent pre-screens
     // Log the intake either way so the enterprise brain sees all activity.
+    // Capture consent metadata (TCPA/CAN-SPAM proof) when the form supplies it.
+    const consent = (body as any).consent === true
+      ? { consented: true, consent_at: (body as any).consent_at || new Date().toISOString(), consent_text: (body as any).consent_text || null }
+      : null;
+
     after(async () => {
       await logActivity({
         entity_type: "lead", entity_id: data.id, lead_id: data.id, actor: "system",
         action: deduped ? "lead.updated" : "lead.created",
-        detail: { source: row.source, tier, score, product: body.loan_purpose },
+        detail: { source: row.source, tier, score, product: body.loan_purpose, ...(consent ? { consent } : {}) },
       });
     });
 
@@ -230,6 +235,18 @@ export async function POST(req: NextRequest) {
             await logActivity({ entity_type: "agent", entity_id: newLead.id, lead_id: newLead.id, actor: `agent:${stage}`, action: "agent.ran", detail: { stage, summary: r.summary } });
           } catch (e) { console.warn(`[/api/apply] ${stage} agent failed:`, e); }
         }
+      });
+    } else {
+      // A KNOWN lead came back — strong intent. Alert the team so it gets worked
+      // (we intentionally do NOT auto-text again, to avoid duplicate messages).
+      after(async () => {
+        try {
+          await notifyNewLead({
+            lead_id: data.id, full_name, email, phone,
+            state: body.state, loan_purpose: body.loan_purpose, score, tier,
+            source: row.source as string, returning: true, auto_sent: [],
+          });
+        } catch (e) { console.warn("[/api/apply] returning-lead alert failed:", e); }
       });
     }
 

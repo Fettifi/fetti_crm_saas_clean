@@ -57,6 +57,9 @@ export default function QuotePage() {
           referrer: q.get("ref") || undefined,
           notes: `Instant-quote: est. ${fmt(estimate!.amount)} @ ${(estimate!.ltv * 100).toFixed(0)}% LTV`,
           hp: String(fd.get("company") || ""),
+          consent: true,
+          consent_at: new Date().toISOString(),
+          consent_text: "By submitting, borrower agreed Fetti Financial Services may contact by phone, email & text (SMS), including automated. Consent not required to buy. STOP to opt out.",
         }),
       });
       const j = await res.json();
