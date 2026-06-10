@@ -1,7 +1,7 @@
 "use client";
 
 // Instant-quote lead magnet. Visitor gets a real-time estimate, then enters
-// contact info to "unlock full results" — which captures them as a scored lead
+// contact info to "unlock full results". Which captures them as a scored lead
 // in the CRM (source: instant_quote), carrying any ?ref referral code.
 import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
@@ -75,7 +75,7 @@ export default function QuotePage() {
           <p className="text-emerald-600 font-mono text-sm">Lender &amp; broker · Fetti Financial Services</p>
           <h1 className="text-3xl font-bold mt-1">What can you qualify for?</h1>
           <p className="text-slate-500 mt-2">Instant estimate. No credit pull.</p>
-          <CediBubble center size={52} className="mt-5">Run the numbers — I&apos;ll show you what we can do. Easy, no stress. 😎</CediBubble>
+          <CediBubble center size={52} className="mt-5">Run the numbers. I&apos;ll show you what we can do. Easy, no stress. 😎</CediBubble>
         </div>
 
         {!estimate && (
@@ -117,7 +117,7 @@ export default function QuotePage() {
                 {submitting ? "Submitting…" : "Unlock my full quote →"}
               </button>
               <p className="text-xs text-slate-400 text-center">
-                Estimate only — not a commitment to lend. By submitting, you agree Fetti Financial
+                Estimate only. Not a commitment to lend. By submitting, you agree Fetti Financial
                 Services LLC may contact you by phone, email &amp; text (SMS), including automated, at the
                 number provided. Consent isn&apos;t required to buy. Msg &amp; data rates may apply; reply STOP to opt out.
               </p>

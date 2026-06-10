@@ -1,15 +1,15 @@
 "use client";
 
 // Conversational application wizard. Two arcs:
-//   1) QUALIFY — a few intuitive, branching questions route to the right product
+//   1) QUALIFY. A few intuitive, branching questions route to the right product
 //      from Fetti's full catalog, then we capture contact and CREATE the lead
 //      immediately (speed-to-lead is preserved even if they stop here).
-//   2) APPLICATION (1003) — framed as "lock in your pre-approval," we quietly
+//   2) APPLICATION (1003). Framed as "lock in your pre-approval," we quietly
 //      collect the rest of a complete Uniform Residential Loan Application
 //      (URLA / Form 1003): borrower, residence, employment & income, assets,
 //      declarations, property. Each answer UPDATES the same lead (dedup-merge).
 // Occupancy is authoritative: if the borrower won't live there, it's an
-// investment loan — that drives product selection AND licensing (investment /
+// investment loan. That drives product selection AND licensing (investment /
 // business loans are available in all 50 states; owner-occupied only FL/MI/CA).
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -29,9 +29,9 @@ type Answers = Record<string, string>;
 const STATES = ["CA", "FL", "MI", "TX", "AZ", "GA", "NV", "OH", "WA", "CO", "Other"];
 const CREDIT: Opt[] = [
   { value: "760", label: "Excellent (740+)" },
-  { value: "720", label: "Good (700–739)" },
-  { value: "680", label: "Fair (660–699)" },
-  { value: "640", label: "Building (620–659)" },
+  { value: "720", label: "Good (700-739)" },
+  { value: "680", label: "Fair (660-699)" },
+  { value: "640", label: "Building (620-659)" },
   { value: "600", label: "Below 620" },
   { value: "0", label: "Not sure" },
 ];
@@ -56,19 +56,19 @@ const GOAL: Q = {
 const FLOWS: Record<string, Q[]> = {
   buy: [
     { id: "occupancy", kind: "select", prompt: "Will you live there?", sub: "This is the single biggest factor in your options.", options: [
-      { value: "Owner", label: "Yes — my primary home", emoji: "🏠" },
+      { value: "Owner", label: "Yes. My primary home", emoji: "🏠" },
       { value: "Second Home", label: "It's a second / vacation home", emoji: "🌴" },
-      { value: "Investor", label: "No — it's an investment", emoji: "📈", hint: "Rental income property" },
+      { value: "Investor", label: "No. It's an investment", emoji: "📈", hint: "Rental income property" },
     ] },
     { id: "military", kind: "select", prompt: "Are you a veteran or active military?", sub: "You may qualify for a $0-down VA loan.", options: [
       { value: "yes", label: "Yes", emoji: "🎖️" }, { value: "no", label: "No", emoji: "🙂" },
     ] },
     { id: "firsttime", kind: "select", prompt: "Is this your first home purchase?", options: [
-      { value: "yes", label: "Yes — first time", emoji: "✨" }, { value: "no", label: "I've owned before", emoji: "🔑" },
+      { value: "yes", label: "Yes. First time", emoji: "✨" }, { value: "no", label: "I've owned before", emoji: "🔑" },
     ] },
     { id: "down", kind: "select", prompt: "How much can you put down?", sub: "Little saved? You may qualify for down payment assistance.", options: [
       { value: "lt3", label: "Little to none", hint: "FHA/VA/USDA + down payment assistance" },
-      { value: "3to10", label: "3–10%", hint: "Assistance programs may help" }, { value: "10to20", label: "10–20%" }, { value: "20p", label: "20%+" },
+      { value: "3to10", label: "3-10%", hint: "Assistance programs may help" }, { value: "10to20", label: "10-20%" }, { value: "20p", label: "20%+" },
     ] },
     { id: "property_value", kind: "number", prompt: "About what price range?", sub: "A rough number is fine.", placeholder: "Home price ($)" },
   ],
@@ -96,7 +96,7 @@ const FLOWS: Record<string, Q[]> = {
       { value: "ltr", label: "Long-term rental", emoji: "🏘️" }, { value: "str", label: "Short-term / Airbnb", emoji: "🏖️" }, { value: "none", label: "Not rented yet", emoji: "🤷" },
     ] },
     { id: "prop_type", kind: "select", prompt: "What type of property?", options: [
-      { value: "SFR", label: "Single-family" }, { value: "2-4 Unit", label: "2–4 units" }, { value: "Multifamily", label: "5+ units" }, { value: "Condo", label: "Condo / townhome" },
+      { value: "SFR", label: "Single-family" }, { value: "2-4 Unit", label: "2-4 units" }, { value: "Multifamily", label: "5+ units" }, { value: "Condo", label: "Condo / townhome" },
     ] },
     { id: "property_value", kind: "number", prompt: "Roughly what's the purchase price or value?", placeholder: "Price / value ($)" },
   ],
@@ -106,7 +106,7 @@ const FLOWS: Record<string, Q[]> = {
       { value: "Construction", label: "Ground-up build", emoji: "🏗️" }, { value: "Bridge", label: "Bridge / buy-before-sell", emoji: "🌉" },
     ] },
     { id: "experience", kind: "select", prompt: "How many projects have you done?", options: [
-      { value: "0", label: "This is my first", emoji: "🌱" }, { value: "1-4", label: "A few (1–4)", emoji: "👍" }, { value: "5+", label: "I'm seasoned (5+)", emoji: "🚀" },
+      { value: "0", label: "This is my first", emoji: "🌱" }, { value: "1-4", label: "A few (1-4)", emoji: "👍" }, { value: "5+", label: "I'm seasoned (5+)", emoji: "🚀" },
     ] },
     { id: "property_value", kind: "number", prompt: "Purchase price of the property?", placeholder: "Purchase price ($)" },
     { id: "loan_amount_requested", kind: "number", prompt: "Estimated rehab / build budget?", sub: "Ballpark is fine.", placeholder: "Rehab budget ($)" },
@@ -139,22 +139,22 @@ const FLOWS: Record<string, Q[]> = {
 };
 
 const CONSUMER_GOALS = ["buy", "refi", "equity", "reverse"];
-const CREDIT_Q: Q = { id: "credit", kind: "select", prompt: "Roughly, how's your credit?", sub: "An estimate is fine — no credit pull to get started.", options: CREDIT };
+const CREDIT_Q: Q = { id: "credit", kind: "select", prompt: "Roughly, how's your credit?", sub: "An estimate is fine. No credit pull to get started.", options: CREDIT };
 
 // ---- Objection handling -----------------------------------------------------
 // When a borrower picks an answer that often makes people feel disqualified, we
-// don't let them stall — we coach them with an alternative strategy and keep them
+// don't let them stall. We coach them with an alternative strategy and keep them
 // moving. These defaults are the floor; the Application Coach LEARNS better copy
 // per obstacle from real drop-off and overrides them via config.rebuttals.
 const DEFAULT_REBUTTALS: Record<string, string> = {
-  low_credit: "Credit under 620 is very workable — FHA goes to 580 and we have flexible programs. Plenty of clients raise their score fast once we show them how. Let's keep going and I'll find real options for you. 💪",
-  building_credit: "Scores in the 620s open up plenty of programs — this won't hold you back. Let's keep going.",
-  low_down: "Little to put down? No problem — FHA needs just 3.5%, VA/USDA can be $0, and you may qualify for down payment assistance. Let's find what fits. 🙌",
-  self_employed: "Self-employed? We have bank-statement and P&L programs — no tax returns required. You're in great company here.",
-  past_bk_fc: "A past bankruptcy or foreclosure doesn't disqualify you — there are seasoning windows and non-QM paths. Let's map your timeline together.",
+  low_credit: "Credit under 620 is very workable. FHA goes to 580 and we have flexible programs. Plenty of clients raise their score fast once we show them how. Let's keep going and I'll find real options for you. 💪",
+  building_credit: "Scores in the 620s open up plenty of programs. This won't hold you back. Let's keep going.",
+  low_down: "Little to put down? No problem. FHA needs just 3.5%, VA/USDA can be $0, and you may qualify for down payment assistance. Let's find what fits. 🙌",
+  self_employed: "Self-employed? We have bank-statement and P&L programs. No tax returns required. You're in great company here.",
+  past_bk_fc: "A past bankruptcy or foreclosure doesn't disqualify you. There are seasoning windows and non-QM paths. Let's map your timeline together.",
   first_flip: "First project? We fund first-time investors with the right deal and a solid plan. Let's structure it together. 🚀",
-  not_62: "Not 62 yet? A HELOC or cash-out refinance can unlock your equity now — let's look at those instead.",
-  high_balance: "Owe a lot relative to the value? There are still options — and improving your equity is a strategy we can plan toward. Let's keep going.",
+  not_62: "Not 62 yet? A HELOC or cash-out refinance can unlock your equity now. Let's look at those instead.",
+  high_balance: "Owe a lot relative to the value? There are still options. And improving your equity is a strategy we can plan toward. Let's keep going.",
 };
 
 // Returns an obstacle key if this answer is a known friction point, else null.
@@ -191,7 +191,7 @@ function isInvestment(a: Answers): boolean {
   return o === "Investor" || o === "Investment/Commercial";
 }
 // Consumer (owner-occupied) loans are licensed FL/MI/CA only. Anything the
-// borrower won't live in is investment/business — available in all 50 states.
+// borrower won't live in is investment/business. Available in all 50 states.
 function isConsumer(a: Answers): boolean {
   return CONSUMER_GOALS.includes(a.goal) && !isInvestment(a);
 }
@@ -242,12 +242,12 @@ function product(a: Answers): string {
 function appSteps(a: Answers): Q[] {
   const purchase = a.goal === "buy" || a.invest_action === "purchase" || a.goal === "flip";
   const consumer = isConsumer(a);
-  // DSCR loans qualify on the PROPERTY's rental income, not the borrower's — so
+  // DSCR loans qualify on the PROPERTY's rental income, not the borrower's. So
   // we never ask for personal employment/income. We ask projected rent instead.
   const dscr = product(a).toLowerCase().includes("dscr");
   const steps: Q[] = [];
   // Borrower (URLA §1)
-  steps.push({ id: "dob", kind: "date", prompt: "Quick one — when's your birthday? 🎂", sub: "We use it to match you to the best programs.", optional: true });
+  steps.push({ id: "dob", kind: "date", prompt: "Quick one. When's your birthday? 🎂", sub: "We use it to match you to the best programs.", optional: true });
   steps.push({ id: "citizenship", kind: "select", prompt: "Citizenship status?", options: [
     { value: "US Citizen", label: "U.S. citizen", emoji: "🇺🇸" },
     { value: "Permanent Resident", label: "Permanent resident (green card)" },
@@ -263,13 +263,13 @@ function appSteps(a: Answers): Q[] {
   steps.push({ id: "own_or_rent", kind: "select", prompt: "Right now, do you own or rent?", options: [
     { value: "Own", label: "I own", emoji: "🏠" }, { value: "Rent", label: "I rent", emoji: "🔑" }, { value: "Rent-free", label: "Neither / live rent-free" },
   ] });
-  steps.push({ id: "housing_payment", kind: "number", prompt: "What's your current monthly housing payment?", sub: "Rent or mortgage — a round number is fine.", placeholder: "Monthly housing ($)", optional: true });
+  steps.push({ id: "housing_payment", kind: "number", prompt: "What's your current monthly housing payment?", sub: "Rent or mortgage. A round number is fine.", placeholder: "Monthly housing ($)", optional: true });
   steps.push({ id: "years_at_address", kind: "select", prompt: "How long at your current place?", options: [
     { value: "<2", label: "Less than 2 years" }, { value: "2+", label: "2+ years" },
   ] });
   if (dscr) {
     // DSCR = no personal-income docs. Qualify on the property's cash flow.
-    steps.push({ id: "rent_income", kind: "number", prompt: "What's the expected monthly rent?", sub: "This is what qualifies a DSCR loan — no pay stubs or tax returns needed. A market estimate is fine.", placeholder: "Monthly rent ($)", optional: true });
+    steps.push({ id: "rent_income", kind: "number", prompt: "What's the expected monthly rent?", sub: "This is what qualifies a DSCR loan. No pay stubs or tax returns needed. A market estimate is fine.", placeholder: "Monthly rent ($)", optional: true });
   } else {
     // Employment & income (URLA §1c / §1d)
     steps.push({ id: "employment_status", kind: "select", prompt: "How do you earn your income?", options: [
@@ -281,15 +281,15 @@ function appSteps(a: Answers): Q[] {
     steps.push({ id: "years_employed", kind: "select", prompt: "How long in this line of work?", options: [
       { value: "<2", label: "Less than 2 years" }, { value: "2+", label: "2+ years" },
     ] });
-    steps.push({ id: "monthly_income", kind: "number", prompt: "About what's your monthly income, before taxes?", sub: "Best estimate — we verify later.", placeholder: "Gross monthly income ($)", optional: true });
+    steps.push({ id: "monthly_income", kind: "number", prompt: "About what's your monthly income, before taxes?", sub: "Best estimate. We verify later.", placeholder: "Gross monthly income ($)", optional: true });
     steps.push({ id: "other_income", kind: "number", prompt: "Any other monthly income?", sub: "Rentals, side business, support, etc. Skip if none.", placeholder: "Other monthly income ($)", optional: true });
   }
   // Assets (URLA §2)
-  steps.push({ id: "liquid_assets", kind: "number", prompt: "Roughly how much do you have saved or invested?", sub: "Checking, savings, 401k/IRA — helps us show what you qualify for.", placeholder: "Total assets ($)", optional: true });
+  steps.push({ id: "liquid_assets", kind: "number", prompt: "Roughly how much do you have saved or invested?", sub: "Checking, savings, 401k/IRA. Helps us show what you qualify for.", placeholder: "Total assets ($)", optional: true });
   if (purchase && consumer) {
-    // Offer down payment assistance — only meaningful for owner-occupied buyers.
-    steps.push({ id: "dpa", kind: "select", prompt: "Want help covering your down payment?", sub: "You may qualify for down payment assistance — grants or low-interest 'silent second' loans that cut the cash you need to close.", options: [
-      { value: "yes", label: "Yes — show me assistance options", emoji: "🙌" },
+    // Offer down payment assistance. Only meaningful for owner-occupied buyers.
+    steps.push({ id: "dpa", kind: "select", prompt: "Want help covering your down payment?", sub: "You may qualify for down payment assistance. Grants or low-interest 'silent second' loans that cut the cash you need to close.", options: [
+      { value: "yes", label: "Yes. Show me assistance options", emoji: "🙌" },
       { value: "no", label: "No, I've got it covered", emoji: "👍" },
     ] });
     steps.push({ id: "down_payment_source", kind: "select", prompt: "Where will your down payment come from?", options: [
@@ -300,12 +300,12 @@ function appSteps(a: Answers): Q[] {
   steps.push({ id: "own_other_property", kind: "select", prompt: "Do you own any other real estate?", options: [
     { value: "no", label: "No, this is it", emoji: "🙂" }, { value: "yes", label: "Yes, I own other property", emoji: "🏘️" },
   ] });
-  // Declarations (URLA §5 — the most material ones, asked gently)
-  steps.push({ id: "bk_fc", kind: "select", prompt: "In the last 7 years, any bankruptcy or foreclosure?", sub: "Totally fine either way — it just shapes your options.", options: [
+  // Declarations (URLA §5. The most material ones, asked gently)
+  steps.push({ id: "bk_fc", kind: "select", prompt: "In the last 7 years, any bankruptcy or foreclosure?", sub: "Totally fine either way. It just shapes your options.", options: [
     { value: "no", label: "Nope, all good", emoji: "✅" }, { value: "yes", label: "Yes, within 7 years" },
   ] });
   // Property (URLA §4)
-  steps.push({ id: "property_address", kind: "address", prompt: "What's the property address?", sub: purchase ? "Already have one? We'll verify it. Still shopping? Just skip." : "The address we're financing — we'll verify it.", placeholder: "Property address", optional: true });
+  steps.push({ id: "property_address", kind: "address", prompt: "What's the property address?", sub: purchase ? "Already have one? We'll verify it. Still shopping? Just skip." : "The address we're financing. We'll verify it.", placeholder: "Property address", optional: true });
   return steps;
 }
 
@@ -438,12 +438,12 @@ export default function ApplyWizard() {
     const occ = effectiveOccupancy(a);
     const p = product(a);
     const dscr = p.toLowerCase().includes("dscr");
-    // DSCR qualifies on property cash flow — never report borrower personal income.
+    // DSCR qualifies on property cash flow. Never report borrower personal income.
     const monthly = !dscr && a.monthly_income ? Number(a.monthly_income) : undefined;
     const propType = a.prop_type || (a.goal === "buy" ? "Residential" : undefined);
     // A readable 1003 summary that updates on the lead (notes survives dedup-merge).
-    const lines: string[] = [`Product: ${p}`, `Goal: ${a.goal}`, `Occupancy: ${occ || "—"} (${isInvestment(a) ? "INVESTMENT — all 50 states" : "consumer — FL/MI/CA"})`];
-    if (dscr) lines.push("Qualification: DSCR (property cash flow — no personal income)");
+    const lines: string[] = [`Product: ${p}`, `Goal: ${a.goal}`, `Occupancy: ${occ || "n/a"} (${isInvestment(a) ? "INVESTMENT, all 50 states" : "consumer, FL/MI/CA"})`];
+    if (dscr) lines.push("Qualification: DSCR (property cash flow, no personal income)");
     const add = (label: string, v?: string) => { if (v) lines.push(`${label}: ${v}`); };
     add("DOB", a.dob); add("Citizenship", a.citizenship); add("Marital", a.marital); add("Dependents", a.dependents);
     add("Owns/Rents", a.own_or_rent); add("Current housing pmt", a.housing_payment && `$${a.housing_payment}/mo`);
@@ -510,7 +510,7 @@ export default function ApplyWizard() {
     try {
       await post(buildPayload(finalAnswers, contact));
       track("complete", { phase: "app", goal: finalAnswers.goal, occupancy: effectiveOccupancy(finalAnswers), product: product(finalAnswers) });
-    } catch { /* lead already exists; non-fatal — specialist follows up */ } finally {
+    } catch { /* lead already exists; non-fatal. Specialist follows up */ } finally {
       setSubmitting(false); setPhase("done");
     }
   }
@@ -524,10 +524,10 @@ export default function ApplyWizard() {
           <h1 className="text-2xl font-bold">You're all set! 🎉</h1>
           <p className="text-slate-600 mt-3">
             Based on everything you shared, a <span className="text-emerald-600 font-semibold">{prod || "loan"}</span> looks
-            like a strong fit — and your application is essentially done. A Fetti specialist will reach out shortly to confirm
+            like a strong fit. And your application is essentially done. A Fetti specialist will reach out shortly to confirm
             your numbers and send next steps.
           </p>
-          <CediBubble center size={56} className="mt-6">We got it from here. Sit back — I&apos;ll make sure your file moves. 🌴</CediBubble>
+          <CediBubble center size={56} className="mt-6">We got it from here. Sit back. I&apos;ll make sure your file moves. 🌴</CediBubble>
           {leadId && (
             <Link href={`/portal/${leadId}`} className="inline-block mt-7 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-full">
               Track my application
@@ -538,18 +538,18 @@ export default function ApplyWizard() {
     );
   }
 
-  // ---- COACH (objection handling — keep them engaged) -----------------------
+  // ---- COACH (objection handling. Keep them engaged) -----------------------
   if (coach) {
     return (
       <Shell pct={pct} onBack={() => { advanceRef.current = null; setCoach(null); }}>
         <div className="rounded-2xl bg-gradient-to-b from-emerald-500/15 to-white/0 border border-emerald-200 p-6">
-          <div className="flex items-center gap-2 text-emerald-700 font-semibold"><Lightbulb className="w-5 h-5" /> Good news — there's a path here</div>
+          <div className="flex items-center gap-2 text-emerald-700 font-semibold"><Lightbulb className="w-5 h-5" /> Good news. There's a path here</div>
           <p className="text-slate-100 text-lg leading-relaxed mt-3">{coach.message}</p>
         </div>
         <button onClick={continueCoach} className="w-full mt-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-full">
           Keep going →
         </button>
-        <p className="text-center text-xs text-slate-400 mt-3">No obligation — we'll show you real options either way.</p>
+        <p className="text-center text-xs text-slate-400 mt-3">No obligation. We'll show you real options either way.</p>
       </Shell>
     );
   }
@@ -560,7 +560,7 @@ export default function ApplyWizard() {
       <Shell pct={pct} onBack={back}>
         <h1 className="text-2xl font-bold">Where should we send your options?</h1>
         <p className="text-slate-500 mt-1 text-sm">No impact to your credit. A real specialist follows up fast.</p>
-        <CediBubble size={48} className="mt-4">Almost there — drop your info and I&apos;ll get your options moving. 😎</CediBubble>
+        <CediBubble size={48} className="mt-4">Almost there. Drop your info and I&apos;ll get your options moving. 😎</CediBubble>
         <form onSubmit={submitContact} className="space-y-3 mt-5">
           <input type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: "absolute", left: "-9999px" }} />
           <input name="full_name" required placeholder="Full name" className={field} />
@@ -599,7 +599,7 @@ export default function ApplyWizard() {
         {ai === 0 && (
           <div className="mb-4 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-            <p className="text-xs text-emerald-700">Nice — you pre-qualify! A few quick details and your pre-approval is ready.</p>
+            <p className="text-xs text-emerald-700">Nice. You pre-qualify! A few quick details and your pre-approval is ready.</p>
           </div>
         )}
         <QuestionView q={q} input={input} setInput={setInput} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerApp(q.id, "", q.kind) : undefined} />

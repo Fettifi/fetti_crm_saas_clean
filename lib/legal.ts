@@ -12,4 +12,4 @@ export const LICENSING_SHORT =
 // notice, and the standard "not a commitment to lend / subject to credit
 // approval" disclaimer. Required on mortgage advertising (NMLS / Reg Z / Reg N).
 export const SOCIAL_DISCLOSURE =
-  "—\nFetti Financial Services LLC | NMLS #2267023 · CA #60DBO-153798 · FL #MBR7286 · MI #FL0024463 | Equal Housing Opportunity 🏠\nThis is an advertisement, not a commitment to lend. All loans subject to credit approval & program guidelines; rates/terms may change.";
+  "Fetti Financial Services LLC | NMLS #2267023 · CA #60DBO-153798 · FL #MBR7286 · MI #FL0024463 | Equal Housing Opportunity 🏠\nThis is an advertisement, not a commitment to lend. All loans subject to credit approval & program guidelines; rates/terms may change.";
