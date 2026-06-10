@@ -143,5 +143,7 @@ export const config = {
         '/api/doctor/:path*',
         '/api/preapprovals/:path*',
         '/api/tiktok/publish/:path*',
+        '/api/chat/:path*',
+        '/api/rupee/:path*',
     ],
 }
