@@ -1,7 +1,7 @@
 // Auto content engine: generates ready-to-post social content — Reel scripts +
 // captions + hashtags, plus an AI-generated image — for the Content Studio queue.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { BRAND_BRIEF, CONTENT_PERSONALITY } from "@/lib/brand";
+import { BRAND_BRIEF, CONTENT_PERSONALITY, CEDI_PERSONA } from "@/lib/brand";
 import { CEDI_BADGE_B64 } from "@/lib/cediBadge";
 
 // Brand a generated campaign image with the Cedi mascot in the bottom-right
@@ -34,6 +34,13 @@ export async function generatePosts(n: number, topic = ""): Promise<Post[]> {
   const system = `${BRAND_BRIEF}
 
 ${CONTENT_PERSONALITY}
+
+${CEDI_PERSONA}
+
+CRITICAL — VOICE: Write EVERY post in Cedi's first-person voice (Fetti's LA spokes-owl). Cedi is the
+one talking and teaching: California-cool, confident, witty, a little swagger, warm. Use his cadence and
+sprinkle his flavor ("Hoo", "eyes open", "easy money, no stress", "sun's out money's out", "we DO money")
+without overdoing it — the value/teaching must still land. Stay fully compliant (no rate or approval promises).
 
 OUTPUT FORMAT — return ONLY JSON: { "posts": [ { "hook", "script", "caption", "hashtags" } ] } with exactly ${n} posts.
 - hook: the on-screen / first-line hook (<= 12 words) — the scroll-stopper

@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { LICENSING_NOTE } from "@/lib/legal";
 import { CediBubble } from "@/components/CediBubble";
+import { CediVoice } from "@/components/CediVoice";
 
 export const metadata = {
   title: "Fetti Financial Services LLC | Home, Investment & Business Lending",
@@ -148,6 +149,7 @@ export default function MarketingHome() {
           <CediBubble center size={64} className="mt-10">
             Hoo&apos;s ready to get funded? I&apos;m <span className="font-bold text-slate-900">Cedi</span> — straight outta LA, and I find your money. Easy, no stress. 😎
           </CediBubble>
+          <div className="mt-4 flex justify-center"><CediVoice /></div>
         </div>
 
         {/* stats bar */}

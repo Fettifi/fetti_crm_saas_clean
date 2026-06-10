@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Home, TrendingUp, Building2, Calculator, ArrowRight } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
+import { CediVoice } from "@/components/CediVoice";
 
 const CTAS = [
   { href: "/apply/form", label: "Get pre-approved", sub: "2 minutes · no credit pull", icon: Home },
@@ -31,6 +32,7 @@ function Links() {
         </p>
         <img src="/cedi-512.png" alt="Cedi — the all-knowing Fetti owl" width={56} height={56} className="w-14 h-14 mx-auto mt-3" />
         <p className="text-slate-600 mt-2">Home loans, investment & business loans — fast, licensed, no pressure.</p>
+        <div className="mt-3 flex justify-center"><CediVoice /></div>
         <div className="space-y-3 mt-8">
           {CTAS.map((c) => (
             <Link key={c.label} href={`${c.href}${q(c.goal ? { goal: c.goal } : {})}`}
