@@ -150,8 +150,11 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
         <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="text-xs uppercase tracking-wide text-slate-500">1003 / URLA · MISMO 3.4 export</div>
-            <a href={`/api/los/export?file=${id}`} download
-              className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 px-3 py-1.5 rounded-lg">⬇ Download MISMO 3.4 XML</a>
+            <div className="flex items-center gap-2">
+              <Link href={`/los/${id}/1003`} className="text-xs font-semibold bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg">✎ Complete 1003</Link>
+              <a href={`/api/los/export?file=${id}`} download
+                className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 px-3 py-1.5 rounded-lg">⬇ Download MISMO 3.4 XML</a>
+            </div>
           </div>
           {mismo ? (
             <>
