@@ -56,6 +56,58 @@ function safeParse(s: string): any {
   try { return JSON.parse(s || "{}"); } catch { return {}; }
 }
 
+// Stream a Claude response via SSE, calling onDelta(text) as words arrive, and
+// return the fully-assembled content block array (text + tool_use) so the rest
+// of the agent loop works exactly as it does for the non-streaming path.
+async function streamAnthropic(reqBody: any, onDelta: (t: string) => void): Promise<any[]> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": anthropicKey as string,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({ ...reqBody, stream: true }),
+  });
+  if (!res.ok || !res.body) {
+    const j = await res.json().catch(() => ({} as any));
+    throw new Error(j?.error?.message || `Anthropic HTTP ${res.status}`);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  const blocks: any[] = [];
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() || "";
+    for (const line of lines) {
+      const s = line.trim();
+      if (!s.startsWith("data:")) continue;
+      const payload = s.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      let ev: any;
+      try { ev = JSON.parse(payload); } catch { continue; }
+      if (ev.type === "content_block_start") {
+        blocks[ev.index] = { ...ev.content_block };
+        if (blocks[ev.index].type === "tool_use") blocks[ev.index]._json = "";
+        if (blocks[ev.index].type === "text" && blocks[ev.index].text === undefined) blocks[ev.index].text = "";
+      } else if (ev.type === "content_block_delta") {
+        const b = blocks[ev.index];
+        if (!b) continue;
+        if (ev.delta?.type === "text_delta") { b.text = (b.text || "") + ev.delta.text; onDelta(ev.delta.text); }
+        else if (ev.delta?.type === "input_json_delta") { b._json = (b._json || "") + ev.delta.partial_json; }
+      } else if (ev.type === "content_block_stop") {
+        const b = blocks[ev.index];
+        if (b && b.type === "tool_use") { try { b.input = JSON.parse(b._json || "{}"); } catch { b.input = {}; } delete b._json; }
+      }
+    }
+  }
+  return blocks.filter(Boolean).map((b: any) => { if (b.type === "tool_use") { const { _json, ...rest } = b; return rest; } return b; });
+}
+
 // --- Anthropic (Claude) — Rupee's brain ------------------------------------
 
 function anthropicHistoryToMessages(history: HistoryMsg[] = []) {
@@ -84,7 +136,7 @@ function makeAnthropicModel() {
       let lastToolUses: { id: string; name: string }[] = [];
 
       return {
-        async sendMessage(input: string | unknown[]): Promise<GeminiResponse> {
+        async sendMessage(input: string | unknown[], opts: { onDelta?: (t: string) => void } = {}): Promise<GeminiResponse> {
           if (typeof input === "string") {
             messages.push({ role: "user", content: input });
           } else {
@@ -109,25 +161,30 @@ function makeAnthropicModel() {
             lastToolUses = [];
           }
 
+          const reqBody: any = {
+            model: CLAUDE_MODEL,
+            max_tokens: maxTokens,
+            messages,
+            ...(hasTools ? { tools: anthropicTools, tool_choice: { type: "auto" } } : {}),
+          };
           let content: any[] = [];
           try {
-            const res = await fetch("https://api.anthropic.com/v1/messages", {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                "x-api-key": anthropicKey as string,
-                "anthropic-version": "2023-06-01",
-              },
-              body: JSON.stringify({
-                model: CLAUDE_MODEL,
-                max_tokens: maxTokens,
-                messages,
-                ...(hasTools ? { tools: anthropicTools, tool_choice: { type: "auto" } } : {}),
-              }),
-            });
-            const json = await res.json();
-            if (!res.ok) throw new Error(json?.error?.message || `Anthropic HTTP ${res.status}`);
-            content = Array.isArray(json.content) ? json.content : [];
+            if (opts.onDelta) {
+              content = await streamAnthropic(reqBody, opts.onDelta);
+            } else {
+              const res = await fetch("https://api.anthropic.com/v1/messages", {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                  "x-api-key": anthropicKey as string,
+                  "anthropic-version": "2023-06-01",
+                },
+                body: JSON.stringify(reqBody),
+              });
+              const json = await res.json();
+              if (!res.ok) throw new Error(json?.error?.message || `Anthropic HTTP ${res.status}`);
+              content = Array.isArray(json.content) ? json.content : [];
+            }
             messages.push({ role: "assistant", content });
             lastToolUses = content
               .filter((b: any) => b.type === "tool_use")

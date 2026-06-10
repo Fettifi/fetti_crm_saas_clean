@@ -18,6 +18,7 @@ export default function RupeePage() {
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [recording, setRecording] = useState(false);
   const [voiceOn, setVoiceOn] = useState(true);
 
@@ -80,6 +81,28 @@ export default function RupeePage() {
       const decoder = new TextDecoder();
       let buf = "";
       let finalText = "";
+      let streamed = "";
+      let draftStarted = false;
+
+      const handle = (evt: any) => {
+        if (evt.type === "token") {
+          streamed += evt.text || "";
+          if (!draftStarted) {
+            draftStarted = true;
+            setStreaming(true);
+            setStatus(null);
+            setMessages((m) => [...m, { role: "assistant", content: streamed }]);
+          } else {
+            setMessages((m) => { const c = m.slice(); c[c.length - 1] = { role: "assistant", content: streamed }; return c; });
+          }
+        } else if (evt.type === "status") {
+          if (!draftStarted) setStatus(evt.message || "Working…");
+        } else if (evt.type === "result") {
+          finalText = evt.message || finalText;
+        } else if (evt.type === "error") {
+          finalText = "⚠️ " + (evt.message || "Something went wrong.");
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -91,22 +114,24 @@ export default function RupeePage() {
           if (!line.trim()) continue;
           let evt: any;
           try { evt = JSON.parse(line); } catch { continue; }
-          if (evt.type === "status") setStatus(evt.message || "Working…");
-          else if (evt.type === "result") finalText = evt.message || finalText;
-          else if (evt.type === "error") finalText = "⚠️ " + (evt.message || "Something went wrong.");
+          handle(evt);
         }
       }
-      if (buf.trim()) {
-        try { const evt = JSON.parse(buf); if (evt.type === "result") finalText = evt.message || finalText; } catch {}
-      }
+      if (buf.trim()) { try { handle(JSON.parse(buf)); } catch {} }
 
-      const reply = finalText || "…";
-      setMessages((m) => [...m, { role: "assistant", content: reply }]);
+      const reply = finalText || streamed || "…";
+      setMessages((m) => {
+        const c = m.slice();
+        if (draftStarted) c[c.length - 1] = { role: "assistant", content: reply };
+        else c.push({ role: "assistant", content: reply });
+        return c;
+      });
       speak(reply);
     } catch (e: any) {
       setMessages((m) => [...m, { role: "assistant", content: "⚠️ " + (e?.message || "Connection error.") }]);
     } finally {
       setBusy(false);
+      setStreaming(false);
       setStatus(null);
     }
   }
@@ -184,7 +209,7 @@ export default function RupeePage() {
               </div>
             </div>
           ))}
-          {busy && (
+          {busy && !streaming && (
             <div className="flex justify-start">
               <div className="rounded-2xl rounded-bl-sm bg-white border border-slate-200 px-4 py-3 shadow-sm">
                 <span className="inline-flex gap-1">

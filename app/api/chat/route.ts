@@ -17,6 +17,31 @@ function createChunk(type: string, data: Record<string, unknown>) {
     return JSON.stringify({ type, ...data, _padding: padding }) + '\n';
 }
 
+// Lighter chunk for live token deltas (modest padding keeps it flushing in
+// real time without 4KB of overhead per word).
+function tokenChunk(text: string) {
+    return JSON.stringify({ type: 'token', text }) + ' '.repeat(256) + '\n';
+}
+
+// Bridge: call chat.sendMessage with an onDelta callback (Claude streams; other
+// brains just resolve at the end), yielding each text delta as it arrives and
+// finally returning the complete response so the tool loop is unchanged.
+async function* streamSend(chat: any, input: any) {
+    const q: string[] = [];
+    let done = false, resp: any = null, error: any = null, wake: (() => void) | null = null;
+    const ping = () => { if (wake) { const w = wake; wake = null; w(); } };
+    chat.sendMessage(input, { onDelta: (t: string) => { q.push(t); ping(); } })
+        .then((r: any) => { resp = r; })
+        .catch((e: any) => { error = e; })
+        .finally(() => { done = true; ping(); });
+    while (!done || q.length) {
+        if (q.length) { yield q.shift() as string; continue; }
+        await new Promise<void>((r) => { wake = r; });
+    }
+    if (error) throw error;
+    return resp;
+}
+
 async function* runChatLogic(req: NextRequest) {
     let mode = 'co-founder';
 
@@ -143,15 +168,16 @@ ${knowledgeString}
             // Force flush by yielding to event loop
             await new Promise(resolve => setTimeout(resolve, 0));
 
-            // Create a timeout promise
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Gemini API Timeout")), 60000)
-            );
-
-            let result: any = await Promise.race([
-                chat.sendMessage(systemInstruction),
-                timeoutPromise
-            ]);
+            // Consult the brain, streaming her words live as they generate.
+            let result: any;
+            {
+                const g = streamSend(chat, systemInstruction);
+                while (true) {
+                    const it = await g.next();
+                    if (it.done) { result = it.value; break; }
+                    yield tokenChunk(it.value as string);
+                }
+            }
 
             let response = result.response;
             let functionCalls = response.functionCalls();
@@ -233,14 +259,14 @@ ${knowledgeString}
 
                 yield createChunk('status', { message: "Synthesizing Answer...", progress: Math.min(progressStep + 10, 95) });
 
-                const loopTimeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Gemini API Timeout (Loop)")), 60000)
-                );
-
-                result = await Promise.race([
-                    chat.sendMessage(toolResponses),
-                    loopTimeoutPromise
-                ]);
+                {
+                    const g = streamSend(chat, toolResponses);
+                    while (true) {
+                        const it = await g.next();
+                        if (it.done) { result = it.value; break; }
+                        yield tokenChunk(it.value as string);
+                    }
+                }
                 response = result.response;
                 functionCalls = response.functionCalls();
             }
