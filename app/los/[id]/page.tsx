@@ -33,6 +33,15 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [submitState, setSubmitState] = useState<{ id?: string; msg?: string; ok?: boolean }>({});
   const [priceRows, setPriceRows] = useState<any[] | null>(null);
   const [pricing, setPricing] = useState(false);
+  const [screen, setScreen] = useState<any>(null);
+  const [screening, setScreening] = useState(false);
+
+  async function runScreen() {
+    setScreening(true);
+    try { const r = await fetch(`/api/los/screen?file=${id}`, { method: "POST" }); const j = await r.json(); setScreen(r.ok ? j.screen : { verdict: "Needs more info", summary: "⚠️ " + (j.error || "Failed"), bestLenders: [], questions: [] }); }
+    catch { setScreen({ verdict: "Needs more info", summary: "⚠️ Connection error", bestLenders: [], questions: [] }); }
+    setScreening(false);
+  }
 
   async function priceLoan() {
     setPricing(true);
@@ -253,6 +262,52 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
               <p className="text-xs text-slate-600 mt-3">The XML includes everything captured. Missing items still export as empty MISMO elements; fill them on the application to complete the file.</p>
             </>
           ) : <div className="text-slate-600 text-sm">Building 1003 view…</div>}
+        </div>
+
+        {/* AI Deal Screen (Relip-style triage + lender match) */}
+        <div className="bg-gradient-to-br from-emerald-950/40 to-slate-900/40 border border-emerald-800/40 rounded-2xl p-5 mt-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="text-xs uppercase tracking-wide text-emerald-400">🎯 AI Deal Screen — fundable? best lender?</div>
+            <button onClick={runScreen} disabled={screening} className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              {screening ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}{screening ? "Screening…" : screen ? "Re-screen" : "Screen this deal"}
+            </button>
+          </div>
+          {!screen && !screening && <div className="text-slate-500 text-sm">Claude screens the deal for fundability (real deal vs tire-kicker) and tells you which of your wholesalers to send it to. Not a credit decision.</div>}
+          {screen && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${/hot/i.test(screen.verdict) ? "bg-emerald-500/20 text-emerald-300" : /workable/i.test(screen.verdict) ? "bg-teal-500/20 text-teal-300" : /tire/i.test(screen.verdict) ? "bg-red-500/20 text-red-300" : "bg-amber-500/20 text-amber-300"}`}>{screen.verdict}</span>
+                {typeof screen.dealScore === "number" && <span className="text-xs text-slate-400">Deal score {screen.dealScore}/100</span>}
+              </div>
+              <p className="text-sm text-slate-200 leading-relaxed">{screen.summary}</p>
+              {screen.dealRead && <p className="text-xs text-slate-400">{screen.dealRead}</p>}
+              {!!(screen.bestLenders || []).length && (
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5">Best lender for this deal</div>
+                  <div className="space-y-1.5">
+                    {screen.bestLenders.map((bl: any, i: number) => {
+                      const lender = dirLenders.find((l: any) => l.id === bl.lenderId || l.name === bl.lenderName);
+                      const pass = /pass/i.test(bl.fit);
+                      return (
+                        <div key={i} className="flex items-center justify-between gap-2 bg-slate-900/50 border border-slate-800 rounded-lg px-3 py-2">
+                          <div className="min-w-0">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded mr-2 ${/strong/i.test(bl.fit) ? "bg-emerald-500/20 text-emerald-300" : pass ? "bg-slate-700 text-slate-400" : "bg-amber-500/20 text-amber-300"}`}>{bl.fit}</span>
+                            <span className="font-medium text-sm">{bl.lenderName}</span>
+                            <div className="text-xs text-slate-500 mt-0.5">{bl.reason}</div>
+                          </div>
+                          {lender && !pass && <button onClick={() => submitToLender(lender)} className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500 shrink-0">Send file</button>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {!!(screen.questions || []).length && (
+                <div><div className="text-xs text-slate-500 mb-1">Ask the borrower</div><ul className="text-sm text-slate-300 space-y-0.5">{screen.questions.map((q: string, i: number) => <li key={i}>• {q}</li>)}</ul></div>
+              )}
+              {screen.nextAction && <div className="text-sm text-emerald-300">➡️ {screen.nextAction}</div>}
+            </div>
+          )}
         </div>
 
         {/* Price across lenders */}
