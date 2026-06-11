@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { runOrgBrain } from "@/lib/agents/orgBrain";
 import { logActivity } from "@/lib/activity";
+import { recordHeartbeat } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -102,7 +103,7 @@ export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization");
   if (secret && auth !== `Bearer ${secret}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  try { return NextResponse.json(await learn()); }
+  try { const out = await learn(); await recordHeartbeat("org-learn"); return NextResponse.json(out); }
   catch (e) { return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "error" }, { status: 500 }); }
 }
 

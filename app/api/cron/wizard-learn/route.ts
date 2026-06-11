@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { runOptimizer } from "@/lib/agents/optimizer";
+import { recordHeartbeat } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -129,7 +130,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   try {
-    return NextResponse.json(await learn());
+    const out = await learn(); await recordHeartbeat("wizard-learn"); return NextResponse.json(out);
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }

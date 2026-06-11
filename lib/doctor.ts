@@ -5,6 +5,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { generateBatch } from "@/lib/content";
 import { healMetaToken } from "@/lib/metaHeal";
+import { recordHeartbeat, checkContinuity, pingWatchdog, type Continuity } from "@/lib/heartbeat";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
@@ -16,9 +17,10 @@ const randomToken = () =>
     ? crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "")
     : Math.random().toString(16).slice(2)).slice(0, 28);
 
-export async function runDoctor(): Promise<{ status: string; checks: Check[]; repairs: Repair[] }> {
+export async function runDoctor(): Promise<{ status: string; checks: Check[]; repairs: Repair[]; continuity: Continuity[] }> {
   const checks: Check[] = [];
   const repairs: Repair[] = [];
+  let continuity: Continuity[] = [];
   const add = (name: string, ok: boolean, level: Check["level"], detail = "") => checks.push({ name, ok, level, detail });
 
   // 1) Database tables reachable
@@ -88,9 +90,25 @@ export async function runDoctor(): Promise<{ status: string; checks: Check[]; re
     } catch (e) { add(`page:${p}`, false, "warn", e instanceof Error ? e.message : "error"); }
   }
 
+  // 8) CONTINUITY OF COMPUTE — are the scheduled jobs still firing? If a cron
+  // stopped (Vercel outage, plan limit, bad deploy), flag it loudly here.
+  try {
+    continuity = await checkContinuity();
+    for (const c of continuity) {
+      if (c.lastRun === null) add(`cron:${c.name}`, true, "info", "no heartbeat yet (will populate on next run)");
+      else add(`cron:${c.name}`, !c.overdue, c.overdue ? "critical" : "info",
+        c.overdue ? `⛔ OVERDUE — last ran ${c.ageHours}h ago (expected ≤${c.expectedHours}h). Compute may be stalled.` : `ran ${c.ageHours}h ago`);
+    }
+  } catch (e) { add("continuity_check", false, "warn", e instanceof Error ? e.message : "error"); }
+
   const criticalDown = checks.some((c) => c.level === "critical" && !c.ok);
   const warnDown = checks.some((c) => c.level === "warn" && !c.ok);
   const status = criticalDown ? "down" : warnDown ? "degraded" : "healthy";
+
+  // The doctor ran — record its own heartbeat and ping the external watchdog so
+  // an outside monitor confirms the system's compute is alive.
+  await recordHeartbeat("doctor");
+  await pingWatchdog();
 
   // Persist + alert on trouble
   try {
@@ -98,7 +116,7 @@ export async function runDoctor(): Promise<{ status: string; checks: Check[]; re
     if (status !== "healthy") await alertDiscord(status, checks, repairs);
   } catch { /* best-effort */ }
 
-  return { status, checks, repairs };
+  return { status, checks, repairs, continuity };
 }
 
 async function alertDiscord(status: string, checks: Check[], repairs: Repair[]) {
