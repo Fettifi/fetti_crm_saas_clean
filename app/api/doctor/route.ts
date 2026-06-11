@@ -2,13 +2,14 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { runDoctor } from "@/lib/doctor";
+import { checkContinuity } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET() {
   const { data } = await supabaseAdmin.from("doctor_reports").select("*").order("created_at", { ascending: false }).limit(1).maybeSingle();
-  return NextResponse.json({ report: data || null });
+  return NextResponse.json({ report: data || null, continuity: await checkContinuity() });
 }
 
 export async function POST() {

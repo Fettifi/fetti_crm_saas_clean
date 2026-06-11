@@ -9,14 +9,17 @@ type Check = { name: string; ok: boolean; level: string; detail: string };
 type Repair = { name: string; detail: string };
 type Report = { status: string; checks: Check[]; repairs: Repair[]; created_at?: string };
 
+type Beat = { name: string; lastRun: string | null; ageHours: number | null; overdue: boolean; expectedHours: number };
+
 export default function DoctorPage() {
   const [report, setReport] = useState<Report | null>(null);
+  const [continuity, setContinuity] = useState<Beat[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
 
   async function load() {
     const r = await fetch("/api/doctor"); const j = await r.json();
-    setReport(j.report); setLoading(false);
+    setReport(j.report); setContinuity(j.continuity || []); setLoading(false);
   }
   useEffect(() => { load(); }, []);
 
@@ -44,6 +47,29 @@ export default function DoctorPage() {
         </div>
 
         {loading && <div className="text-slate-500 mt-10 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>}
+
+        {/* Continuity of compute — at-a-glance "all systems alive" */}
+        {!loading && continuity.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+            <div className="text-xs uppercase tracking-wide text-slate-500 mb-3">Continuity of compute · scheduled jobs</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {continuity.map((b) => {
+                const state = b.overdue ? "overdue" : b.lastRun ? "alive" : "pending";
+                return (
+                  <div key={b.name} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2">
+                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${state === "alive" ? "bg-emerald-400" : state === "overdue" ? "bg-red-500 animate-pulse" : "bg-slate-600"}`} />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{b.name}</div>
+                      <div className={`text-[11px] ${state === "overdue" ? "text-red-400" : "text-slate-500"}`}>
+                        {b.overdue ? `⛔ overdue (${b.ageHours}h)` : b.lastRun ? `ran ${b.ageHours}h ago` : "awaiting first run"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {report && (
           <>
