@@ -4,7 +4,8 @@
 // one-click copy of the borrower's custom document link.
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, RefreshCw, Link2, Check } from "lucide-react";
+import { Loader2, RefreshCw, Link2, Check, Plus } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
 
@@ -15,6 +16,11 @@ export default function LosBoard() {
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
+  // "New file from lead" picker.
+  const [picker, setPicker] = useState(false);
+  const [leadOpts, setLeadOpts] = useState<{ id: string; label: string }[]>([]);
+  const [picked, setPicked] = useState("");
+  const [creating, setCreating] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -32,6 +38,26 @@ export default function LosBoard() {
     setTimeout(() => setCopied(null), 1500);
   }
 
+  async function openPicker() {
+    setPicker((v) => !v);
+    if (!leadOpts.length) {
+      const { data } = await supabase.from("leads")
+        .select("id, full_name, email, loan_purpose")
+        .order("created_at", { ascending: false }).limit(300);
+      setLeadOpts((data || []).map((l: any) => ({ id: l.id, label: `${l.full_name || l.email || "Lead"}${l.loan_purpose ? ` · ${l.loan_purpose}` : ""}` })));
+    }
+  }
+  async function createFromLead() {
+    if (!picked) return;
+    setCreating(true);
+    try {
+      const r = await fetch("/api/los/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lead_id: picked }) });
+      const j = await r.json();
+      if (r.ok && j.file) { setPicker(false); setPicked(""); await load(); copyLink(j.file.share_token); }
+      else alert(j.error || "Could not create loan file.");
+    } finally { setCreating(false); }
+  }
+
   const active = files.filter((f) => f.status === "active");
   const funded = files.filter((f) => f.stage === "Funded").length;
 
@@ -43,10 +69,31 @@ export default function LosBoard() {
             <h1 className="text-2xl font-bold">📁 Loan Files (LOS)</h1>
             <p className="text-slate-400 text-sm mt-1">{active.length} active · {funded} funded · every file has a borrower document link.</p>
           </div>
-          <button onClick={load} className="flex items-center gap-2 text-sm bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg">
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={openPicker} className="flex items-center gap-2 text-sm bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-semibold px-4 py-2 rounded-lg">
+              <Plus className="w-4 h-4" /> New file from lead
+            </button>
+            <button onClick={load} className="flex items-center gap-2 text-sm bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg">
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
+            </button>
+          </div>
         </div>
+
+        {picker && (
+          <div className="mt-4 bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+            <div className="text-sm text-slate-300 mb-2">Pick a lead to open a loan file + borrower link:</div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select value={picked} onChange={(e) => setPicked(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                <option value="">— Select a lead —</option>
+                {leadOpts.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+              </select>
+              <button onClick={createFromLead} disabled={!picked || creating} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
+                {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />} Create file + copy link
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">If the lead already has a file, this just opens it and copies the same link — no duplicates.</p>
+          </div>
+        )}
 
         {loading && !files.length && <div className="text-slate-500 mt-10 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>}
         {!loading && !files.length && <div className="text-slate-500 mt-10">No loan files yet. They open automatically when a lead applies.</div>}

@@ -20,6 +20,35 @@ export default function LeadTable() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // LOS: create-or-fetch a loan file (+ borrower link) per lead, on demand.
+  const [losBusy, setLosBusy] = useState<string | null>(null);
+  const [losFile, setLosFile] = useState<Record<string, { id: string; token: string }>>({});
+  const [copied, setCopied] = useState<string | null>(null);
+
+  async function createFile(leadId: string) {
+    setLosBusy(leadId);
+    try {
+      const r = await fetch("/api/los/files", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_id: leadId }),
+      });
+      const j = await r.json();
+      if (r.ok && j.file) {
+        setLosFile((m) => ({ ...m, [leadId]: { id: j.file.id, token: j.file.share_token } }));
+        try {
+          await navigator.clipboard?.writeText(`${window.location.origin}/file/${j.file.share_token}`);
+          setCopied(leadId); setTimeout(() => setCopied(null), 1500);
+        } catch { /* clipboard may be blocked; link still on the row */ }
+      } else {
+        alert(j.error || "Could not create loan file.");
+      }
+    } finally { setLosBusy(null); }
+  }
+  function copyLink(leadId: string) {
+    const f = losFile[leadId]; if (!f) return;
+    navigator.clipboard?.writeText(`${window.location.origin}/file/${f.token}`);
+    setCopied(leadId); setTimeout(() => setCopied(null), 1500);
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -105,6 +134,7 @@ export default function LeadTable() {
             <th className="px-3 py-2">Stage</th>
             <th className="px-3 py-2">Source</th>
             <th className="px-3 py-2">Deal Score</th>
+            <th className="px-3 py-2">LOS file</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-800">
@@ -141,6 +171,21 @@ export default function LeadTable() {
                     return <span className="text-slate-600">Error</span>;
                   }
                 })()}
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                {losFile[lead.id] ? (
+                  <span className="flex items-center gap-2">
+                    <button onClick={() => copyLink(lead.id)} className="text-emerald-400 hover:text-emerald-300">
+                      {copied === lead.id ? "✓ Copied" : "🔗 Copy link"}
+                    </button>
+                    <a href={`/los/${losFile[lead.id].id}`} className="text-slate-400 hover:text-white underline">Open</a>
+                  </span>
+                ) : (
+                  <button onClick={() => createFile(lead.id)} disabled={losBusy === lead.id}
+                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-50">
+                    {losBusy === lead.id ? "…" : "📁 Create file + link"}
+                  </button>
+                )}
               </td>
             </tr>
           ))}
