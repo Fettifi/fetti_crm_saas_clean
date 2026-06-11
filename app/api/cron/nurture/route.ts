@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runNurture } from "@/lib/nurture";
+import { recordHeartbeat } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,5 +14,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const result = await runNurture();
+  await recordHeartbeat("nurture");
   return NextResponse.json({ ok: true, ...result });
 }

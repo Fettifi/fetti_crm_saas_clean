@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { generateBatch } from "@/lib/content";
 import { publishPost } from "@/lib/publish";
 import { logActivity } from "@/lib/activity";
+import { recordHeartbeat } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 90;
@@ -42,6 +43,6 @@ export async function GET(req: NextRequest) {
   if (secret && req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  try { return NextResponse.json(await run()); }
+  try { const out = await run(); await recordHeartbeat("content"); return NextResponse.json(out); }
   catch (e) { return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "error" }, { status: 500 }); }
 }
