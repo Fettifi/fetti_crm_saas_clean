@@ -3,16 +3,14 @@
 // Paid-traffic DSCR landing page. Message-matched to the ads, ZERO nav (no leaks),
 // inline lead capture (fewer clicks = higher conversion on cold paid traffic),
 // UTM passthrough, honeypot + consent. Public route (not gated).
-import { Suspense, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState } from "react";
 import { CheckCircle2, ShieldCheck, Zap, Building2 } from "lucide-react";
 import { trackLead } from "@/lib/track";
 import { LICENSING_NOTE } from "@/lib/legal";
 
 const CONSENT = "By submitting, borrower agreed Fetti Financial Services may contact by phone, email & text (SMS), including automated. Consent not required to buy. STOP to opt out.";
 
-function LP() {
-  const sp = useSearchParams();
+export default function DscrLandingPage() {
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -21,6 +19,7 @@ function LP() {
     e.preventDefault();
     setSubmitting(true); setErr(null);
     const fd = new FormData(e.currentTarget);
+    const sp = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     try {
       const res = await fetch("/api/apply", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -118,8 +117,4 @@ function LP() {
       </footer>
     </div>
   );
-}
-
-export default function DscrLandingPage() {
-  return <Suspense fallback={<div className="min-h-screen bg-white" />}><LP /></Suspense>;
 }
