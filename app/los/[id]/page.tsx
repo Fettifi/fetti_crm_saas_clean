@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { use } from "react";
 import Link from "next/link";
-import { Loader2, Link2, Check, ArrowLeft, Plus, ExternalLink } from "lucide-react";
+import { Loader2, Link2, Check, ArrowLeft, Plus, ExternalLink, Send, X } from "lucide-react";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
 
@@ -24,6 +24,13 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [copied, setCopied] = useState(false);
   const [newDoc, setNewDoc] = useState("");
   const [saving, setSaving] = useState(false);
+  // In-file document request composer.
+  const [reqList, setReqList] = useState<string[]>([]);
+  const [recipient, setRecipient] = useState<"borrower" | "other">("borrower");
+  const [other, setOther] = useState({ name: "", email: "", phone: "" });
+  const [reqNote, setReqNote] = useState("");
+  const [sendingReq, setSendingReq] = useState(false);
+  const [reqMsg, setReqMsg] = useState<{ ok?: boolean; text: string } | null>(null);
   const [mismo, setMismo] = useState<{ completeness: { missing: string[]; present: string[]; pct: number }; metrics: any; urla: any } | null>(null);
   const [uw, setUw] = useState<any>(null);
   const [uwLoading, setUwLoading] = useState(false);
@@ -106,10 +113,40 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     await fetch(`/api/los/files/${id}/docs`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ doc_id, status }) });
     await load();
   }
-  async function addDoc() {
-    if (!newDoc.trim()) return;
-    await fetch(`/api/los/files/${id}/docs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newDoc.trim() }) });
-    setNewDoc(""); await load();
+  function addToReq(name: string) {
+    const n = name.trim();
+    if (!n) return;
+    setReqList((l) => (l.includes(n) ? l : [...l, n]));
+    setNewDoc("");
+  }
+  async function addOnly() {
+    if (!reqList.length) { setReqMsg({ text: "Add at least one document." }); return; }
+    setSendingReq(true); setReqMsg(null);
+    await fetch(`/api/los/files/${id}/docs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: reqList }) });
+    setReqList([]); setReqMsg({ ok: true, text: "Added to checklist." }); setSendingReq(false); await load();
+  }
+  async function sendRequest() {
+    if (!reqList.length) { setReqMsg({ text: "Add at least one document to request." }); return; }
+    const notify: any = recipient === "borrower"
+      ? { to_name: file?.borrower_name, to_email: file?.email, to_phone: file?.phone }
+      : { to_name: other.name || null, to_email: other.email || null, to_phone: other.phone || null };
+    if (!notify.to_email && !notify.to_phone) {
+      setReqMsg({ text: recipient === "borrower" ? "No borrower email/phone on file — use “Someone else”." : "Add an email or phone for the recipient." });
+      return;
+    }
+    if (reqNote.trim()) notify.note = reqNote.trim();
+    setSendingReq(true); setReqMsg(null);
+    try {
+      const r = await fetch(`/api/los/files/${id}/docs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: reqList, notify }) });
+      const j = await r.json();
+      if (r.ok) {
+        const ch = (j.sent || []).join(" + ");
+        setReqMsg({ ok: !!ch, text: ch ? `✓ Sent via ${ch} with the file link` : "Added to the file, but no email/SMS channel is configured to deliver it yet." });
+        setReqList([]); setReqNote("");
+        await load();
+      } else setReqMsg({ text: "⚠️ " + (j.error || "Failed") });
+    } catch { setReqMsg({ text: "⚠️ Connection error" }); }
+    setSendingReq(false);
   }
   async function viewDoc(doc_id: string) {
     const res = await fetch(`/api/los/files/${id}/docs?doc_id=${doc_id}`);
@@ -185,11 +222,62 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                 );
               })}
             </div>
-            <div className="flex gap-2 mt-4">
-              <input value={newDoc} onChange={(e) => setNewDoc(e.target.value)} placeholder="Request another document…"
-                onKeyDown={(e) => { if (e.key === "Enter") addDoc(); }}
-                className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
-              <button onClick={addDoc} className="bg-slate-800 hover:bg-slate-700 px-3 rounded-lg flex items-center"><Plus className="w-4 h-4" /></button>
+            {/* Request documents — build a list, then send the borrower (or anyone
+                else) this file's secure upload link, without leaving this screen. */}
+            <div className="mt-5 border-t border-slate-800/60 pt-4">
+              <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">Request documents</div>
+
+              {reqList.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {reqList.map((n) => (
+                    <span key={n} className="flex items-center gap-1 text-xs bg-slate-800 rounded-full pl-2.5 pr-1.5 py-1">
+                      {n}
+                      <button onClick={() => setReqList(reqList.filter((x) => x !== n))} className="hover:text-red-300"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <input value={newDoc} onChange={(e) => setNewDoc(e.target.value)} placeholder="Add a document to request…"
+                  onKeyDown={(e) => { if (e.key === "Enter") addToReq(newDoc); }}
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
+                <button onClick={() => addToReq(newDoc)} className="bg-slate-800 hover:bg-slate-700 px-3 rounded-lg flex items-center"><Plus className="w-4 h-4" /></button>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {["Government-issued photo ID", "Bank statements — last 2 months", "Lease agreement / Form 1007", "Property insurance quote", "Entity documents (LLC)", "Purchase contract", "Mortgage statement"].map((q) => (
+                  <button key={q} onClick={() => addToReq(q)} className="text-[11px] px-2 py-1 rounded-full bg-slate-800/60 hover:bg-slate-700 text-slate-300">+ {q}</button>
+                ))}
+              </div>
+
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-slate-500 text-xs">Send to:</span>
+                <button onClick={() => setRecipient("borrower")} className={`text-xs px-2.5 py-1 rounded-full ${recipient === "borrower" ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 text-slate-300"}`}>Borrower</button>
+                <button onClick={() => setRecipient("other")} className={`text-xs px-2.5 py-1 rounded-full ${recipient === "other" ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 text-slate-300"}`}>Someone else</button>
+              </div>
+              {recipient === "borrower" ? (
+                <div className="text-xs text-slate-500 mt-1.5">{[file.email, file.phone].filter(Boolean).join(" · ") || "No borrower email/phone on file — add one on the lead, or use “Someone else”."}</div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+                  <input value={other.name} onChange={(e) => setOther({ ...other, name: e.target.value })} placeholder="Name (e.g. CPA, title co.)" className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm focus:border-emerald-500 focus:outline-none" />
+                  <input value={other.email} onChange={(e) => setOther({ ...other, email: e.target.value })} placeholder="Email" className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm focus:border-emerald-500 focus:outline-none" />
+                  <input value={other.phone} onChange={(e) => setOther({ ...other, phone: e.target.value })} placeholder="Phone (optional)" className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm focus:border-emerald-500 focus:outline-none" />
+                </div>
+              )}
+
+              <textarea value={reqNote} onChange={(e) => setReqNote(e.target.value)} rows={2} placeholder="Optional note (added to the email)…"
+                className="w-full mt-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
+
+              <div className="flex items-center flex-wrap gap-2 mt-2">
+                <button onClick={sendRequest} disabled={sendingReq}
+                  className="text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                  {sendingReq ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send request + file link
+                </button>
+                <button onClick={addOnly} disabled={sendingReq} className="text-xs text-slate-400 hover:text-white px-2 py-2">Add to checklist only</button>
+                {reqMsg && <span className={`text-xs ${reqMsg.ok ? "text-emerald-400" : "text-amber-300"}`}>{reqMsg.text}</span>}
+              </div>
+              <p className="text-[11px] text-slate-600 mt-1">Always sends this file&apos;s secure link (<span className="font-mono">/file/{file.share_token.slice(0, 6)}…</span>) so every upload lands in this file.</p>
             </div>
           </div>
 

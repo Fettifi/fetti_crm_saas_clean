@@ -1,0 +1,97 @@
+// Send a document request for a specific loan file — to the borrower OR any
+// third party you need something from (co-borrower, CPA, title, employer,
+// insurance agent). It ALWAYS includes that file's dedicated upload link
+// (/file/<token>) so every document routes back to the right file and nothing
+// gets lost. Channel guards mirror leadResponder: email needs RESEND_API_KEY +
+// LEAD_RESPONSE_FROM_EMAIL, SMS needs Twilio creds. No-ops safely if a channel
+// isn't configured, and never throws.
+
+export type DocRequest = {
+  to_name?: string | null;
+  to_email?: string | null;
+  to_phone?: string | null;
+  link: string; // borrower file link — required
+  docs: string[]; // names of the documents being requested
+  note?: string | null; // optional personal note from the loan officer
+  file_number?: string | null;
+  lo_name?: string | null; // who is asking (defaults to Fetti Financial Services)
+};
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+}
+
+function listHtml(docs: string[]): string {
+  if (!docs.length) return "";
+  return `<ul style="margin:14px 0;padding-left:18px;color:#0f172a">${docs
+    .map((d) => `<li style="margin:4px 0">${escapeHtml(d)}</li>`)
+    .join("")}</ul>`;
+}
+
+async function emailDocRequest(r: DocRequest): Promise<boolean> {
+  const key = process.env.RESEND_API_KEY;
+  const from = process.env.LEAD_RESPONSE_FROM_EMAIL; // e.g. "Fetti <hello@fettifi.com>"
+  if (!key || !from || !r.to_email) return false;
+  const first = (r.to_name || "there").split(" ")[0];
+  const who = r.lo_name || "Fetti Financial Services";
+  const intro =
+    r.note && r.note.trim()
+      ? escapeHtml(r.note.trim())
+      : `${escapeHtml(who)} needs a few documents to keep your loan moving. Please upload them securely using the button below — it's the fastest way to get everything in one place.`;
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#0f172a">
+    <p>Hi ${escapeHtml(first)},</p>
+    <p>${intro}</p>
+    ${r.docs.length ? `<p style="margin-bottom:0;font-weight:600">Documents requested:</p>${listHtml(r.docs)}` : ""}
+    <div style="margin-top:18px"><a href="${r.link}" style="background:#10b981;color:#021;font-weight:700;text-decoration:none;padding:12px 22px;border-radius:9999px;display:inline-block">Open your secure file &amp; upload documents →</a></div>
+    <div style="margin-top:8px;color:#64748b;font-size:12px">Or paste this link into your browser: ${r.link}</div>
+    <p style="margin-top:20px;color:#64748b;font-size:12px">Your documents are encrypted and visible only to your Fetti loan team.${r.file_number ? ` · File ${escapeHtml(r.file_number)}` : ""}</p>
+  </div>`;
+  const subject =
+    r.docs.length === 1
+      ? `Document needed for your Fetti loan: ${r.docs[0]}`
+      : `Documents needed for your Fetti loan${r.file_number ? ` (${r.file_number})` : ""}`;
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to: [r.to_email], subject, html }),
+  });
+  return res.ok;
+}
+
+async function smsDocRequest(r: DocRequest): Promise<boolean> {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const from = process.env.TWILIO_FROM;
+  if (!sid || !token || !from || !r.to_phone) return false;
+  const first = (r.to_name || "there").split(" ")[0];
+  const docLine = r.docs.length ? ` We need: ${r.docs.join(", ")}.` : "";
+  const body = `Hi ${first}, ${r.lo_name || "Fetti Financial Services"} here.${docLine} Upload securely here: ${r.link}`;
+  const to = r.to_phone.startsWith("+") ? r.to_phone : `+1${r.to_phone.replace(/\D/g, "")}`;
+  const params = new URLSearchParams({ To: to, From: from, Body: body });
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+  return res.ok;
+}
+
+/** Send a document request over every configured channel. Never throws. */
+export async function sendDocRequest(r: DocRequest): Promise<{ sent: string[] }> {
+  const sent: string[] = [];
+  await Promise.all([
+    emailDocRequest(r)
+      .then((ok) => { if (ok) sent.push("email"); })
+      .catch((e) => console.warn("[docRequest] email", e)),
+    smsDocRequest(r)
+      .then((ok) => { if (ok) sent.push("sms"); })
+      .catch((e) => console.warn("[docRequest] sms", e)),
+  ]);
+  if (sent.length === 0) {
+    console.log("[docRequest] no channels configured — request added to file but not delivered.");
+  }
+  return { sent };
+}

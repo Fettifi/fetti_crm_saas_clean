@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { maybeAdvanceStage } from "@/lib/los";
+import { sendDocRequest } from "@/lib/notify/docRequest";
 
 export const dynamic = "force-dynamic";
 const BUCKET = "loan-docs";
@@ -20,19 +21,57 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({ url: data.signedUrl });
 }
 
-// POST { name, category, required } -> request a new document on this file.
+// POST -> request document(s) on this file, and (optionally) send the borrower
+// or any third party (co-borrower, CPA, title, employer) this file's dedicated
+// upload link so everything routes back to the same file.
+//   { name }            -> single doc (back-compatible)
+//   { items: string[] } -> multiple docs at once
+//   category?, required?
+//   notify?: { to_name, to_email, to_phone, note, lo_name } -> sends the link
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
     const b = await req.json();
-    if (!b.name) return NextResponse.json({ error: "name required" }, { status: 400 });
-    const { data: doc, error } = await supabaseAdmin.from("loan_documents").insert([{
-      loan_file_id: id, name: String(b.name).slice(0, 160), category: b.category || "Other",
+    const names: string[] = Array.isArray(b.items)
+      ? b.items.map((s: unknown) => String(s ?? "").trim()).filter(Boolean)
+      : b.name ? [String(b.name).trim()] : [];
+    if (!names.length) return NextResponse.json({ error: "name or items required" }, { status: 400 });
+
+    const rows = names.map((name) => ({
+      loan_file_id: id, name: name.slice(0, 160), category: b.category || "Other",
       required: b.required !== false, status: "needed", uploaded_by: "lo",
-    }]).select().single();
+    }));
+    const { data: docs, error } = await supabaseAdmin.from("loan_documents").insert(rows).select();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logActivity({ entity_type: "document", entity_id: doc.id, loan_file_id: id, actor: "lo", action: "doc.requested", detail: { name: doc.name } });
-    return NextResponse.json({ document: doc }, { status: 201 });
+    for (const d of docs || []) {
+      await logActivity({ entity_type: "document", entity_id: d.id, loan_file_id: id, actor: "lo", action: "doc.requested", detail: { name: d.name } });
+    }
+
+    // Optionally deliver the request — always carrying this file's secure link.
+    let sent: string[] = [];
+    const notify = b.notify;
+    if (notify && (notify.to_email || notify.to_phone)) {
+      const { data: file } = await supabaseAdmin
+        .from("loan_files").select("share_token, file_number, borrower_name, lead_id").eq("id", id).maybeSingle();
+      if (file?.share_token) {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+        const link = `${appUrl}/file/${file.share_token}`;
+        const res = await sendDocRequest({
+          to_name: notify.to_name || file.borrower_name || null,
+          to_email: notify.to_email || null,
+          to_phone: notify.to_phone || null,
+          link, docs: names, note: notify.note || null,
+          file_number: file.file_number || null, lo_name: notify.lo_name || null,
+        });
+        sent = res.sent;
+        await logActivity({
+          entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: file.lead_id,
+          actor: "lo", action: "doc.request.sent",
+          detail: { to: notify.to_email || notify.to_phone, name: notify.to_name || file.borrower_name, docs: names, channels: sent },
+        });
+      }
+    }
+    return NextResponse.json({ documents: docs, sent }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }
