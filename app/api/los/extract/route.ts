@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { assembleUrla } from "@/lib/urla";
+import { encryptUrlaSsns } from "@/lib/crypto";
 
 // Document OCR auto-fill. Upload a paystub / W2 / bank statement / ID / 1003 and
 // Claude (vision) extracts the URLA-relevant fields and merges them into the
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
     if (Array.isArray(extracted.assets) && extracted.assets.length) {
       cur.assets = [...(cur.assets || []), ...extracted.assets];
     }
-    raw.urla = cur;
+    raw.urla = encryptUrlaSsns(cur); // SSN encrypted at rest (app-layer)
     await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
 
     return NextResponse.json({ ok: true, docType: extracted.docType || "document", extracted });

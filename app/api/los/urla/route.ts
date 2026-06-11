@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { assembleUrla, urlaCompleteness } from "@/lib/urla";
+import { encryptUrlaSsns } from "@/lib/crypto";
 
 // Structured 1003 (URLA) load + save. Auth-gated via the /api/los matcher.
 //   GET  /api/los/urla?file=<id> | ?lead=<id>   -> { urla } (full, for the LO to edit)
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing urla object." }, { status: 400 });
     }
     const raw = lead.raw && typeof lead.raw === "object" ? lead.raw : {};
-    raw.urla = incoming;
+    raw.urla = encryptUrlaSsns(incoming); // SSN encrypted at rest (app-layer)
     const { error } = await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
     if (error) throw new Error(error.message);
 

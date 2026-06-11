@@ -8,6 +8,8 @@
 // lead's first-class columns, (3) the parsed notes blob. Nothing is "hidden"
 // anymore — it all lands in a typed object.
 
+import { decryptField } from "./crypto";
+
 export type YesNo = "Yes" | "No" | "";
 
 export interface UrlaAddress { street?: string; city?: string; state?: string; zip?: string; country?: string; }
@@ -184,7 +186,7 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     firstName: seededBorrower.firstName || firstName,
     lastName: seededBorrower.lastName || lastName,
     fullName: seededBorrower.fullName || lead?.full_name || [firstName, lastName].filter(Boolean).join(" ") || undefined,
-    ssn: seededBorrower.ssn || raw.ssn || n["ssn"] || undefined,
+    ssn: decryptField(seededBorrower.ssn) || raw.ssn || n["ssn"] || undefined,
     dob: seededBorrower.dob || n["dob"] || undefined,
     citizenship: seededBorrower.citizenship || n["citizenship"] || undefined,
     maritalStatus: seededBorrower.maritalStatus || n["marital"] || undefined,
