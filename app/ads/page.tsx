@@ -108,6 +108,33 @@ export default function AdsPage() {
           </div>
         </div>
 
+        {/* Refi campaign */}
+        <div className={card}>
+          <div className="text-xs uppercase tracking-wide text-emerald-400 mb-3">🔁 Google Search — Refinance (run alongside DSCR · ~$15–25/day)</div>
+          <p className="text-sm text-slate-400 mb-3">Two angles, two landing pages. <b>DSCR cash-out</b> (investors pulling equity from rentals — high value) and <b>general refi</b> (homeowners lowering rate / cashing out).</p>
+          <div className="space-y-3">
+            <List title="DSCR cash-out refi — keywords" items={['"dscr cash out refinance"', '"cash out refinance rental property"', '"refinance investment property"', '"dscr refinance"', '"cash out rental property loan"', '"refinance rental no tax returns"']} />
+            <List title="General refi — keywords" items={['"cash out refinance"', '"refinance my home"', '"mortgage refinance"', '"lower my mortgage payment"', '"home equity cash out"', '"rate and term refinance"']} />
+            <List title="Headlines (mix for both)" items={["Cash-Out Your Rental Equity", "DSCR Cash-Out Refi", "Refi On Rental Income, No Tax Returns", "Lower Your Rate & Payment", "Tap Your Home Equity", "Pull Cash To Buy Your Next Deal", "Lender & Broker — Best Terms", "Pre-Qualify In 2 Minutes", "Shorten Your Term", "Fetti Financial · NMLS 2267023"]} />
+            <List title="Descriptions" items={[
+              "Pull equity from your rentals to fund the next deal. Qualify on cash flow, not tax returns.",
+              "Lower your payment or cash out. We shop dozens of lenders for your best refinance — no games.",
+              "DSCR refi closes in an LLC, nationwide. Pre-qualify with no credit pull to start.",
+            ]} />
+            <div className="grid grid-cols-1 gap-2">
+              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-1"><div className="text-xs uppercase tracking-wide text-emerald-400">DSCR refi landing page</div><CopyBtn text="https://app.fettifi.com/lp/dscr-refi?utm_source=google&utm_medium=cpc&utm_campaign=dscr_refi" /></div>
+                <code className="text-xs text-emerald-300 break-all">https://app.fettifi.com/lp/dscr-refi?utm_source=google&utm_medium=cpc&utm_campaign=dscr_refi</code>
+              </div>
+              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-1"><div className="text-xs uppercase tracking-wide text-emerald-400">General refi landing page</div><CopyBtn text="https://app.fettifi.com/lp/refinance?utm_source=google&utm_medium=cpc&utm_campaign=refi" /></div>
+                <code className="text-xs text-emerald-300 break-all">https://app.fettifi.com/lp/refinance?utm_source=google&utm_medium=cpc&utm_campaign=refi</code>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">Tip: put DSCR-refi keywords in one ad group → /lp/dscr-refi, and general-refi keywords in another → /lp/refinance, so each ad message-matches its page.</p>
+          </div>
+        </div>
+
         {/* Meta phase 2 */}
         <div className={card}>
           <div className="text-xs uppercase tracking-wide text-emerald-400 mb-3">📣 Meta — Phase 2 (after pixel has 30+ visitors) · ~$10/day</div>
