@@ -99,7 +99,7 @@ export async function proxy(request: NextRequest) {
     // (/home, /apply, /quote, /start, /lending, /file, /portal, /privacy, /terms) are NOT listed.
     const protectedRoutes = [
         '/leads', '/pipeline', '/settings', '/training', '/team',
-        '/command', '/los', '/agents', '/partners', '/requests', '/automations', '/task-list', '/roadmap', '/dashboard', '/growth', '/content', '/doctor', '/preapprovals', '/rupee', '/pricing', '/funnel',
+        '/command', '/los', '/agents', '/partners', '/requests', '/automations', '/task-list', '/roadmap', '/dashboard', '/growth', '/content', '/doctor', '/preapprovals', '/rupee', '/pricing', '/funnel', '/ads',
     ]
     const isProtectedRoute = protectedRoutes.some(route => path.startsWith(route))
 

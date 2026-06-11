@@ -13,6 +13,7 @@ const navItems = [
   { href: "/agents", label: "AI Agents", icon: "🧠" },
   { href: "/growth", label: "Lead-Gen Launchpad", icon: "🚀" },
   { href: "/funnel", label: "Funnel Analytics", icon: "📉" },
+  { href: "/ads", label: "Paid Ads Launch Kit", icon: "🎯" },
   { href: "/content", label: "Content Studio", icon: "🎬" },
   { href: "/doctor", label: "CRM Doctor", icon: "🩺" },
   { href: "/los", label: "Loan Files (LOS)", icon: "📁" },
