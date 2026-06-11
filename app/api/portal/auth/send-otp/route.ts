@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+// Server-side OTP must use the service role (bypasses RLS), NOT the public anon
+// key — the anon key has no access to the leads table after the RLS lockdown.
+import { supabaseAdmin as supabase } from '@/lib/supabaseAdminClient';
 
 export async function POST(req: NextRequest) {
     try {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+// Service role (server-side), not the public anon key — required after RLS lockdown.
+import { supabaseAdmin as supabase } from '@/lib/supabaseAdminClient';
 
 export async function POST(req: NextRequest) {
     try {
