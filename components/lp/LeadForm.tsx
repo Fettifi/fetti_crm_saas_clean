@@ -1,0 +1,83 @@
+"use client";
+
+// Inline lead-capture form for paid landing pages. Client-only (form interactivity),
+// but the surrounding pitch is server-rendered for instant paint. Reads UTMs at
+// submit time. Honeypot + consent + conversion pixel.
+import { useState } from "react";
+import { CheckCircle2 } from "lucide-react";
+import { trackLead } from "@/lib/track";
+import type { LpConfig } from "@/lib/lpConfigs";
+
+const CONSENT = "By submitting, borrower agreed Fetti Financial Services may contact by phone, email & text (SMS), including automated. Consent not required to buy. STOP to opt out.";
+
+export default function LeadForm({ config }: { config: LpConfig }) {
+  const [done, setDone] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const field = "w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none";
+
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitting(true); setErr(null);
+    const fd = new FormData(e.currentTarget);
+    const sp = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    const purpose = config.purposes.find((p) => p.value === fd.get("purpose")) || config.purposes[0];
+    const value = Number(String(fd.get("property_value") || "").replace(/[^0-9.]/g, "")) || undefined;
+    try {
+      const res = await fetch("/api/apply", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: fd.get("full_name"), email: fd.get("email"), phone: fd.get("phone"), state: fd.get("state"),
+          property_value: value, loan_purpose: purpose.loanPurpose, occupancy: config.occupancy, property_type: config.productType,
+          source: `paid_lp_${config.slug}`,
+          utm_source: sp.get("utm_source") || "paid", utm_medium: sp.get("utm_medium") || "cpc", utm_campaign: sp.get("utm_campaign") || config.slug,
+          referrer: sp.get("ref") || undefined,
+          consent: true, consent_at: new Date().toISOString(), consent_text: CONSENT,
+          hp: String(fd.get("company") || ""),
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Something went wrong.");
+      trackLead(value);
+      setDone(true);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Error"); } finally { setSubmitting(false); }
+  }
+
+  if (done) return (
+    <div className="text-center py-6">
+      <CheckCircle2 className="w-14 h-14 text-emerald-600 mx-auto mb-3" />
+      <h2 className="text-2xl font-bold">You&apos;re in! 🎉</h2>
+      <p className="text-slate-600 mt-2">A Fetti specialist will reach out shortly with your options. No credit pull, no pressure.</p>
+      <a href={`/apply/form?utm_source=lp_${config.slug}`} className="inline-block mt-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-7 py-3 rounded-full">Finish your full pre-approval →</a>
+    </div>
+  );
+
+  return (
+    <>
+      <h2 className="text-xl font-bold">Get your options</h2>
+      <p className="text-sm text-slate-500 mt-1">2 minutes · no credit pull · no obligation.</p>
+      <form onSubmit={submit} className="space-y-3 mt-4">
+        <input type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: "absolute", left: "-9999px" }} />
+        <input name="full_name" required placeholder="Full name" className={field} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input name="email" type="email" required placeholder="Email" className={field} />
+          <input name="phone" required placeholder="Phone" className={field} />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input name="state" required placeholder="Property state (e.g. FL)" className={field} />
+          <input name="property_value" inputMode="numeric" placeholder="Est. property value ($)" className={field} />
+        </div>
+        {config.purposes.length > 1 && (
+          <select name="purpose" defaultValue={config.purposes[0].value} className={field}>
+            {config.purposes.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+        )}
+        {err && <p className="text-red-500 text-sm">{err}</p>}
+        <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3.5 rounded-full text-lg shadow-lg shadow-emerald-600/25">
+          {submitting ? "Submitting…" : "See my options →"}
+        </button>
+        <p className="text-[11px] text-slate-400 text-center">{CONSENT}</p>
+      </form>
+    </>
+  );
+}

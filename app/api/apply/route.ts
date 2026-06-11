@@ -11,6 +11,7 @@ import { getAgent } from "@/lib/agents/agents";
 import { runAgent } from "@/lib/agents/runner";
 import { logActivity } from "@/lib/activity";
 import { ensureLoanFileForLead } from "@/lib/los";
+import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 
 export const dynamic = "force-dynamic";
 // The full 5-agent pipeline runs post-response via after(); give the function
@@ -184,13 +185,26 @@ export async function POST(req: NextRequest) {
         // Open a loan file immediately — gives the borrower a custom document link
         // and seeds the checklist/compliance for this product.
         let fileLink: string | undefined;
+        let loanFile: any = null;
         try {
-          const loanFile = await ensureLoanFileForLead(newLead);
+          loanFile = await ensureLoanFileForLead(newLead);
           if (loanFile?.share_token) {
             const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
             fileLink = `${appUrl}/file/${loanFile.share_token}`;
           }
         } catch (e) { console.warn("[/api/apply] loan file create failed:", e); }
+
+        // Auto-screen investor deals — triaged + lender-matched before the LO
+        // even opens the file (cached on the lead for instant display).
+        if (loanFile && isInvestorDeal(newLead)) {
+          try {
+            const screen = await runDealScreen(loanFile, newLead);
+            const raw = newLead.raw && typeof newLead.raw === "object" ? newLead.raw : {};
+            raw.deal_screen = screen;
+            await supabaseAdmin.from("leads").update({ raw }).eq("id", newLead.id);
+            await logActivity({ entity_type: "lead", entity_id: newLead.id, lead_id: newLead.id, actor: "agent:dealscreen", action: "deal.screened", detail: { verdict: screen.verdict, score: screen.dealScore } });
+          } catch (e) { console.warn("[/api/apply] deal screen failed:", e); }
+        }
 
         let draftReply = "";
         try {
