@@ -18,6 +18,7 @@ import { LICENSING_SHORT } from "@/lib/legal";
 import { trackLead, trackApplication } from "@/lib/track";
 import AddressInput from "@/components/AddressInput";
 import { CediBubble } from "@/components/CediBubble";
+import CurrencyInput from "@/components/ui/CurrencyInput";
 
 type Opt = { value: string; label: string; emoji?: string; hint?: string };
 type Q =
@@ -654,16 +655,26 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip }: {
       )}
       {(q.kind === "number" || q.kind === "text" || q.kind === "date") && (
         <div className="mt-5">
-          <input
-            autoFocus
-            type={q.kind === "date" ? "date" : "text"}
-            inputMode={q.kind === "number" ? "numeric" : undefined}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={q.placeholder}
-            className={field}
-            onKeyDown={(e) => { if (e.key === "Enter" && input) onAnswer(input); }}
-          />
+          {q.kind === "number" ? (
+            <CurrencyInput
+              autoFocus
+              value={input}
+              onChange={setInput}
+              placeholder={q.placeholder}
+              className={field}
+              onKeyDown={(e) => { if (e.key === "Enter" && input) onAnswer(input); }}
+            />
+          ) : (
+            <input
+              autoFocus
+              type={q.kind === "date" ? "date" : "text"}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={q.placeholder}
+              className={field}
+              onKeyDown={(e) => { if (e.key === "Enter" && input) onAnswer(input); }}
+            />
+          )}
           <button disabled={!input} onClick={() => onAnswer(input)}
             className="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold py-3 rounded-full">Continue →</button>
           {onSkip && (

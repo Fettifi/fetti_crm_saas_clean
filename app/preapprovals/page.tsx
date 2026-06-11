@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { FileCheck2, Loader2, Copy, Check, ExternalLink, Plus, Ban, Download } from "lucide-react";
 import AddressInput from "@/components/AddressInput";
+import CurrencyInput from "@/components/ui/CurrencyInput";
 
 type PA = { id: string; letter_number: string; share_token: string; borrower_name: string; loan_type?: string; loan_amount?: number; status: string; expires_on?: string; created_at: string };
 type LoanFile = { id: string; lead_id?: string; borrower_name: string; email?: string; product?: string; occupancy?: string; property_address?: string; property_value?: number; loan_amount?: number };
@@ -104,9 +105,9 @@ export default function PreApprovals() {
             <div><label className="text-xs text-slate-500">Co-borrower</label><input value={f.co_borrower} onChange={(e) => set("co_borrower", e.target.value)} className={field} /></div>
             <div><label className="text-xs text-slate-500">Loan program</label><select value={f.loan_type} onChange={(e) => set("loan_type", e.target.value)} className={field}>{LOAN_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
             <div><label className="text-xs text-slate-500">Occupancy</label><select value={f.occupancy} onChange={(e) => set("occupancy", e.target.value)} className={field}>{OCC.map((t) => <option key={t}>{t}</option>)}</select></div>
-            <div><label className="text-xs text-slate-500">Purchase price ($)</label><input value={f.purchase_price} onChange={(e) => set("purchase_price", e.target.value)} inputMode="numeric" className={field} /></div>
-            <div><label className="text-xs text-slate-500">Down payment ($)</label><input value={f.down_payment} onChange={(e) => set("down_payment", e.target.value)} inputMode="numeric" className={field} /></div>
-            <div><label className="text-xs text-slate-500">Approved loan amount ($)</label><input value={f.loan_amount} onChange={(e) => set("loan_amount", e.target.value)} inputMode="numeric" placeholder="auto = price − down" className={field} /></div>
+            <div><label className="text-xs text-slate-500">Purchase price</label><CurrencyInput value={f.purchase_price} onChange={(v) => set("purchase_price", v)} className={field} /></div>
+            <div><label className="text-xs text-slate-500">Down payment</label><CurrencyInput value={f.down_payment} onChange={(v) => set("down_payment", v)} className={field} /></div>
+            <div><label className="text-xs text-slate-500">Approved loan amount</label><CurrencyInput value={f.loan_amount} onChange={(v) => set("loan_amount", v)} placeholder="auto = price − down" className={field} /></div>
             <div><label className="text-xs text-slate-500">Loan term</label><select value={f.term} onChange={(e) => set("term", e.target.value)} className={field}>{TERMS.map((t) => <option key={t}>{t}</option>)}</select></div>
             <div><label className="text-xs text-slate-500">Estimated rate</label><input value={f.interest_rate} onChange={(e) => set("interest_rate", e.target.value)} placeholder="e.g. 6.5% (or leave blank)" className={field} /></div>
             <div><label className="text-xs text-slate-500">Expires on</label><input type="date" value={f.expires_on} onChange={(e) => set("expires_on", e.target.value)} placeholder="defaults to 60 days" className={field} /></div>

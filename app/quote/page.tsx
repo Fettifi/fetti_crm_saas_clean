@@ -8,6 +8,7 @@ import { CheckCircle2 } from "lucide-react";
 import { trackLead } from "@/lib/track";
 import AddressInput from "@/components/AddressInput";
 import { CediBubble } from "@/components/CediBubble";
+import CurrencyInput from "@/components/ui/CurrencyInput";
 
 const PRODUCTS = [
   { key: "Home Purchase", ltv: 0.95 },
@@ -86,7 +87,7 @@ export default function QuotePage() {
             <select value={purpose} onChange={(e) => setPurpose(e.target.value)} className={field}>
               {PRODUCTS.map((p) => <option key={p.key}>{p.key}</option>)}
             </select>
-            <input value={value} onChange={(e) => setValue(e.target.value)} inputMode="numeric" placeholder="Property value ($)" className={field} />
+            <CurrencyInput value={value} onChange={setValue} placeholder="Property value" className={field} />
             <select value={credit} onChange={(e) => setCredit(e.target.value)} className={field}>
               {CREDIT.map((c) => <option key={c}>{c}</option>)}
             </select>

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { trackLead } from "@/lib/track";
 import type { LpConfig } from "@/lib/lpConfigs";
+import CurrencyInput from "@/components/ui/CurrencyInput";
 
 const CONSENT = "By submitting, borrower agreed Fetti Financial Services may contact by phone, email & text (SMS), including automated. Consent not required to buy. STOP to opt out.";
 
@@ -14,6 +15,7 @@ export default function LeadForm({ config }: { config: LpConfig }) {
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [propVal, setPropVal] = useState(""); // clean numeric string from CurrencyInput
   const field = "w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none";
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -22,7 +24,7 @@ export default function LeadForm({ config }: { config: LpConfig }) {
     const fd = new FormData(e.currentTarget);
     const sp = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     const purpose = config.purposes.find((p) => p.value === fd.get("purpose")) || config.purposes[0];
-    const value = Number(String(fd.get("property_value") || "").replace(/[^0-9.]/g, "")) || undefined;
+    const value = Number(propVal.replace(/[^0-9.]/g, "")) || undefined;
     try {
       const res = await fetch("/api/apply", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -65,7 +67,7 @@ export default function LeadForm({ config }: { config: LpConfig }) {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <input name="state" required placeholder="Property state (e.g. FL)" className={field} />
-          <input name="property_value" inputMode="numeric" placeholder="Est. property value ($)" className={field} />
+          <CurrencyInput value={propVal} onChange={setPropVal} placeholder="Est. property value" className={field} />
         </div>
         {config.purposes.length > 1 && (
           <select name="purpose" defaultValue={config.purposes[0].value} className={field}>

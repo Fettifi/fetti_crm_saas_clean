@@ -6,6 +6,7 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Plus, Trash2, Save, Download, FileUp } from "lucide-react";
+import CurrencyInput from "@/components/ui/CurrencyInput";
 
 function getAt(o: any, path: string) { return path.split(".").reduce((a, k) => (a == null ? undefined : a[k]), o); }
 function setAt(o: any, path: string, val: any) {
@@ -77,7 +78,10 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
 
   const Txt = ({ label, path, type = "text", money = false }: { label: string; path: string; type?: string; money?: boolean }) => (
     <div><label className={lbl}>{label}</label>
-      <input type={type} className={inp} value={getAt(u, path) ?? ""} onChange={(e) => (money || type === "number") ? setNum(path, e.target.value) : set(path, e.target.value)} /></div>
+      {money
+        ? <CurrencyInput value={getAt(u, path) ?? ""} onChange={(v) => setNum(path, v)} className={inp} />
+        : <input type={type} className={inp} value={getAt(u, path) ?? ""} onChange={(e) => type === "number" ? setNum(path, e.target.value) : set(path, e.target.value)} />}
+    </div>
   );
   const Sel = ({ label, path, opts }: { label: string; path: string; opts: (string | string[])[] }) => (
     <div><label className={lbl}>{label}</label>
