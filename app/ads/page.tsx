@@ -99,9 +99,9 @@ export default function AdsPage() {
             <List title="Responsive Search Ad — Headlines (paste all)" items={DSCR_HEADLINES} />
             <List title="Responsive Search Ad — Descriptions" items={DSCR_DESCRIPTIONS} />
             <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
-              <div className="flex items-center justify-between mb-2"><div className="text-xs uppercase tracking-wide text-emerald-400">Final URL (lead magnet)</div><CopyBtn text="https://app.fettifi.com/quote?utm_source=google&utm_medium=cpc&utm_campaign=dscr" /></div>
-              <code className="text-xs text-emerald-300 break-all">https://app.fettifi.com/quote?utm_source=google&utm_medium=cpc&utm_campaign=dscr</code>
-              <p className="text-[11px] text-slate-500 mt-1">Instant-estimate page = highest cold-traffic conversion; the UTM tags flow into the lead.</p>
+              <div className="flex items-center justify-between mb-2"><div className="text-xs uppercase tracking-wide text-emerald-400">Final URL (dedicated paid landing page)</div><CopyBtn text="https://app.fettifi.com/lp/dscr?utm_source=google&utm_medium=cpc&utm_campaign=dscr" /></div>
+              <code className="text-xs text-emerald-300 break-all">https://app.fettifi.com/lp/dscr?utm_source=google&utm_medium=cpc&utm_campaign=dscr</code>
+              <p className="text-[11px] text-slate-500 mt-1">Purpose-built DSCR landing page: message-matched to the ad, no nav, inline lead capture = highest cold-traffic conversion. UTMs flow into the lead.</p>
             </div>
             <List title="Sitelink extensions" items={["Get a DSCR Quote → /quote", "Pre-Qualify (2 min) → /apply/form", "Investment Loan Programs → /lending", "Why Fetti → /home"]} />
             <List title="Callout extensions" items={["No Tax Returns", "Close in an LLC", "Lender + Broker", "Nationwide DSCR", "No Credit Pull to Start", "Fast Pre-Approval"]} />
@@ -126,8 +126,8 @@ export default function AdsPage() {
               <p className="text-xs text-slate-400">Audience: <b>Lookalike of your leads</b> (1%) + interests: real estate investing, rental property, BiggerPockets, landlords. Objective: Leads.</p>
             </div>
             <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
-              <div className="flex items-center justify-between mb-1"><div className="text-xs uppercase tracking-wide text-emerald-400">Meta destination URL</div><CopyBtn text="https://app.fettifi.com/quote?utm_source=meta&utm_medium=paid_social&utm_campaign=dscr_retarget" /></div>
-              <code className="text-xs text-emerald-300 break-all">https://app.fettifi.com/quote?utm_source=meta&utm_medium=paid_social&utm_campaign=dscr_retarget</code>
+              <div className="flex items-center justify-between mb-1"><div className="text-xs uppercase tracking-wide text-emerald-400">Meta destination URL</div><CopyBtn text="https://app.fettifi.com/lp/dscr?utm_source=meta&utm_medium=paid_social&utm_campaign=dscr_retarget" /></div>
+              <code className="text-xs text-emerald-300 break-all">https://app.fettifi.com/lp/dscr?utm_source=meta&utm_medium=paid_social&utm_campaign=dscr_retarget</code>
             </div>
           </div>
         </div>
