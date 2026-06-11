@@ -93,6 +93,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     if (res.ok) { const j = await res.json(); setFile(j.file); setDocs(j.documents); setActivity(j.activity); }
     setLoading(false);
     try { const r = await fetch(`/api/los/export?file=${id}&report=1`); if (r.ok) setMismo(await r.json()); } catch {}
+    try { const sr = await fetch(`/api/los/screen?file=${id}`); if (sr.ok) { const sj = await sr.json(); if (sj.screen) setScreen(sj.screen); } } catch {}
   }, [id]);
   useEffect(() => { load(); }, [load]);
 
