@@ -12,6 +12,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // MFA step-up (only shown if the account has a verified authenticator).
+  const [mfa, setMfa] = useState<{ factorId: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -45,10 +48,39 @@ export default function LoginPage() {
         return;
       }
 
+      // MFA step-up: if this account has a verified authenticator, require the
+      // 6-digit code. Fail-open — any error here proceeds to login (no lockout).
+      try {
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (aal?.currentLevel === "aal1" && aal?.nextLevel === "aal2") {
+          const { data: f } = await supabase.auth.mfa.listFactors();
+          const totp = f?.totp?.find((x: any) => x.status === "verified") || f?.totp?.[0];
+          if (totp?.id) { setMfa({ factorId: totp.id }); return; }
+        }
+      } catch { /* fail open */ }
+
       router.push("/leads");
       router.refresh();
     } catch (err) {
       setError("An unexpected error occurred.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleMfa(e: FormEvent) {
+    e.preventDefault();
+    if (!mfa || mfaCode.length < 6) return;
+    setLoading(true); setError(null);
+    try {
+      const { data: ch, error: cErr } = await supabase.auth.mfa.challenge({ factorId: mfa.factorId });
+      if (cErr) throw cErr;
+      const { error: vErr } = await supabase.auth.mfa.verify({ factorId: mfa.factorId, challengeId: ch.id, code: mfaCode });
+      if (vErr) { setError("Invalid code — enter the current 6 digits."); return; }
+      router.push("/leads");
+      router.refresh();
+    } catch (err: any) {
+      setError(err?.message || "Verification failed.");
     } finally {
       setLoading(false);
     }
@@ -79,6 +111,22 @@ export default function LoginPage() {
           </div>
         )}
 
+        {mfa ? (
+          <form onSubmit={handleMfa} className="space-y-4">
+            <p className="text-sm text-slate-400">Enter the 6-digit code from your authenticator app.</p>
+            <input
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              inputMode="numeric"
+              autoFocus
+              placeholder="123456"
+              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-emerald-500 tracking-[0.4em] text-center"
+            />
+            <button type="submit" disabled={loading || mfaCode.length < 6} className="w-full rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 transition-colors disabled:opacity-50">
+              {loading ? "Verifying..." : "Verify"}
+            </button>
+          </form>
+        ) : (
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
@@ -124,6 +172,7 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
+        )}
       </div>
     </div>
   );

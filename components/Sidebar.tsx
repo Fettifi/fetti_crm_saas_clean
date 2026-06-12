@@ -24,6 +24,7 @@ const navItems = [
   { href: "/requests", label: "Requests", icon: "📥" },
   { href: "/automations", label: "Automations", icon: "⚡" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
+  { href: "/security", label: "Security (MFA)", icon: "🔐" },
   { href: "/team", label: "Team", icon: "👥" },
   { href: "/training", label: "My Personal Assistant", icon: "🤖" },
   { href: "/task-list", label: "Task List", icon: "✅" },
