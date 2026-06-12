@@ -1,8 +1,11 @@
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { logActivity } from "@/lib/logger";
+import { createBrowserClient } from "@supabase/ssr";
 
 // Nav items matching the specialized screenshot
 const navItems = [
@@ -33,6 +36,18 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    try { logActivity('logout'); } catch { /* */ }
+    try {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (url && key) await createBrowserClient(url, key).auth.signOut();
+    } catch { /* sign out is best-effort */ }
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <aside className="hidden md:flex w-64 flex-col border-r border-slate-900/80 bg-slate-950/95 overflow-hidden">
@@ -113,7 +128,7 @@ export default function Sidebar() {
           </div>
 
           <button
-            onClick={() => logActivity('logout')}
+            onClick={handleLogout}
             className="flex w-full items-center justify-between text-[10px] text-slate-400 hover:text-slate-200 py-1.5 px-2 rounded-lg hover:bg-slate-800 transition-colors"
           >
             <span>Log Out</span>
