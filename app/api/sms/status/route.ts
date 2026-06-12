@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,16 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
-    console.log("[sms/status]", form.get("MessageSid"), "->", form.get("MessageStatus"), "to", form.get("To"));
+    const params: Record<string, string> = {};
+    form.forEach((v, k) => { params[k] = String(v); });
+    const token = process.env.TWILIO_AUTH_TOKEN || "";
+    if (token) {
+      const sig = req.headers.get("x-twilio-signature") || "";
+      if (!twilioSignatureValid(token, sig, webhookCandidateUrls(req, "/api/sms/status"), params)) {
+        return new NextResponse("Forbidden", { status: 403 });
+      }
+    }
+    console.log("[sms/status]", params["MessageSid"], "->", params["MessageStatus"], "to", params["To"]);
   } catch (e) {
     console.warn("[sms/status] parse error", e);
   }

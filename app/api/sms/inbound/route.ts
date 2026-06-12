@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,23 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
-    const from = String(form.get("From") || "");
-    const body = String(form.get("Body") || "").trim();
+    const params: Record<string, string> = {};
+    form.forEach((v, k) => { params[k] = String(v); });
+
+    // Reject forged webhooks: verify Twilio's signature. Fail-open only if no
+    // auth token is configured (can't verify) so this never silently blocks.
+    const token = process.env.TWILIO_AUTH_TOKEN || "";
+    if (token) {
+      const sig = req.headers.get("x-twilio-signature") || "";
+      const ok = twilioSignatureValid(token, sig, webhookCandidateUrls(req, "/api/sms/inbound"), params);
+      if (!ok) {
+        console.warn("[sms/inbound] rejected: invalid Twilio signature");
+        return new NextResponse("Forbidden", { status: 403 });
+      }
+    }
+
+    const from = String(params["From"] || "");
+    const body = String(params["Body"] || "").trim();
     const digits = from.replace(/\D/g, "").slice(-10);
 
     if (digits) {
