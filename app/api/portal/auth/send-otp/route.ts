@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 // Server-side OTP must use the service role (bypasses RLS), NOT the public anon
 // key — the anon key has no access to the leads table after the RLS lockdown.
 import { supabaseAdmin as supabase } from '@/lib/supabaseAdminClient';
+import { rateLimit, clientIp } from '@/lib/rateLimit';
 
 export async function POST(req: NextRequest) {
     try {
@@ -9,6 +10,11 @@ export async function POST(req: NextRequest) {
 
         if (!email) {
             return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+        }
+
+        // Throttle OTP requests per IP and per email (anti brute-force/enumeration).
+        if (!(await rateLimit(`otp-send:${clientIp(req)}`, 6, 900)) || !(await rateLimit(`otp-send:${String(email).toLowerCase()}`, 6, 900))) {
+            return NextResponse.json({ message: 'Too many requests. Please wait a few minutes.' }, { status: 429 });
         }
 
         // 1. Check if lead exists

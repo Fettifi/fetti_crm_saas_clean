@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 // Service role (server-side), not the public anon key — required after RLS lockdown.
 import { supabaseAdmin as supabase } from '@/lib/supabaseAdminClient';
+import { rateLimit, clientIp } from '@/lib/rateLimit';
 
 export async function POST(req: NextRequest) {
     try {
@@ -8,6 +9,11 @@ export async function POST(req: NextRequest) {
 
         if (!email || !code) {
             return NextResponse.json({ error: 'Email and code are required' }, { status: 400 });
+        }
+
+        // Throttle verification attempts (anti brute-force on the 6-digit code).
+        if (!(await rateLimit(`otp-verify:${clientIp(req)}`, 10, 900))) {
+            return NextResponse.json({ error: 'Too many attempts. Please wait a few minutes.' }, { status: 429 });
         }
 
         // 1. Find Lead with matching code

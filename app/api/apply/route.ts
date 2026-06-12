@@ -12,6 +12,7 @@ import { runAgent } from "@/lib/agents/runner";
 import { logActivity } from "@/lib/activity";
 import { ensureLoanFileForLead } from "@/lib/los";
 import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
+import { rateLimit, clientIp } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 // The full 5-agent pipeline runs post-response via after(); give the function
@@ -67,6 +68,12 @@ function scoreLead(b: Body): { score: number; tier: "Tier 1" | "Tier 2" | "Tier 
 
 export async function POST(req: NextRequest) {
   try {
+    // Abuse protection: cap submissions per IP (generous so real users and
+    // shared office IPs are never blocked; stops bulk spam). Fail-open.
+    if (!(await rateLimit(`apply:${clientIp(req)}`, 20, 600))) {
+      return NextResponse.json({ error: "Too many submissions — please wait a few minutes and try again." }, { status: 429 });
+    }
+
     const body = (await req.json()) as Body;
 
     // Anti-spam honeypot: real users never see/fill this hidden field. Bots do.

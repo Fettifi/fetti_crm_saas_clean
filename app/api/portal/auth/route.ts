@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 // Service role (server-side), not the public anon key — required after RLS lockdown.
 import { supabaseAdmin as supabase } from '@/lib/supabaseAdminClient';
+import { rateLimit, clientIp } from '@/lib/rateLimit';
 
 export async function POST(req: NextRequest) {
     try {
         const { action, email, code } = await req.json();
+
+        // Throttle OTP send/verify per IP (anti brute-force/enumeration).
+        if (!(await rateLimit(`otp:${clientIp(req)}`, 12, 900))) {
+            return NextResponse.json({ message: 'Too many requests. Please wait a few minutes.' }, { status: 429 });
+        }
 
         if (action === 'send_code') {
             // 1. Check if lead exists
