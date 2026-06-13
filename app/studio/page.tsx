@@ -73,6 +73,8 @@ export default function CreativeStudio() {
   const [gen, setGen] = useState(false);
   const [rec, setRec] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [ideas, setIdeas] = useState<any[]>([]);
+  const [loadingIdeas, setLoadingIdeas] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const embRef = useRef<HTMLImageElement | null>(null);
   const markRef = useRef<HTMLImageElement | null>(null);
@@ -150,8 +152,20 @@ export default function CreativeStudio() {
   useEffect(() => { const i = new Image(); i.src = "/fetti-emblem.png"; i.onload = () => { embRef.current = i; draw(); }; }, [draw]);
   useEffect(() => { const i = new Image(); i.src = "/cedi.png"; i.onload = () => { markRef.current = i; draw(); }; }, [draw]);
   useEffect(() => { draw(); }, [draw]);
+  // Load the auto-generated (daily-refreshed) idea queue on mount.
+  useEffect(() => { (async () => { try { const r = await fetch("/api/studio/ideas"); if (r.ok) { const j = await r.json(); setIdeas(j.concepts || []); } } catch { /* */ } })(); }, []);
 
   function applyTemplate(t: typeof TEMPLATES[number]) { setHeadline(t.headline); setSub(t.sub); setCta(t.cta); setPrompt(t.prompt); setLine(t.line); setHookOpts(t.hooks); setHook(t.hooks[0]); }
+  function applyConcept(c: any) {
+    if (c.headline) setHeadline(c.headline); if (c.sub) setSub(c.sub); if (c.cta) setCta(c.cta);
+    if (c.prompt) setPrompt(c.prompt); if (c.line) setLine(c.line);
+    if (Array.isArray(c.hooks) && c.hooks.length) { setHookOpts(c.hooks); setHook(c.hooks[0]); }
+  }
+  async function autoIdeas() {
+    setLoadingIdeas(true);
+    try { const r = await fetch("/api/studio/ideas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ n: 6 }) }); const j = await r.json(); if (r.ok && j.concepts?.length) setIdeas(j.concepts); }
+    catch { /* */ } finally { setLoadingIdeas(false); }
+  }
 
   async function generate() {
     setGen(true); setMsg(null);
@@ -219,6 +233,27 @@ export default function CreativeStudio() {
         <p className="text-slate-400 text-sm mt-1">Mark-fronted ad images & videos built for attention: scroll-stopping hook, captions synced to his voice, 9:16. NMLS disclosure baked in.</p>
 
         <div className="flex flex-wrap gap-2 mt-4">{TEMPLATES.map((t) => (<button key={t.key} onClick={() => applyTemplate(t)} className="text-xs px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200">{t.key}</button>))}</div>
+
+        {/* Ad Factory — auto-generated fresh ideas (daily cron + on-demand) */}
+        <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 mt-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold flex items-center gap-2">🤖 Ad Factory <span className="text-xs text-slate-500 font-normal hidden sm:inline">— fresh AI ad ideas in Mark&apos;s voice, auto-refreshed daily</span></div>
+            <button onClick={autoIdeas} disabled={loadingIdeas} className="text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5">{loadingIdeas ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}{loadingIdeas ? "Thinking…" : "Generate ideas"}</button>
+          </div>
+          {ideas.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
+              {ideas.map((c, i) => (
+                <button key={i} onClick={() => applyConcept(c)} className="text-left bg-slate-900 border border-slate-800 hover:border-emerald-500/60 rounded-lg p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-emerald-400">{c.product}</div>
+                  <div className="text-sm font-semibold mt-0.5 truncate">{(c.hooks && c.hooks[0]) || c.headline}</div>
+                  <div className="text-xs text-slate-500 mt-1 h-8 overflow-hidden">{(c.line || "").slice(0, 95)}…</div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-600 mt-2">Click <b>Generate ideas</b> for a fresh batch (they also auto-refresh daily). Tap any idea to load its hooks, script &amp; copy into the editor — then Generate the image and export.</div>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-5">
           <div className="space-y-4">

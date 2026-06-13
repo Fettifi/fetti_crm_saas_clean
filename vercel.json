@@ -10,6 +10,7 @@
         { "path": "/api/cron/org-learn", "schedule": "0 18 * * *" },
         { "path": "/api/cron/content", "schedule": "0 13 * * *" },
         { "path": "/api/cron/doctor", "schedule": "0 */6 * * *" },
-        { "path": "/api/cron/heal", "schedule": "30 * * * *" }
+        { "path": "/api/cron/heal", "schedule": "30 * * * *" },
+        { "path": "/api/cron/ad-factory", "schedule": "0 14 * * *" }
     ]
 }
