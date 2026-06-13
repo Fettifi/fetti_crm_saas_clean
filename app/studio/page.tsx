@@ -19,19 +19,19 @@ const FORMATS: Record<string, { w: number; h: number; label: string; gen: string
 // "Fetti. We do money." (see lib/markPersona.ts for the character brief).
 const TEMPLATES = [
   { key: "DSCR Purchase", headline: "DSCR Loans", sub: "Qualify on the rental income — not your tax returns.", cta: "Apply in 2 min",
-    line: "Hey — Mark here. Own a rental, or want one? Forget the tax returns. I qualify you on the property's income, you close in your L-L-C, anywhere in the country. Two minutes to apply, and we've got your money ready. Fetti. We do money.",
+    line: "I'm Mark, with Fetti. Own a rental — or ready to? We qualify you on the property's income, not your tax returns. Close in your L-L-C, in any state. Two minutes to start, and the capital is ready when you are. Fetti. We do money.",
     prompt: "attractive modern American single-family rental home, manicured lawn, bright daylight, blue sky" },
   { key: "DSCR Cash-Out", headline: "Cash Out Your Rentals", sub: "Refinance on the property's cash flow. Close in your LLC.", cta: "Get my options",
-    line: "It's Mark. You've got equity just sitting in your rentals — let's put it to work. I qualify you on the property's cash flow, not your paperwork. Pull the cash, go grab your next deal. Tap below. Fetti. We do money.",
+    line: "Mark here. You have equity sitting in your rentals — let's put it to work. We qualify on the property's cash flow, not your paperwork. Pull your cash out, fund the next deal. Start below. Fetti. We do money.",
     prompt: "beautiful suburban investment property exterior at golden hour" },
   { key: "Fix & Flip", headline: "Fund Your Flip", sub: "Purchase + rehab, fast close, interest-only.", cta: "Get funded",
-    line: "Mark here. Found a flip? I fund the purchase AND the rehab, close you fast, keep it interest-only while you work. You move quick — I move quicker. Let's fund it. Fetti. We do money.",
+    line: "Mark here. Found a flip? We fund the purchase and the rehab, close fast, and keep you interest-only through the project. You move quick — we move quicker. Let's fund it. Fetti. We do money.",
     prompt: "house mid-renovation with fresh exterior remodel, bright" },
   { key: "Refinance", headline: "Lower Your Payment", sub: "Cut your rate or tap your equity — we shop the whole market.", cta: "See my rate",
-    line: "Hi — Mark with Fetti. Want a lower payment, or cash out of your home? I'm a lender AND a broker, so I shop the whole market and bring you the best deal — not one bank's menu. See your number in two minutes. Fetti. We do money.",
+    line: "I'm Mark, with Fetti. Looking for a lower payment, or cash from your home? We're a lender and a broker — so we fund it ourselves, or shop the whole market for your best terms. Never one bank's menu. See your numbers in two minutes. Fetti. We do money.",
     prompt: "warm inviting suburban home exterior, lush landscaping, sunny" },
   { key: "Bank-Statement", headline: "Self-Employed? No Problem.", sub: "Qualify on bank deposits, not tax returns.", cta: "Apply now",
-    line: "Mark here. Self-employed? Your tax returns don't show what you really make — so I don't use 'em. I qualify you on your bank deposits instead. Built by people who get the grind. Apply below. Fetti. We do money.",
+    line: "Mark here. Self-employed? Your tax returns rarely show what you truly earn — so we don't use them. We qualify you on your bank deposits instead. Built by entrepreneurs who understand. Start below. Fetti. We do money.",
     prompt: "modern home office and an attractive home, entrepreneurial, bright and clean" },
 ];
 
