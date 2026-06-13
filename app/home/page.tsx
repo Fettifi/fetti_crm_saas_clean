@@ -147,7 +147,7 @@ export default function MarketingHome() {
             <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Equal Housing Opportunity</span>
           </div>
           <CediBubble center size={64} className="mt-10">
-            Hoo&apos;s ready to get funded? I&apos;m <span className="font-bold text-slate-900">Mark</span>. Straight outta LA, and I find your money. Easy, no stress. 😎
+            Hoo&apos;s ready to get funded? I&apos;m <span className="font-bold text-slate-900">Mark</span>. Straight outta LA, and we&apos;ve got your money. Easy, no stress. 😎
           </CediBubble>
           <div className="mt-4 flex justify-center"><CediVoice /></div>
         </div>

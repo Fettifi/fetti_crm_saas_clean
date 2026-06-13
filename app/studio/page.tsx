@@ -19,7 +19,7 @@ const FORMATS: Record<string, { w: number; h: number; label: string; gen: string
 // "Fetti. We do money." (see lib/markPersona.ts for the character brief).
 const TEMPLATES = [
   { key: "DSCR Purchase", headline: "DSCR Loans", sub: "Qualify on the rental income — not your tax returns.", cta: "Apply in 2 min",
-    line: "Hey — Mark here. Own a rental, or want one? Forget the tax returns. I qualify you on the property's income, you close in your L-L-C, anywhere in the country. Two minutes to apply, and I go find your money. Fetti. We do money.",
+    line: "Hey — Mark here. Own a rental, or want one? Forget the tax returns. I qualify you on the property's income, you close in your L-L-C, anywhere in the country. Two minutes to apply, and we've got your money ready. Fetti. We do money.",
     prompt: "attractive modern American single-family rental home, manicured lawn, bright daylight, blue sky" },
   { key: "DSCR Cash-Out", headline: "Cash Out Your Rentals", sub: "Refinance on the property's cash flow. Close in your LLC.", cta: "Get my options",
     line: "It's Mark. You've got equity just sitting in your rentals — let's put it to work. I qualify you on the property's cash flow, not your paperwork. Pull the cash, go grab your next deal. Tap below. Fetti. We do money.",

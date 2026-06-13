@@ -26,7 +26,7 @@ export const LP_CONFIGS: Record<string, LpConfig> = {
     bullets: ["⚡ Pre-qualify in 2 minutes — no credit pull to start", "🏢 1–4 units, nationwide. Close in your LLC.", "🛡️ Built by people who've scaled real companies. No games."],
     occupancy: "Investor", productType: "Investment",
     purposes: [{ value: "purchase", label: "Purchase", loanPurpose: "DSCR Purchase" }, { value: "refi", label: "Refinance / cash-out", loanPurpose: "DSCR Refinance" }],
-    markLine: "Qualify on the property, not your paperwork. I'll find your money. — Mark 🦉",
+    markLine: "Qualify on the property, not your paperwork — and we've got the money. — Mark 🦉",
   },
   "dscr-refi": {
     slug: "dscr-refi",
