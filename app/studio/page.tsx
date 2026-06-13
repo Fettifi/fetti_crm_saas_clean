@@ -7,6 +7,7 @@
 // disclosure is baked into every export.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Sparkles, Download, Video, Upload, Image as ImageIcon } from "lucide-react";
+import { withMarkSignoff } from "@/lib/markPersona";
 
 const FORMATS: Record<string, { w: number; h: number; label: string; gen: string }> = {
   square: { w: 1080, h: 1080, label: "Square 1:1", gen: "1024x1024" },
@@ -14,21 +15,23 @@ const FORMATS: Record<string, { w: number; h: number; label: string; gen: string
   story: { w: 1080, h: 1920, label: "Story / Reel 9:16", gen: "1024x1536" },
 };
 
+// Mark's voiceover lines — street-smart money mentor, every clip closes with
+// "Fetti. We do money." (see lib/markPersona.ts for the character brief).
 const TEMPLATES = [
   { key: "DSCR Purchase", headline: "DSCR Loans", sub: "Qualify on the rental income — not your tax returns.", cta: "Apply in 2 min",
-    line: "Hey, I'm Mark with Fetti. Own a rental, or want one? We qualify you on the property's income — not your tax returns. Close in your L-L-C, anywhere in the country. Apply in two minutes and I'll find your money.",
+    line: "Hey — Mark here. Own a rental, or want one? Forget the tax returns. I qualify you on the property's income, you close in your L-L-C, anywhere in the country. Two minutes to apply, and I go find your money. Fetti. We do money.",
     prompt: "attractive modern American single-family rental home, manicured lawn, bright daylight, blue sky" },
   { key: "DSCR Cash-Out", headline: "Cash Out Your Rentals", sub: "Refinance on the property's cash flow. Close in your LLC.", cta: "Get my options",
-    line: "It's Mark. Got equity sitting in your rentals? Let's pull it out — we qualify on the property's cash flow, not your tax returns. Use it to grab your next deal. Tap below and let's go.",
+    line: "It's Mark. You've got equity just sitting in your rentals — let's put it to work. I qualify you on the property's cash flow, not your paperwork. Pull the cash, go grab your next deal. Tap below. Fetti. We do money.",
     prompt: "beautiful suburban investment property exterior at golden hour" },
   { key: "Fix & Flip", headline: "Fund Your Flip", sub: "Purchase + rehab, fast close, interest-only.", cta: "Get funded",
-    line: "Mark here. Found a flip? We fund the purchase plus the rehab, close fast, and keep you interest-only while you work. Move quick — tap below and let's fund it.",
+    line: "Mark here. Found a flip? I fund the purchase AND the rehab, close you fast, keep it interest-only while you work. You move quick — I move quicker. Let's fund it. Fetti. We do money.",
     prompt: "house mid-renovation with fresh exterior remodel, bright" },
   { key: "Refinance", headline: "Lower Your Payment", sub: "Cut your rate or tap your equity — we shop the whole market.", cta: "See my rate",
-    line: "Hi, I'm Mark with Fetti. Want a lower payment or cash from your home? We're a lender and a broker, so we shop the whole market for your best deal. See your rate in two minutes.",
+    line: "Hi — Mark with Fetti. Want a lower payment, or cash out of your home? I'm a lender AND a broker, so I shop the whole market and bring you the best deal — not one bank's menu. See your number in two minutes. Fetti. We do money.",
     prompt: "warm inviting suburban home exterior, lush landscaping, sunny" },
   { key: "Bank-Statement", headline: "Self-Employed? No Problem.", sub: "Qualify on bank deposits, not tax returns.", cta: "Apply now",
-    line: "I'm Mark. Self-employed? Your tax returns don't show your real income — so we don't use them. Qualify on your bank deposits instead. Built by entrepreneurs, for entrepreneurs. Apply below.",
+    line: "Mark here. Self-employed? Your tax returns don't show what you really make — so I don't use 'em. I qualify you on your bank deposits instead. Built by people who get the grind. Apply below. Fetti. We do money.",
     prompt: "modern home office and an attractive home, entrepreneurial, bright and clean" },
 ];
 
@@ -142,7 +145,7 @@ export default function CreativeStudio() {
       // Mark's voiceover: fetch TTS, route through WebAudio, mux into the recording.
       if (markMode && voiceover && line.trim()) {
         setMsg("🎙️ Generating Mark's voiceover…");
-        const tr = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: line }) });
+        const tr = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: withMarkSignoff(line) }) });
         if (tr.ok) {
           const blob = await tr.blob(); const url = URL.createObjectURL(blob);
           audioEl = new Audio(url); audioEl.crossOrigin = "anonymous";
