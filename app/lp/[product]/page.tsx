@@ -6,8 +6,11 @@ import type { Metadata } from "next";
 import { LP_CONFIGS, LP_SLUGS } from "@/lib/lpConfigs";
 import { LICENSING_NOTE } from "@/lib/legal";
 import LeadForm from "@/components/lp/LeadForm";
+import ExitCapture from "@/components/lp/ExitCapture";
+import { SocialProofWall } from "@/components/SocialProofWall";
 
 export const dynamicParams = false; // only the configured products exist; others 404
+export const revalidate = 600; // ISR so fresh proof appears without a redeploy
 export function generateStaticParams() { return LP_SLUGS.map((product) => ({ product })); }
 
 export async function generateMetadata({ params }: { params: Promise<{ product: string }> }): Promise<Metadata> {
@@ -41,7 +44,7 @@ export default async function LandingPage({ params }: { params: Promise<{ produc
           </div>
           {c.statesNote && <p className="text-xs text-slate-400 mt-4">{c.statesNote}</p>}
           <div className="mt-7 flex items-center gap-3">
-            <img src="/cedi-512.png" alt="Mark, the all-knowing Fetti owl" width={56} height={56} className="w-12 h-12" />
+            <img src="/mark-golden-owl-512.png" alt="Mark, the all-knowing Fetti owl" width={56} height={56} className="w-12 h-12" />
             <p className="text-sm text-slate-600 italic">&quot;{c.markLine}&quot;</p>
           </div>
         </div>
@@ -50,6 +53,10 @@ export default async function LandingPage({ params }: { params: Promise<{ produc
           <LeadForm config={c} />
         </div>
       </div>
+
+      <SocialProofWall variant="compact" max={2} heading="Funded, and they'd tell you so." />
+
+      <ExitCapture slug={product} />
 
       <footer className="border-t border-slate-100 mt-6">
         <div className="max-w-5xl mx-auto px-5 py-6">

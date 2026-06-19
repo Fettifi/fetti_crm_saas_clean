@@ -7,11 +7,17 @@ import {
 import { LICENSING_NOTE } from "@/lib/legal";
 import { CediBubble } from "@/components/CediBubble";
 import { CediVoice } from "@/components/CediVoice";
+import HeroCapture from "@/components/HeroCapture";
+import { SocialProofWall } from "@/components/SocialProofWall";
+
+// ISR: keep the static speed of the marketing homepage but let newly approved
+// client wins / fresh Google reviews surface within ~10 minutes.
+export const revalidate = 600;
 
 export const metadata = {
   title: "Fetti Financial Services LLC | Home, Investment & Business Lending",
   description:
-    "Fetti Financial Services LLC. A licensed mortgage lender & broker (NMLS #2267023). We lend directly and shop dozens of lenders to fund your home, investment, or business loan fast. Pre-qualify in 2 minutes, no credit impact.",
+    "Fetti Financial Services LLC — your mortgage solutions specialist (NMLS #2267023). We fund loans directly and tap dozens of lenders to solve your home, investment, or business financing fast. Pre-qualify in 2 minutes, no credit impact.",
   alternates: { canonical: "https://fettifi.com" },
 };
 
@@ -79,12 +85,12 @@ const STEPS = [
 const WHY = [
   { icon: ShieldCheck, title: "Compliance in our DNA", desc: "Shaped by years in heavily-regulated industries. We do it right. Every file, every time." },
   { icon: Rocket, title: "California-fast", desc: "Bridge and hard-money options close in days. Pre-qualification takes minutes." },
-  { icon: Scale, title: "We work for you", desc: "Lender and broker both. Our job is your best option, not a bank's quota." },
+  { icon: Scale, title: "We work for you", desc: "Your solutions specialist. Our job is your best option, not a bank's quota." },
   { icon: HeartHandshake, title: "We get you", desc: "Built by people who've been the operator and the everyday grinder. We respect what you need." },
 ];
 
 const FAQ = [
-  { q: "Are you a lender or a broker?", a: "Both, and that's the advantage. We're a licensed mortgage lender and broker (NMLS #2267023). When funding your loan ourselves is the fastest, cleanest path, we do it. When shopping a wide lender network gets you a better fit, we broker it. You win either way. We do the legwork." },
+  { q: "What makes Fetti different?", a: "We're your mortgage solutions specialist — and we're licensed as both a lender and a broker (NMLS #2267023). When funding your loan ourselves is the fastest, cleanest path, we do it. When a wide lender network gets you a better fit, we tap it. Either way you get the right solution — we do the legwork." },
   { q: "Will getting started affect my credit?", a: "No. Pre-qualifying takes about two minutes with no hard credit pull. We only move forward when you're ready." },
   { q: "How fast can I close?", a: "It depends on the loan, but we move fast. Bridge and hard-money options can close in days, and we keep you posted at every step. All loans are subject to credit approval and program guidelines." },
   { q: "What states do you cover?", a: "Owner-occupied home loans in Florida, Michigan, and California. Investment and business-purpose loans (DSCR, fix & flip, bridge, hard money, and business loans) are available in all 50 states." },
@@ -92,7 +98,7 @@ const FAQ = [
   { q: "Is it really no-obligation?", a: "100%. Pre-qualifying costs nothing, doesn't impact your credit, and comes with zero pressure. Wise money moves only. 🦉" },
 ];
 
-export default function MarketingHome() {
+export default async function MarketingHome() {
   return (
     <div className="min-h-screen bg-white text-slate-900 antialiased selection:bg-emerald-200">
       {/* ---------- Sticky header ---------- */}
@@ -122,16 +128,12 @@ export default function MarketingHome() {
           <p className="mb-6 text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
             We <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">DO</span> Money<span className="text-emerald-600">!</span>
           </p>
-          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-xs font-medium text-emerald-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Licensed mortgage lender &amp; broker · NMLS #2267023
-          </span>
           <h1 className="mt-7 text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.05] text-slate-900">
             The loan the banks{" "}
             <span className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent">won&apos;t shop for you.</span>
           </h1>
           <p className="mt-6 text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            We&apos;re a <span className="font-semibold text-slate-800">lender and a broker</span>. So you bring the goal and we handle the rest: funding it ourselves when that&apos;s fastest, or shopping dozens of lenders when that fits better. Either way, we find your best option for home, investment, and business loans. Start in two minutes. No credit impact.
+            We&apos;re your <span className="font-semibold text-slate-800">mortgage solutions specialist</span>. So you bring the goal and we handle the rest: funding it ourselves when that&apos;s fastest, or tapping dozens of lenders when that fits better. Either way, we find your best option for home, investment, and business loans. Start in two minutes. No credit impact.
           </p>
           <div className="mt-9 flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/apply/form" className="group inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">
@@ -141,13 +143,16 @@ export default function MarketingHome() {
               See what you qualify for
             </Link>
           </div>
+
+          {/* Inline capture — convert hero traffic on the spot instead of bouncing to /apply */}
+          <HeroCapture />
           <div className="mt-7 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-slate-500">
             <span className="inline-flex items-center gap-1.5"><Lock className="w-3.5 h-3.5 text-emerald-600" /> No credit impact to start</span>
             <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> No obligation, no pressure</span>
             <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Equal Housing Opportunity</span>
           </div>
           <CediBubble center size={64} className="mt-10">
-            I&apos;m <span className="font-bold text-slate-900">Mark</span>, your Fetti money guy out of LA. We&apos;ve got the capital — and we make it simple. No stress.
+            I&apos;m <span className="font-bold text-slate-900">Mark</span> with Fetti Financial Services, your mortgage solutions specialist. My job is simple: read your situation, find your smartest move, and make the whole thing easy. Tell me your goal below and I&apos;ll show you the way there. Two minutes, no credit pull.
           </CediBubble>
           <div className="mt-4 flex justify-center"><CediVoice /></div>
         </div>
@@ -170,7 +175,7 @@ export default function MarketingHome() {
         <div className="text-center max-w-2xl mx-auto mb-12">
           <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">The Fetti advantage</p>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">A bank shows you one option. We find your best one.</h2>
-          <p className="text-slate-500 mt-3">Big banks only push their own loans. We do both. Fund directly when that&apos;s fastest, and broker the whole market when that fits you better.</p>
+          <p className="text-slate-500 mt-3">Big banks only push their own loans. We find what actually fits — funding directly when that&apos;s fastest, and shopping the whole market when that gets you a better deal.</p>
         </div>
         <div className="grid md:grid-cols-2 gap-5 max-w-4xl mx-auto">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-7">
@@ -185,7 +190,7 @@ export default function MarketingHome() {
           </div>
           <div className="rounded-2xl border-2 border-emerald-300 bg-white p-7 shadow-lg shadow-emerald-600/5 relative">
             <span className="absolute -top-3 left-7 rounded-full bg-emerald-600 text-white text-xs font-bold px-3 py-1 shadow">Fetti</span>
-            <div className="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-4">Fetti. Lender + broker</div>
+            <div className="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-4">Fetti. Solutions specialist</div>
             <ul className="space-y-3">
               {BANK_VS.map((r) => (
                 <li key={r.us} className="flex items-start gap-3 text-slate-800">
@@ -196,6 +201,9 @@ export default function MarketingHome() {
           </div>
         </div>
       </section>
+
+      {/* ---------- Social proof (real reviews + consented wins) ---------- */}
+      <SocialProofWall heading="Don't take our word for it." />
 
       {/* ---------- Programs ---------- */}
       <section className="max-w-7xl mx-auto px-6 py-16 border-t border-slate-100">
@@ -311,7 +319,7 @@ export default function MarketingHome() {
           <div>
             <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-4">Why Fetti</p>
             <CediBubble className="mb-5">I don&apos;t miss. Here&apos;s why folks roll with Fetti. Straight from me. 🦉</CediBubble>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-slate-900">A brokerage that moves like a fintech, advises like a partner.</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-slate-900">A solutions specialist that moves like a fintech, advises like a partner.</h2>
             <p className="text-slate-500 mt-4 leading-relaxed">
               Institutional-grade programs, operator-grade discipline, and a team that actually picks up the phone.
               We carry the load. Shopping, structuring, and guiding. So you get the right loan, closed fast, without the stress.
