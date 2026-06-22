@@ -17,3 +17,37 @@ a {
 .nav-link {
   @apply text-gray-700 hover:text-black font-medium flex items-center gap-2;
 }
+
+/* Google Places autocomplete dropdown — dark-themed to match the CRM (the SDK
+   appends .pac-container to <body>, so it must be styled globally). */
+.pac-container {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  margin-top: 4px;
+  font-family: inherit;
+  z-index: 9999;
+  overflow: hidden;
+}
+.pac-item {
+  color: #cbd5e1;
+  border-top: 1px solid #1e293b;
+  padding: 7px 11px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.pac-item:hover,
+.pac-item-selected {
+  background: #1e293b;
+}
+.pac-item-query {
+  color: #f8fafc;
+  font-size: 0.85rem;
+}
+.pac-matched {
+  color: #34d399;
+}
+.pac-icon {
+  filter: invert(0.7);
+}

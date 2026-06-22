@@ -3,11 +3,7 @@
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
-import NewLeadsWidget from '@/components/dashboard/NewLeadsWidget';
-import AppsInProgressWidget from '@/components/dashboard/AppsInProgressWidget';
-import SubmittedAppsWidget from '@/components/dashboard/SubmittedAppsWidget';
-import AutomationsWidget from '@/components/dashboard/AutomationsWidget';
-import ReferralStatsWidget from '@/components/dashboard/ReferralStatsWidget';
+import DashboardOverview from '@/components/dashboard/DashboardOverview';
 import AutomationHub from '@/components/dashboard/AutomationHub';
 import RoadmapView from '@/components/dashboard/RoadmapView';
 import TaskList from '@/components/dashboard/TaskList';
@@ -86,31 +82,7 @@ const TABS: { id: TabId; label: string; description: string }[] = [
 
 function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
   if (activeTab === 'dashboard') {
-    return (
-      <>
-        {/* Top stat row */}
-        <section className="grid gap-4 md:grid-cols-3">
-          <NewLeadsWidget />
-          <AppsInProgressWidget />
-          <SubmittedAppsWidget />
-          <AutomationsWidget />
-          <ReferralStatsWidget />
-        </section>
-
-        {/* Matrix workspace */}
-        <section className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 px-5 py-6 text-xs text-slate-400">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Matrix workspace
-          </p>
-          <p className="mt-3 max-w-3xl leading-relaxed">
-            This area is reserved for future widgets: live lead tables, pipeline
-            boards, automations timeline, and LOS views. Fetti Matrix agents
-            should only add new components inside this box while keeping the
-            outer shell layout, sidebar, and header intact.
-          </p>
-        </section>
-      </>
-    );
+    return <DashboardOverview />;
   }
 
   const tabCopy: Record<TabId, string> = {

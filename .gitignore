@@ -7,3 +7,4 @@ fetti_last_errors.json
 .env*.local
 .env
 public/*.pdf
+.claude/settings.local.json

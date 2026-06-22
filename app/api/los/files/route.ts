@@ -16,7 +16,9 @@ export async function GET() {
     for (const d of (docs || []) as any[]) {
       const p = progress[d.loan_file_id] || { total: 0, received: 0, required: 0, requiredReceived: 0 };
       p.total++;
-      const got = d.status !== "needed";
+      // Rejected docs are NOT "received" — they stay outstanding (re-upload needed),
+      // so the queue keeps counting them as missing and the Remind button shows.
+      const got = d.status === "received" || d.status === "accepted";
       if (got) p.received++;
       if (d.required) { p.required++; if (got) p.requiredReceived++; }
       progress[d.loan_file_id] = p;

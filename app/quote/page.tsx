@@ -121,9 +121,10 @@ export default function QuotePage() {
                 {submitting ? "Submitting…" : "Unlock my full quote →"}
               </button>
               <p className="text-xs text-slate-400 text-center">
-                Estimate only. Not a commitment to lend. By submitting, you agree Fetti Financial
-                Services LLC may contact you by phone, email &amp; text (SMS), including automated, at the
-                number provided. Consent isn&apos;t required to buy. Msg &amp; data rates may apply; reply STOP to opt out.
+                Estimate only. Not a commitment to lend. By submitting, you agree Fetti Financial Services LLC (NMLS #2267023)
+                may contact you by phone, email &amp; text (SMS) — including automated — at the number provided, about your inquiry and application.
+                Consent isn&apos;t required to buy. Msg &amp; data rates may apply; message frequency varies. Reply STOP to opt out, HELP for help.
+                See our <a href="/privacy" className="underline hover:text-slate-300">Privacy Policy</a> &amp; <a href="/terms" className="underline hover:text-slate-300">Terms</a>.
               </p>
             </form>
           </div>

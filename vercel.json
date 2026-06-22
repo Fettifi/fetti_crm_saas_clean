@@ -11,6 +11,7 @@
         { "path": "/api/cron/content", "schedule": "0 16 * * *" },
         { "path": "/api/cron/doctor", "schedule": "0 */6 * * *" },
         { "path": "/api/cron/heal", "schedule": "30 * * * *" },
+        { "path": "/api/cron/import-leads", "schedule": "*/15 * * * *" },
         { "path": "/api/cron/ad-factory", "schedule": "0 12 * * *" }
     ]
 }

@@ -26,7 +26,8 @@ export type PricingProduct = {
   propertyTypes?: string[];
   states?: string[];            // 2-letter; empty = all
   notes?: string;
-  uploadedAt?: string;
+  uploadedAt?: string;          // when ingested into the CRM
+  effectiveDate?: string;       // the "as of" date printed on the rate sheet (rates move daily)
 };
 
 export type Scenario = {
@@ -56,10 +57,12 @@ export async function clearLender(lenderId: string): Promise<void> {
 }
 
 export function lenderSummary(products: PricingProduct[]) {
-  const map = new Map<string, { lenderId: string; lenderName: string; count: number; uploadedAt?: string }>();
+  const map = new Map<string, { lenderId: string; lenderName: string; count: number; uploadedAt?: string; effectiveDate?: string }>();
   for (const p of products) {
-    const e = map.get(p.lenderId) || { lenderId: p.lenderId, lenderName: p.lenderName, count: 0, uploadedAt: p.uploadedAt };
-    e.count += 1; if (p.uploadedAt && (!e.uploadedAt || p.uploadedAt > e.uploadedAt)) e.uploadedAt = p.uploadedAt;
+    const e = map.get(p.lenderId) || { lenderId: p.lenderId, lenderName: p.lenderName, count: 0, uploadedAt: p.uploadedAt, effectiveDate: p.effectiveDate };
+    e.count += 1;
+    if (p.uploadedAt && (!e.uploadedAt || p.uploadedAt > e.uploadedAt)) e.uploadedAt = p.uploadedAt;
+    if (p.effectiveDate && (!e.effectiveDate || p.effectiveDate > e.effectiveDate)) e.effectiveDate = p.effectiveDate;
     map.set(p.lenderId, e);
   }
   return [...map.values()].sort((a, b) => a.lenderName.localeCompare(b.lenderName));

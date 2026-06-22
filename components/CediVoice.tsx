@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { Volume2, Pause } from "lucide-react";
 
-// "Hear Mark" — plays the mascot's AI voice greeting (chill LA swagger).
+// "Hear Mark" — plays the mascot's AI voice greeting (cool, calm, insightful).
 export function CediVoice({ className = "" }: { className?: string }) {
   const ref = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -27,7 +27,7 @@ export function CediVoice({ className = "" }: { className?: string }) {
     >
       {playing ? <Pause className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
       {playing ? "Mark's talking…" : "🔊 Hear Mark"}
-      <audio ref={ref} src="/cedi-greeting.mp3" preload="none" onEnded={() => setPlaying(false)} />
+      <audio ref={ref} src="/cedi-greeting.mp3?v=mark3" preload="none" onEnded={() => setPlaying(false)} />
     </button>
   );
 }

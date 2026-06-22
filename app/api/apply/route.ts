@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
+import { encryptField } from "@/lib/crypto";
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { getAgent } from "@/lib/agents/agents";
 import { runAgent } from "@/lib/agents/runner";
@@ -13,6 +14,8 @@ import { logActivity } from "@/lib/activity";
 import { ensureLoanFileForLead } from "@/lib/los";
 import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { sendMetaLeadEvent } from "@/lib/metaCapi";
+import { advanceLeadStage } from "@/lib/leadStage";
 
 export const dynamic = "force-dynamic";
 // The full 5-agent pipeline runs post-response via after(); give the function
@@ -41,6 +44,10 @@ type Body = {
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+  gclid?: string;   // Google Ads click id — needed to tie a lead back to the ad
+  fbclid?: string;  // Meta click id
   referrer?: string; // referral partner code (?ref=)
   hp?: string; // honeypot — must stay empty (bots fill it)
 };
@@ -69,8 +76,11 @@ function scoreLead(b: Body): { score: number; tier: "Tier 1" | "Tier 2" | "Tier 
 export async function POST(req: NextRequest) {
   try {
     // Abuse protection: cap submissions per IP (generous so real users and
-    // shared office IPs are never blocked; stops bulk spam). Fail-open.
-    if (!(await rateLimit(`apply:${clientIp(req)}`, 20, 600))) {
+    // shared office IPs are never blocked; stops bulk spam). Fail-open. Trusted
+    // server-to-server callers (the Meta Lead Ads webhook) carry an internal secret
+    // and skip the per-IP limit so a burst of paid leads is never throttled.
+    const internal = !!process.env.CRON_SECRET && req.headers.get("x-fetti-internal") === process.env.CRON_SECRET;
+    if (!internal && !(await rateLimit(`apply:${clientIp(req)}`, 20, 600))) {
       return NextResponse.json({ error: "Too many submissions — please wait a few minutes and try again." }, { status: 429 });
     }
 
@@ -107,6 +117,12 @@ export async function POST(req: NextRequest) {
 
     const { score, tier } = scoreLead(body);
 
+    // Never persist SSN in plaintext — encrypt at rest (app-layer AES-256-GCM via
+    // SSN_ENCRYPTION_KEY) before it goes into `raw`. The URLA/1003 builder decrypts
+    // it for the LO. Strip formatting so it stores as 9 digits, encrypted.
+    const rawBody: Record<string, unknown> = { ...(body as Record<string, unknown>) };
+    if (rawBody.ssn) rawBody.ssn = encryptField(String(rawBody.ssn).replace(/[^0-9]/g, "")) ?? null;
+
     const row: Record<string, unknown> = {
       full_name,
       first_name,
@@ -131,7 +147,7 @@ export async function POST(req: NextRequest) {
       source: body.source || "website_apply",
       lead_source: body.utm_source || body.source || "website_apply",
       referrer: body.referrer ? String(body.referrer).trim() : null,
-      raw: body as unknown as object,
+      raw: rawBody as object,
     };
 
     // Deduplicate: if a lead with this email or phone already exists, UPDATE it
@@ -141,10 +157,11 @@ export async function POST(req: NextRequest) {
     if (email) orParts.push(`email.eq.${email}`);
     if (phone) orParts.push(`phone.eq.${phone}`);
     let existingId: string | null = null;
+    let existingRaw: Record<string, unknown> | null = null;
     if (orParts.length) {
       const { data: existing } = await supabaseAdmin
-        .from("leads").select("id").or(orParts.join(",")).limit(1).maybeSingle();
-      if (existing) existingId = existing.id as string;
+        .from("leads").select("id, raw").or(orParts.join(",")).limit(1).maybeSingle();
+      if (existing) { existingId = existing.id as string; existingRaw = (existing as any).raw ?? null; }
     }
 
     let data: any;
@@ -153,6 +170,10 @@ export async function POST(req: NextRequest) {
       const updateRow = Object.fromEntries(
         Object.entries(row).filter(([k, v]) => v !== null && k !== "stage" && k !== "raw")
       );
+      // MERGE raw so the multi-step application accumulates (contact step + the full
+      // 1003 step: DOB, citizenship, employment, assets, SSN…). Previously `raw` was
+      // excluded on update, so everything collected after the contact step was lost.
+      updateRow.raw = { ...(existingRaw && typeof existingRaw === "object" ? existingRaw : {}), ...rawBody };
       ({ data, error } = await supabaseAdmin
         .from("leads").update(updateRow).eq("id", existingId).select().single());
     } else {
@@ -165,6 +186,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     const deduped = !!existingId;
+
+    // A completed full 1003 advances the lead to "Application" (new OR returning lead).
+    // This is the signal the pipeline was previously discarding — leads sat at "New Lead"
+    // even after finishing the application.
+    if ((body as any).app_completed && data?.id) {
+      after(async () => { try { await advanceLeadStage(data.id, "Application", { actor: "borrower", reason: "completed application" }); } catch { /* */ } });
+    }
 
     // For genuinely NEW leads, all post-response (after()) so the applicant's
     // submit stays instant:
@@ -186,21 +214,22 @@ export async function POST(req: NextRequest) {
       });
     });
 
+    let fileLink: string | undefined;
     if (!deduped) {
       const newLead = data;
-      after(async () => {
-        // Open a loan file immediately — gives the borrower a custom document link
-        // and seeds the checklist/compliance for this product.
-        let fileLink: string | undefined;
-        let loanFile: any = null;
-        try {
-          loanFile = await ensureLoanFileForLead(newLead);
-          if (loanFile?.share_token) {
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
-            fileLink = `${appUrl}/file/${loanFile.share_token}`;
-          }
-        } catch (e) { console.warn("[/api/apply] loan file create failed:", e); }
+      // Open the loan file + secure document-upload link SYNCHRONOUSLY (idempotent,
+      // best-effort) so we can RETURN it and show it on the confirmation screen —
+      // the borrower gets their secure link on-screen AND in the auto email/SMS.
+      let loanFile: any = null;
+      try {
+        loanFile = await ensureLoanFileForLead(newLead);
+        if (loanFile?.share_token) {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+          fileLink = `${appUrl}/file/${loanFile.share_token}`;
+        }
+      } catch (e) { console.warn("[/api/apply] loan file create failed:", e); }
 
+      after(async () => {
         // Auto-screen investor deals — triaged + lender-matched before the LO
         // even opens the file (cached on the lead for instant display).
         if (loanFile && isInvestorDeal(newLead)) {
@@ -226,10 +255,23 @@ export async function POST(req: NextRequest) {
           }
         } catch (e) { console.warn("[/api/apply] capture agent failed:", e); }
 
+        // Full-auto funnel: tell the borrower exactly what to upload, with their
+        // secure link, in the very first touch — so they self-serve and the
+        // engagement loop (upload → Engaged → doc-chaser) starts with no human.
+        let needDocs: string[] = [];
+        try {
+          if (loanFile?.id) {
+            const { data: ds } = await supabaseAdmin.from("loan_documents")
+              .select("name").eq("loan_file_id", loanFile.id).eq("required", true).limit(6);
+            needDocs = (ds || []).map((d: any) => d.name);
+          }
+        } catch { /* */ }
+        const docsLine = needDocs.length ? ` To get started fast, upload these at your secure link: ${needDocs.join(", ")}.` : "";
+
         let autoSent: string[] = [];
         try {
           const res = await respondToLead({
-            name: full_name, email, phone, loan_purpose: body.loan_purpose, message: draftReply, link: fileLink,
+            name: full_name, email, phone, loan_purpose: body.loan_purpose, message: (draftReply || "") + docsLine, link: fileLink,
           });
           autoSent = res.sent;
         } catch (e) { console.warn("[/api/apply] auto-response failed:", e); }
@@ -241,6 +283,20 @@ export async function POST(req: NextRequest) {
             source: row.source as string, draft_reply: draftReply, auto_sent: autoSent,
           });
         } catch (e) { console.warn("[/api/apply] alert failed:", e); }
+
+        // First-touch physically sent → the lead is Contacted. Advance forward-only.
+        if (autoSent.length) { try { await advanceLeadStage(newLead.id, "Contacted", { actor: "system", reason: "first-touch " + autoSent.join("+") }); } catch { /* */ } }
+
+        // Report the lead to Meta (Conversions API) so the pixel can OPTIMIZE toward
+        // real leads and they show in ad reporting. Skip FB/IG-sourced leads — Meta
+        // already counts those from the instant form (avoids double-counting).
+        try {
+          const src = String(row.source || "").toLowerCase();
+          if (!/facebook|instagram|meta_lead_ad/.test(src)) {
+            const res = await sendMetaLeadEvent(newLead, { sourceUrl: body.referrer || undefined });
+            if (!res.ok) console.warn("[/api/apply] meta CAPI lead:", res.detail);
+          }
+        } catch (e) { console.warn("[/api/apply] meta CAPI error:", e); }
 
         // Run the rest of the 5-agent pipeline automatically on every new lead:
         // Qualify -> Structure -> Process -> Close. Each advises (humans decide),
@@ -272,7 +328,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { success: true, lead_id: data.id, score, tier, deduped },
+      { success: true, lead_id: data.id, score, tier, deduped, file_link: fileLink },
       { status: deduped ? 200 : 201 }
     );
   } catch (err: unknown) {

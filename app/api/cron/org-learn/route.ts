@@ -8,6 +8,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { runOrgBrain } from "@/lib/agents/orgBrain";
 import { logActivity } from "@/lib/activity";
 import { recordHeartbeat } from "@/lib/heartbeat";
+import { cfg } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -18,14 +19,14 @@ async function learn() {
 
   // Leads + quality
   const { data: leads } = await supabaseAdmin
-    .from("leads").select("created_at, tier, source, stage").gte("created_at", sinceISO).limit(8000);
+    .from("leads").select("id, created_at, tier, source, lead_source, stage").gte("created_at", sinceISO).limit(8000);
   const lrows = (leads || []) as any[];
   const tierMix = { t1: 0, t2: 0, t3: 0 };
   for (const l of lrows) { if (l.tier === "Tier 1") tierMix.t1++; else if (l.tier === "Tier 2") tierMix.t2++; else tierMix.t3++; }
 
   // Loan pipeline by stage + funded
   const { data: files } = await supabaseAdmin
-    .from("loan_files").select("stage, status, loan_amount, created_at").limit(8000);
+    .from("loan_files").select("stage, status, loan_amount, created_at, lead_id").limit(8000);
   const frows = (files || []) as any[];
   const pipeline: Record<string, number> = {};
   let funded30 = 0, fundedVolume30 = 0, activeFiles = 0;
@@ -45,6 +46,29 @@ async function learn() {
   const { count: docsReceived } = await supabaseAdmin
     .from("loan_documents").select("*", { count: "exact", head: true }).neq("status", "needed");
 
+  // ---- REVENUE ATTRIBUTION: which lead sources actually produce funded dollars ----
+  // The brain optimizes for REVENUE, not vanity volume — it learns what monetizes.
+  const marginPct = Number(await cfg("LOAN_MARGIN_PCT")) || 2.75;
+  const MARGIN = marginPct / 100;
+  const srcOf = new Map<string, string>();
+  for (const l of lrows) srcOf.set(l.id, l.source || l.lead_source || "unknown");
+  type Rev = { leads: number; funded: number; funded_volume: number; est_revenue: number };
+  const revenue_by_source: Record<string, Rev> = {};
+  const bump = (s: string) => (revenue_by_source[s] ||= { leads: 0, funded: 0, funded_volume: 0, est_revenue: 0 });
+  for (const l of lrows) bump(l.source || l.lead_source || "unknown").leads++;
+  for (const f of frows) {
+    if (f.stage !== "Funded") continue;
+    const r = bump(srcOf.get(f.lead_id) || "unknown");
+    const amt = Number(f.loan_amount || 0);
+    r.funded++; r.funded_volume += amt; r.est_revenue += amt * MARGIN;
+  }
+  // conversion + round, per source
+  for (const r of Object.values(revenue_by_source)) {
+    (r as any).conversion_pct = r.leads ? Math.round((r.funded / r.leads) * 1000) / 10 : 0;
+    r.est_revenue = Math.round(r.est_revenue);
+  }
+  const est_revenue_30d = Math.round(Object.values(revenue_by_source).reduce((a, b) => a + b.est_revenue, 0));
+
   const metrics = {
     leads_30d: lrows.length,
     tier_mix: tierMix,
@@ -54,6 +78,9 @@ async function learn() {
     funded_30d: funded30,
     funded_volume_30d: fundedVolume30,
     documents_received: docsReceived || 0,
+    margin_pct: marginPct,
+    est_revenue_30d,
+    revenue_by_source,
   };
   const activity = { period: "30d", action_counts: actionCounts, total_actions: (acts || []).length };
 
@@ -75,10 +102,12 @@ async function learn() {
     model: process.env.OPENAI_MODEL || "gpt-4o-mini",
   }]);
 
-  // Turn the brain's next-best-actions into trackable tasks. Dedup against
-  // currently-open brain tasks so a daily run doesn't pile up duplicates.
+  // Turn the brain's next-best-actions into trackable tasks. OFF by default —
+  // Ramon manages his own task list (cleared 2026-06-14). Re-enable by setting
+  // app_settings AUTO_BRAIN_TASKS = "on". The brain still banks insights either way.
   let tasksCreated = 0;
-  try {
+  const autoTasks = (await cfg("AUTO_BRAIN_TASKS")) === "on";
+  if (autoTasks) try {
     const { data: openTasks } = await supabaseAdmin.from("org_tasks").select("dedup_key").eq("status", "open");
     const existing = new Set((openTasks || []).map((t: any) => t.dedup_key));
     const toInsert: any[] = [];

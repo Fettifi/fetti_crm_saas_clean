@@ -21,8 +21,12 @@ const navItems = [
   { href: "/studio", label: "Creative Studio", icon: "🎨" },
   { href: "/doctor", label: "CRM Doctor", icon: "🩺" },
   { href: "/los", label: "Loan Files (LOS)", icon: "📁" },
+  { href: "/esign", label: "E-Sign", icon: "✍️" },
   { href: "/pricing", label: "Pricing Comparison", icon: "💲" },
+  { href: "/pricer", label: "Quick Pricer", icon: "🧮" },
+  { href: "/income", label: "Income Calc", icon: "💵" },
   { href: "/preapprovals", label: "Pre-Approvals", icon: "📝" },
+  { href: "/scenarios", label: "Scenario Desk", icon: "📑" },
   { href: "/pipeline", label: "Pipeline", icon: "📈" },
   { href: "/partners", label: "Referral Partners", icon: "🤝" },
   { href: "/requests", label: "Requests", icon: "📥" },
@@ -35,7 +39,7 @@ const navItems = [
   { href: "/roadmap", label: "Roadmap", icon: "🗺️" },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -51,7 +55,7 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="hidden md:flex w-64 flex-col border-r border-slate-900/80 bg-slate-950/95 overflow-hidden">
+    <aside className="flex h-full w-64 flex-col border-r border-slate-900/80 bg-slate-950/95 overflow-hidden">
       {/* Brand block */}
       <div className="border-b border-slate-900/80 px-4 py-6">
         <div className="flex items-center gap-3">
@@ -87,7 +91,7 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              onClick={() => logActivity('navigate_sidebar', { destination: item.href, label: item.label })}
+              onClick={() => { logActivity('navigate_sidebar', { destination: item.href, label: item.label }); onNavigate?.(); }}
               className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs transition-all duration-200 ${active
                 ? "bg-slate-800/80 text-emerald-400 font-medium border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]"
                 : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"

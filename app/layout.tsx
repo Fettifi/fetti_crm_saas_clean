@@ -18,13 +18,16 @@ export const viewport: Viewport = { themeColor: "#0f172a" };
 
 import { Toaster } from 'sonner';
 import TrackingPixels from '@/components/TrackingPixels';
+import AttributionCapture from '@/components/AttributionCapture';
+import AppChrome from '@/components/AppChrome';
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={inter.className}>
       <body className="bg-gray-50 text-gray-900">
         <TrackingPixels />
-        {children}
+        <AttributionCapture />
+        <AppChrome>{children}</AppChrome>
         <Toaster position="top-center" richColors />
       </body>
     </html>

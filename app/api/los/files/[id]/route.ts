@@ -3,9 +3,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
-import { STAGES } from "@/lib/los";
+import { STAGES, deleteLoanFileCascade } from "@/lib/los";
 
 export const dynamic = "force-dynamic";
+
+// DELETE ?purge=1 -> permanently delete this loan file + its documents, activity,
+// preapprovals, and (when purge) the uploaded files in storage. Irreversible.
+// Auth-gated by the /api/los matcher in proxy.ts.
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  try {
+    const { data: file } = await supabaseAdmin.from("loan_files").select("id, lead_id, borrower_name").eq("id", id).maybeSingle();
+    if (!file) return NextResponse.json({ error: "not found" }, { status: 404 });
+    const purge = req.nextUrl.searchParams.get("purge") === "1";
+    const totals = await deleteLoanFileCascade(id, { purgeStorage: purge });
+    await logActivity({ entity_type: "loan_file", entity_id: id, lead_id: file.lead_id, actor: "lo", action: "file.deleted", detail: { borrower: file.borrower_name, purged: purge, ...totals } });
+    return NextResponse.json({ ok: true, purged: purge, ...totals });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
+  }
+}
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

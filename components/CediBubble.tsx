@@ -1,14 +1,14 @@
 import type { ReactNode } from "react";
 
-// Mark the spokes-owl, talking. A speech bubble in his voice. California cool,
-// shades on. Use across the site so the mascot has a real personality.
+// Mark the spokes-owl, talking. A speech bubble in his voice. Cool, calm, and
+// insightful. Use across the site so the mascot has a real personality.
 export function CediBubble({
   children, size = 56, center = false, className = "",
 }: { children: ReactNode; size?: number; center?: boolean; className?: string }) {
   return (
     <div className={`flex w-full max-w-full items-end gap-2 sm:gap-3 ${center ? "justify-center" : ""} ${className}`}>
       <img
-        src="/cedi-512.png"
+        src="/mark-golden-owl-512.png"
         alt="Mark. The all-knowing Fetti owl"
         width={size}
         height={size}

@@ -3,10 +3,11 @@
 // Structured 1003 / URLA editor. The loan officer (or borrower, via a future
 // portal link) completes the full application here. Saves to leads.raw.urla as
 // structured data so the MISMO 3.4 export is complete and import-ready.
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { createContext, use, useCallback, useContext, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Plus, Trash2, Save, Download, FileUp } from "lucide-react";
 import CurrencyInput from "@/components/ui/CurrencyInput";
+import AddressInput from "@/components/AddressInput";
 
 function getAt(o: any, path: string) { return path.split(".").reduce((a, k) => (a == null ? undefined : a[k]), o); }
 function setAt(o: any, path: string, val: any) {
@@ -23,6 +24,61 @@ function setAt(o: any, path: string, val: any) {
   return root;
 }
 
+// Field components live at MODULE scope (stable identity) so typing never remounts the
+// input — defining them inside the page caused the "one character at a time / focus pops
+// away" bug. They read the live form + setters from context so values + saves stay live.
+const Ctx = createContext<any>(null);
+function Txt({ label, path, type = "text", money = false }: { label: string; path: string; type?: string; money?: boolean }) {
+  const { u, set, setNum, inp, lbl } = useContext(Ctx);
+  return (
+    <div><label className={lbl}>{label}</label>
+      {money
+        ? <CurrencyInput value={getAt(u, path) ?? ""} onChange={(v: string) => setNum(path, v)} className={inp} />
+        : <input type={type} className={inp} value={getAt(u, path) ?? ""} onChange={(e) => type === "number" ? setNum(path, e.target.value) : set(path, e.target.value)} />}
+    </div>
+  );
+}
+function Sel({ label, path, opts }: { label: string; path: string; opts: (string | string[])[] }) {
+  const { u, set, inp, lbl } = useContext(Ctx);
+  return (
+    <div><label className={lbl}>{label}</label>
+      <select className={inp} value={getAt(u, path) ?? ""} onChange={(e) => set(path, e.target.value || undefined)}>
+        {opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return <option key={v} value={v}>{t}</option>; })}
+      </select></div>
+  );
+}
+function Card({ title, children }: { title: string; children: any }) {
+  return (
+    <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
+      <div className="text-xs uppercase tracking-wide text-emerald-400 mb-3">{title}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{children}</div>
+    </div>
+  );
+}
+// Address street line with live Google autocomplete; picking a result auto-fills the
+// sibling city/state/zip on the same base path. Module scope (no focus-loss) + reads
+// the live form/setters from Ctx, like Txt.
+function AddrAuto({ base, label = "Street" }: { base: string; label?: string }) {
+  const { u, set, inp, lbl } = useContext(Ctx);
+  return (
+    <div className="col-span-2 sm:col-span-3">
+      <label className={lbl}>{label}</label>
+      <AddressInput
+        value={getAt(u, `${base}.street`) ?? ""}
+        onChange={(v: string) => set(`${base}.street`, v)}
+        onResolved={(c: any) => {
+          if (c.street) set(`${base}.street`, c.street);
+          if (c.city) set(`${base}.city`, c.city);
+          if (c.state) set(`${base}.state`, c.state);
+          if (c.zip) set(`${base}.zip`, c.zip);
+        }}
+        placeholder="Start typing the address…"
+        className={inp}
+      />
+    </div>
+  );
+}
+
 const C = "U.S. Citizen", PR = "Permanent Resident";
 const CITIZEN = [["USCitizen", C], ["PermanentResidentAlien", PR], ["NonPermanentResidentAlien", "Non-Permanent Resident"]];
 const YN = [["", "—"], ["Yes", "Yes"], ["No", "No"]];
@@ -36,7 +92,25 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [bi, setBi] = useState(0);
   const [ocr, setOcr] = useState<string | null>(null);
+  const [imp, setImp] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const xmlRef = useRef<HTMLInputElement>(null);
+
+  async function importMismo(f: File) {
+    setImp(`Importing ${f.name}…`);
+    try {
+      const fd = new FormData(); fd.append("xml", f);
+      const r = await fetch(`/api/los/import-mismo?file=${id}`, { method: "POST", body: fd });
+      const j = await r.json();
+      if (r.ok) {
+        await load();
+        const names = (j.summary?.borrowerNames || []).join(", ");
+        const warn = (j.warnings || []).length ? ` ⚠️ ${j.warnings[0]}` : "";
+        setImp(`✓ Imported ${names || "1003"}${j.summary?.originationSystem ? ` from ${j.summary.originationSystem}` : ""}.${warn}`);
+      } else setImp("⚠️ " + (j.error || "Import failed."));
+    } catch { setImp("⚠️ Upload failed."); }
+    setTimeout(() => setImp(null), 9000);
+  }
 
   async function autofillFromDoc(f: File) {
     setOcr("Reading " + f.name + "…");
@@ -76,29 +150,13 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
   const inp = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none";
   const lbl = "text-xs text-slate-400 mb-1 block";
 
-  const Txt = ({ label, path, type = "text", money = false }: { label: string; path: string; type?: string; money?: boolean }) => (
-    <div><label className={lbl}>{label}</label>
-      {money
-        ? <CurrencyInput value={getAt(u, path) ?? ""} onChange={(v) => setNum(path, v)} className={inp} />
-        : <input type={type} className={inp} value={getAt(u, path) ?? ""} onChange={(e) => type === "number" ? setNum(path, e.target.value) : set(path, e.target.value)} />}
-    </div>
-  );
-  const Sel = ({ label, path, opts }: { label: string; path: string; opts: (string | string[])[] }) => (
-    <div><label className={lbl}>{label}</label>
-      <select className={inp} value={getAt(u, path) ?? ""} onChange={(e) => set(path, e.target.value || undefined)}>
-        {opts.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return <option key={v} value={v}>{t}</option>; })}
-      </select></div>
-  );
-  const Card = ({ title, children }: { title: string; children: any }) => (
-    <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
-      <div className="text-xs uppercase tracking-wide text-emerald-400 mb-3">{title}</div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{children}</div>
-    </div>
-  );
+  // Txt / Sel / Card are now module-level (see top of file) — defining them here was
+  // what remounted inputs on every keystroke. inp/lbl are passed to them via context.
   const addItem = (key: string) => set(key, [...(getAt(u, key) || []), {}]);
   const delItem = (key: string, i: number) => set(key, (getAt(u, key) || []).filter((_: any, idx: number) => idx !== i));
 
   return (
+    <Ctx.Provider value={{ u, set, setNum, inp, lbl }}>
     <div className="min-h-screen bg-slate-950 text-white p-6">
       <div className="max-w-4xl mx-auto pb-28">
         <Link href={`/los/${id}`} className="text-slate-400 hover:text-white text-sm flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Loan file</Link>
@@ -117,6 +175,16 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
             {ocr && <span className="text-xs text-slate-400">{ocr}</span>}
             <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) autofillFromDoc(f); e.currentTarget.value = ""; }} />
             <button onClick={() => fileRef.current?.click()} className="text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg flex items-center gap-1.5"><FileUp className="w-4 h-4" /> Upload document</button>
+          </div>
+        </div>
+
+        {/* Full 1003 import from a MISMO / Calyx Point XML */}
+        <div className="bg-gradient-to-br from-sky-950/40 to-slate-900/40 border border-sky-800/40 rounded-2xl p-4 mb-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm text-slate-300">📄 <span className="font-semibold text-sky-300">Import full 1003:</span> upload a MISMO 3.4 / Calyx Point <code className="text-sky-200">.xml</code> export and the entire application fills in here — encrypted &amp; editable. The original file is archived to this loan file.</div>
+          <div className="flex items-center gap-3">
+            {imp && <span className="text-xs text-slate-400 max-w-xs">{imp}</span>}
+            <input ref={xmlRef} type="file" accept=".xml,text/xml,application/xml" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importMismo(f); e.currentTarget.value = ""; }} />
+            <button onClick={() => xmlRef.current?.click()} className="text-sm font-semibold bg-sky-600 hover:bg-sky-500 px-3 py-1.5 rounded-lg flex items-center gap-1.5"><FileUp className="w-4 h-4" /> Import 1003 XML</button>
           </div>
         </div>
 
@@ -148,7 +216,7 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
           </Card>
 
           <Card title="Current residence">
-            <Txt label="Street" path={`borrowers.${bi}.currentAddress.street`} />
+            <AddrAuto base={`borrowers.${bi}.currentAddress`} />
             <Txt label="City" path={`borrowers.${bi}.currentAddress.city`} />
             <Txt label="State" path={`borrowers.${bi}.currentAddress.state`} />
             <Txt label="ZIP" path={`borrowers.${bi}.currentAddress.zip`} />
@@ -175,7 +243,7 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
           </Card>
 
           <Card title="Subject property & loan">
-            <Txt label="Street" path="property.address.street" />
+            <AddrAuto base="property.address" />
             <Txt label="City" path="property.address.city" />
             <Txt label="State" path="property.address.state" />
             <Txt label="ZIP" path="property.address.zip" />
@@ -231,7 +299,7 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
             <div className="space-y-2">
               {(u.reo || []).map((_: any, i: number) => (
                 <div key={i} className="grid grid-cols-2 sm:grid-cols-7 gap-2 items-end border-b border-slate-800/40 pb-2">
-                  <Txt label="Street" path={`reo.${i}.address.street`} />
+                  <AddrAuto base={`reo.${i}.address`} />
                   <Txt label="City" path={`reo.${i}.address.city`} />
                   <Txt label="State" path={`reo.${i}.address.state`} />
                   <Txt label="ZIP" path={`reo.${i}.address.zip`} />
@@ -268,6 +336,7 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
           <div className="text-sm text-slate-400">{pct != null && <span className="font-semibold text-emerald-400">{pct}% complete</span>}{savedAt && <span className="ml-3 text-slate-500">saved {savedAt}</span>}</div>
           <div className="flex items-center gap-2">
+            <a href={`/api/los/urla/pdf?file=${id}`} target="_blank" rel="noreferrer" className="text-sm flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg"><Download className="w-4 h-4" /> PDF (1003)</a>
             <a href={`/api/los/export?file=${id}`} download className="text-sm flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg"><Download className="w-4 h-4" /> MISMO 3.4</a>
             <button onClick={save} disabled={saving} className="text-sm font-semibold flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2 rounded-lg">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save 1003
@@ -276,5 +345,6 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
         </div>
       </div>
     </div>
+    </Ctx.Provider>
   );
 }

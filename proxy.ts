@@ -88,9 +88,16 @@ export async function proxy(request: NextRequest) {
 
     const path = request.nextUrl.pathname
 
+    // Machine-to-machine endpoints authenticate by a bearer token inside the
+    // route (not a login session), so they bypass the session gate below. The
+    // route itself returns 401 if the token is missing/wrong, and 503 if no
+    // token is configured (fail-closed).
+    const tokenAuthedApis = ['/api/pricing/feed']
+    if (tokenAuthedApis.includes(path)) return response
+
     // Sensitive internal DATA APIs — return 401 (not a redirect) when unauthed.
     // Public APIs (apply, file portal, wizard, cron, sms) are NOT listed and stay open.
-    const apiProtected = ['/api/los', '/api/stats', '/api/tasks', '/api/players', '/api/bosses', '/api/growth/generate', '/api/content', '/api/doctor', '/api/preapprovals', '/api/tiktok/publish', '/api/chat', '/api/rupee', '/api/pricing', '/api/funnel', '/api/partners', '/api/agents', '/api/applications', '/api/tts', '/api/studio']
+    const apiProtected = ['/api/los', '/api/stats', '/api/tasks', '/api/players', '/api/bosses', '/api/growth/generate', '/api/content', '/api/doctor', '/api/preapprovals', '/api/tiktok/publish', '/api/chat', '/api/rupee', '/api/pricing', '/api/funnel', '/api/partners', '/api/agents', '/api/applications', '/api/tts', '/api/studio', '/api/settings', '/api/esign/requests', '/api/dashboard', '/api/pricer', '/api/referral', '/api/voice/messages', '/api/scenarios', '/api/wholesalers']
     if (apiProtected.some(route => path.startsWith(route)) && !session) {
         return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
     }
@@ -99,7 +106,7 @@ export async function proxy(request: NextRequest) {
     // (/home, /apply, /quote, /start, /lending, /file, /portal, /privacy, /terms) are NOT listed.
     const protectedRoutes = [
         '/leads', '/pipeline', '/settings', '/training', '/team',
-        '/command', '/los', '/agents', '/partners', '/requests', '/automations', '/task-list', '/roadmap', '/dashboard', '/growth', '/content', '/doctor', '/preapprovals', '/rupee', '/pricing', '/funnel', '/ads', '/security', '/studio',
+        '/command', '/los', '/agents', '/partners', '/requests', '/automations', '/task-list', '/roadmap', '/dashboard', '/growth', '/content', '/doctor', '/preapprovals', '/rupee', '/pricing', '/funnel', '/ads', '/security', '/studio', '/esign', '/pricer', '/income', '/messages', '/scenarios',
     ]
     const isProtectedRoute = protectedRoutes.some(route => path.startsWith(route))
 
@@ -152,5 +159,13 @@ export const config = {
         '/api/applications/:path*',
         '/api/tts/:path*',
         '/api/studio/:path*',
+        '/api/settings/:path*',
+        '/api/esign/requests/:path*',
+        '/api/dashboard/:path*',
+        '/api/pricer/:path*',
+        '/api/referral/:path*',
+        '/api/voice/messages/:path*',
+        '/api/scenarios/:path*',
+        '/api/wholesalers/:path*',
     ],
 }

@@ -16,6 +16,7 @@ import Link from "next/link";
 import { CheckCircle2, ArrowLeft, ShieldCheck, Lightbulb } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
 import { trackLead, trackApplication } from "@/lib/track";
+import { getAttribution } from "@/lib/attribution";
 import AddressInput from "@/components/AddressInput";
 import { CediBubble } from "@/components/CediBubble";
 import CurrencyInput from "@/components/ui/CurrencyInput";
@@ -248,7 +249,8 @@ function appSteps(a: Answers): Q[] {
   const dscr = product(a).toLowerCase().includes("dscr");
   const steps: Q[] = [];
   // Borrower (URLA §1)
-  steps.push({ id: "dob", kind: "date", prompt: "Quick one. When's your birthday? 🎂", sub: "We use it to match you to the best programs.", optional: true });
+  steps.push({ id: "dob", kind: "date", prompt: "Quick one. When's your birthday? 🎂", sub: "Required on every loan application — we use it to match you to the best programs.", optional: true });
+  steps.push({ id: "ssn", kind: "text", prompt: "Your Social Security number", sub: "🔒 Encrypted and used only to prepare your application and verify identity. Required to finalize your loan — you can skip it for now if you prefer.", placeholder: "XXX-XX-XXXX", optional: true });
   steps.push({ id: "citizenship", kind: "select", prompt: "Citizenship status?", options: [
     { value: "US Citizen", label: "U.S. citizen", emoji: "🇺🇸" },
     { value: "Permanent Resident", label: "Permanent resident (green card)" },
@@ -321,6 +323,7 @@ export default function ApplyWizard() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leadId, setLeadId] = useState<string | null>(null);
+  const [fileLink, setFileLink] = useState<string | null>(null); // secure document-upload link
   const [prod, setProd] = useState<string>("");
   const [contact, setContact] = useState<Record<string, unknown>>({});
 
@@ -455,6 +458,8 @@ export default function ApplyWizard() {
     add("Down pmt source", a.down_payment_source); add("Down payment assistance", a.dpa === "yes" ? "INTERESTED" : undefined); add("Owns other RE", a.own_other_property);
     add("BK/Foreclosure 7yr", a.bk_fc); add("Property address", a.property_address);
     add("VA/Military", a.military); add("First-time buyer", a.firsttime); add("Rental type", a.rental_type); add("Experience", a.experience);
+    const attr = getAttribution();
+    const av = (k: string) => (attr as Record<string, string>)[k] || qs.get(k) || undefined;
     return {
       ...extra,
       loan_purpose: p,
@@ -466,12 +471,31 @@ export default function ApplyWizard() {
       credit_score: a.credit && a.credit !== "0" ? Number(a.credit) : undefined,
       liquid_assets: a.liquid_assets ? Number(a.liquid_assets) : undefined,
       income: monthly,
+      // Discrete identity / URLA fields so the 1003 captures them structurally
+      // (not just in the notes summary). SSN is encrypted server-side; never in notes.
+      dob: a.dob || undefined,
+      ssn: a.ssn || undefined,
+      citizenship: a.citizenship || undefined,
+      marital_status: a.marital || undefined,
+      dependents: a.dependents || undefined,
+      employment_status: a.employment_status || undefined,
+      employer: a.employer || undefined,
+      job_title: a.job_title || undefined,
+      years_employed: a.years_employed || undefined,
+      own_or_rent: a.own_or_rent || undefined,
+      bk_fc: a.bk_fc || undefined,
       notes: lines.join(" · "),
-      referrer: qs.get("ref") || undefined,
-      utm_source: qs.get("utm_source") || undefined,
-      utm_medium: qs.get("utm_medium") || undefined,
-      utm_campaign: qs.get("utm_campaign") || undefined,
-      source: qs.get("ref") ? "referral" : "wizard",
+      referrer: av("ref"),
+      utm_source: av("utm_source"),
+      utm_medium: av("utm_medium"),
+      utm_campaign: av("utm_campaign"),
+      utm_term: av("utm_term"),
+      utm_content: av("utm_content"),
+      gclid: av("gclid"),
+      fbclid: av("fbclid"),
+      // Mark ad-sourced wizard leads as paid so they're visible as paid in the CRM
+      // (first-touch utm survives navigation; ignore the LP success-CTA's lp_* tag).
+      source: av("ref") ? "referral" : (av("utm_source") && !/^lp_/.test(String(av("utm_source")))) ? `paid_${av("utm_source")}` : "wizard",
       // TCPA/CAN-SPAM consent record: submitting the contact form is the agreement.
       consent: true,
       consent_at: new Date().toISOString(),
@@ -485,7 +509,7 @@ export default function ApplyWizard() {
     });
     const j = await res.json();
     if (!res.ok) throw new Error(j.error || "Something went wrong.");
-    return j as { lead_id: string };
+    return j as { lead_id: string; file_link?: string };
   }
 
   // Contact step: CREATE the lead now (speed-to-lead), then continue into the 1003.
@@ -503,6 +527,8 @@ export default function ApplyWizard() {
     try {
       const j = await post(buildPayload(answers, c));
       setLeadId(j.lead_id);
+      if (j.file_link) setFileLink(j.file_link); // borrower's secure upload link
+
       trackLead(answers.loan_amount_requested ? Number(answers.loan_amount_requested) : undefined); // ad conversion
       track("contact", { phase: "contact", goal: answers.goal, occupancy: effectiveOccupancy(answers), product: p });
       setPhase("app"); setAi(0);
@@ -513,7 +539,7 @@ export default function ApplyWizard() {
   async function submitApplication(finalAnswers: Answers) {
     setSubmitting(true); setError(null);
     try {
-      await post(buildPayload(finalAnswers, contact));
+      await post({ ...buildPayload(finalAnswers, contact), app_completed: true });
       trackApplication(finalAnswers.loan_amount_requested ? Number(finalAnswers.loan_amount_requested) : undefined); // completed-1003 conversion
       track("complete", { phase: "app", goal: finalAnswers.goal, occupancy: effectiveOccupancy(finalAnswers), product: product(finalAnswers) });
     } catch { /* lead already exists; non-fatal. Specialist follows up */ } finally {
@@ -534,10 +560,20 @@ export default function ApplyWizard() {
             your numbers and send next steps.
           </p>
           <CediBubble center size={56} className="mt-6">We got it from here. Sit back. I&apos;ll make sure your file moves. 🌴</CediBubble>
-          {leadId && (
-            <Link href={`/portal/${leadId}`} className="inline-block mt-7 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-full">
-              Track my application
-            </Link>
+          {fileLink ? (
+            <div className="mt-7 flex flex-col items-center gap-3">
+              <a href={fileLink} className="inline-block bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-full">
+                Upload your documents securely →
+              </a>
+              <p className="text-xs text-slate-500 max-w-sm">This is your private, secure upload link — we&apos;ve also sent it to your email{contact.phone ? " and phone" : ""}. Uploading now gets your file moving fastest.</p>
+              {leadId && <Link href={`/portal/${leadId}`} className="text-sm text-emerald-700 hover:text-emerald-600 font-semibold">Or track my application →</Link>}
+            </div>
+          ) : (
+            leadId && (
+              <Link href={`/portal/${leadId}`} className="inline-block mt-7 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-full">
+                Track my application
+              </Link>
+            )
           )}
         </div>
       </Shell>
@@ -588,8 +624,9 @@ export default function ApplyWizard() {
             {submitting ? "Submitting…" : "See my options →"}
           </button>
           <p className="text-[11px] text-slate-400 text-center">
-            By submitting, you agree Fetti Financial Services may contact you by phone, email &amp; text (SMS),
-            including automated, at the number provided. Consent isn't required to buy. Msg &amp; data rates may apply; reply STOP to opt out.
+            By submitting, you agree Fetti Financial Services LLC (NMLS #2267023) may contact you by phone, email &amp; text (SMS) — including automated —
+            at the number provided, about your inquiry and application. Consent isn&apos;t required to buy. Msg &amp; data rates may apply; message frequency varies.
+            Reply STOP to opt out, HELP for help. See our <a href="/privacy" className="underline hover:text-slate-300">Privacy Policy</a> &amp; <a href="/terms" className="underline hover:text-slate-300">Terms</a>.
           </p>
           <p className="text-[10px] text-slate-400 text-center">{LICENSING_SHORT}</p>
         </form>

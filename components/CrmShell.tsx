@@ -1,15 +1,9 @@
-"use client";
-
 import { ReactNode } from "react";
-import Sidebar from "@/components/Sidebar";
 
-// Lightweight CRM shell: persistent sidebar + scrollable main content area.
-// Used by route-group layouts so the sidebar never disappears when navigating.
+// The CRM shell (sidebar + top bar + mobile drawer) is now provided globally by
+// AppChrome in the root layout, so every CRM route gets consistent navigation
+// and a Back button. This component is kept as a passthrough so the route-group
+// layouts that import it keep working without double-wrapping the chrome.
 export default function CrmShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-50">
-      <Sidebar />
-      <main className="flex-1 min-w-0">{children}</main>
-    </div>
-  );
+  return <>{children}</>;
 }

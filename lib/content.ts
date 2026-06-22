@@ -37,10 +37,18 @@ ${CONTENT_PERSONALITY}
 
 ${CEDI_PERSONA}
 
-CRITICAL — VOICE: Write EVERY post in Mark's first-person voice (Fetti's LA spokes-owl). Mark is the
-one talking and teaching: California-cool, confident, witty, a little swagger, warm. Use his cadence and
-sprinkle his flavor ("Hoo", "eyes open", "easy money, no stress", "sun's out money's out", "we DO money")
-without overdoing it — the value/teaching must still land. Stay fully compliant (no rate or approval promises).
+CRITICAL — VOICE: Write EVERY post in Mark's first-person voice — Fetti's GOLDEN OWL mascot. Mark is
+California-fresh and smooth with confident SWAGGER: intelligent, sharp, effortlessly cool, and he tells
+you what he KNOWS, not what he thinks (he's done this before). Dignified and aspirational — knighthood,
+not street/hood — never loud. Light, tasteful owl wordplay ("eyes open", "wise move", "we do money")
+used sparingly; the real teaching value must land. Stay fully compliant (no rate or approval promises).
+
+CONTENT STRATEGY — EDUCATION FIRST, THEN BLEND THE STORY: Open every post by TEACHING something genuinely
+useful and TRUE — a real finance or mortgage fact/insight (how DSCR qualifies on rent, what actually moves
+your rate, how equity compounds, the rent-vs-buy math, credit factors, money principles). Deliver the value
+first. THEN blend in Fetti's role and why Ramon Dent built it (the mission to do money the right way) as the
+natural bridge into the CTA. Education earns the trust; the story earns the call. Facts must be accurate and
+evergreen — NEVER invent statistics, rates, awards, or testimonials.
 
 OUTPUT FORMAT — return ONLY JSON: { "posts": [ { "hook", "script", "caption", "hashtags" } ] } with exactly ${n} posts.
 - hook: the on-screen / first-line hook (<= 12 words) — the scroll-stopper
@@ -50,7 +58,7 @@ OUTPUT FORMAT — return ONLY JSON: { "posts": [ { "hook", "script", "caption", 
 Across the ${n} posts: hit DIFFERENT content pillars and ROTATE the CTA — no repeated CTA, no two posts that feel alike.`;
   const user = topic
     ? `Create ${n} posts on this theme: ${topic}. Each distinct, each passing the Fetti Content Test (≥4 of 5).`
-    : `Create ${n} posts — each on a DIFFERENT content pillar (home buying, investing, wealth building, market intel, success stories). Distinct hooks, real teaching value, rotated CTAs, all passing the Fetti Content Test.`;
+    : `Create ${n} posts, EDUCATION-FIRST. Each OPENS with a real, useful finance/mortgage fact or insight — rotate the teaching pillar: home-buying know-how, DSCR & investment-loan basics, credit & how you qualify, building equity & wealth, rent-vs-buy math, market intel, core money principles. Deliver genuine value, THEN blend in Fetti / why Ramon Dent built it / the mission as the bridge to a rotated CTA. Distinct hooks, all TRUE, accurate, and compliant — never invent stats, rates, awards, or testimonials. Each passes the Fetti Content Test.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({ model: MODEL, temperature: 0.9, max_tokens: 1200, response_format: { type: "json_object" },
@@ -69,6 +77,9 @@ Across the ${n} posts: hit DIFFERENT content pillars and ROTATE the CTA — no r
 }
 
 const IMAGE_CONCEPTS = [
+  "Original cartoon brand mascot: Mark, a confident GOLDEN OWL with smart glasses and relaxed California swagger, bold modern vector illustration, thick clean outlines, gold with emerald and slate accents, scroll-stopping and memorable, premium ORIGINAL brand character — do NOT imitate the Simpsons, Family Guy, the GEICO gecko, or any show/brand, NO text, no words",
+  "The golden owl mascot Mark, cool and confident, giving an easy knowing nod in a clean modern flat-vector style, vibrant gold tones, original cartoon brand character, fun and premium, NO text, no words",
+  "Original cartoon scene: Mark the golden owl in a sharp blazer reviewing a glowing chart on a tablet, smooth and intelligent, modern vector illustration, gold/emerald brand palette, aspirational and fresh, NO text, no words",
   "Editorial real-estate photograph: a stunning modern luxury home exterior at golden hour, manicured landscaping, warm glowing windows, shot on a 35mm lens, magazine quality, cinematic, NO text, no words, no letters",
   "Candid lifestyle photo: a joyful diverse young couple laughing while holding house keys in front of their new home, natural sunlight, shallow depth of field, premium real-estate brand aesthetic, NO text, no words",
   "Architectural photograph of a sleek contemporary multi-unit rental building, blue-hour sky, clean lines, professional commercial real-estate photography, NO text, no words",
@@ -113,7 +124,7 @@ export async function generateImage(): Promise<string | null> {
 // Produce a day's batch: a few Reel scripts + one image post. Returns rows ready
 // to insert into content_posts (does not insert).
 export async function generateBatch(topic = ""): Promise<Record<string, unknown>[]> {
-  const posts = await generatePosts(4, topic);
+  const posts = await generatePosts(6, topic);
   const today = new Date().toISOString().slice(0, 10);
   const rows: Record<string, unknown>[] = [];
   // NOTE: every row must have the SAME keys (PostgREST bulk-insert rule), so

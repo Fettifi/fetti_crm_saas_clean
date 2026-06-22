@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const BASE = "https://app.fettifi.com";
+const BASE = "https://fettifi.com";
 
 // Expose the public marketing pages to search engines; keep the CRM/app private.
 export default function robots(): MetadataRoute.Robots {
@@ -8,7 +8,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        allow: ["/start", "/quote", "/apply", "/lending/", "/privacy", "/terms"],
+        allow: ["/", "/about", "/start", "/quote", "/apply", "/lending/", "/privacy", "/terms"],
         disallow: [
           "/dashboard", "/leads", "/agents", "/partners", "/pipeline", "/settings",
           "/team", "/requests", "/task-list", "/roadmap", "/training", "/automations",

@@ -3,14 +3,17 @@
 // Loan file detail for the loan officer: stage control, document review (view /
 // accept / reject / request), compliance checklist, the borrower's custom link,
 // and the full activity timeline for this file.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { use } from "react";
 import Link from "next/link";
-import { Loader2, Link2, Check, ArrowLeft, Plus, ExternalLink, Send, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Loader2, Link2, Check, ArrowLeft, Plus, ExternalLink, Send, X, Trash2 } from "lucide-react";
+import { borrowerCode } from "@/lib/borrowerCode";
+import DeleteConfirm from "@/components/DeleteConfirm";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
 
-type Doc = { id: string; name: string; category: string; required: boolean; status: string; file_name?: string; storage_path?: string };
+type Doc = { id: string; name: string; category: string; required: boolean; status: string; file_name?: string; storage_path?: string; notes?: string };
 type Comp = { key: string; label: string; done: boolean };
 type FileT = { id: string; file_number: string; borrower_name: string; email?: string; phone?: string; product: string; occupancy?: string; property_address?: string; property_value?: number; loan_amount?: number; state?: string; stage: string; status: string; share_token: string; compliance: Comp[]; lead_id?: string };
 type Act = { id: string; actor: string; action: string; detail: any; created_at: string };
@@ -22,8 +25,33 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [activity, setActivity] = useState<Act[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [sendingLink, setSendingLink] = useState(false);
+  const [linkMsg, setLinkMsg] = useState<{ ok?: boolean; text: string } | null>(null);
   const [newDoc, setNewDoc] = useState("");
   const [saving, setSaving] = useState(false);
+  // In-app document viewer — streams the file through our OWN origin (inline) so it
+  // loads under CSP `frame-src 'self'` (framing the cross-origin Supabase URL was
+  // blocked: "This content is blocked"). Works for PDFs and image docs.
+  const [viewer, setViewer] = useState<{ url: string; name: string; isImage?: boolean } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [docBusy, setDocBusy] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<{ id: string; name: string } | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
+  const uploadTargetRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+  const [delOpen, setDelOpen] = useState(false);
+  const [delBusy, setDelBusy] = useState(false);
+  async function deleteFile(purge: boolean) {
+    setDelBusy(true);
+    try {
+      const r = await fetch(`/api/los/files/${id}?purge=${purge ? 1 : 0}`, { method: "DELETE" });
+      if (r.ok) { router.push("/los"); return; }
+      const j = await r.json().catch(() => ({})); alert(j.error || "Delete failed.");
+    } catch { alert("Connection error deleting the file."); }
+    setDelBusy(false);
+  }
   // In-file document request composer.
   const [reqList, setReqList] = useState<string[]>([]);
   const [recipient, setRecipient] = useState<"borrower" | "other">("borrower");
@@ -109,9 +137,17 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     await fetch(`/api/los/files/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
     await load(); setSaving(false);
   }
-  async function patchDoc(doc_id: string, status: string) {
-    await fetch(`/api/los/files/${id}/docs`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ doc_id, status }) });
+  async function patchDoc(doc_id: string, status: string, notes?: string) {
+    await fetch(`/api/los/files/${id}/docs`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ doc_id, status, ...(notes !== undefined ? { notes } : {}) }) });
     await load();
+  }
+  // Reject WITH a reason — sets the doc to "rejected" + the note, which re-adds it to
+  // the borrower's missing items and shows them WHY on their portal + in the reminder.
+  async function confirmReject() {
+    if (!rejectTarget) return;
+    setDocBusy(rejectTarget.id);
+    try { await patchDoc(rejectTarget.id, "rejected", rejectNote.trim()); }
+    finally { setDocBusy(null); setRejectTarget(null); setRejectNote(""); }
   }
   function addToReq(name: string) {
     const n = name.trim();
@@ -148,9 +184,59 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     } catch { setReqMsg({ text: "⚠️ Connection error" }); }
     setSendingReq(false);
   }
-  async function viewDoc(doc_id: string) {
-    const res = await fetch(`/api/los/files/${id}/docs?doc_id=${doc_id}`);
-    const j = await res.json(); if (j.url) window.open(j.url, "_blank");
+  // One click: email/text the borrower their secure link + ONLY the docs still missing.
+  // Adds nothing to the checklist (no duplicates) — just re-requests what's outstanding.
+  async function remindMissing() {
+    setSendingReq(true); setReqMsg(null);
+    try {
+      const r = await fetch(`/api/los/files/${id}/remind`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const j = await r.json();
+      if (r.ok) {
+        if (j.missing === 0) setReqMsg({ ok: true, text: "✓ All documents are already in — nothing to request." });
+        else if (j.sent?.length) setReqMsg({ ok: true, text: `✓ Reminder for ${j.missing} missing doc(s) sent via ${j.sent.join(" + ")}.` });
+        else setReqMsg({ text: "Found missing docs, but no email/SMS channel delivered — check the borrower's contact." });
+        await load();
+      } else setReqMsg({ text: "⚠️ " + (j.error || "Failed") });
+    } catch { setReqMsg({ text: "⚠️ Connection error" }); }
+    setSendingReq(false);
+  }
+  function viewDoc(doc_id: string, name: string) {
+    // Open each document in its OWN window so the LO can keep working in the CRM
+    // while a document is up. The stream is same-origin + session-gated, so the new
+    // window is authenticated by the session cookie. A stable per-doc window name
+    // means re-clicking View focuses that doc's existing window instead of duplicating.
+    const url = `/api/los/files/${id}/docs?doc_id=${doc_id}&inline=1`;
+    const w = window.open(url, `fettidoc_${doc_id}`, "popup=yes,width=1000,height=1200,resizable=yes,scrollbars=yes");
+    if (w) { try { w.focus(); } catch { /* */ } return; }
+    // Popup blocked (browser only) — fall back to the in-app viewer overlay.
+    const isImage = /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(name || "");
+    setZoom(1);
+    setViewer({ url, name, isImage });
+  }
+  // LO uploads a file directly into the file. target = a doc_id (satisfy that item) or
+  // "new" (add it as a fresh item — e.g. something the borrower emailed you).
+  function pickUpload(target: string) { uploadTargetRef.current = target; fileInputRef.current?.click(); }
+  async function onFilePicked(e: any) {
+    const f = e.target.files?.[0]; e.target.value = "";
+    const target = uploadTargetRef.current; uploadTargetRef.current = null;
+    if (!f || !target) return;
+    setDocBusy(target);
+    try {
+      const fd = new FormData(); fd.append("file", f);
+      if (target !== "new") fd.append("doc_id", target);
+      const r = await fetch(`/api/los/files/${id}/upload`, { method: "POST", body: fd });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error || "Upload failed."); }
+      await load();
+    } catch { alert("Connection error during upload."); } finally { setDocBusy(null); }
+  }
+  async function removeDoc(docId: string, name: string) {
+    if (!confirm(`Remove "${name}" from this file's checklist? If a file was uploaded for it, that file is deleted too.`)) return;
+    setDocBusy(docId);
+    try {
+      const r = await fetch(`/api/los/files/${id}/docs?doc_id=${docId}`, { method: "DELETE" });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error || "Remove failed."); }
+      await load();
+    } catch { alert("Connection error removing the item."); } finally { setDocBusy(null); }
   }
   function toggleComp(i: number) {
     if (!file) return;
@@ -163,11 +249,23 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     navigator.clipboard?.writeText(`${window.location.origin}/file/${file.share_token}`);
     setCopied(true); setTimeout(() => setCopied(false), 1500);
   }
+  async function sendBorrowerLink() {
+    if (!file) return;
+    setSendingLink(true); setLinkMsg(null);
+    try {
+      const r = await fetch(`/api/los/files/${id}/send-link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const j = await r.json();
+      setLinkMsg({ ok: r.ok && (j.sent?.length > 0), text: r.ok ? j.message : (j.error || "Failed to send.") });
+    } catch { setLinkMsg({ text: "⚠️ Connection error." }); }
+    setSendingLink(false);
+    setTimeout(() => setLinkMsg(null), 9000);
+  }
 
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-emerald-400" /></div>;
   if (!file) return <div className="min-h-screen bg-slate-950 text-slate-400 flex items-center justify-center">Loan file not found.</div>;
 
   const badge = (s: string) => s === "accepted" ? "text-emerald-400" : s === "received" ? "text-yellow-400" : s === "rejected" ? "text-red-400" : "text-slate-500";
+  const code = borrowerCode(file.borrower_name, file.id);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
@@ -176,16 +274,32 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
 
         <div className="flex flex-wrap items-start justify-between gap-3 mt-3">
           <div>
-            <h1 className="text-2xl font-bold">{file.borrower_name || "Borrower"}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-bold">{file.borrower_name || "Borrower"}</h1>
+              <button
+                onClick={() => { navigator.clipboard?.writeText(code); setCodeCopied(true); setTimeout(() => setCodeCopied(false), 1500); }}
+                title="Borrower code — identifies this borrower's secure link (not their SSN/DOB). Click to copy."
+                className="font-mono text-xs font-bold tracking-wider bg-sky-500/15 text-sky-300 border border-sky-500/30 rounded-full px-2.5 py-1 hover:bg-sky-500/25"
+              >{code}{codeCopied ? " ✓" : ""}</button>
+            </div>
             <div className="text-sm text-slate-400 mt-1 font-mono">{file.file_number} · {file.product || "—"}{file.occupancy ? ` · ${file.occupancy}` : ""}</div>
             <div className="text-sm text-slate-500 mt-1">{[file.email, file.phone, file.property_address, file.state].filter(Boolean).join(" · ")}</div>
             {file.property_address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(file.property_address)}`} target="_blank" rel="noreferrer" className="text-xs text-emerald-400 hover:underline">🗺️ View property on map</a>}
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={copyLink} className="flex items-center gap-2 text-sm bg-emerald-600/80 hover:bg-emerald-500 px-3 py-2 rounded-lg">
-              {copied ? <Check className="w-4 h-4" /> : <Link2 className="w-4 h-4" />} {copied ? "Copied!" : "Copy borrower link"}
-            </button>
-            <a href={`/file/${file.share_token}`} target="_blank" className="text-slate-400 hover:text-white p-2"><ExternalLink className="w-4 h-4" /></a>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
+              <button onClick={sendBorrowerLink} disabled={sendingLink} className="flex items-center gap-2 text-sm bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-3 py-2 rounded-lg">
+                {sendingLink ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send upload link
+              </button>
+              <button onClick={copyLink} className="flex items-center gap-2 text-sm bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg">
+                {copied ? <Check className="w-4 h-4" /> : <Link2 className="w-4 h-4" />} {copied ? "Copied!" : "Copy link"}
+              </button>
+              <a href={`/file/${file.share_token}`} target="_blank" className="text-slate-400 hover:text-white p-2" title="Preview the borrower portal"><ExternalLink className="w-4 h-4" /></a>
+              <a href={`/scenarios?loan_file_id=${id}`} className="flex items-center gap-2 text-sm bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg" title="Build a wholesaler pricing scenario from this file">📑 Price this deal</a>
+              <button onClick={() => setDelOpen(true)} title="Delete this loan file permanently" className="flex items-center gap-1.5 text-sm bg-slate-800 hover:bg-red-900/60 text-red-300 px-3 py-2 rounded-lg"><Trash2 className="w-4 h-4" /> Delete</button>
+            </div>
+            {linkMsg && <span className={`text-xs ${linkMsg.ok ? "text-emerald-400" : "text-amber-300"}`}>{linkMsg.text}</span>}
+            <span className="text-[11px] text-slate-500">Texts/emails {file.borrower_name?.split(" ")[0] || "the borrower"} their secure link for file <span className="font-mono text-sky-300">{code}</span></span>
           </div>
         </div>
 
@@ -203,24 +317,43 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
           {/* Documents */}
           <div className="lg:col-span-2 bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
-            <div className="text-xs uppercase tracking-wide text-slate-500 mb-3">Documents & conditions</div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Documents & conditions</div>
+              <a href={`/esign?file=${id}`} className="text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1">✍️ Send for signature</a>
+            </div>
             <div className="space-y-2">
               {docs.map((d) => {
-                const got = d.status !== "needed";
+                const rejected = d.status === "rejected";
+                // "Provided" = a file is in AND not rejected. A rejected doc reads as
+                // NOT provided (re-upload needed) and stays in the missing queue.
+                const provided = d.status === "received" || d.status === "accepted";
                 return (
-                  <div key={d.id} className="flex items-center justify-between gap-2 border-b border-slate-800/50 pb-2">
+                  <div key={d.id} className={`flex items-center justify-between gap-2 border-b border-slate-800/50 pb-2 ${rejected ? "bg-red-950/20 -mx-2 px-2 rounded" : ""}`}>
                     <div className="min-w-0">
-                      <div className="font-medium truncate">{d.name} {d.required && <span className="text-[10px] text-amber-400/70">required</span>}</div>
-                      <div className={`text-xs ${badge(d.status)}`}>{d.status}{d.file_name ? ` · ${d.file_name}` : ""}</div>
+                      <div className="font-medium truncate">{d.name} {d.required && !provided && <span className="text-[10px] text-amber-400/70">required</span>}</div>
+                      <div className={`text-xs ${badge(d.status)}`}>{rejected ? "rejected · not provided — awaiting new upload" : `${d.status}${d.file_name ? ` · ${d.file_name}` : ""}`}</div>
+                      {rejected && d.notes && <div className="text-[11px] text-red-300/90 mt-0.5">↩︎ Sent back: {d.notes}</div>}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      {d.storage_path && <button onClick={() => viewDoc(d.id)} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">View</button>}
-                      {got && d.status !== "accepted" && <button onClick={() => patchDoc(d.id, "accepted")} className="text-xs px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500">Accept</button>}
-                      {got && d.status !== "rejected" && <button onClick={() => patchDoc(d.id, "rejected")} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-red-900/60">Reject</button>}
+                      {d.storage_path && <button onClick={() => viewDoc(d.id, d.name)} title={rejected ? "View the rejected copy" : "View"} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">View</button>}
+                      <button onClick={() => pickUpload(d.id)} disabled={docBusy === d.id} title="Upload a file for this item (e.g. one the borrower emailed you)" className="text-xs px-2 py-1 rounded bg-sky-700/70 hover:bg-sky-600 disabled:opacity-50">{docBusy === d.id ? "…" : (provided ? "Replace" : "Upload")}</button>
+                      {d.status === "received" && <button onClick={() => patchDoc(d.id, "accepted")} className="text-xs px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500">Accept</button>}
+                      {(d.status === "received" || d.status === "accepted") && <button onClick={() => { setRejectTarget({ id: d.id, name: d.name }); setRejectNote(""); }} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-red-900/60">Reject</button>}
+                      <button onClick={() => removeDoc(d.id, d.name)} disabled={docBusy === d.id} title="Remove this item from the checklist" className="text-xs px-1.5 py-1 rounded text-slate-500 hover:text-red-400 hover:bg-slate-800">🗑</button>
                     </div>
                   </div>
                 );
               })}
+            </div>
+            {/* LO can drop a file straight in (e.g. one the borrower emailed) — as a new
+                checklist item; or use the per-row Upload to satisfy an existing item. */}
+            <div className="mt-3">
+              <input ref={fileInputRef} type="file" className="hidden" onChange={onFilePicked}
+                accept=".pdf,.png,.jpg,.jpeg,.heic,.heif,.webp,.gif,.bmp,.tif,.tiff,.doc,.docx,.xls,.xlsx,.csv,.txt" />
+              <button onClick={() => pickUpload("new")} disabled={docBusy === "new"}
+                className="w-full text-xs font-semibold bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 rounded-lg py-2 flex items-center justify-center gap-1.5">
+                {docBusy === "new" ? "Uploading…" : "⬆️ Add a file directly (emailed / on hand)"}
+              </button>
             </div>
             {/* Request documents — build a list, then send the borrower (or anyone
                 else) this file's secure upload link, without leaving this screen. */}
@@ -275,6 +408,10 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                   {sendingReq ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send request + file link
                 </button>
                 <button onClick={addOnly} disabled={sendingReq} className="text-xs text-slate-400 hover:text-white px-2 py-2">Add to checklist only</button>
+                <button onClick={remindMissing} disabled={sendingReq} title="Email/text the borrower their secure link + every document still missing — no typing, no duplicates"
+                  className="text-sm font-semibold bg-sky-600 hover:bg-sky-500 disabled:opacity-50 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                  {sendingReq ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>📨</span>} Remind: missing{(() => { const n = docs.filter((d) => (d.status === "needed" || d.status === "rejected") && d.required).length; return n ? ` (${n})` : ""; })()}
+                </button>
                 {reqMsg && <span className={`text-xs ${reqMsg.ok ? "text-emerald-400" : "text-amber-300"}`}>{reqMsg.text}</span>}
               </div>
               <p className="text-[11px] text-slate-600 mt-1">Always sends this file&apos;s secure link (<span className="font-mono">/file/{file.share_token.slice(0, 6)}…</span>) so every upload lands in this file.</p>
@@ -531,6 +668,56 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
           </div>
         </div>
       </div>
+
+      {/* In-app document viewer — opens approved PDFs right here (no popup blockers). */}
+      {viewer && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-sm" onClick={() => setViewer(null)}>
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900" onClick={(e) => e.stopPropagation()}>
+            <div className="min-w-0 text-sm font-medium text-slate-200 truncate">{viewer.name}</div>
+            <div className="flex items-center gap-2 shrink-0">
+              {viewer.isImage && (
+                <div className="flex items-center gap-1 mr-1" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => setZoom((z) => Math.max(0.2, +(z * 0.8).toFixed(2)))} title="Zoom out" className="text-base w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 leading-none">−</button>
+                  <span className="text-xs w-12 text-center tabular-nums text-slate-300">{Math.round(zoom * 100)}%</span>
+                  <button onClick={() => setZoom((z) => Math.min(8, +(z * 1.25).toFixed(2)))} title="Zoom in" className="text-base w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 leading-none">+</button>
+                  <button onClick={() => setZoom(1)} title="Fit to screen" className="text-xs px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700">Fit</button>
+                </div>
+              )}
+              <a href={viewer.url} target="_blank" rel="noopener noreferrer" className="text-xs px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 flex items-center gap-1"><ExternalLink className="w-3.5 h-3.5" /> New tab</a>
+              <button onClick={() => setViewer(null)} className="text-xs px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 flex items-center gap-1"><X className="w-3.5 h-3.5" /> Close</button>
+            </div>
+          </div>
+          {viewer.isImage ? (
+            <div className="flex-1 overflow-auto bg-slate-900 flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+              <img src={viewer.url} alt={viewer.name} draggable={false}
+                style={zoom === 1 ? { maxWidth: "100%", maxHeight: "100%" } : { width: `${zoom * 100}%`, maxWidth: "none", height: "auto" }} />
+            </div>
+          ) : (
+            <iframe src={viewer.url} title={viewer.name} className="flex-1 w-full bg-white" onClick={(e) => e.stopPropagation()} />
+          )}
+        </div>
+      )}
+
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4" onClick={() => setRejectTarget(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-red-500/40 bg-slate-900 p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-white">Reject & send back</h3>
+            <p className="text-sm text-slate-400 mt-1"><span className="text-slate-200 font-semibold">{rejectTarget.name}</span> — tell the borrower what's wrong so they can fix it. This re-adds it to their missing items, and the reason shows on their upload page.</p>
+            <textarea value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} rows={3} autoFocus
+              placeholder="e.g. Statement is cut off — need all pages, most recent month."
+              className="w-full mt-3 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-red-500 focus:outline-none" />
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setRejectTarget(null)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-2.5 rounded-lg">Cancel</button>
+              <button onClick={confirmReject} disabled={docBusy === rejectTarget.id} className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-lg">
+                {docBusy === rejectTarget.id ? "…" : "Reject & request re-upload"}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-600 mt-2">Tip: reject everything that needs fixing, then hit “📨 Remind: missing” once to send the borrower their link with all the reasons.</p>
+          </div>
+        </div>
+      )}
+
+      <DeleteConfirm open={delOpen} name={file.borrower_name || file.file_number || "this file"} kind="loan file" busy={delBusy} onCancel={() => setDelOpen(false)} onConfirm={deleteFile} />
     </div>
   );
 }

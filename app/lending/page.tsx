@@ -52,7 +52,7 @@ export default function LendingIndex() {
       <SiteHeader />
 
       <section className="max-w-5xl mx-auto px-6 pt-14 pb-8 text-center">
-        <img src="/cedi-512.png" alt="Mark. The all-knowing Fetti owl" width={72} height={72} className="w-16 h-16 mx-auto mb-3" />
+        <img src="/mark-golden-owl-512.png" alt="Mark. The all-knowing Fetti owl" width={72} height={72} className="w-16 h-16 mx-auto mb-3" />
         <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Mark presents · Programs</p>
         <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900">Loan programs for every goal</h1>
         <p className="text-slate-600 text-lg mt-4 max-w-2xl mx-auto">

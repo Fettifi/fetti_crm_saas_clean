@@ -30,7 +30,7 @@ function Links() {
         <p className="text-xl font-black tracking-tight text-slate-900 -mt-1">
           We <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">DO</span> Money<span className="text-emerald-600">!</span>
         </p>
-        <img src="/cedi-512.png" alt="Mark. The all-knowing Fetti owl" width={56} height={56} className="w-14 h-14 mx-auto mt-3" />
+        <img src="/mark-golden-owl-512.png" alt="Mark. The all-knowing Fetti owl" width={56} height={56} className="w-14 h-14 mx-auto mt-3" />
         <p className="text-slate-600 mt-2">Home loans, investment & business loans. Fast, licensed, no pressure.</p>
         <div className="mt-3 flex justify-center"><CediVoice /></div>
         <div className="space-y-3 mt-8">

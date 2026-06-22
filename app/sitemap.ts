@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 
-const BASE = "https://app.fettifi.com";
+// Brand domain (apex) — consolidate organic ranking authority here, not the app subdomain.
+const BASE = "https://fettifi.com";
 
 // Investment + business products are available in all states; consumer (home)
 // products only in the licensed states (FL, MI, CA).
@@ -15,6 +16,8 @@ const CONSUMER_STATES = ["florida", "michigan", "california"];
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
   const core: MetadataRoute.Sitemap = [
+    { url: BASE, lastModified: now, changeFrequency: "weekly", priority: 1 },
+    { url: `${BASE}/about`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${BASE}/start`, lastModified: now, changeFrequency: "weekly", priority: 1 },
     { url: `${BASE}/quote`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${BASE}/apply`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },

@@ -6,13 +6,17 @@
 import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { trackLead } from "@/lib/track";
+import { getAttribution } from "@/lib/attribution";
+import { referralCode } from "@/lib/referral";
+import ReferShare from "@/components/ReferShare";
 import type { LpConfig } from "@/lib/lpConfigs";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 
-const CONSENT = "By submitting, borrower agreed Fetti Financial Services may contact by phone, email & text (SMS), including automated. Consent not required to buy. STOP to opt out.";
+const CONSENT = "By submitting, you agree Fetti Financial Services LLC (NMLS #2267023) may contact you by phone, email & text (SMS) — including automated — at the number provided, about your inquiry and application. Consent isn't required to buy. Msg & data rates may apply; message frequency varies. Reply STOP to opt out, HELP for help.";
 
 export default function LeadForm({ config }: { config: LpConfig }) {
   const [done, setDone] = useState(false);
+  const [leadId, setLeadId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [propVal, setPropVal] = useState(""); // clean numeric string from CurrencyInput
@@ -23,6 +27,8 @@ export default function LeadForm({ config }: { config: LpConfig }) {
     setSubmitting(true); setErr(null);
     const fd = new FormData(e.currentTarget);
     const sp = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    const attr = getAttribution(); // first-touch ad params (survives navigation); URL is the fallback
+    const a = (k: string) => (attr as Record<string, string>)[k] || sp.get(k) || undefined;
     const purpose = config.purposes.find((p) => p.value === fd.get("purpose")) || config.purposes[0];
     const value = Number(propVal.replace(/[^0-9.]/g, "")) || undefined;
     try {
@@ -32,8 +38,9 @@ export default function LeadForm({ config }: { config: LpConfig }) {
           full_name: fd.get("full_name"), email: fd.get("email"), phone: fd.get("phone"), state: fd.get("state"),
           property_value: value, loan_purpose: purpose.loanPurpose, occupancy: config.occupancy, property_type: config.productType,
           source: `paid_lp_${config.slug}`,
-          utm_source: sp.get("utm_source") || "paid", utm_medium: sp.get("utm_medium") || "cpc", utm_campaign: sp.get("utm_campaign") || config.slug,
-          referrer: sp.get("ref") || undefined,
+          utm_source: a("utm_source") || "paid", utm_medium: a("utm_medium") || "cpc", utm_campaign: a("utm_campaign") || config.slug,
+          utm_term: a("utm_term"), utm_content: a("utm_content"), gclid: a("gclid"), fbclid: a("fbclid"),
+          referrer: a("ref"),
           consent: true, consent_at: new Date().toISOString(), consent_text: CONSENT,
           hp: String(fd.get("company") || ""),
         }),
@@ -41,6 +48,7 @@ export default function LeadForm({ config }: { config: LpConfig }) {
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Something went wrong.");
       trackLead(value);
+      setLeadId(j.lead_id || "");
       setDone(true);
     } catch (e) { setErr(e instanceof Error ? e.message : "Error"); } finally { setSubmitting(false); }
   }
@@ -51,6 +59,12 @@ export default function LeadForm({ config }: { config: LpConfig }) {
       <h2 className="text-2xl font-bold">You&apos;re in! 🎉</h2>
       <p className="text-slate-600 mt-2">A Fetti specialist will reach out shortly with your options. No credit pull, no pressure.</p>
       <a href={`/apply/form?utm_source=lp_${config.slug}`} className="inline-block mt-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-7 py-3 rounded-full">Finish your full pre-approval →</a>
+      {leadId && (
+        <div className="mt-6 pt-5 border-t border-slate-200 text-left">
+          <p className="font-semibold text-slate-900 text-center text-sm">Know someone who needs a loan? Send them your link.</p>
+          <ReferShare code={referralCode(leadId)} />
+        </div>
+      )}
     </div>
   );
 
@@ -66,8 +80,8 @@ export default function LeadForm({ config }: { config: LpConfig }) {
           <input name="phone" required placeholder="Phone" className={field} />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <input name="state" required placeholder="Property state (e.g. FL)" className={field} />
-          <CurrencyInput value={propVal} onChange={setPropVal} placeholder="Est. property value" className={field} />
+          <input name="state" placeholder="Property state (optional)" className={field} />
+          <CurrencyInput value={propVal} onChange={setPropVal} placeholder="Est. value (optional)" className={field} />
         </div>
         {config.purposes.length > 1 && (
           <select name="purpose" defaultValue={config.purposes[0].value} className={field}>
@@ -78,7 +92,7 @@ export default function LeadForm({ config }: { config: LpConfig }) {
         <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3.5 rounded-full text-lg shadow-lg shadow-emerald-600/25">
           {submitting ? "Submitting…" : "See my options →"}
         </button>
-        <p className="text-[11px] text-slate-400 text-center">{CONSENT}</p>
+        <p className="text-[11px] text-slate-400 text-center">{CONSENT} See our <a href="/privacy" className="underline hover:text-slate-600">Privacy Policy</a> &amp; <a href="/terms" className="underline hover:text-slate-600">Terms</a>.</p>
       </form>
     </>
   );

@@ -3,7 +3,7 @@
 // Pre-Approvals: issue branded, compliant mortgage pre-approval letters (pull
 // from a loan file or enter manually), then share/print the letter.
 import { useEffect, useState } from "react";
-import { FileCheck2, Loader2, Copy, Check, ExternalLink, Plus, Ban, Download } from "lucide-react";
+import { FileCheck2, Loader2, Copy, Check, ExternalLink, Plus, Ban, Download, Upload } from "lucide-react";
 import AddressInput from "@/components/AddressInput";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 
@@ -23,6 +23,8 @@ export default function PreApprovals() {
   const [copied, setCopied] = useState<string | null>(null);
   const [justIssued, setJustIssued] = useState<PA | null>(null);
   const [emailed, setEmailed] = useState<string[]>([]);
+  const [tsBusy, setTsBusy] = useState(false);
+  const [tsMsg, setTsMsg] = useState<{ ok?: boolean; text: string } | null>(null);
   const [f, setF] = useState<any>({
     borrower_name: "", co_borrower: "", loan_type: "Conventional", purchase_price: "", down_payment: "",
     loan_amount: "", interest_rate: "", term: "30-year fixed", property_address: "", occupancy: "Primary residence",
@@ -51,6 +53,37 @@ export default function PreApprovals() {
       loan_amount: lf.loan_amount ? String(lf.loan_amount) : p.loan_amount,
       occupancy: lf.occupancy === "Investor" ? "Investment" : lf.occupancy === "Owner" ? "Primary residence" : p.occupancy,
     }));
+  }
+
+  // Upload a lender term sheet → Claude extracts the loan terms → pre-fill the form.
+  async function uploadTermSheet(file: File) {
+    setTsBusy(true); setTsMsg(null);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const r = await fetch("/api/preapprovals/extract", { method: "POST", body: fd });
+      const j = await r.json();
+      if (r.ok && j.extracted) {
+        const ex = j.extracted;
+        const numStr = (v: any) => (v != null ? String(v) : undefined);
+        setF((p: any) => ({
+          ...p,
+          ...(ex.borrower_name && { borrower_name: ex.borrower_name }),
+          ...(ex.co_borrower && { co_borrower: ex.co_borrower }),
+          ...(ex.loan_type && { loan_type: ex.loan_type }),
+          ...(ex.loan_amount != null && { loan_amount: numStr(ex.loan_amount) }),
+          ...(ex.purchase_price != null && { purchase_price: numStr(ex.purchase_price) }),
+          ...(ex.down_payment != null && { down_payment: numStr(ex.down_payment) }),
+          ...(ex.interest_rate && { interest_rate: ex.interest_rate }),
+          ...(ex.term && { term: ex.term }),
+          ...(ex.property_address && { property_address: ex.property_address }),
+          ...(ex.occupancy && { occupancy: ex.occupancy }),
+          ...(ex.conditions && { conditions: ex.conditions }),
+          ...(ex.expires_on && { expires_on: ex.expires_on }),
+        }));
+        const n = (j.fields || []).length;
+        setTsMsg(n ? { ok: true, text: `✅ Pulled ${n} field${n === 1 ? "" : "s"} from the term sheet — review below, then issue the letter.` } : { text: "Read the file but found no usable terms — enter them manually." });
+      } else setTsMsg({ text: "⚠️ " + (j.error || "Couldn't read the term sheet.") });
+    } catch { setTsMsg({ text: "⚠️ Connection error." }); } finally { setTsBusy(false); }
   }
 
   async function issue(e: React.FormEvent) {
@@ -89,8 +122,23 @@ export default function PreApprovals() {
           </div>
         )}
 
+        {/* Create from a term sheet — upload, AI extracts the terms, review, issue */}
+        <div className="bg-gradient-to-r from-emerald-950/40 to-slate-900/40 border border-emerald-800/40 rounded-2xl p-4 mt-5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-sm font-semibold flex items-center gap-2">📄 Create from a term sheet
+              <span className="text-xs text-slate-500 font-normal hidden sm:inline">— upload a lender term sheet and AI fills the letter below</span></div>
+            <label className={`${tsBusy ? "opacity-60" : ""} bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-2 rounded-lg text-sm flex items-center gap-2 cursor-pointer`}>
+              {tsBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} {tsBusy ? "Reading…" : "Upload term sheet"}
+              <input type="file" accept="application/pdf,image/*" className="hidden" disabled={tsBusy}
+                onChange={(e) => { const fl = e.target.files?.[0]; if (fl) uploadTermSheet(fl); e.currentTarget.value = ""; }} />
+            </label>
+          </div>
+          {tsMsg && <div className={`text-xs mt-2 ${tsMsg.ok ? "text-emerald-300" : "text-slate-300"}`}>{tsMsg.text}</div>}
+          <div className="text-[11px] text-slate-500 mt-1">PDF or image. Terms are extracted for your review — nothing is issued until you click &ldquo;Issue pre-approval letter&rdquo; below.</div>
+        </div>
+
         {/* Issue form */}
-        <form onSubmit={issue} className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-5 space-y-3">
+        <form onSubmit={issue} className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4 space-y-3">
           {files.length > 0 && (
             <div>
               <label className="text-xs text-slate-500">Pull from a loan file (optional)</label>

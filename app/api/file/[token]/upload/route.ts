@@ -44,17 +44,48 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       doc = data;
     }
     if (!doc) {
-      const { data } = await supabaseAdmin.from("loan_documents").insert([{
-        loan_file_id: file.id, name: safeName, category: "Uploaded", required: false,
-        status: "received", storage_path: path, file_name: safeName, size_bytes: upload.size, uploaded_by: "borrower",
-      }]).select().single();
-      doc = data;
+      // Generic upload (not tied to a checklist item) = an ADDITIONAL document.
+      // Dedupe by file name so the same file uploaded twice REPLACES, never duplicates.
+      const { data: dupe } = await supabaseAdmin.from("loan_documents")
+        .select("id").eq("loan_file_id", file.id).eq("file_name", safeName)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (dupe?.id) {
+        const { data } = await supabaseAdmin.from("loan_documents").update({
+          status: "received", storage_path: path, size_bytes: upload.size,
+          uploaded_by: "borrower", updated_at: new Date().toISOString(),
+        }).eq("id", dupe.id).eq("loan_file_id", file.id).select().single();
+        doc = data;
+      } else {
+        const { data } = await supabaseAdmin.from("loan_documents").insert([{
+          loan_file_id: file.id, name: safeName, category: "Additional", required: false,
+          status: "received", storage_path: path, file_name: safeName, size_bytes: upload.size, uploaded_by: "borrower",
+        }]).select().single();
+        doc = data;
+      }
     }
 
     await logActivity({
       entity_type: "document", entity_id: doc?.id, loan_file_id: file.id, lead_id: file.lead_id,
       actor: "borrower", action: "doc.uploaded", detail: { name: doc?.name || safeName, size: upload.size },
     });
+
+    // Engagement: the moment a borrower uploads even one document, promote the
+    // lead out of the cold "New Lead" state into "Engaged" so the funnel keeps
+    // working them (doc-chaser cadence) instead of running the give-up drip.
+    // Only promotes upward — never downgrades an Engaged/Application lead.
+    if (file.lead_id) {
+      try {
+        const { data: lead } = await supabaseAdmin.from("leads").select("stage").eq("id", file.lead_id).maybeSingle();
+        const stage = (lead?.stage || "").toLowerCase();
+        const isFresh = !stage || stage === "new lead" || stage === "new" || stage === "contacted";
+        if (isFresh) {
+          await supabaseAdmin.from("leads").update({
+            stage: "Engaged", last_nurture_at: new Date().toISOString(),
+          }).eq("id", file.lead_id);
+        }
+      } catch (e) { console.warn("[upload] engage promote failed", e); }
+    }
+
     await maybeAdvanceStage(file.id);
     return NextResponse.json({ ok: true, document: { id: doc?.id, name: doc?.name, status: "received" } }, { status: 201 });
   } catch (e) {

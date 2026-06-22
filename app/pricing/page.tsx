@@ -42,16 +42,23 @@ export default function PricingPage() {
   async function delLender(id: string, name: string) { if (!confirm(`Remove ${name}?`)) return; await fetch(`/api/pricing/lenders?id=${id}`, { method: "DELETE" }); await loadDir(); }
   function editLender(l: any) { setLf({ id: l.id, name: l.name, submissionEmail: l.submissionEmail || "", portalUrl: l.portalUrl || "", aeEmail: l.aeEmail || "", loanTypes: (l.loanTypes || []).join(", "), states: (l.states || []).join(", ") }); window.scrollTo({ top: 0, behavior: "smooth" }); }
 
-  async function ingest(f: File) {
+  // Daily refresh: the first file replaces this lender's current sheet, any
+  // additional files accumulate (a multi-sheet lender = one fresh set).
+  async function ingestFiles(files: FileList | File[]) {
     if (!lenderName.trim()) { alert("Enter the lender name first."); return; }
-    setIngesting(`Parsing ${f.name} for ${lenderName}…`);
-    try {
-      const fd = new FormData(); fd.append("lenderName", lenderName.trim()); fd.append("doc", f);
-      const r = await fetch("/api/pricing/ingest", { method: "POST", body: fd });
-      const j = await r.json();
-      setIngesting(r.ok ? `✓ Added ${j.added} products for ${lenderName}.` : "⚠️ " + (j.error || "Failed."));
-      if (r.ok) { setLenderName(""); await load(); }
-    } catch { setIngesting("⚠️ Upload failed."); }
+    const arr = Array.from(files); const name = lenderName.trim(); let total = 0;
+    for (let i = 0; i < arr.length; i++) {
+      setIngesting(`Parsing ${arr[i].name}${arr.length > 1 ? ` (${i + 1}/${arr.length})` : ""} for ${name}…`);
+      const fd = new FormData(); fd.append("lenderName", name); fd.append("doc", arr[i]); fd.append("replace", i === 0 ? "true" : "false");
+      try {
+        const r = await fetch("/api/pricing/ingest", { method: "POST", body: fd });
+        const j = await r.json();
+        if (!r.ok) { setIngesting("⚠️ " + (j.error || `Failed on ${arr[i].name}.`)); await load(); setTimeout(() => setIngesting(null), 7000); return; }
+        total += j.added || 0;
+      } catch { setIngesting("⚠️ Upload failed."); setTimeout(() => setIngesting(null), 7000); return; }
+    }
+    setIngesting(`✓ Refreshed ${name} — ${total} products${arr.length > 1 ? ` from ${arr.length} sheets` : ""}.`);
+    setLenderName(""); await load();
     setTimeout(() => setIngesting(null), 6000);
   }
 
@@ -86,11 +93,12 @@ export default function PricingPage() {
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
             <div className="text-xs uppercase tracking-wide text-emerald-400 mb-3">Add a wholesaler rate sheet</div>
             <input value={lenderName} onChange={(e) => setLenderName(e.target.value)} placeholder="Lender name (e.g. TheLender)" className={`${inp} w-full mb-2`} />
-            <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) ingest(f); e.currentTarget.value = ""; }} />
+            <input ref={fileRef} type="file" multiple accept="image/*,application/pdf" className="hidden" onChange={(e) => { const fs = e.target.files; if (fs && fs.length) ingestFiles(fs); e.currentTarget.value = ""; }} />
             <button onClick={() => fileRef.current?.click()} disabled={!!ingesting} className="w-full text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3 py-2 rounded-lg flex items-center justify-center gap-1.5">
-              {ingesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />} Parse rate sheet
+              {ingesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />} Parse / refresh rate sheet
             </button>
             {ingesting && <div className="text-xs text-slate-400 mt-2">{ingesting}</div>}
+            <div className="text-[11px] text-slate-600 mt-2">Re-uploading <span className="text-slate-400">replaces</span> this lender&apos;s sheet — built for a daily refresh, no stale rows. Select multiple files for a lender that splits sheets (conv / govt / non-QM).</div>
           </div>
 
           {/* Lenders */}
@@ -98,16 +106,36 @@ export default function PricingPage() {
             <div className="text-xs uppercase tracking-wide text-slate-500 mb-3">Lenders loaded · {total} products</div>
             {lenders.length ? (
               <div className="space-y-1.5">
-                {lenders.map((l) => (
+                {lenders.map((l) => {
+                  const fresh = l.uploadedAt && new Date(l.uploadedAt).toDateString() === new Date().toDateString();
+                  return (
                   <div key={l.lenderId} className="flex items-center justify-between border-b border-slate-800/50 pb-1.5">
-                    <div><span className="font-medium">{l.lenderName}</span> <span className="text-xs text-slate-500">· {l.count} products{l.uploadedAt ? ` · ${new Date(l.uploadedAt).toLocaleDateString()}` : ""}</span></div>
+                    <div>
+                      <span className="font-medium">{l.lenderName}</span>{" "}
+                      <span className="text-xs text-slate-500">· {l.count} products{l.effectiveDate ? ` · as of ${l.effectiveDate}` : l.uploadedAt ? ` · ${new Date(l.uploadedAt).toLocaleDateString()}` : ""}</span>
+                      {l.uploadedAt && (fresh
+                        ? <span className="text-[11px] text-emerald-400 ml-1">· fresh today</span>
+                        : <span className="text-[11px] text-amber-400 ml-1">· refresh today</span>)}
+                    </div>
                     <button onClick={() => clearLender(l.lenderId, l.lenderName)} className="text-slate-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ) : <div className="text-slate-600 text-sm">No rate sheets yet. Add one to start comparing.</div>}
           </div>
         </div>
+
+        {/* Fast multi-portal pricing */}
+        <Link href="/pricing/run" className="block bg-emerald-600/10 border border-emerald-700/40 hover:border-emerald-500 rounded-2xl p-4 mt-4 transition-colors">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-emerald-300">⚡ Price a deal across your portals →</div>
+              <div className="text-xs text-slate-400 mt-0.5">Set the scenario once, open each portal, paste each result into its lane, and capture + compare all of them in one click.</div>
+            </div>
+            <span className="text-emerald-400 text-xl shrink-0">→</span>
+          </div>
+        </Link>
 
         {/* Wholesale lender directory */}
         <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4">

@@ -4,28 +4,38 @@
 // Places autocomplete (type → dropdown of real addresses). Either way it then
 // verifies/standardizes via /api/verify-address (free Census/OSM) and offers a
 // "view on map" link. Degrades gracefully if Google is unavailable.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapPin, Check, Loader2, ExternalLink, AlertTriangle } from "lucide-react";
 
 type Result = { verified: boolean; standardized?: string; mapsUrl: string };
 const GKEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
 
 export default function AddressInput({
-  value, onChange, onVerified, placeholder = "Property address", className = "",
+  value, onChange, onVerified, onResolved, placeholder = "Property address", className = "",
 }: {
-  value: string; onChange: (v: string) => void; onVerified?: (r: Result) => void; placeholder?: string; className?: string;
+  value: string; onChange: (v: string) => void; onVerified?: (r: Result) => void;
+  onResolved?: (r: { street?: string; city?: string; state?: string; zip?: string; formatted?: string }) => void;
+  placeholder?: string; className?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<Result | null>(null);
   const [sugs, setSugs] = useState<string[]>([]);
+  // The key is a Vercel "Sensitive" var (not inlined at build), so fetch it at runtime.
+  const [gkey, setGkey] = useState<string | null>(GKEY || null);
   const timer = useRef<any>(null);
+  useEffect(() => {
+    if (gkey) return;
+    let on = true;
+    fetch("/api/places/key").then((r) => r.json()).then((j) => { if (on && j?.key) setGkey(j.key); }).catch(() => {});
+    return () => { on = false; };
+  }, [gkey]);
 
   async function fetchSuggestions(input: string) {
-    if (!GKEY || input.trim().length < 3) { setSugs([]); return; }
+    if (!gkey || input.trim().length < 3) { setSugs([]); return; }
     try {
       const r = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Goog-Api-Key": GKEY },
+        headers: { "Content-Type": "application/json", "X-Goog-Api-Key": gkey },
         body: JSON.stringify({ input, includedRegionCodes: ["us"] }),
       });
       const j = await r.json();
@@ -47,7 +57,7 @@ export default function AddressInput({
     try {
       const r = await fetch(`/api/verify-address?q=${encodeURIComponent(q)}`);
       const j = (await r.json()) as Result;
-      setRes(j); onVerified?.(j);
+      setRes(j); onVerified?.(j); onResolved?.({ formatted: j.standardized || q, street: j.standardized || q });
     } finally { setBusy(false); }
   }
 

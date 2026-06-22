@@ -1,8 +1,54 @@
 // app/api/leads/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { deleteLeadCascade } from "@/lib/los";
 
 const INTERNAL_TOKEN = process.env.INTERNAL_LEAD_API_TOKEN;
+
+// This route's POST is token-authed (machine intake), so /api/leads is NOT in the
+// proxy session-gate. The DELETE therefore verifies the staff session itself.
+async function isStaff(req: NextRequest): Promise<boolean> {
+  try {
+    const supa = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { get: (name: string) => req.cookies.get(name)?.value, set() {}, remove() {} } },
+    );
+    const { data } = await supa.auth.getUser();
+    return !!data.user;
+  } catch { return false; }
+}
+
+// GET -> lightweight lead list for internal pickers (Scenario Desk prefill, etc.).
+// This route sits OUTSIDE the proxy gate (its POST is token-authed machine intake),
+// so the GET self-checks the staff session — lead PII is never exposed publicly.
+export async function GET(req: NextRequest) {
+  if (!(await isStaff(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const { data, error } = await supabaseAdmin
+    .from("leads")
+    .select("id, full_name, first_name, last_name, email, phone, loan_purpose, property_value, state, stage, created_at")
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ leads: data || [] });
+}
+
+// DELETE ?id=<leadId>&purge=1 -> permanently delete a lead and EVERYTHING tied to
+// it (loan files, documents, agent runs, activity, preapprovals) and, when purge=1,
+// the uploaded files in storage too. Irreversible. Staff session required.
+export async function DELETE(req: NextRequest) {
+  if (!(await isStaff(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const id = req.nextUrl.searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const purge = req.nextUrl.searchParams.get("purge") === "1";
+  try {
+    const totals = await deleteLeadCascade(id, { purgeStorage: purge });
+    return NextResponse.json({ ok: true, purged: purge, ...totals });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {

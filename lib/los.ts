@@ -42,7 +42,7 @@ export function docChecklistFor(product?: string, occupancy?: string): Doc[] {
   const isDscr = p.includes("dscr") || p.includes("airbnb") || p.includes("rental");
   const isFlip = /(flip|rehab|construction|bridge)/.test(p);
   const isBiz = /(commercial|sba|business|working capital|equipment)/.test(p);
-  const isInvestor = isDscr || isFlip || occupancy === "Investor" || occupancy === "Investment/Commercial";
+  const isInvestor = isDscr || isFlip || /invest|multi-?family/.test(p) || occupancy === "Investor" || occupancy === "Investment/Commercial";
   const isPurchase = p.includes("purchase") || p.includes("buy") || isFlip;
 
   const base: Doc[] = [
@@ -82,6 +82,18 @@ export function docChecklistFor(product?: string, occupancy?: string): Doc[] {
       { name: "Property insurance (builder's risk)", category: "Property", required: true },
     ];
   }
+  if (isInvestor) {
+    // Any other business-purpose investment loan (e.g. Multi-Family Investor
+    // Financing, Investment HELOC) — qualifies on the PROPERTY, never on the
+    // borrower's personal income. No pay stubs / W-2s / personal tax returns.
+    return [
+      ...base,
+      { name: "Rent roll / lease agreements", category: "Property", required: true },
+      { name: "Property insurance quote", category: "Property", required: true },
+      { name: "Entity documents (if vesting in an LLC)", category: "Business", required: false },
+      { name: "Mortgage statement (if refinance)", category: "Property", required: false },
+    ];
+  }
   // Consumer (owner-occupied) — full income/asset documentation.
   return [
     ...base,
@@ -101,7 +113,7 @@ type Comp = { key: string; label: string; done: boolean };
 export function complianceFor(product?: string, occupancy?: string): Comp[] {
   const p = (product || "").toLowerCase();
   const isBizPurpose =
-    /(dscr|airbnb|rental|flip|rehab|construction|bridge|commercial|sba|business|working capital|equipment)/.test(p) ||
+    /(dscr|airbnb|rental|flip|rehab|construction|bridge|commercial|sba|business|working capital|equipment|invest|multi-?family)/.test(p) ||
     occupancy === "Investor" || occupancy === "Investment/Commercial";
   if (isBizPurpose) {
     return [
@@ -181,6 +193,15 @@ export async function maybeAdvanceStage(loanFileId: string): Promise<void> {
     if (!allIn) return;
     await supabaseAdmin.from("loan_files")
       .update({ stage: "Processing", updated_at: new Date().toISOString() }).eq("id", loanFileId);
+    // All required documents are in — this is now a COMPLETE APPLICATION, not a
+    // raw lead. Mark the lead "Application" so the Leads view and the
+    // Applications view stay cleanly separated.
+    if (file.lead_id) {
+      try {
+        await supabaseAdmin.from("leads")
+          .update({ stage: "Application", status: "APPLICATION" }).eq("id", file.lead_id);
+      } catch (e) { console.warn("[los] mark lead application failed", e); }
+    }
     await logActivity({
       entity_type: "loan_file", entity_id: loanFileId, loan_file_id: loanFileId, lead_id: file.lead_id,
       actor: "system", action: "stage.changed",
@@ -198,4 +219,61 @@ export async function ensureLoanFileForLead(lead: LoanFile): Promise<LoanFile | 
     .from("loan_files").select("*").eq("lead_id", lead.id).limit(1).maybeSingle();
   if (existing) return existing;
   return createLoanFileFromLead(lead);
+}
+
+// ---- Permanent deletion (cascade) ----
+// Removes a loan file and EVERYTHING tied to it. When purgeStorage is true, the
+// uploaded files (borrower docs + e-signed PDFs) are erased from the loan-docs
+// bucket too — irreversible. Used by the LOS + Leads delete buttons (double-
+// confirmed in the UI). Service-role only (callers must auth-gate).
+const DOCS_BUCKET = "loan-docs";
+
+export async function deleteLoanFileCascade(
+  fileId: string,
+  opts: { purgeStorage?: boolean } = {},
+): Promise<{ files: number; docs: number; storage: number }> {
+  const out = { files: 0, docs: 0, storage: 0 };
+  const { data: docs } = await supabaseAdmin
+    .from("loan_documents").select("id, storage_path").eq("loan_file_id", fileId);
+
+  if (opts.purgeStorage) {
+    const paths = new Set<string>();
+    for (const d of docs || []) if (d.storage_path) paths.add(d.storage_path as string);
+    // Also sweep anything left under the file's own folder (orphans).
+    try {
+      const { data: listed } = await supabaseAdmin.storage.from(DOCS_BUCKET).list(fileId);
+      for (const o of listed || []) paths.add(`${fileId}/${o.name}`);
+    } catch { /* listing best-effort */ }
+    if (paths.size) {
+      try {
+        const { data: removed } = await supabaseAdmin.storage.from(DOCS_BUCKET).remove([...paths]);
+        out.storage = (removed || []).length;
+      } catch { /* removal best-effort */ }
+    }
+  }
+
+  await supabaseAdmin.from("loan_documents").delete().eq("loan_file_id", fileId);
+  out.docs = (docs || []).length;
+  await supabaseAdmin.from("activity_log").delete().eq("loan_file_id", fileId);
+  await supabaseAdmin.from("preapprovals").delete().eq("loan_file_id", fileId);
+  await supabaseAdmin.from("loan_files").delete().eq("id", fileId);
+  out.files = 1;
+  return out;
+}
+
+export async function deleteLeadCascade(
+  leadId: string,
+  opts: { purgeStorage?: boolean } = {},
+): Promise<{ files: number; docs: number; storage: number }> {
+  const totals = { files: 0, docs: 0, storage: 0 };
+  const { data: files } = await supabaseAdmin.from("loan_files").select("id").eq("lead_id", leadId);
+  for (const f of files || []) {
+    const r = await deleteLoanFileCascade(f.id as string, opts);
+    totals.files += r.files; totals.docs += r.docs; totals.storage += r.storage;
+  }
+  await supabaseAdmin.from("lead_agents").delete().eq("lead_id", leadId);
+  await supabaseAdmin.from("activity_log").delete().eq("lead_id", leadId);
+  await supabaseAdmin.from("preapprovals").delete().eq("lead_id", leadId);
+  await supabaseAdmin.from("leads").delete().eq("id", leadId);
+  return totals;
 }

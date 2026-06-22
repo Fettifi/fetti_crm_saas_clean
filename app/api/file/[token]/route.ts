@@ -3,6 +3,7 @@
 // scores, or activity).
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { cfg } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   if (!file) return NextResponse.json({ error: "not found" }, { status: 404 });
   const { data: documents } = await supabaseAdmin
     .from("loan_documents")
-    .select("id, name, category, required, status, file_name, updated_at")
+    .select("id, name, category, required, status, file_name, notes, updated_at")
     .eq("loan_file_id", file.id)
     .order("required", { ascending: false }).order("created_at");
   return NextResponse.json({
@@ -25,5 +26,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       stage: file.stage, status: file.status, property_address: file.property_address, state: file.state,
     },
     documents: documents || [],
+    calendly: (await cfg("CALENDLY_URL")) || "",
   });
 }
