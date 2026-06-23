@@ -16,6 +16,7 @@ import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { sendMetaLeadEvent } from "@/lib/metaCapi";
 import { advanceLeadStage } from "@/lib/leadStage";
+import { scoreLead } from "@/lib/leadScore";
 
 export const dynamic = "force-dynamic";
 // The full 5-agent pipeline runs post-response via after(); give the function
@@ -52,26 +53,8 @@ type Body = {
   hp?: string; // honeypot — must stay empty (bots fill it)
 };
 
-function scoreLead(b: Body): { score: number; tier: "Tier 1" | "Tier 2" | "Tier 3" } {
-  let score = 0;
-  const cs = b.credit_score;
-  const band = b.credit_band;
-  if (band === "720+" || band === "700-719" || (cs && cs >= 700)) score += 40;
-  else if (band === "680-699" || (cs && cs >= 680)) score += 30;
-  else if (band === "650-679" || (cs && cs >= 650)) score += 20;
-
-  if (b.liquid_assets && b.liquid_assets >= 100000) score += 30;
-  else if (b.liquid_assets && b.liquid_assets >= 50000) score += 20;
-
-  if (b.property_value && b.property_value >= 750000) score += 20;
-  else if (b.property_value && b.property_value >= 350000) score += 10;
-
-  if (typeof b.loan_purpose === "string" && b.loan_purpose.toLowerCase().includes("dscr")) score += 10;
-
-  score = Math.min(score, 100);
-  const tier = score >= 70 ? "Tier 1" : score >= 40 ? "Tier 2" : "Tier 3";
-  return { score, tier };
-}
+// scoreLead lives in @/lib/leadScore (shared with the Meta Lead Center importer)
+// so a tier means the same thing regardless of how the lead arrived.
 
 export async function POST(req: NextRequest) {
   try {

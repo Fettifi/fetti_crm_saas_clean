@@ -8,6 +8,7 @@
 import { getSetting, setSetting, cfg } from "@/lib/settings";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
+import { scoreLead } from "@/lib/leadScore";
 import crypto from "crypto";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
@@ -354,8 +355,12 @@ export async function importHistoricalLeads(): Promise<any> {
           if (seen.has(lgid)) { skipped++; pr.skipped++; continue; }
           const m = mapLead(lead.field_data || []);
           if (!m.email && !m.phone && !m.full_name) { skipped++; pr.skipped++; continue; }
+          // Score/tier through the SAME logic as /api/apply so imported paid leads
+          // are prioritized for follow-up instead of sitting in the pipeline untiered.
+          const { score, tier } = scoreLead({ loan_purpose: m.loan_purpose });
           const row = {
             full_name: m.full_name, email: m.email, phone: m.phone, state: m.state, loan_purpose: m.loan_purpose,
+            score, tier,
             notes: `Imported from Meta Lead Center (historical) — page "${page.name}", form "${form.name}". Review before contacting.`,
             stage: "New Lead", source: "facebook", lead_source: "facebook",
             raw: { meta: { leadgen_id: lgid, form_id: form.id, form_name: form.name, page_id: page.id, created_time: lead.created_time }, historical_import: true, field_data: lead.field_data },
@@ -367,7 +372,7 @@ export async function importHistoricalLeads(): Promise<any> {
             try {
               await notifyNewLead({
                 lead_id: (ins as any)?.id, full_name: row.full_name, email: row.email, phone: row.phone,
-                state: row.state, loan_purpose: row.loan_purpose, score: 0, tier: "Tier 3",
+                state: row.state, loan_purpose: row.loan_purpose, score, tier,
                 source: "facebook (auto-recovered)", auto_sent: [],
               });
             } catch { /* alert is best-effort */ }
