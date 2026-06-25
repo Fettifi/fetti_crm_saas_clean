@@ -321,6 +321,12 @@ export async function importHistoricalLeads(): Promise<any> {
       phone: digits.length >= 7 ? digits : null,
       state: get("state") || null,
       loan_purpose: get("loan_purpose", "purpose", "loan_type", "what_type") || null,
+      // Scoring inputs (were dropped before, so every historical lead scored 0/Tier 3).
+      credit_band: (get("credit_band", "credit_score", "credit") || null) as string | null,
+      credit_score: Number(String(getExact("credit_score") || "").replace(/[^0-9.]/g, "")) || null,
+      liquid_assets: Number(String(get("liquid_assets", "liquid_reserves", "reserves", "cash", "savings", "available_funds") || "").replace(/[^0-9.]/g, "")) || null,
+      property_value: Number(String(get("property_value", "home_value", "purchase_price") || "").replace(/[^0-9.]/g, "")) || null,
+      income: Number(String(get("annual_income", "monthly_income", "gross_income", "income") || "").replace(/[^0-9.]/g, "")) || null,
     };
   };
 
@@ -357,9 +363,14 @@ export async function importHistoricalLeads(): Promise<any> {
           if (!m.email && !m.phone && !m.full_name) { skipped++; pr.skipped++; continue; }
           // Score/tier through the SAME logic as /api/apply so imported paid leads
           // are prioritized for follow-up instead of sitting in the pipeline untiered.
-          const { score, tier } = scoreLead({ loan_purpose: m.loan_purpose });
+          const { score, tier } = scoreLead({
+            loan_purpose: m.loan_purpose, credit_band: m.credit_band, credit_score: m.credit_score,
+            liquid_assets: m.liquid_assets, property_value: m.property_value,
+          });
           const row = {
             full_name: m.full_name, email: m.email, phone: m.phone, state: m.state, loan_purpose: m.loan_purpose,
+            credit_band: m.credit_band, credit_score: m.credit_score, liquid_assets: m.liquid_assets,
+            property_value: m.property_value, income: m.income,
             score, tier,
             notes: `Imported from Meta Lead Center (historical) — page "${page.name}", form "${form.name}". Review before contacting.`,
             stage: "New Lead", source: "facebook", lead_source: "facebook",

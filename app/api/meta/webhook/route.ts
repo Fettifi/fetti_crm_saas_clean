@@ -78,6 +78,13 @@ function mapFields(fieldData: any[]): Record<string, any> {
     loan_purpose: get("loan_purpose", "purpose", "loan_type", "what_type"),
     property_value: Number(String(get("property_value", "home_value", "purchase_price") || "").replace(/[^0-9.]/g, "")) || undefined,
     credit_band: get("credit_band", "credit_score", "credit"),
+    // Capture the remaining SCORING inputs so a Meta lead can actually reach Tier 1.
+    // Previously liquid_assets/credit_score/income were never mapped, so paid leads
+    // were structurally capped at Tier 2/3 no matter how strong the borrower was.
+    liquid_assets: Number(String(get("liquid_assets", "liquid_reserves", "reserves", "cash", "savings", "available_funds") || "").replace(/[^0-9.]/g, "")) || undefined,
+    credit_score: Number(String(getExact("credit_score") || "").replace(/[^0-9.]/g, "")) || undefined,
+    income: Number(String(get("annual_income", "monthly_income", "gross_income", "income") || "").replace(/[^0-9.]/g, "")) || undefined,
+    loan_amount_requested: Number(String(get("loan_amount_requested", "loan_amount", "amount_needed") || "").replace(/[^0-9.]/g, "")) || undefined,
   };
   // keep everything for the record
   body.notes = "Meta Lead Ad: " + fieldData.map((f) => `${f.name}=${Array.isArray(f.values) ? f.values.join("/") : f.values}`).join("; ");
