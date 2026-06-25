@@ -37,11 +37,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
     let doc;
     if (docId) {
-      const { data } = await supabaseAdmin.from("loan_documents").update({
-        status: "received", storage_path: path, file_name: safeName, size_bytes: upload.size,
-        uploaded_by: "borrower", updated_at: new Date().toISOString(),
-      }).eq("id", docId).eq("loan_file_id", file.id).select().single();
-      doc = data;
+      const { data: reqRow } = await supabaseAdmin.from("loan_documents")
+        .select("id, name, category, status, storage_path").eq("id", docId).eq("loan_file_id", file.id).maybeSingle();
+      const alreadySatisfied = !!reqRow?.storage_path && (reqRow.status === "received" || reqRow.status === "accepted");
+      if (reqRow && !alreadySatisfied) {
+        // First file for this request (or replacing a rejected/needed one) → fill the request row.
+        const { data } = await supabaseAdmin.from("loan_documents").update({
+          status: "received", storage_path: path, file_name: safeName, size_bytes: upload.size,
+          uploaded_by: "borrower", updated_at: new Date().toISOString(),
+        }).eq("id", docId).eq("loan_file_id", file.id).select().single();
+        doc = data;
+      } else if (reqRow) {
+        // Request already satisfied → this is an ADDITIONAL file for the SAME line item
+        // (e.g. a 2nd pay stub, another bank-statement month, back of an ID). Each row holds
+        // exactly one storage_path, so we keep the extra file as its OWN row — nothing is
+        // overwritten. Named after the request so it stays grouped; required:false so it
+        // never re-blocks completion. This is how a borrower attaches multiple docs to one request.
+        const { data } = await supabaseAdmin.from("loan_documents").insert([{
+          loan_file_id: file.id, name: `${reqRow.name} — additional`, category: reqRow.category || "Additional",
+          required: false, status: "received", storage_path: path, file_name: safeName, size_bytes: upload.size,
+          uploaded_by: "borrower", notes: `Additional file for: ${reqRow.name}`,
+        }]).select().single();
+        doc = data;
+      }
     }
     if (!doc) {
       // Generic upload (not tied to a checklist item) = an ADDITIONAL document.

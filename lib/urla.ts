@@ -9,6 +9,7 @@
 // anymore — it all lands in a typed object.
 
 import { decryptField } from "./crypto";
+import { PROPERTY_TAX_RATE, INSURANCE_RATE, zipToState } from "./pricer";
 
 export type YesNo = "Yes" | "No" | "";
 
@@ -70,6 +71,8 @@ export interface UrlaProperty {
   address?: UrlaAddress; propertyType?: string; occupancy?: string;   // PrimaryResidence | SecondHome | Investment
   presentValue?: number; mixedUse?: YesNo; manufactured?: YesNo;
   expectedMonthlyRentalIncome?: number;
+  // Monthly escrow components — needed for a real PITIA / DSCR (undefined = unknown, NOT 0).
+  monthlyPropertyTax?: number; hazardInsurance?: number; floodInsurance?: number; hoaDues?: number; monthlyMI?: number;
 }
 
 export interface UrlaLoan {
@@ -80,6 +83,8 @@ export interface UrlaLoan {
   termMonths?: number;
   noteRatePercent?: number;
   productDescription?: string;
+  interestOnly?: boolean;            // qualifying payment is interest-only
+  qualifyingRatePercent?: number;    // ARM/stress qualifying rate (≥ note rate)
 }
 
 export interface UrlaOriginator {
@@ -201,8 +206,23 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     income: seededBorrower.income || (num(lead?.income) ? { total: num(lead?.income) } : undefined),
   };
 
+  // Co-borrower(s): every borrower PAST the first comes straight from the structured
+  // 1003 (e.g. a MISMO import with two borrowers, or a manually-added spouse). Only
+  // the PRIMARY is enriched from the flat lead columns; co-borrowers are preserved
+  // verbatim with their SSN decrypted. Previously these were silently dropped.
+  const coBorrowers: UrlaBorrower[] = (seeded.borrowers || []).slice(1).map((cb: any) => ({
+    ...cb,
+    ssn: decryptField(cb?.ssn),
+  }));
+
+  // Property location: prefer an explicit property address, but fall back to the
+  // lead's state/ZIP so escrow (taxes + insurance) can still be ZIP-estimated when
+  // only the borrower's state/zip is on file (most leads have no property_address).
+  const propAddr: UrlaAddress = { ...((seeded.property?.address as UrlaAddress) || parseAddress(lead?.property_address) || {}) };
+  if (!propAddr.state && lead?.state) propAddr.state = normalizeState(lead.state) || lead.state || undefined;
+  if (!propAddr.zip && lead?.zip) propAddr.zip = String(lead.zip);
   const property: UrlaProperty = {
-    address: (seeded.property?.address) || parseAddress(lead?.property_address),
+    address: (propAddr.street || propAddr.city || propAddr.state || propAddr.zip) ? propAddr : undefined,
     propertyType: seeded.property?.propertyType || lead?.property_type || undefined,
     occupancy: seeded.property?.occupancy || (lead?.occupancy ? (/(investor|investment)/i.test(lead.occupancy) ? "Investment" : /(second)/i.test(lead.occupancy) ? "SecondHome" : "PrimaryResidence") : undefined),
     presentValue: seeded.property?.presentValue ?? num(lead?.property_value),
@@ -238,7 +258,7 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
   };
 
   return {
-    borrowers: [borrower],
+    borrowers: [borrower, ...coBorrowers],
     property,
     loan,
     assets,
@@ -253,30 +273,60 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
 
 // Underwriting math derived from the application — the numbers an LO/UW lives on.
 export function computeLoanMetrics(u: Urla) {
-  const borrowerIncome = (u.borrowers || []).reduce((s, b) => {
+  const byBorrower: Record<number, number> = {};
+  (u.borrowers || []).forEach((b, idx) => {
     const i = b.income || {};
     const parts = (i.base || 0) + (i.overtime || 0) + (i.bonus || 0) + (i.commission || 0) + (i.other || 0);
-    return s + (parts || i.total || 0);
-  }, 0);
-  const rental = u.property?.expectedMonthlyRentalIncome || 0;
-  const monthlyIncome = borrowerIncome + rental;
+    byBorrower[idx + 1] = Math.round(parts || i.total || 0);
+  });
+  const borrowerIncome = Object.values(byBorrower).reduce((s, v) => s + v, 0);
+  const grossRent = u.property?.expectedMonthlyRentalIncome || 0;
+  const monthlyIncome = borrowerIncome; // subject investment rent qualifies via DSCR, not personal income (no double-count)
   const value = u.property?.presentValue || 0;
   const amount = u.loan?.amount || 0;
   const ltv = value ? (amount / value) * 100 : undefined;
+  const noteRate = u.loan?.noteRatePercent || 0;
+  const qualRate = Math.max(noteRate, u.loan?.qualifyingRatePercent || 0); // qualify at the stress rate for ARMs
+  const term = u.loan?.termMonths || 360;
   let pi: number | undefined;
-  const rate = u.loan?.noteRatePercent, term = u.loan?.termMonths || 360;
-  if (amount && rate) { const r = rate / 100 / 12; pi = r ? (amount * r * Math.pow(1 + r, term)) / (Math.pow(1 + r, term) - 1) : amount / term; }
+  if (amount && qualRate) {
+    const r = qualRate / 100 / 12;
+    pi = u.loan?.interestOnly ? amount * r : (r ? (amount * r * Math.pow(1 + r, term)) / (Math.pow(1 + r, term) - 1) : amount / term);
+  }
+  // Escrow → a real PITIA. Explicit components win. Otherwise estimate taxes +
+  // insurance from the property ZIP→state using the SAME tables as the Quick Pricer
+  // (lib/pricer) so DSCR/DTI reflect a real PITIA instead of reporting incomplete.
+  // The /income LOS panel refines this to ZIP-accurate county rates via /api/pricer/location.
+  const p = u.property || {};
+  const explicitEscrow = [p.monthlyPropertyTax, p.hazardInsurance, p.floodInsurance, p.hoaDues, p.monthlyMI].some((x) => typeof x === "number" && x > 0);
+  const zip = p.address?.zip;
+  const stAbbr = zipToState(zip) || (p.address?.state && p.address.state.length === 2 ? p.address.state.toUpperCase() : null);
+  let taxMonthly = p.monthlyPropertyTax || 0;
+  let insMonthly = p.hazardInsurance || 0;
+  let escrowEstimated = false;
+  if (!explicitEscrow && value > 0 && stAbbr) {
+    taxMonthly = (value * (PROPERTY_TAX_RATE[stAbbr] ?? 1.0)) / 100 / 12;
+    insMonthly = (value * (INSURANCE_RATE[stAbbr] ?? 0.55)) / 100 / 12;
+    escrowEstimated = true;
+  }
+  const escrow = explicitEscrow
+    ? [p.monthlyPropertyTax, p.hazardInsurance, p.floodInsurance, p.hoaDues, p.monthlyMI].reduce((s: number, x) => s + (x || 0), 0)
+    : taxMonthly + insMonthly + (p.hoaDues || 0) + (p.floodInsurance || 0) + (p.monthlyMI || 0);
+  const escrowKnown = escrow > 0;
+  const pitia = pi != null ? pi + escrow : undefined;
   const liabilities = (u.liabilities || []).reduce((s, l) => s + (l.monthlyPayment || 0), 0);
-  const housing = pi ?? (u.borrowers?.[0]?.monthlyHousingExpense || 0);
+  const housing = (escrowKnown && pitia != null) ? pitia : (pi ?? (u.borrowers?.[0]?.monthlyHousingExpense || 0));
   const frontDti = monthlyIncome && housing ? (housing / monthlyIncome) * 100 : undefined;
   const backDti = monthlyIncome ? ((housing + liabilities) / monthlyIncome) * 100 : undefined;
   const isInvestment = u.property?.occupancy === "Investment";
-  const dscr = isInvestment && pi && rental ? rental / pi : undefined;
+  // DSCR = gross rent ÷ PITIA, and ONLY when escrow is known — never bare P&I (overstates).
+  const dscr = isInvestment && escrowKnown && pitia ? grossRent / pitia : undefined;
   const round = (n?: number, d = 1) => (n === undefined ? undefined : Math.round(n * 10 ** d) / 10 ** d);
   return {
-    monthlyIncome: round(monthlyIncome, 0), borrowerIncome: round(borrowerIncome, 0), rental: round(rental, 0),
-    value, amount, ltv: round(ltv), pi: round(pi, 0), liabilities: round(liabilities, 0),
-    frontDti: round(frontDti), backDti: round(backDti), dscr: round(dscr, 2), isInvestment,
+    monthlyIncome: round(monthlyIncome, 0), borrowerIncome: round(borrowerIncome, 0), rental: round(grossRent, 0),
+    value, amount, ltv: round(ltv), pi: round(pi, 0), pitia: round(pitia, 0), escrowKnown, escrowEstimated,
+    taxMonthly: round(taxMonthly, 0), insMonthly: round(insMonthly, 0), zip: zip || undefined, state: stAbbr || undefined,
+    liabilities: round(liabilities, 0), frontDti: round(frontDti), backDti: round(backDti), dscr: round(dscr, 2), isInvestment, byBorrower,
   };
 }
 

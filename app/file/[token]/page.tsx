@@ -21,7 +21,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
   const [notFound, setNotFound] = useState(false);
   const [busyDoc, setBusyDoc] = useState<string | null>(null);
   const [dropping, setDropping] = useState(false);
-  const [pending, setPending] = useState<File | null>(null);
+  const [pending, setPending] = useState<File[]>([]);
   const [calendly, setCalendly] = useState<string>("");
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -33,14 +33,21 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
   }, [token]);
   useEffect(() => { load(); }, [load]);
 
-  async function upload(docId: string | null, f: File) {
+  // Upload one OR MORE files to the same checklist item, SEQUENTIALLY. The first file
+  // satisfies the request; each additional file is kept as its own document (the server
+  // never overwrites). Sequential so the request→satisfied transition lands before the
+  // next file, which then attaches as an additional doc to that same item.
+  async function uploadMany(docId: string | null, files: File[]) {
+    if (!files.length) return;
     setBusyDoc(docId || "new");
-    const fd = new FormData();
-    fd.append("file", f);
-    if (docId) fd.append("doc_id", docId);
     try {
-      const res = await fetch(`/api/file/${token}/upload`, { method: "POST", body: fd });
-      if (res.ok) await load();
+      for (const f of files) {
+        const fd = new FormData();
+        fd.append("file", f);
+        if (docId) fd.append("doc_id", docId);
+        await fetch(`/api/file/${token}/upload`, { method: "POST", body: fd });
+      }
+      await load();
     } finally { setBusyDoc(null); }
   }
 
@@ -91,7 +98,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
             <span className="text-sm text-slate-500">{received}/{docs.length} uploaded</span>
           </div>
           <div className="h-2 bg-slate-100 rounded mt-2"><div className="h-2 bg-emerald-600 rounded transition-all" style={{ width: `${docs.length ? (received / docs.length) * 100 : 0}%` }} /></div>
-          <p className="text-xs text-slate-500 mt-2">Tap <span className="font-medium text-slate-700">Upload</span> next to each item to send it securely — ID, bank statements, pay stubs, and anything else listed. Your file moves forward as documents come in.</p>
+          <p className="text-xs text-slate-500 mt-2">Tap <span className="font-medium text-slate-700">Upload</span> next to each item to send it securely — ID, bank statements, pay stubs, and anything else listed. You can attach <span className="font-medium text-slate-700">more than one file</span> to any item. Your file moves forward as documents come in.</p>
 
           <div className="space-y-2 mt-4">
             {docs.map((d) => {
@@ -109,12 +116,12 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
                     {rejected && <div className="text-xs text-red-600 font-medium mt-0.5 ml-6">❗ Please re-upload{d.notes ? ` — ${d.notes}` : ""}</div>}
                   </div>
                   <div className="shrink-0 ml-3">
-                    <input ref={(el) => { fileInputs.current[d.id] = el; }} type="file" className="hidden"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(d.id, f); e.currentTarget.value = ""; }} />
+                    <input ref={(el) => { fileInputs.current[d.id] = el; }} type="file" multiple className="hidden"
+                      onChange={(e) => { const fs = Array.from(e.target.files || []); if (fs.length) uploadMany(d.id, fs); e.currentTarget.value = ""; }} />
                     <button onClick={() => fileInputs.current[d.id]?.click()} disabled={busyDoc === d.id}
                       className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${uploaded ? "bg-slate-100 hover:bg-slate-200 text-slate-600" : rejected ? "bg-red-600 hover:bg-red-500 text-white font-semibold" : "bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"}`}>
                       {busyDoc === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                      {uploaded ? "Replace" : rejected ? "Re-upload" : "Upload"}
+                      {uploaded ? "Add file(s)" : rejected ? "Re-upload" : "Upload"}
                     </button>
                   </div>
                 </div>
@@ -124,12 +131,12 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
 
           {/* Add another document — ask which item it is so it lands in the right slot (never a duplicate) */}
           <div className="mt-4">
-            <input ref={(el) => { fileInputs.current["new"] = el; }} type="file" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) setPending(f); e.currentTarget.value = ""; }} />
+            <input ref={(el) => { fileInputs.current["new"] = el; }} type="file" multiple className="hidden"
+              onChange={(e) => { const fs = Array.from(e.target.files || []); if (fs.length) setPending(fs); e.currentTarget.value = ""; }} />
             <button onClick={() => fileInputs.current["new"]?.click()} disabled={busyDoc === "new"}
               onDragOver={(e) => { e.preventDefault(); setDropping(true); }}
               onDragLeave={() => setDropping(false)}
-              onDrop={(e) => { e.preventDefault(); setDropping(false); const f = e.dataTransfer.files?.[0]; if (f) setPending(f); }}
+              onDrop={(e) => { e.preventDefault(); setDropping(false); const fs = Array.from(e.dataTransfer.files || []); if (fs.length) setPending(fs); }}
               className={`w-full border border-dashed rounded-xl py-5 text-sm flex items-center justify-center gap-2 transition ${dropping ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 hover:border-emerald-300 text-slate-500"}`}>
               {busyDoc === "new" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} {dropping ? "Drop to upload" : "Upload another document"}
             </button>
@@ -137,24 +144,24 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
 
           {/* "Which document is this?" — routes the file to the right checklist item so it
               satisfies that requirement instead of creating a duplicate/orphan. */}
-          {pending && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setPending(null)}>
+          {pending.length > 0 && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setPending([])}>
               <div className="w-full max-w-sm bg-white rounded-2xl p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-                <h3 className="font-semibold text-slate-900">Which document is this?</h3>
-                <p className="text-xs text-slate-500 mt-1 truncate">📎 {pending.name}</p>
+                <h3 className="font-semibold text-slate-900">{pending.length === 1 ? "Which document is this?" : "Which item are these files for?"}</h3>
+                <p className="text-xs text-slate-500 mt-1 truncate">📎 {pending.length === 1 ? pending[0].name : `${pending.length} files selected`}</p>
                 <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
                   {docs.filter((d) => d.status === "needed" || d.status === "rejected").map((d) => (
-                    <button key={d.id} onClick={async () => { const f = pending; setPending(null); if (f) await upload(d.id, f); }}
+                    <button key={d.id} onClick={async () => { const fs = pending; setPending([]); if (fs.length) await uploadMany(d.id, fs); }}
                       className="w-full text-left text-sm px-3 py-2 rounded-lg bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700">
                       {d.name}{d.required ? "  ·  required" : ""}
                     </button>
                   ))}
-                  <button onClick={async () => { const f = pending; setPending(null); if (f) await upload(null, f); }}
+                  <button onClick={async () => { const fs = pending; setPending([]); if (fs.length) await uploadMany(null, fs); }}
                     className="w-full text-left text-sm px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-500">
-                    It&apos;s something else (additional document)
+                    {pending.length === 1 ? "It’s something else (additional document)" : "They’re something else (additional documents)"}
                   </button>
                 </div>
-                <button onClick={() => setPending(null)} className="mt-3 text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                <button onClick={() => setPending([])} className="mt-3 text-xs text-slate-400 hover:text-slate-600">Cancel</button>
               </div>
             </div>
           )}

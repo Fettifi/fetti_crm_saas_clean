@@ -26,6 +26,16 @@ Return ONLY valid JSON in this shape — INCLUDE ONLY fields you can actually re
  "property_address": string,
  "occupancy": one of ${JSON.stringify(OCC)},
  "conditions": string (any conditions/stipulations/exceptions listed, concatenated into one line),
+ "loan_purpose": string (one of "Purchase", "Rate/Term Refinance", "Cash-Out Refinance" — only if discernible),
+ "ltv": string (loan-to-value as a percent, e.g. "75%", if shown),
+ "rate_type": string (the rate structure, e.g. "30-yr Fixed", "5/1 ARM", "Interest-Only"),
+ "monthly_payment": string (estimated total monthly payment / PITIA if shown, e.g. "$3,142"),
+ "points": string (discount/origination points, e.g. "1.000" or "0"),
+ "lender_fees": string (total lender/origination fees in dollars, e.g. "$1,995"),
+ "prepay_penalty": string (prepayment penalty structure, e.g. "5/4/3/2/1" or "None"),
+ "reserves": string (required reserves, e.g. "6 months PITIA"),
+ "dscr": string (DSCR ratio for investment loans, e.g. "1.25"),
+ "lock_period": string (rate lock period, e.g. "45 days"),
  "expires_on": "YYYY-MM-DD" (rate-lock expiration or term-sheet expiry, if shown)
 }`;
 
@@ -77,6 +87,10 @@ export async function POST(req: NextRequest) {
     if (OCC.includes(ex.occupancy)) clean.occupancy = ex.occupancy;
     if (str(ex.conditions)) clean.conditions = str(ex.conditions);
     if (/^\d{4}-\d{2}-\d{2}$/.test(String(ex.expires_on || ""))) clean.expires_on = ex.expires_on;
+    // Richer term-sheet fields (no DB column) — free strings, capped; carried in extra_terms.
+    for (const k of ["loan_purpose", "ltv", "rate_type", "monthly_payment", "points", "lender_fees", "prepay_penalty", "reserves", "dscr", "lock_period"]) {
+      const v = str((ex as any)[k]); if (v) clean[k] = v.slice(0, 80);
+    }
 
     return NextResponse.json({ ok: true, extracted: clean, fields: Object.keys(clean) });
   } catch (e: any) {

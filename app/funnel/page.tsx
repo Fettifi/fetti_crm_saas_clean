@@ -6,10 +6,24 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 
+function ago(iso?: string | null): string {
+  if (!iso) return "—";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!isFinite(ms) || ms < 0) return "just now";
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 export default function FunnelPage() {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState<any>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -18,6 +32,19 @@ export default function FunnelPage() {
     setLoading(false);
   }, [days]);
   useEffect(() => { load(); }, [load]);
+
+  const runNow = useCallback(async () => {
+    setRunning(true); setRunResult(null);
+    try {
+      const r = await fetch("/api/funnel/run-nurture", { method: "POST" });
+      setRunResult(await r.json());
+      await load();
+    } catch (e: any) {
+      setRunResult({ ok: false, error: e?.message || "Run failed." });
+    } finally {
+      setRunning(false);
+    }
+  }, [load]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
@@ -35,10 +62,82 @@ export default function FunnelPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-emerald-400" /></div>
-        ) : !data || !data.started ? (
-          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-8 text-center text-slate-500">No funnel events in this window yet. Once applicants run the wizard, their step-by-step path shows here.</div>
+        ) : !data ? (
+          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-8 text-center text-slate-500">Couldn&apos;t load funnel data. Try again.</div>
         ) : (
           <>
+            {/* ===== Lead pipeline & follow-up health — proves the engine is actually working ===== */}
+            {data.health && (() => {
+              const h = data.health;
+              const STAGE_ORDER = ["New Lead", "Contacted", "Engaged", "Application", "Pre-Approved", "Approved", "Funded", "Closed", "Nurture", "Lost", "Dead"];
+              const byStage: Record<string, number> = h.leadsByStage || {};
+              const ordered = [...STAGE_ORDER.filter((s) => s in byStage), ...Object.keys(byStage).filter((s) => !STAGE_ORDER.includes(s))];
+              const totalLeads = Object.values(byStage).reduce((a: number, b: any) => a + (b as number), 0);
+              const ob = h.outbound || {};
+              const chans = Object.entries(h.nurtureChannels || {}).map(([c, n]) => `${c}: ${n}`).join(" · ");
+              return (
+                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mb-4">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Lead pipeline &amp; follow-up health</div>
+                    <button onClick={runNow} disabled={running} className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                      {running ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Running…</> : <>▶ Run follow-ups now</>}
+                    </button>
+                  </div>
+
+                  {/* pipeline by stage */}
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {ordered.length ? ordered.map((s) => (
+                      <div key={s} className="bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2 text-center min-w-[84px]">
+                        <div className="text-xl font-bold text-emerald-300">{byStage[s]}</div>
+                        <div className="text-[10px] text-slate-400">{s}</div>
+                      </div>
+                    )) : <div className="text-slate-600 text-sm">No leads yet.</div>}
+                    <div className="bg-emerald-500/5 border border-emerald-700/40 rounded-xl px-3 py-2 text-center min-w-[84px]">
+                      <div className="text-xl font-bold text-emerald-400">{totalLeads}</div>
+                      <div className="text-[10px] text-slate-400">Total leads</div>
+                    </div>
+                  </div>
+
+                  {runResult && (
+                    <div className={`text-xs rounded-lg px-3 py-2 mb-3 ${runResult.ok ? "bg-emerald-500/10 text-emerald-300" : "bg-red-500/10 text-red-300"}`}>
+                      {runResult.ok ? `Follow-up run complete — considered ${runResult.considered}, sent ${runResult.sent}, doc-chases ${runResult.chased}, reactivated ${runResult.reactivated}.` : `Run failed: ${runResult.error || "unknown error"}`}
+                    </div>
+                  )}
+
+                  {/* outbound activity in window */}
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Activity · last {days}d</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                    {([
+                      ["New leads", ob["lead.created"] || 0],
+                      ["Follow-ups sent", ob["nurture.sent"] || 0],
+                      ["Stage advances", ob["lead.stage.advanced"] || 0],
+                      ["Doc requests", (ob["doc.requested"] || 0) + (ob["doc.request.sent"] || 0)],
+                      ["Docs uploaded", ob["doc.uploaded"] || 0],
+                      ["Reminders sent", ob["doc.reminder.sent"] || 0],
+                      ["Pre-approvals", ob["preapproval.issued"] || 0],
+                      ["Emails delivered", ob["email.delivered"] || 0],
+                    ] as [string, number][]).map(([k, v]) => (
+                      <div key={k} className="bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2">
+                        <div className="text-lg font-bold text-white">{v}</div>
+                        <div className="text-[10px] text-slate-400">{k}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {chans && <div className="text-[11px] text-slate-500 mb-2">Follow-up channels: {chans}</div>}
+                  <div className="text-[11px] text-slate-500 flex flex-wrap gap-x-4 gap-y-1">
+                    <span>Last follow-up run: <b className="text-slate-300">{h.lastNurtureRun ? `${ago(h.lastNurtureRun.at)} (considered ${h.lastNurtureRun.considered}, sent ${h.lastNurtureRun.sent})` : "—"}</b></span>
+                    <span>Last message sent: <b className="text-slate-300">{ago(h.lastNurtureSent)}</b></span>
+                    <span>Last new lead: <b className="text-slate-300">{ago(h.lastLeadCreated)}</b></span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ===== Wizard step-by-step funnel (only when there are wizard events) ===== */}
+            {!data.started ? (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 text-center text-slate-500 text-sm">No wizard runs in this window yet — the step-by-step application drop-off appears here once applicants start the apply wizard.</div>
+            ) : (
+            <>
             {/* headline conversion */}
             <div className="grid grid-cols-3 gap-3 mb-5">
               {[["Started", data.started, ""], ["Reached contact", data.contact, `${data.contactRate}%`], ["Completed app", data.complete, `${data.completeRate}%`]].map(([k, v, p]) => (
@@ -112,6 +211,8 @@ export default function FunnelPage() {
                 ) : <div className="text-slate-600 text-sm">No objections recorded — clean run.</div>}
               </div>
             </div>
+            </>
+            )}
           </>
         )}
       </div>

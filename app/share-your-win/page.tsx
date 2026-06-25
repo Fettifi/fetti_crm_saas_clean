@@ -72,7 +72,7 @@ export default function ShareYourWin() {
       <main className="mx-auto max-w-xl px-6 py-14">
         {state === "done" ? (
           <div className="rounded-3xl border border-emerald-200 bg-white p-10 text-center shadow-sm">
-            <img src="/mark-golden-owl-512.png" alt="Mark" width={72} height={72} className="mx-auto mb-4 h-16 w-16" />
+            <img src="/mark-owl.png" alt="Mark" width={88} height={128} className="mx-auto mb-4 h-28 w-auto drop-shadow-md" />
             <h1 className="text-2xl font-bold text-slate-900">Thank you! 🦉</h1>
             <p className="mt-3 text-slate-600">
               Your story is in review and may be featured on our site soon. We appreciate you trusting Fetti with your
@@ -88,7 +88,7 @@ export default function ShareYourWin() {
         ) : (
           <>
             <div className="mb-8 text-center">
-              <img src="/mark-golden-owl-512.png" alt="Mark" width={64} height={64} className="mx-auto mb-3 h-14 w-14" />
+              <img src="/mark-owl.png" alt="Mark" width={77} height={112} className="mx-auto mb-3 h-24 w-auto drop-shadow-md" />
               <h1 className="text-3xl font-extrabold tracking-tight">Share your Fetti win</h1>
               <p className="mt-2 text-slate-600">
                 Closed a deal with us? Tell future clients what it was like. 30 seconds — and it helps another family or

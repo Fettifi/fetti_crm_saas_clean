@@ -19,6 +19,10 @@ export type Recipient = {
   order: number;              // 1-based signing order (sequential routing)
   token: string;              // per-recipient signing link token
   status: "pending" | "sent" | "viewed" | "signed" | "declined";
+  // Email DELIVERY state (separate from signing status) — updated by the Resend
+  // bounce/delivery webhook so a mistyped address auto-flips to "bounced".
+  delivery?: "sent" | "delivered" | "bounced" | "complained";
+  deliveryAt?: string;
   viewedAt?: string; signedAt?: string; ip?: string; ua?: string; typedName?: string; declineReason?: string;
 };
 

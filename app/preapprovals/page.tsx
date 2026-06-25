@@ -13,6 +13,20 @@ type LoanFile = { id: string; lead_id?: string; borrower_name: string; email?: s
 const LOAN_TYPES = ["Conventional", "FHA", "VA", "USDA", "Jumbo", "First-Time Homebuyer", "DSCR", "Bank-Statement (Self-Employed)", "Fix & Flip", "Bridge", "HELOC", "Reverse (HECM)"];
 const TERMS = ["30-year fixed", "15-year fixed", "20-year fixed", "5/1 ARM", "7/1 ARM", "12-month interest-only", "Other"];
 const OCC = ["Primary residence", "Second home", "Investment"];
+// Richer term-sheet fields with no preapprovals column — captured, shown on the
+// letter, persisted via app_settings. [key, label, placeholder]
+const EXTRA_FIELDS: [string, string, string][] = [
+  ["loan_purpose", "Loan purpose", "Purchase / Cash-Out Refi"],
+  ["rate_type", "Rate type", "e.g. 5/1 ARM, Fixed, I/O"],
+  ["monthly_payment", "Est. monthly payment", "e.g. $3,142"],
+  ["ltv", "LTV", "auto if blank"],
+  ["points", "Points", "e.g. 1.000"],
+  ["lender_fees", "Lender fees", "e.g. $1,995"],
+  ["prepay_penalty", "Prepay penalty", "5/4/3/2/1 or None"],
+  ["reserves", "Reserves", "e.g. 6 months"],
+  ["dscr", "DSCR", "e.g. 1.25"],
+  ["lock_period", "Rate lock", "e.g. 45 days"],
+];
 const field = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none";
 
 export default function PreApprovals() {
@@ -31,6 +45,8 @@ export default function PreApprovals() {
     conditions: "Standard documentation required: income, assets, and employment verification; satisfactory appraisal; clear title.",
     officer_name: "Ramon Dent", officer_nmls: "2267023", expires_on: "",
     borrower_email: "", agent_email: "",
+    loan_purpose: "", rate_type: "", monthly_payment: "", ltv: "", points: "",
+    lender_fees: "", prepay_penalty: "", reserves: "", dscr: "", lock_period: "",
   });
   const set = (k: string, v: string) => setF((p: any) => ({ ...p, [k]: v }));
 
@@ -79,6 +95,7 @@ export default function PreApprovals() {
           ...(ex.occupancy && { occupancy: ex.occupancy }),
           ...(ex.conditions && { conditions: ex.conditions }),
           ...(ex.expires_on && { expires_on: ex.expires_on }),
+          ...Object.fromEntries(EXTRA_FIELDS.map(([k]) => [k, ex[k]]).filter(([, v]) => v)),
         }));
         const n = (j.fields || []).length;
         setTsMsg(n ? { ok: true, text: `✅ Pulled ${n} field${n === 1 ? "" : "s"} from the term sheet — review below, then issue the letter.` } : { text: "Read the file but found no usable terms — enter them manually." });
@@ -90,7 +107,8 @@ export default function PreApprovals() {
     e.preventDefault(); if (!f.borrower_name.trim()) return;
     setSaving(true);
     try {
-      const r = await fetch("/api/preapprovals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+      const extra_terms = Object.fromEntries(EXTRA_FIELDS.map(([k]) => [k, f[k]]).filter(([, v]) => v && String(v).trim()));
+      const r = await fetch("/api/preapprovals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, extra_terms }) });
       const j = await r.json();
       if (r.ok) { setJustIssued(j.preapproval); setEmailed(j.emailed || []); await load(); }
     } finally { setSaving(false); }
@@ -162,6 +180,14 @@ export default function PreApprovals() {
           </div>
           <div><label className="text-xs text-slate-500">Property address</label><AddressInput value={f.property_address} onChange={(v) => set("property_address", v)} placeholder="To be determined" /></div>
           <div><label className="text-xs text-slate-500">Conditions</label><textarea value={f.conditions} onChange={(e) => set("conditions", e.target.value)} rows={2} className={field} /></div>
+          <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+            <div className="text-xs text-slate-400 mb-2">📑 Additional loan terms <span className="text-slate-500">— captured from the term sheet; edit any, blanks are left off the letter (LTV auto-computes from amount ÷ price)</span></div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {EXTRA_FIELDS.map(([k, label, ph]) => (
+                <div key={k}><label className="text-xs text-slate-500">{label}</label><input value={f[k] || ""} onChange={(e) => set(k, e.target.value)} placeholder={ph} className={field} /></div>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-slate-500">Loan officer name</label><input value={f.officer_name} onChange={(e) => set("officer_name", e.target.value)} className={field} /></div>
             <div><label className="text-xs text-slate-500">Officer NMLS #</label><input value={f.officer_nmls} onChange={(e) => set("officer_nmls", e.target.value)} className={field} /></div>

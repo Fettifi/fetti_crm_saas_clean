@@ -90,6 +90,27 @@ async function viaTwilio(l: LeadAlert) {
   });
 }
 
+/** Generic team alert (e-sign viewed, etc.) — same channels/recipients as the lead
+ *  alert (webhook + email to LEAD_NOTIFY_EMAIL_TO + SMS to LEAD_NOTIFY_SMS_TO). Never throws. */
+export async function notifyTeam(subject: string, body: string): Promise<{ sent: string[] }> {
+  const text = `${subject}\n${body}`;
+  const tasks: Array<[string, boolean, () => Promise<void>]> = [
+    ["webhook", !!process.env.LEAD_NOTIFY_WEBHOOK, async () => {
+      await fetch(process.env.LEAD_NOTIFY_WEBHOOK!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, content: text }) });
+    }],
+    ["email", !!(process.env.RESEND_API_KEY && process.env.LEAD_NOTIFY_EMAIL_TO && process.env.LEAD_NOTIFY_EMAIL_FROM), async () => {
+      await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: process.env.LEAD_NOTIFY_EMAIL_FROM, to: process.env.LEAD_NOTIFY_EMAIL_TO!.split(",").map((s) => s.trim()), subject, html: `<pre style="font:14px ui-monospace,monospace;white-space:pre-wrap">${body}</pre>` }) });
+    }],
+    ["sms", !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM && process.env.LEAD_NOTIFY_SMS_TO), async () => {
+      const b = new URLSearchParams({ To: process.env.LEAD_NOTIFY_SMS_TO!, From: process.env.TWILIO_FROM!, Body: text });
+      await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: b.toString() });
+    }],
+  ];
+  const sent: string[] = [];
+  await Promise.all(tasks.map(async ([name, enabled, fn]) => { if (!enabled) return; try { await fn(); sent.push(name); } catch (e) { console.warn(`[notifyTeam] ${name} failed:`, e); } }));
+  return { sent };
+}
+
 /** Fire all configured channels. Never throws; logs and continues per channel. */
 export async function notifyNewLead(lead: LeadAlert): Promise<{ sent: string[] }> {
   const channels: Array<[string, () => Promise<void>]> = [

@@ -16,7 +16,7 @@ export default async function ReferPage({ params }: { params: Promise<{ code: st
       <div className="max-w-md mx-auto px-5 py-12 text-center">
         <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={160} height={48} className="h-11 w-auto mx-auto" />
         <h1 className="text-3xl font-extrabold tracking-tight mt-8">Know someone who needs a loan?</h1>
-        <p className="text-slate-600 mt-3 text-lg">Send them your link. We&apos;ll shop the whole market and take great care of them — home, investment, or business financing. They get a specialist who actually picks up the phone.</p>
+        <p className="text-slate-600 mt-3 text-lg">Send them your link and we&apos;ll take great care of them — a nonbank lender that funds home, investment, and business loans directly. They get a specialist who actually picks up the phone.</p>
 
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mt-7 text-left">
           <div className="text-xs uppercase tracking-wide text-emerald-700 font-semibold mb-2">Your personal link</div>

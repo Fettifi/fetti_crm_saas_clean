@@ -21,7 +21,9 @@ export async function GET(req: NextRequest) {
   const items = reqs.map((r) => ({
     token: r.token, title: r.title, signer_name: r.signer_name, status: r.status,
     loan_file_id: r.loan_file_id, created_at: r.created_at,
-    recipients: (r.recipients || []).map((x) => ({ name: x.name, order: x.order, status: x.status })),
+    recipients: (r.recipients || []).map((x) => ({ name: x.name, email: x.email || null, order: x.order, status: x.status, delivery: x.delivery || null })),
+    has_signed: !!r.signed_path,
+    has_cert: !!r.cert_path,
   }));
   return NextResponse.json({ requests: items });
 }
@@ -48,6 +50,11 @@ export async function POST(req: NextRequest) {
     raw = raw.filter((r) => r && String(r.name || "").trim());
     if (!raw.length) return NextResponse.json({ error: "Add at least one signer (name + email or phone)." }, { status: 400 });
     for (const r of raw) if (!String(r.email || "").trim() && !String(r.phone || "").trim()) return NextResponse.json({ error: `Add an email or phone for ${r.name}.` }, { status: 400 });
+    // Validate email FORMAT so a malformed address is rejected at the source (caught
+    // immediately, not after a silent bounce). Syntactically-valid-but-wrong addresses
+    // are caught by the sender's confirm-recipients step + the Resend bounce webhook.
+    const isEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+    for (const r of raw) { const e = String(r.email || "").trim(); if (e && !isEmail(e)) return NextResponse.json({ error: `That email for ${r.name || "a signer"} isn't a valid address: "${e}". Please correct it and resend.` }, { status: 400 }); }
 
     const envToken = newToken();
     const source_path = `esign/${envToken}/source.pdf`;
@@ -100,6 +107,7 @@ export async function POST(req: NextRequest) {
     const first = recipients[0];
     first.status = "sent";
     const { sent } = await sendSignRequest({ to_name: first.name, to_email: first.email, to_phone: first.phone, link: `${origin}/sign/${first.token}`, title });
+    if (sent.includes("email")) first.delivery = "sent"; // pending delivery confirmation; the Resend webhook flips to delivered/bounced
     env.events!.push({ type: "sent", at: new Date().toISOString(), detail: sent.length ? `Sent to ${first.name} via ${sent.join(" + ")}` : `Link created for ${first.name} (manual delivery)` });
     await saveRequest(env);
 

@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ArrowLeft, Menu, X } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import MarkChat from "@/components/MarkChat";
 
 // Internal CRM route prefixes that get the app shell (sidebar + top bar with a
 // Back button + a mobile menu drawer). Everything else — marketing pages, the
@@ -32,7 +33,8 @@ export default function AppChrome({ children }: { children: ReactNode }) {
   // Close the mobile drawer whenever the route changes.
   useEffect(() => { setOpen(false); }, [pathname]);
 
-  if (!isCrm) return <>{children}</>;
+  // Public pages render bare — plus the floating "Chat with Mark" widget (never on the CRM).
+  if (!isCrm) return <>{children}<MarkChat /></>;
 
   const goBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) router.back();

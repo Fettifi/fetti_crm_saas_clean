@@ -87,10 +87,42 @@ export async function GET(req: NextRequest) {
 
     const topObjections = Object.entries(objections).map(([obstacle, count]) => ({ obstacle: humanize(obstacle), count })).sort((a, b) => b.count - a.count);
 
+    // ---- Lead lifecycle + follow-up health (proves the engine is actually working) ----
+    const leadsByStage: Record<string, number> = {};
+    const outbound: Record<string, number> = {};
+    const nurtureChannels: Record<string, number> = {};
+    let lastNurtureRun: any = null;
+    let lastNurtureSent: string | null = null;
+    let lastLeadCreated: string | null = null;
+    try {
+      const { data: leadRows } = await supabaseAdmin.from("leads").select("stage").limit(5000);
+      for (const l of leadRows || []) { const s = (l as any).stage || "New Lead"; leadsByStage[s] = (leadsByStage[s] || 0) + 1; }
+      const acts: any[] = [];
+      for (let p = 0; p < 8; p++) {
+        const { data } = await supabaseAdmin.from("activity_log")
+          .select("action,detail,created_at").gte("created_at", cutoff)
+          .order("created_at", { ascending: false }).range(p * 1000, p * 1000 + 999);
+        if (!data || !data.length) break;
+        acts.push(...data);
+        if (data.length < 1000) break;
+      }
+      const KEYS = ["lead.created", "nurture.sent", "lead.stage.advanced", "doc.requested", "doc.request.sent", "doc.reminder.sent", "doc.uploaded", "lead.historical_outreach", "preapproval.issued", "email.delivered", "email.opened"];
+      for (const a of acts) {
+        if (KEYS.includes(a.action)) outbound[a.action] = (outbound[a.action] || 0) + 1;
+        if (a.action === "nurture.sent") {
+          for (const c of ((a.detail?.channels) || [])) nurtureChannels[c] = (nurtureChannels[c] || 0) + 1;
+          if (!lastNurtureSent) lastNurtureSent = a.created_at;
+        }
+        if (a.action === "cron.ran" && a.detail?.cron === "nurture" && !lastNurtureRun) lastNurtureRun = { at: a.created_at, ...a.detail };
+        if (a.action === "lead.created" && !lastLeadCreated) lastLeadCreated = a.created_at;
+      }
+    } catch { /* health is best-effort — never break the funnel response */ }
+
     return NextResponse.json({
       days, started, contact: contact.size, complete: complete.size,
       contactRate: pct(contact.size), completeRate: pct(complete.size),
       funnel, goals, topObjections, eventCount: events.length,
+      health: { leadsByStage, outbound, nurtureChannels, lastNurtureRun, lastNurtureSent, lastLeadCreated },
     });
   } catch (e: any) {
     console.error("[funnel] error:", e);

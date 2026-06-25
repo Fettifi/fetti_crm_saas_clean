@@ -1,80 +1,132 @@
+import PrivacyChoices from "@/components/PrivacyChoices";
+
 export const metadata = {
   title: "Privacy Policy | Fetti Financial Services",
-  description: "Privacy Policy for Fetti Financial Services LLC, including SMS/mobile messaging terms.",
+  description: "Privacy Policy for Fetti Financial Services LLC — GLBA financial privacy notice, California (CCPA/CPRA) rights, cookies & tracking, CAN-SPAM, and SMS/mobile messaging terms.",
 };
 
-const UPDATED = "June 2026";
+const EFFECTIVE = "June 22, 2026";
+const INTRO = "<p>This Privacy Policy explains how <strong>Fetti Financial Services LLC</strong> (\"Fetti,\" \"we,\" \"us,\" or \"our\") collects, uses, shares, and protects your information when you visit <a href=\"https://fettifi.com\">fettifi.com</a> (our marketing site) and <a href=\"https://app.fettifi.com\">app.fettifi.com</a> (our application and borrower portal), and when you use our services.</p><p><strong>Effective date: June 22, 2026 | Last updated: June 22, 2026.</strong></p><p>Fetti is a licensed mortgage lender and broker and a \"financial institution\" under the federal Gramm-Leach-Bliley Act (GLBA). This Policy also serves as our GLBA / Regulation P financial privacy notice (see the section titled \"GLBA / Financial Privacy Notice (Nonpublic Personal Information)\") and includes a supplemental notice for California residents (see \"California Privacy Notice (CCPA/CPRA)\").</p><p><em>Quick links:</em> <a href=\"#choices\">Your Privacy Choices &amp; Manage Cookies</a> \u00b7 <a href=\"#california\">California Privacy Notice</a> \u00b7 <a href=\"#glba\">GLBA / Financial Privacy Notice</a> \u00b7 <a href=\"#contact\">Contact Us</a>.</p>";
+const SECTIONS: { id: string | null; heading: string; html: string }[] = [
+  {
+    "id": null,
+    "heading": "Information We Collect",
+    "html": "<p>Depending on how you interact with us, we collect the following information:</p><ul><li><strong>Contact details:</strong> your name, email address, and phone number.</li><li><strong>Loan-inquiry details:</strong> loan purpose, property value, occupancy, requested products, credit range, assets, and any free-text notes you provide.</li><li><strong>Technical data:</strong> source/UTM parameters, referral data, IP address, and device or browser identifiers.</li><li><strong>Advertising web-activity:</strong> only if you click \"Accept all\" in our cookie banner, website-activity information collected by advertising cookies (see \"Cookies &amp; Tracking Technologies\").</li><li><strong>Secured-application information (nonpublic personal information):</strong> when you proceed into our secured application, we collect additional information needed to evaluate and originate a loan, including your Social Security number and financial-account information. This sensitive information is collected only in the secured application, is encrypted, and is <strong>never collected through website cookies</strong>.</li></ul>"
+  },
+  {
+    "id": null,
+    "heading": "How We Use Your Information",
+    "html": "<p>We use your information to:</p><ul><li>respond to and evaluate your financing request;</li><li>communicate with you by phone, email, and SMS, including using automated technology where you have consented;</li><li>prevent fraud and maintain the security of our systems;</li><li>keep records and improve our services; and</li><li>comply with our legal, lending, and regulatory obligations.</li></ul><p>We do not use your information for materially different, unrelated, or incompatible purposes without providing you notice.</p>"
+  },
+  {
+    "id": null,
+    "heading": "Sources of the Information We Collect",
+    "html": "<p>We collect personal information:</p><ul><li><strong>directly from you</strong> \u2014 through our forms, your application, and your communications with us;</li><li><strong>automatically from your device and browser</strong> \u2014 through cookies, referral, and UTM data; and</li><li><strong>from third parties, where needed to evaluate your request</strong> \u2014 such as consumer reporting agencies, lenders, investors, and verification or service providers.</li></ul>"
+  },
+  {
+    "id": null,
+    "heading": "How We Share Your Information",
+    "html": "<p>We share the loan-inquiry and application information you provide with lenders, investors, and service providers solely to evaluate, process, fund, or service the financing you requested, and with vendors who help us operate (such as hosting and communications providers) under contracts that require them to keep your information confidential and use it only for those purposes.</p><p><strong>We do not sell your personal information for money or other valuable consideration, and we do not disclose your loan-inquiry information to third parties for their own marketing.</strong> The one exception relates to advertising cookies: if, and only if, you click \"Accept all,\" advertising cookies may \"share\" your website-activity information with Meta (Facebook/Instagram), Google, and TikTok for cross-context behavioral advertising as those terms are defined under California law. You can opt out at any time using the <a href=\"#choices\">\"Do Not Sell or Share \u2014 Essential cookies only\"</a> control, and we automatically honor the Global Privacy Control (GPC) signal.</p><p><em>Note:</em> your mobile phone number and your SMS opt-in/consent data are excluded from all sharing described in this Policy and are never shared with or sold to third parties or affiliates for marketing \u2014 see the \"SMS / Mobile Messaging\" section below.</p>"
+  },
+  {
+    "id": "glba",
+    "heading": "GLBA / Financial Privacy Notice (Nonpublic Personal Information)",
+    "html": "<p>This section is the privacy notice required by the federal Gramm-Leach-Bliley Act (GLBA) and Regulation P. It describes the nonpublic personal information (\"NPI\") we collect about you, how we share it, and how we protect it.</p><p><strong>Information we collect (NPI).</strong> In connection with your loan inquiry and application, we may collect: information you provide on applications or other forms (such as your name, address, telephone number, email, loan purpose, occupancy, property value, income, assets, and \u2014 in the secured application \u2014 your Social Security number and financial-account numbers); information about your transactions with us and others; and information we receive from a consumer reporting agency, such as your credit history and credit scores. Social Security numbers and financial-account numbers are collected only in our secured application, are encrypted, and are never collected through website cookies.</p><p><strong>How we share NPI.</strong> We disclose nonpublic personal information about you to nonaffiliated third parties only as permitted by law, including: (a) lenders, investors, and funding sources, to evaluate, process, underwrite, fund, or service the financing you requested; (b) service providers that perform services or functions on our behalf, such as hosting, communications, document handling, and compliance, under contracts that require them to keep your information confidential and use it only for those purposes; and (c) others as permitted or required by law, such as in response to a subpoena or court order, or to prevent fraud. Because these disclosures fall within the exceptions provided by GLBA and Regulation P, you are not required to opt out of them, and no opt-out is available for these necessary disclosures.</p><p>We do not disclose your nonpublic personal information to nonaffiliated third parties for their own marketing purposes, and we do not sell your information.</p><p><strong>Affiliates.</strong> Fetti Financial Services LLC does not share your nonpublic personal information with affiliates because it has no affiliates.</p><p><strong>How we protect your information (Safeguards).</strong> We maintain physical, electronic, and procedural safeguards designed to protect your nonpublic personal information and that comply with applicable federal standards, including the GLBA Safeguards Rule. We limit access to your information to employees and service providers who need it to provide products or services to you, and we require our service providers to protect your information and use it only for the purposes for which we provide it.</p><p><strong>Delivery of this notice.</strong> We make this notice continuously available on this website and also provide it when you become our customer (for example, within your application packet or secure borrower portal).</p>"
+  },
+  {
+    "id": null,
+    "heading": "Data Retention & Security",
+    "html": "<p>We retain each category of personal information only as long as necessary for the purposes described in this Policy and to meet our legal, lending, and recordkeeping obligations. Loan-inquiry and application records are kept for the period required by applicable mortgage, GLBA, and state recordkeeping laws, and technical and advertising data is kept for a shorter period.</p><p>To protect your information, we maintain physical, electronic, and procedural safeguards that comply with applicable federal standards, including the GLBA Safeguards Rule, and we restrict access to your information to those who need it to provide products or services to you. No method of transmission or storage is 100% secure, however, and we cannot guarantee absolute security.</p>"
+  },
+  {
+    "id": null,
+    "heading": "Cookies & Tracking Technologies",
+    "html": "<p>We use cookies and similar technologies in two categories.</p><ul><li><strong>Essential cookies</strong> are always on and are required to operate the site and remember your settings. These include a first-party cookie (\"fetti_consent\") that stores your cookie choice for up to one year so we do not have to ask again.</li><li><strong>Analytics &amp; advertising cookies</strong> \u2014 including those set by Meta (Facebook/Instagram), TikTok, and Google Ads \u2014 help us measure traffic and show relevant Fetti information. These non-essential cookies and the related advertising scripts <strong>do not load until you click \"Accept all\"</strong> in our cookie banner. If you choose \"Essential only\" (or your browser sends a Global Privacy Control signal), they are not loaded.</li></ul><p>When advertising cookies are enabled, they may transmit your website activity to Meta, Google, and TikTok for advertising and measurement; under California law this constitutes a \"share\" for cross-context behavioral advertising. These cookies do not collect Social Security numbers or financial-account numbers, which are gathered only later in the secured application.</p><p><strong>Server-side conversion measurement.</strong> To measure the results of our advertising, when you submit an inquiry we may send a server-to-server conversion event to Meta using a securely hashed (irreversible) version of your contact details. This measurement is separate from cookies and may occur even if you decline advertising cookies. We do not send your Social Security number or financial-account numbers in these events, and we do not authorize advertising partners to use this information for their own purposes. To opt out of this sharing, enable Global Privacy Control in your browser or contact us at <a href=\"mailto:info@fettifi.com\">info@fettifi.com</a>.</p><p><strong>Cookieless analytics.</strong> We also use Vercel Web Analytics, a cookieless, aggregate analytics service that runs for all visitors. It does not set cookies, does not use fingerprinting, and does not collect personally identifiable information.</p><p><strong>No session replay or fingerprinting.</strong> We do not use session-replay tools that record your screen, keystrokes, or mouse movements, and we do not use device fingerprinting to identify or track you.</p><p><strong>Cookie retention.</strong> Our first-party consent cookie expires about one year after you set it. Cookies set by Meta, TikTok, and Google have their own retention periods (typically several months up to about two years); you can review and control these in your browser settings and through the advertising partners' own privacy tools, and you can turn them off here at any time using the control below.</p><p><strong>How to withdraw or change your consent.</strong> You can change or withdraw your cookie consent at any time using the <a href=\"#choices\">\"Do Not Sell or Share \u2014 Essential cookies only\"</a> control on this page. Your choice takes effect immediately \u2014 advertising and analytics scripts stop loading \u2014 and is remembered in your browser for up to one year. Clearing your browser cookies will reset the choice and you will be asked again.</p><p><strong>Global Privacy Control (GPC).</strong> We automatically detect the browser Global Privacy Control signal (and the legacy Do-Not-Track signal) on each visit and treat it as a valid \"do not sell or share\" opt-out. When that signal is present, analytics &amp; advertising cookies and advertising scripts are turned off for that browser, your prior \"Accept all\" choice is overridden, and no further action is needed on your part.</p>"
+  },
+  {
+    "id": null,
+    "heading": "SMS / Mobile Messaging",
+    "html": "<p>By providing your mobile number and submitting an inquiry, you consent to receive text messages from Fetti Financial Services LLC related to your inquiry and application \u2014 for example, replies to your questions and application and document-status updates. These transactional or relationship messages may be sent using automated technology.</p><p><strong>Separate consent for marketing messages.</strong> We will send you promotional or marketing text messages, or place autodialed or prerecorded marketing calls, only if you give separate prior express written consent through a distinct opt-in. You may receive messages about your own inquiry without agreeing to receive marketing messages.</p><p><strong>Consent is not a condition of service.</strong> Agreeing to receive text messages or automated or prerecorded calls \u2014 whether transactional or marketing \u2014 is not a condition of applying for, obtaining, or being approved for any loan, product, or service from Fetti.</p><p>Messages are sent by Fetti Financial Services LLC. Message frequency varies. <strong>Message and data rates may apply.</strong> Reply <strong>STOP</strong> to any message to opt out; you will receive one confirmation message and then no further texts. Reply <strong>HELP</strong> for help, or contact us at (920) 754-3647 or <a href=\"mailto:info@fettifi.com\">info@fettifi.com</a>.</p><p><strong>We do not sell your information. No mobile information (including phone numbers and SMS opt-in/consent data) will be shared with or sold to third parties or affiliates for their marketing or promotional purposes. SMS opt-in consent is never shared with third parties.</strong> Mobile opt-in and consent data is never included in any advertising-cookie sharing described in the \"Cookies &amp; Tracking Technologies\" section.</p>"
+  },
+  {
+    "id": null,
+    "heading": "Email Choices & Unsubscribe (CAN-SPAM)",
+    "html": "<p>Our marketing and nurture emails always include a clear way to opt out. To stop receiving them, click the unsubscribe link or reply with \"unsubscribe\" to any such message. Unsubscribing is free, requires no information beyond your email address, and we will stop sending you marketing email within 10 business days of your request. You may continue to receive non-marketing, transactional messages about a loan inquiry or application you started.</p><p>Every marketing email we send includes a valid physical mailing address where you can reach us, accurate sender (\"From\") and \"Reply-To\" information, and a subject line that is not misleading. Where required, our marketing messages are identifiable as advertisements.</p><p>We honor opt-outs and maintain a suppression list. Once you opt out of marketing email, we will not send you further marketing email and will not sell or transfer your email address to any other sender for marketing purposes.</p>"
+  },
+  {
+    "id": null,
+    "heading": "Children's Privacy",
+    "html": "<p>Our sites and services are intended for adults seeking financing and are not directed to children. We do not knowingly collect personal information from anyone under 16 years of age. If you believe a child under 16 has provided us personal information, please contact us at <a href=\"mailto:info@fettifi.com\">info@fettifi.com</a> and we will delete it.</p>"
+  },
+  {
+    "id": "california",
+    "heading": "California Privacy Notice (CCPA/CPRA)",
+    "html": "<p>This section applies to California residents and supplements the rest of this Policy.</p><p><strong>Categories of personal information we collect.</strong> In the preceding 12 months we have collected the following categories of personal information:</p><ul><li><strong>Identifiers</strong> \u2014 name, email, phone, IP address, and device or online identifiers;</li><li><strong>Commercial information</strong> \u2014 loan purpose, property value, occupancy, and requested products;</li><li><strong>Financial information</strong> \u2014 credit range and, in the secured application only, Social Security number and financial-account information you provide;</li><li><strong>Internet or other electronic network activity</strong> \u2014 referral and UTM data and, with your consent, website activity collected by advertising cookies; and</li><li><strong>Inferences</strong> we draw to evaluate a financing request.</li></ul><p><strong>Sensitive personal information.</strong> We collect certain sensitive personal information solely within the secured application \u2014 your Social Security number and financial-account information \u2014 and we use it only to evaluate, process, and originate your loan and to comply with law. We do not use or disclose sensitive personal information to infer characteristics about you or for any purpose that would give you a right to limit its use, so we are not required to offer a \"Limit the Use of My Sensitive Personal Information\" link. You may still contact us with questions.</p><p><strong>Sources of personal information.</strong> We collect personal information directly from you (forms, your application, and communications), automatically from your device and browser (cookies, referral, and UTM data), and, where needed to evaluate your request, from third parties such as consumer reporting agencies, lenders, investors, and verification or service providers.</p><p><strong>Business and commercial purposes.</strong> We use personal information to respond to and evaluate financing requests; to communicate with you by phone, email, and SMS (including automated technology where you have consented); to prevent fraud and maintain security; for recordkeeping; to improve our services; and to comply with legal and regulatory obligations. We do not use personal information for materially different, unrelated, or incompatible purposes without providing you notice.</p><p><strong>How we disclose, sell, and share personal information.</strong> In the preceding 12 months, we disclosed Identifiers, Commercial information, and Financial information to lenders, investors, and service providers for the business purpose of evaluating and fulfilling financing requests, and to vendors who help us operate (hosting and communications) under confidentiality obligations. We do not sell your personal information for monetary or other valuable consideration. If you click \"Accept all,\" advertising cookies may \"share\" your Identifiers and Internet activity with Meta, Google, and TikTok for cross-context behavioral advertising as those terms are defined under California law; you can opt out at any time using the control on this page or by enabling Global Privacy Control. We do not knowingly sell or share the personal information of consumers under 16.</p><p><strong>Your California privacy rights.</strong> You have the right to:</p><ul><li>know and access the personal information we have collected;</li><li>delete your personal information;</li><li>correct inaccurate personal information;</li><li>opt out of the sale or sharing of your personal information for cross-context behavioral advertising;</li><li>limit the use of sensitive personal information (we already restrict ours to permitted purposes); and</li><li>not be discriminated against for exercising these rights.</li></ul><p><strong>Non-discrimination.</strong> We will not discriminate against you for exercising your privacy rights, including by denying you services, charging different prices or rates, or providing a different level or quality of service.</p><p><strong>How to submit a request.</strong> To request to know, delete, or correct your personal information, email <a href=\"mailto:info@fettifi.com\">info@fettifi.com</a> or call (920) 754-3647. To opt out of the sale or sharing of your personal information, use the <a href=\"#choices\">\"Do Not Sell or Share \u2014 Essential cookies only\"</a> control on this page or enable the Global Privacy Control (GPC) in your browser. We recognize GPC as a valid opt-out preference signal and treat it as a request to opt out of sale/sharing for that browser or device; you do not need an account to use it.</p><p><strong>Verification and authorized agents.</strong> Before fulfilling a request to know, delete, or correct, we will verify your identity by matching information we have on file, and we may request additional information for sensitive requests. You may use an authorized agent to submit a request; the agent must provide your written, signed permission, and we may verify your identity directly.</p><p><strong>Response timeline.</strong> We will confirm receipt of your request within 10 business days and will respond within 45 calendar days. If we need additional time (up to a further 45 days), we will notify you of the extension and the reason.</p><p><strong>Retention.</strong> We retain each category of personal information only as long as necessary for the purposes described above and to meet our legal, lending, and recordkeeping obligations; loan-inquiry and application records are kept for the period required by applicable mortgage, GLBA, and state recordkeeping laws, and technical and advertising data is kept for a shorter period.</p><p><strong>Updates.</strong> We review and update this Privacy Policy at least once every 12 months. The category disclosures above describe our practices during the preceding 12 months.</p>"
+  },
+  {
+    "id": "choices",
+    "heading": "Your Privacy Choices & Manage Cookies",
+    "html": "<p>Use the controls below to manage your privacy choices:</p><ul><li><strong>Manage cookies:</strong> use the <strong>\"Do Not Sell or Share \u2014 Essential cookies only\"</strong> control on this page to decline or withdraw advertising and analytics cookies at any time. Your choice takes effect immediately and is remembered in your browser for up to one year.</li><li><strong>Global Privacy Control:</strong> enable GPC in your browser, and we will automatically treat it as an opt-out of the sale or sharing of your personal information for that browser or device.</li><li><strong>SMS:</strong> reply <strong>STOP</strong> to any text message to opt out, or <strong>HELP</strong> for assistance.</li><li><strong>Email:</strong> click the unsubscribe link or reply \"unsubscribe\" to any marketing email.</li><li><strong>Other requests:</strong> email <a href=\"mailto:info@fettifi.com\">info@fettifi.com</a> or call (920) 754-3647.</li></ul>"
+  },
+  {
+    "id": null,
+    "heading": "How to Exercise Your Rights",
+    "html": "<p>To exercise your privacy rights, contact us at <a href=\"mailto:info@fettifi.com\">info@fettifi.com</a> or (920) 754-3647 and tell us which right you wish to exercise. To protect your information, we will take reasonable steps to verify your identity before acting on a request to know, access, correct, or delete personal information, which may include matching information you provide against information we already hold. You may use an authorized agent to submit a request on your behalf; we may require the agent to provide proof of authorization and may still verify your identity directly. We will respond within the timeframes required by applicable law (generally within 45 days, with the possibility of an extension where permitted). We will not discriminate or retaliate against you for exercising your privacy rights.</p>"
+  },
+  {
+    "id": null,
+    "heading": "Third-Party Links and Services",
+    "html": "<p>Our sites may contain links to third-party websites, tools, or services that we do not own or control, including those of lenders, investors, and advertising or analytics providers. This Privacy Policy does not apply to those third parties. We are not responsible for the content or privacy practices of any third-party site, and we encourage you to review the privacy policies of any third party before providing them your information.</p>"
+  },
+  {
+    "id": null,
+    "heading": "Where We Process Your Information",
+    "html": "<p>Fetti Financial Services LLC is based in the United States, and we and our service providers store and process your information in the United States. If you access our sites or services from outside the United States, you understand that your information will be transferred to, stored, and processed in the United States, where data-protection laws may differ from those in your location.</p>"
+  },
+  {
+    "id": null,
+    "heading": "Accessibility",
+    "html": "<p>We are committed to making our website and this Privacy Policy accessible to all users, including individuals with disabilities. If you use assistive technology and have difficulty accessing any part of our sites or this policy, or if you would like this policy in an alternative format, please contact us at <a href=\"mailto:info@fettifi.com\">info@fettifi.com</a> or (920) 754-3647 and we will work to assist you.</p>"
+  },
+  {
+    "id": null,
+    "heading": "Changes to This Privacy Policy",
+    "html": "<p>We may update this Privacy Policy from time to time to reflect changes in our practices, technology, or legal requirements. When we make changes, we will revise the \"Last updated\" date above and post the updated policy here. Material changes may also be communicated by other reasonable means. We review this policy at least once every 12 months. Your continued use of our sites or services after an update takes effect means you have reviewed the changes.</p>"
+  },
+  {
+    "id": null,
+    "heading": "Governing Law",
+    "html": "<p>This Privacy Policy is governed by the laws of the State of California, without regard to its conflict-of-laws principles, except where applicable federal or state law (including the privacy laws of your state of residence) requires otherwise. Nothing in this policy limits any rights you may have under the laws of your jurisdiction.</p>"
+  },
+  {
+    "id": null,
+    "heading": "Important Disclosures",
+    "html": "<p>This website and our communications are advertisements. Submitting an inquiry or application does not create a commitment to lend and does not guarantee loan approval, any specific interest rate, or any particular loan term. All loans are subject to underwriting, credit approval, and program eligibility, and not all applicants will qualify.</p><p>Fetti Financial Services LLC is an Equal Housing Opportunity lender and broker. We do not discriminate against any applicant on the basis of race, color, religion, national origin, sex, marital status, age (provided the applicant has the capacity to contract), because all or part of the applicant's income derives from a public-assistance program, or because the applicant has in good faith exercised any right under the Consumer Credit Protection Act.</p><p>The information on our sites and in this Privacy Policy is provided for general informational purposes only and does not constitute legal, tax, or financial advice.</p>"
+  },
+  {
+    "id": "contact",
+    "heading": "Contact Us",
+    "html": "<p><strong>Fetti Financial Services LLC</strong><br>5757 W Century Blvd, Suite 700, Los Angeles, CA 90045</p><p>Email: <a href=\"mailto:info@fettifi.com\">info@fettifi.com</a> \u00b7 Phone: (920) 754-3647</p><p><strong>Fetti Financial Services LLC \u2014 NMLS #2267023</strong> (verify at <a href=\"https://www.nmlsconsumeraccess.org\">nmlsconsumeraccess.org</a>). Licensed by the California Department of Financial Protection and Innovation under the California Financing Law, License #60DBO-153798; Florida Mortgage Broker License #MBR7286; Michigan 1st Mortgage Broker/Lender License #FL0024463. Owner-occupied residential mortgage loans are offered in FL, MI, and CA; investment and business-purpose loans (DSCR, fix &amp; flip, bridge, hard money, and business loans) are offered in all 50 states. Equal Housing Opportunity.</p>"
+  }
+];
 
 export default function PrivacyPage() {
   return (
     <main className="min-h-screen bg-white text-gray-900 py-12 px-5">
-      <div className="max-w-3xl mx-auto prose-sm">
+      <div className="max-w-3xl mx-auto">
         <h1 className="text-3xl font-bold">Privacy Policy</h1>
-        <p className="text-gray-500 mt-1">Last updated: {UPDATED}</p>
-
-        <p className="mt-6">
-          This Privacy Policy describes how <strong>Fetti Financial Services LLC</strong> ("Fetti,"
-          "we," "us") collects, uses, and protects your information when you use our website
-          (fettifi.com, app.fettifi.com) and our services.
-        </p>
-
-        <h2 className="text-xl font-semibold mt-8">Information we collect</h2>
-        <ul className="list-disc list-inside mt-2 space-y-1">
-          <li>Contact details you provide: name, email, and phone number.</li>
-          <li>Loan-inquiry details: loan purpose, property value, occupancy, credit range, assets, and notes.</li>
-          <li>Technical data: source/UTM and referral information about how you reached us.</li>
-        </ul>
-
-        <h2 className="text-xl font-semibold mt-8">How we use your information</h2>
-        <ul className="list-disc list-inside mt-2 space-y-1">
-          <li>To respond to your inquiry and evaluate financing options.</li>
-          <li>To contact you by phone, email, and text message (SMS) about your inquiry, including via automated technology where you have consented.</li>
-          <li>To improve our services and for recordkeeping and compliance.</li>
-        </ul>
-
-        <h2 className="text-xl font-semibold mt-8">SMS / mobile messaging</h2>
-        <p className="mt-2">
-          By providing your phone number and submitting an inquiry, you consent to receive SMS text
-          messages from Fetti Financial Services related to your inquiry and application. Message
-          frequency varies. Message and data rates may apply. Reply <strong>STOP</strong> to opt out
-          at any time, or <strong>HELP</strong> for help.
-        </p>
-        <p className="mt-2 font-semibold">
-          We do not sell your information. No mobile information (including phone numbers and SMS
-          opt-in/consent data) will be shared with or sold to third parties or affiliates for their
-          marketing or promotional purposes. SMS opt-in consent is never shared with third parties.
-        </p>
-
-        <h2 className="text-xl font-semibold mt-8">How we share information</h2>
-        <p className="mt-2">
-          We may share your inquiry information with lenders, investors, or service providers solely
-          to evaluate and fulfill your financing request, and with vendors who help us operate (e.g.,
-          hosting, communications) under confidentiality obligations. We do not share your data with
-          third parties for their own marketing.
-        </p>
-
-        <h2 className="text-xl font-semibold mt-8">Data retention &amp; security</h2>
-        <p className="mt-2">
-          We retain information as needed to provide services and meet legal obligations, and use
-          reasonable safeguards to protect it. No method of transmission is 100% secure.
-        </p>
-
-        <h2 className="text-xl font-semibold mt-8">Your choices</h2>
-        <p className="mt-2">
-          You may opt out of SMS (reply STOP), unsubscribe from email, or request access to or
-          deletion of your information by contacting us below.
-        </p>
-
-        <h2 className="text-xl font-semibold mt-8">Contact</h2>
-        <p className="mt-2">
-          Fetti Financial Services LLC<br />
-          5757 W Century Blvd, Suite 700, Los Angeles, CA 90045<br />
-          Email: info@fettifi.com · Phone: +1 (920) 754-3647
-        </p>
-
-        <p className="mt-8 text-xs text-gray-500">
-          Equal Housing Opportunity. This page is provided for general informational and compliance
-          purposes and is not legal advice.
+        <p className="text-gray-500 mt-1">Last updated: {EFFECTIVE}</p>
+        <div className="mt-6 [&_p]:mt-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mt-2 [&_ul]:space-y-1 [&_li]:mt-0.5 [&_a]:text-emerald-700 [&_a]:underline [&_strong]:font-semibold [&_em]:italic text-sm leading-relaxed text-gray-800" dangerouslySetInnerHTML={{ __html: INTRO }} />
+        {SECTIONS.map((s, i) => (
+          <section key={i} id={s.id ?? undefined} className="scroll-mt-24">
+            <h2 className="text-xl font-semibold mt-8">{s.heading}</h2>
+            <div className="mt-1 [&_p]:mt-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mt-2 [&_ul]:space-y-1 [&_li]:mt-0.5 [&_a]:text-emerald-700 [&_a]:underline [&_strong]:font-semibold [&_em]:italic text-sm leading-relaxed text-gray-800" dangerouslySetInnerHTML={{ __html: s.html }} />
+            {s.id === "choices" && <PrivacyChoices />}
+          </section>
+        ))}
+        <p className="mt-10 text-xs text-gray-500">
+          Equal Housing Opportunity · Fetti Financial Services LLC, NMLS #2267023 · CA DFPI #60DBO-153798 · FL #MBR7286 · MI #FL0024463.
+          This Privacy Policy is provided for general informational purposes, is not legal advice, and is not a commitment to lend.
         </p>
       </div>
     </main>

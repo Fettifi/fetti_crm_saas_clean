@@ -8,6 +8,15 @@
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { cfg } from "@/lib/settings";
+import { logActivity } from "@/lib/activity";
+
+// Record every follow-up that actually goes out, so sends are AUDITABLE in
+// activity_log (the blind spot that let the phantom-status bug send 0 unnoticed).
+const logSent = (leadId: string, lane: string, step: number | string, channels: string[]) =>
+  logActivity({
+    entity_type: "lead", entity_id: leadId, lead_id: leadId, actor: "agent:mark",
+    action: "nurture.sent", detail: { lane, step, channels },
+  }).catch(() => {});
 
 type Lead = {
   id: string; full_name: string | null; first_name: string | null;
@@ -21,22 +30,22 @@ type Lead = {
 // we work each lead for ~90 days, then hand off to the long-term reactivation
 // loop below. STOP opt-out is always honored (TCPA/CAN-SPAM).
 const STEPS: { step: number; afterDays: number; msg: (name: string, purpose: string) => string }[] = [
-  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, checking in on ${p} — want a quick quote or to see your options? Reply YES. Reply STOP to opt out.` },
-  { step: 2, afterDays: 3, msg: (n, p) => `Hi ${n}, still here to help with ${p}. Reply YES and a Fetti specialist will pull your real numbers. Reply STOP to opt out.` },
-  { step: 3, afterDays: 7, msg: (n, p) => `Hi ${n}, quick nudge on ${p} — even if you're early, I can map out what you'd qualify for. Want me to? Reply STOP to opt out.` },
-  { step: 4, afterDays: 14, msg: (n, p) => `Hi ${n}, rates move daily — want me to run ${p} at today's numbers so you know exactly where you stand? Reply STOP to opt out.` },
-  { step: 5, afterDays: 30, msg: (n, p) => `Hi ${n}, circling back on ${p}. If it's still on your radar, I'll get you real options in minutes. Reply STOP to opt out.` },
-  { step: 6, afterDays: 60, msg: (n, p) => `Hi ${n}, still considering ${p}? No pressure — whenever you're ready, Fetti moves fast. Reply STOP to opt out.` },
-  { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, one more check-in on ${p}. I'll keep your info handy — reply anytime and we pick right up. Reply STOP to opt out.` },
+  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's Mark with Fetti Financial Services — checking in on ${p}. Want a quick quote or to see your options? Just reply YES. (Reply STOP to opt out.)` },
+  { step: 2, afterDays: 3, msg: (n, p) => `Hi ${n}, Mark again at Fetti — still here to help with ${p}. Reply YES and I'll pull your real numbers. (Reply STOP to opt out.)` },
+  { step: 3, afterDays: 7, msg: (n, p) => `Hi ${n}, Mark here — quick nudge on ${p}. Even if you're early, I can map out exactly what you'd qualify for. Want me to? (Reply STOP to opt out.)` },
+  { step: 4, afterDays: 14, msg: (n, p) => `Hi ${n}, it's Mark — rates move daily. Want me to run ${p} at today's numbers so you know exactly where you stand? (Reply STOP to opt out.)` },
+  { step: 5, afterDays: 30, msg: (n, p) => `Hi ${n}, Mark circling back on ${p}. If it's still on your radar, I'll get you real options in minutes. (Reply STOP to opt out.)` },
+  { step: 6, afterDays: 60, msg: (n, p) => `Hi ${n}, Mark here — still considering ${p}? No pressure; whenever you're ready, we move fast. (Reply STOP to opt out.)` },
+  { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, one more check-in from Mark on ${p}. I'll keep your details handy — reply anytime and we pick right back up. (Reply STOP to opt out.)` },
 ];
 
 // After the 90-day drip, keep mining the lead forever: a value re-touch every
 // ~45 days until they reply or opt out. This reactivates the dormant database —
 // money from leads already paid for, with no new ad spend. Rotates by step.
 const REACTIVATION: ((name: string, purpose: string) => string)[] = [
-  (n, p) => `Hi ${n}, rates and loan programs change constantly — want a fresh look at ${p}? Reply YES. Reply STOP to opt out.`,
-  (n, p) => `Hi ${n}, still in the market for ${p}? I can pull current options in minutes. Reply YES. Reply STOP to opt out.`,
-  (n, p) => `Hi ${n}, checking in from Fetti — if ${p} is back on your radar, I'm here and fast. Reply STOP to opt out.`,
+  (n, p) => `Hi ${n}, it's Mark at Fetti — rates and loan programs change constantly. Want a fresh look at ${p}? Reply YES. (Reply STOP to opt out.)`,
+  (n, p) => `Hi ${n}, Mark here — still in the market for ${p}? I can pull current options in minutes. Reply YES. (Reply STOP to opt out.)`,
+  (n, p) => `Hi ${n}, Mark checking in from Fetti — if ${p} is back on your radar, I'm here and fast. (Reply STOP to opt out.)`,
 ];
 const REACTIVATE_THROTTLE_DAYS = 45;
 
@@ -64,7 +73,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   const cutoff = new Date(Date.now() - 365 * 86400000).toISOString();
   const { data: leads } = await supabaseAdmin
     .from("leads")
-    .select("id, full_name, first_name, email, phone, loan_purpose, stage, status, created_at, nurture_step, nurture_paused, last_nurture_at, raw")
+    .select("id, full_name, first_name, email, phone, loan_purpose, stage, created_at, nurture_step, nurture_paused, last_nurture_at, raw")
     .gte("created_at", cutoff)
     .limit(800);
 
@@ -79,6 +88,11 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     considered++;
     if (l.nurture_paused) continue;
     if (!l.phone && !l.email) continue;
+    // Stale Meta opt-in (historically recovered FB leads): Meta Lead Ad consent is NOT
+    // TCPA SMS consent — so these are nurtured EMAIL-ONLY (never SMS). They still get the
+    // full email drip/touches; texting is suppressed by forcing phone=null below.
+    // (Owner-approved 2026-06-23.) A historical lead with no email gets no touch (held).
+    const sendPhone = l.raw?.historical_import ? null : l.phone;
     const stage = (l.stage || "").toLowerCase();
 
     // --- Review lane: ask funded/closed borrowers for a Google review (map-pack fuel).
@@ -87,13 +101,14 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     if (reviewUrl && (stage.includes("funded") || stage.includes("closed") || stage.includes("won"))) {
       if (!l.raw?.review_requested) {
         const fn = (l.first_name || l.full_name || "there").split(" ")[0];
-        const msg = `Hi ${fn}, congrats on closing with Fetti Financial Services! 🎉 If we earned it, a quick Google review genuinely helps a small shop like ours: ${reviewUrl} — thank you! Reply STOP to opt out.`;
+        const msg = `Hi ${fn}, it's Mark — congrats on closing with Fetti Financial Services! 🎉 If we earned it, a quick Google review genuinely helps a small shop like ours: ${reviewUrl} — thank you! (Reply STOP to opt out.)`;
         try {
-          await respondToLead({ name: fn, email: l.email, phone: l.phone, loan_purpose: l.loan_purpose, message: msg });
+          const res = await respondToLead({ name: fn, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg });
           const raw = l.raw && typeof l.raw === "object" ? l.raw : {};
           raw.review_requested = new Date().toISOString();
           await supabaseAdmin.from("leads").update({ raw }).eq("id", l.id);
           reviewsRequested++; sent++;
+          await logSent(l.id, "review", 0, res?.sent || []);
         } catch (e) { console.warn("[nurture] review request failed for", l.id, e); }
       }
       continue;
@@ -121,11 +136,12 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       if (!missing.length) continue; // nothing required left → will flip to Application
       const link = `${baseUrl()}/file/${file.share_token}`;
       const list = missing.slice(0, 3).join(", ") + (missing.length > 3 ? `, +${missing.length - 3} more` : "");
-      const message = `Hi ${name}, you're almost there on ${purpose}! Still need: ${list}. Upload securely here: ${link}${bookLine} Reply STOP to opt out.`;
+      const message = `Hi ${name}, it's Mark — you're almost there on ${purpose}! Still need: ${list}. Upload securely here: ${link}${bookLine} (Reply STOP to opt out.)`;
       try {
-        await respondToLead({ name, email: l.email, phone: l.phone, loan_purpose: l.loan_purpose, message });
+        const res = await respondToLead({ name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message });
         await supabaseAdmin.from("leads").update({ last_nurture_at: new Date().toISOString() }).eq("id", l.id);
         chased++; sent++;
+        await logSent(l.id, "doc_chase", 0, res?.sent || []);
       } catch (e) { console.warn("[nurture] doc-chase failed for", l.id, e); }
       continue;
     }
@@ -145,9 +161,10 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       try {
         const link = await leadFileLink(l.id);
         const finishLine = link ? ` Pick up where you left off: ${link}` : "";
-        await respondToLead({ name, email: l.email, phone: l.phone, loan_purpose: l.loan_purpose, message: due.msg(name, purpose) + finishLine + bookLine });
+        const res = await respondToLead({ name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: due.msg(name, purpose) + finishLine + bookLine });
         await supabaseAdmin.from("leads").update({ nurture_step: due.step, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
         sent++;
+        await logSent(l.id, "drip", due.step, res?.sent || []);
       } catch (e) { console.warn("[nurture] drip failed for", l.id, e); }
       continue;
     }
@@ -158,10 +175,17 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     try {
       const link = await leadFileLink(l.id);
       const finishLine = link ? ` Pick up where you left off: ${link}` : "";
-      await respondToLead({ name, email: l.email, phone: l.phone, loan_purpose: l.loan_purpose, message: msg + finishLine + bookLine });
+      const res = await respondToLead({ name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg + finishLine + bookLine });
       await supabaseAdmin.from("leads").update({ nurture_step: curStep + 1, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
       reactivated++; sent++;
+      await logSent(l.id, "reactivation", curStep + 1, res?.sent || []);
     } catch (e) { console.warn("[nurture] reactivation failed for", l.id, e); }
   }
+  // Log every run so cron health + send volume are VISIBLE (the heartbeats table
+  // doesn't exist; this powers the Funnel/Follow-up Health view).
+  await logActivity({
+    entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.ran",
+    detail: { cron: "nurture", considered, sent, chased, reactivated, reviewsRequested },
+  }).catch(() => {});
   return { considered, sent, chased, reactivated, reviewsRequested };
 }

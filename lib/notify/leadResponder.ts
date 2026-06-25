@@ -4,6 +4,8 @@
 // configured it no-ops (and the team still gets the alert). Actual delivery
 // needs RESEND_API_KEY (email) and/or Twilio creds (SMS).
 
+import { markSignatureHtml } from "@/lib/notify/emailSignature";
+
 export type LeadContact = {
   name?: string | null;
   email?: string | null;
@@ -16,7 +18,7 @@ export type LeadContact = {
 function defaultMessage(l: LeadContact): string {
   const first = (l.name || "there").split(" ")[0];
   const purpose = l.loan_purpose ? ` about your ${l.loan_purpose} financing` : "";
-  return `Hi ${first}, this is Fetti Financial Services — thanks for reaching out${purpose}. A specialist is reviewing your info now and will contact you shortly. Reply here anytime with questions!`;
+  return `Hi ${first}, it's Mark with Fetti Financial Services — thanks for reaching out${purpose}. I'm reviewing your details now and a specialist will follow up shortly. Reply here anytime with questions!`;
 }
 
 async function emailLead(l: LeadContact, body: string) {
@@ -26,14 +28,27 @@ async function emailLead(l: LeadContact, body: string) {
   const button = l.link
     ? `<div style="margin-top:18px"><a href="${l.link}" style="background:#10b981;color:#021;font-weight:700;text-decoration:none;padding:12px 22px;border-radius:9999px;display:inline-block">Open your secure file &amp; upload documents →</a></div><div style="margin-top:8px;color:#64748b;font-size:12px">Or paste this link: ${l.link}</div>`
     : "";
+  const signature = await markSignatureHtml();
+  // Speed-to-lead subject lines lift open rates when they lead with the borrower's
+  // first name + what they actually asked about. Fall back gracefully when either
+  // field is missing so the line always reads cleanly.
+  const first = (l.name || "").trim().split(/\s+/)[0];
+  const purpose = (l.loan_purpose || "").trim();
+  const prettyPurpose = purpose
+    ? purpose.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    : "";
+  let subject = "Your Fetti Financial Services LLC inquiry — next steps";
+  if (first && prettyPurpose) subject = `${first}, your ${prettyPurpose} financing — next steps from Fetti`;
+  else if (first) subject = `${first}, your Fetti financing inquiry — next steps`;
+  else if (prettyPurpose) subject = `Your ${prettyPurpose} financing with Fetti — next steps`;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from,
       to: [l.email],
-      subject: "Your Fetti Financial Services LLC inquiry — next steps",
-      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5">${body.replace(/\n/g, "<br>")}${button}</div>`,
+      subject,
+      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;color:#0f172a">${body.replace(/\n/g, "<br>")}${button}</div>${signature}`,
     }),
   });
   return res.ok;

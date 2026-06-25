@@ -45,11 +45,10 @@ export default function AboutPage() {
         <h1 className="text-4xl font-extrabold tracking-tight mt-2">About Fetti Financial Services &amp; Ramon Dent</h1>
 
         <p className="text-lg text-slate-700 leading-relaxed mt-5">
-          Fetti Financial Services LLC is a licensed mortgage lender and broker, founded by <strong>Ramon Dent</strong>{" "}
+          Fetti Financial Services LLC is a licensed nonbank mortgage lender, founded by <strong>Ramon Dent</strong>{" "}
           (NMLS #2235992). Fetti was built on a simple belief: a home or investment loan should work for the borrower
-          and their family — not for a bank&apos;s quota. As a mortgage solutions specialist, Fetti funds loans directly
-          when that&apos;s fastest and shops a wide network of lenders when that gets a better fit — so clients see their
-          real options, not one institution&apos;s menu.
+          and their family — not for a bank&apos;s quota. As a nonbank lender with its own capital, Fetti funds the deals
+          big banks won&apos;t — built for the borrowers banks turn away, not squeezed into one institution&apos;s narrow box.
         </p>
 
         <h2 className={H2}>What Fetti does</h2>

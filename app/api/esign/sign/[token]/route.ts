@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { maybeAdvanceStage } from "@/lib/los";
 import { sendSignRequest } from "@/lib/notify/docRequest";
+import { notifyTeam } from "@/lib/notify/leadAlert";
 import { ESIGN_BUCKET, EsignField, EsignRequest, activeRecipient, envelopeComplete, getByRecipientToken, recipientView, saveRequest } from "@/lib/esign";
 
 // Public signer endpoint — [token] is a RECIPIENT token.
@@ -30,6 +31,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     recipient.status = "viewed"; recipient.viewedAt = new Date().toISOString();
     env.events = [...(env.events || []), { type: "viewed", at: recipient.viewedAt, ip, ua, detail: `${recipient.name} opened the document` }];
     await saveRequest(env);
+    // DocuSign-style "viewed (unsigned)" alert to the loan team — fired once, on first open.
+    notifyTeam(
+      `📄 Viewed — not yet signed: ${env.title}`,
+      `${recipient.name}${recipient.email ? ` <${recipient.email}>` : ""} opened "${env.title}" at ${recipient.viewedAt} (IP ${ip}).\nThey have NOT signed yet.`
+    ).catch(() => {});
+    await logActivity({ entity_type: "esign", entity_id: env.token, loan_file_id: env.loan_file_id || undefined, actor: "signer", action: "esign.viewed", detail: { recipient: recipient.name, title: env.title } }).catch(() => {});
   }
   return NextResponse.json(recipientView(env, recipient));
 }

@@ -44,7 +44,7 @@ export default async function LandingPage({ params }: { params: Promise<{ produc
           </div>
           {c.statesNote && <p className="text-xs text-slate-400 mt-4">{c.statesNote}</p>}
           <div className="mt-7 flex items-center gap-3">
-            <img src="/mark-golden-owl-512.png" alt="Mark, the all-knowing Fetti owl" width={56} height={56} className="w-12 h-12" />
+            <img src="/mark-owl.png" alt="Mark, the all-knowing Fetti owl" width={66} height={96} className="h-16 w-auto drop-shadow-md" />
             <p className="text-sm text-slate-600 italic">&quot;{c.markLine}&quot;</p>
           </div>
         </div>
