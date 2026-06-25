@@ -117,7 +117,11 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
 
   return (
     <Shell meta={meta}>
-      <div className="mt-4 rounded-xl overflow-hidden bg-slate-200 p-3 max-h-[65vh] overflow-y-auto">
+      <div className="mt-4 flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-sm text-slate-600">Review the full document before signing.</p>
+        <a href={`/api/esign/sign/${token}/pdf`} target="_blank" rel="noreferrer" className="text-sm font-semibold text-emerald-700 underline whitespace-nowrap">Open / enlarge as PDF ↗</a>
+      </div>
+      <div className="mt-2 rounded-xl overflow-hidden bg-slate-200 p-3 max-h-[65vh] overflow-y-auto">
         <PdfDoc src={`/api/esign/sign/${token}/pdf`} mode="sign" fields={meta.fields || []} signatureImg={adopted} signerName={meta.signer_name} recipientLabels={{}} />
       </div>
       <div className="mt-5 bg-white border border-slate-300 rounded-2xl p-5">

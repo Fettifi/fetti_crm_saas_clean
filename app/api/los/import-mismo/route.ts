@@ -46,8 +46,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "File too large (max 8 MB)." }, { status: 413 });
     }
     const xml = await file.text();
-    if (!/<MESSAGE[\s>]/.test(xml)) {
-      return NextResponse.json({ error: "That doesn't look like a MISMO 1003 XML (no <MESSAGE> element)." }, { status: 422 });
+    // Accept a namespaced or default-namespaced root (<MESSAGE>, <MESSAGE xmlns=…>,
+    // <ns:MESSAGE>) — the old strict check rejected valid Point/MISMO exports that
+    // prefix the root, which read to the user as "import doesn't work".
+    if (!/<(?:[A-Za-z0-9_]+:)?MESSAGE[\s>/]/i.test(xml)) {
+      return NextResponse.json({ error: "That doesn't look like a MISMO 1003 XML (no <MESSAGE> root). In Calyx Point, export via Interfaces → MISMO 3.4 (ULAD)." }, { status: 422 });
     }
 
     // 2) Parse.
@@ -56,6 +59,15 @@ export async function POST(req: NextRequest) {
     catch (e: any) { return NextResponse.json({ error: e?.message || "Could not parse the file." }, { status: 422 }); }
     const p = parsed.urla;
     const b0 = p.borrowers[0] || {};
+
+    // Parsed OK but nothing recognizable inside → almost certainly the WRONG export
+    // (Point's native file, or a Fannie Mae 3.2 / DU file) rather than MISMO 3.4 / ULAD.
+    // Tell the LO exactly that instead of "succeeding" into a blank 1003.
+    if (!p.borrowers.length && p.loan?.amount == null && !p.property?.address && !(p.assets || []).length) {
+      return NextResponse.json({
+        error: "Parsed the XML but found no 1003 data in it. In Calyx Point, export via Interfaces → MISMO 3.4 (ULAD) — not the native Point file. Fannie Mae 3.2 / DU files aren't supported here.",
+      }, { status: 422 });
+    }
 
     // 3) Resolve (or create) the loan file + lead.
     let loanFile: any = null;
@@ -92,7 +104,6 @@ export async function POST(req: NextRequest) {
         income: b0.income?.total ?? null,
         liquid_assets: liquid,
         source: `MISMO import${parsed.summary.originationSystem ? ` (${parsed.summary.originationSystem})` : ""}`,
-        status: "New",
       };
       const { data: newLead, error: leadErr } = await supabaseAdmin.from("leads").insert([leadRow]).select().single();
       if (leadErr || !newLead) throw new Error("Could not create lead: " + (leadErr?.message || "unknown"));

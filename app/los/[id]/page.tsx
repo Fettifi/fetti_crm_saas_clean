@@ -10,6 +10,8 @@ import { useRouter } from "next/navigation";
 import { Loader2, Link2, Check, ArrowLeft, Plus, ExternalLink, Send, X, Trash2 } from "lucide-react";
 import { borrowerCode } from "@/lib/borrowerCode";
 import DeleteConfirm from "@/components/DeleteConfirm";
+import ConditionsImporter from "@/components/los/ConditionsImporter";
+import IncomeQualifier from "@/components/los/IncomeQualifier";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
 
@@ -355,6 +357,13 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                 {docBusy === "new" ? "Uploading…" : "⬆️ Add a file directly (emailed / on hand)"}
               </button>
             </div>
+
+            {/* Import conditions / approval → Claude splits it into line-item requests,
+                each routable to the borrower, a wholesaler, or a custom email. */}
+            <div className="mt-5 border-t border-slate-800/60 pt-4">
+              <ConditionsImporter loanFileId={id} borrowerName={file.borrower_name} borrowerEmail={file.email} onCreated={load} />
+            </div>
+
             {/* Request documents — build a list, then send the borrower (or anyone
                 else) this file's secure upload link, without leaving this screen. */}
             <div className="mt-5 border-t border-slate-800/60 pt-4">
@@ -489,6 +498,9 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
             </>
           ) : <div className="text-slate-600 text-sm">Building 1003 view…</div>}
         </div>
+
+        {/* Income & qualification — the income calc embedded in the file, prefilled from the 1003 */}
+        {mismo?.metrics && <IncomeQualifier metrics={mismo.metrics} loan={mismo.urla?.loan} fileId={id} />}
 
         {/* AI Deal Screen (Relip-style triage + lender match) */}
         <div className="bg-gradient-to-br from-emerald-950/40 to-slate-900/40 border border-emerald-800/40 rounded-2xl p-5 mt-4">

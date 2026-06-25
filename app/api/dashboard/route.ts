@@ -18,7 +18,7 @@ export async function GET() {
     const MARGIN = marginPct / 100;
     const [{ data: leads }, { data: files }] = await Promise.all([
       supabaseAdmin.from("leads")
-        .select("id, full_name, loan_purpose, loan_amount_requested, property_value, tier, stage, status, created_at")
+        .select("id, full_name, loan_purpose, loan_amount_requested, property_value, tier, stage, created_at")
         .order("created_at", { ascending: false }).limit(5000),
       supabaseAdmin.from("loan_files")
         .select("id, borrower_name, loan_amount, property_value, stage, status, created_at")

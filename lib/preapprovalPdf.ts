@@ -7,7 +7,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 const money = (n?: number | null) => (n == null ? "—" : "$" + Math.round(Number(n)).toLocaleString());
 const fdate = (s?: string) => (s ? new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "—");
 
-export async function buildPreApprovalPdf(l: any): Promise<Uint8Array> {
+export async function buildPreApprovalPdf(l: any, extra?: any): Promise<Uint8Array> {
   const W = 612, H = 792, M = 54;
   const RIGHT = W - M, CW = W - 2 * M;
   const EMERALD = rgb(0.02, 0.47, 0.34), SLATE = rgb(0.07, 0.09, 0.16), GREY = rgb(0.39, 0.45, 0.55), LIGHT = rgb(0.95, 0.96, 0.97);
@@ -51,21 +51,42 @@ export async function buildPreApprovalPdf(l: any): Promise<Uint8Array> {
   para(`This letter confirms that ${l.borrower_name}${co} ${l.co_borrower ? "have" : "has"} been pre-approved by Fetti Financial Services LLC for mortgage financing based on a preliminary review of the information provided, subject to the conditions below.`, 10.5);
   cur += 10;
 
-  const rows: [string, string][] = [
-    ["Loan program", l.loan_type || "—"],
-    ["Approved loan amount (up to)", money(l.loan_amount)],
-    ["Estimated purchase price", money(l.purchase_price)],
-    ["Down payment", money(l.down_payment)],
-    ["Loan term", l.term || "—"],
-    ["Estimated rate", l.interest_rate || "Subject to market at lock"],
-    ["Occupancy", l.occupancy || "—"],
-    ["Subject property", l.property_address || "To be determined"],
-  ];
-  const rh = 18;
+  // Full, professional terms table. Core fields always show; the richer term-sheet
+  // fields (LTV, rate type, payment, points, fees, prepay, reserves, DSCR, lock)
+  // appear only when captured — so a rich term sheet comes through COMPLETE on Fetti
+  // letterhead, not dumped into "conditions". LTV is computed from amount/value.
+  const x = extra && typeof extra === "object" ? extra : {};
+  const ltv = l.loan_amount && l.purchase_price && Number(l.purchase_price) > 0
+    ? `${Math.round((Number(l.loan_amount) / Number(l.purchase_price)) * 1000) / 10}%`
+    : (x.ltv ? String(x.ltv).trim() : null);
+  const rows: [string, string][] = [];
+  const opt = (k: string, v: any) => { const s = v == null ? "" : String(v).trim(); if (s) rows.push([k, s]); };
+  rows.push(["Loan program", l.loan_type || "—"]);
+  opt("Loan purpose", x.loan_purpose);
+  rows.push(["Approved loan amount (up to)", money(l.loan_amount)]);
+  rows.push(["Estimated purchase price / value", money(l.purchase_price)]);
+  rows.push(["Down payment", money(l.down_payment)]);
+  opt("Loan-to-value (LTV)", ltv);
+  rows.push(["Loan term", l.term || "—"]);
+  opt("Rate type", x.rate_type);
+  rows.push(["Estimated rate", l.interest_rate || "Subject to market at lock"]);
+  opt("Estimated monthly payment", x.monthly_payment);
+  opt("Discount / origination points", x.points);
+  opt("Estimated lender fees", x.lender_fees);
+  opt("Prepayment penalty", x.prepay_penalty);
+  opt("Reserves required", x.reserves);
+  opt("DSCR (debt-service coverage)", x.dscr);
+  opt("Rate lock", x.lock_period);
+  rows.push(["Occupancy", l.occupancy || "—"]);
+  rows.push(["Subject property", l.property_address || "To be determined"]);
+
+  const rh = rows.length > 11 ? 15 : 18;
+  const ts = rows.length > 11 ? 9 : 10;
   rows.forEach(([k, v], i) => {
     if (i % 2) page.drawRectangle({ x: M, y: H - cur - rh + 4, width: CW, height: rh, color: LIGHT });
-    page.drawText(k, { x: M + 8, y: H - cur - 12, size: 10, font, color: GREY });
-    page.drawText(v, { x: RIGHT - 8 - font.widthOfTextAtSize(v, 10), y: H - cur - 12, size: 10, font: bold, color: SLATE });
+    const ty = H - cur - rh / 2 - ts * 0.35;
+    page.drawText(k, { x: M + 8, y: ty, size: ts, font, color: GREY });
+    page.drawText(v, { x: RIGHT - 8 - bold.widthOfTextAtSize(v, ts), y: ty, size: ts, font: bold, color: SLATE });
     cur += rh;
   });
   page.drawRectangle({ x: M, y: H - cur + 4, width: CW, height: rows.length * rh, borderColor: rgb(0.85, 0.87, 0.9), borderWidth: 1, color: undefined });

@@ -4,11 +4,11 @@
 // signing order, drop each signer's fields (color-coded) onto the live document,
 // and send. Tracks per-signer status; void anytime before completion.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, FileUp, Send, Link2, ExternalLink, FileSignature, Plus, Trash2, Ban } from "lucide-react";
+import { Loader2, FileUp, Send, Link2, ExternalLink, FileSignature, Plus, Trash2, Ban, Download } from "lucide-react";
 import PdfDoc, { EsignField, EsignFieldType } from "@/components/PdfDoc";
 
 type Recipient = { id: string; name: string; email: string; phone: string; order: number };
-type Req = { token: string; title: string; status: string; created_at: string; recipients: { name: string; order: number; status: string }[] };
+type Req = { token: string; title: string; status: string; created_at: string; has_signed?: boolean; has_cert?: boolean; recipients: { name: string; email?: string | null; order: number; status: string; delivery?: string | null }[] };
 
 const TOOLS: [EsignFieldType, string][] = [["signature", "✍️ Signature"], ["initials", "🅸 Initials"], ["date", "📅 Date"], ["name", "🅽 Name"]];
 const COLORS = ["#0ea5e9", "#f59e0b", "#a855f7", "#ef4444", "#14b8a6"];
@@ -26,6 +26,7 @@ export default function EsignPage() {
   const [msg, setMsg] = useState<{ ok?: boolean; text: string } | null>(null);
   const [reqs, setReqs] = useState<Req[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const pdfRef = useRef<HTMLInputElement>(null);
 
   function acceptDrop(e: React.DragEvent) {
@@ -62,15 +63,28 @@ export default function EsignPage() {
   const setR = (id: string, patch: Partial<Recipient>) => setRecipients(recipients.map((r) => r.id === id ? { ...r, ...patch } : r));
 
   const inp = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none";
+  const isEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 
-  async function send() {
+  // Step 1 — validate, then show the "confirm recipients" review so a typo'd email is
+  // SEEN before anything sends (the DocuSign-style review-recipients gate).
+  function review() {
     setMsg(null);
     if (!pdf) { setMsg({ text: "Choose a PDF." }); return; }
     const clean = recipients.filter((r) => r.name.trim());
     if (!clean.length) { setMsg({ text: "Add at least one signer." }); return; }
-    for (const r of clean) if (!r.email.trim() && !r.phone.trim()) { setMsg({ text: `Add an email or phone for ${r.name}.` }); return; }
-    setSending(true);
+    for (const r of clean) {
+      if (!r.email.trim() && !r.phone.trim()) { setMsg({ text: `Add an email or phone for ${r.name}.` }); return; }
+      if (r.email.trim() && !isEmail(r.email)) { setMsg({ text: `That email for ${r.name} isn't valid: "${r.email.trim()}". Fix it before sending.` }); return; }
+    }
+    setConfirming(true);
+  }
+
+  // Step 2 — actually send, after the LO confirms every recipient is correct.
+  async function doSend() {
+    if (!pdf) return;
+    setSending(true); setMsg(null);
     try {
+      const clean = recipients.filter((r) => r.name.trim());
       const fd = new FormData();
       fd.append("pdf", pdf);
       fd.append("title", title.trim() || pdf.name.replace(/\.pdf$/i, ""));
@@ -81,7 +95,7 @@ export default function EsignPage() {
       const j = await r.json();
       if (r.ok) {
         setMsg({ ok: true, text: j.message || "Sent." });
-        setPdf(null); setPdfData(null); setFields([]); setTitle(""); setRecipients([{ id: "r1", name: "", email: "", phone: "", order: 1 }]); setActiveRid("r1");
+        setPdf(null); setPdfData(null); setFields([]); setTitle(""); setRecipients([{ id: "r1", name: "", email: "", phone: "", order: 1 }]); setActiveRid("r1"); setConfirming(false);
         await load();
       } else setMsg({ text: j.error || "Failed." });
     } catch { setMsg({ text: "Connection error." }); }
@@ -125,7 +139,7 @@ export default function EsignPage() {
                       {recipients.length > 1 && <button onClick={() => removeRecipient(r.id)} className="text-slate-500 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>}
                     </div>
                     <div className="grid grid-cols-2 gap-1.5">
-                      <input className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" value={r.email} onChange={(e) => setR(r.id, { email: e.target.value })} placeholder="email" />
+                      <input className={`bg-slate-900 border rounded px-2 py-1 text-xs ${r.email.trim() && !isEmail(r.email) ? "border-red-500 text-red-300" : "border-slate-700 text-white"}`} value={r.email} onChange={(e) => setR(r.id, { email: e.target.value })} placeholder="email" />
                       <input className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" value={r.phone} onChange={(e) => setR(r.id, { phone: e.target.value })} placeholder="phone (optional)" />
                     </div>
                   </div>
@@ -134,9 +148,31 @@ export default function EsignPage() {
             </div>
 
             <div><label className="text-xs text-slate-400 mb-1 block">Loan file ID (optional)</label><input className={inp} value={fileId} onChange={(e) => setFileId(e.target.value)} placeholder="links the signed doc to a file" /></div>
-            <button onClick={send} disabled={sending} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
-              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send for signature
-            </button>
+            {!confirming ? (
+              <button onClick={review} disabled={sending} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
+                <Send className="w-4 h-4" /> Review &amp; send
+              </button>
+            ) : (
+              <div className="rounded-lg border border-emerald-600/50 bg-emerald-500/5 p-3 space-y-2">
+                <div className="text-xs font-semibold text-emerald-300">Confirm recipients — check every email is exactly right:</div>
+                <div className="space-y-1.5">
+                  {recipients.filter((r) => r.name.trim()).map((r) => (
+                    <div key={r.id} className="text-xs">
+                      <span className="text-slate-500">{r.order}. </span>
+                      <span className="font-medium text-slate-200">{r.name.trim()}</span>
+                      <span className="text-slate-500"> → </span>
+                      <span className="font-mono text-amber-200 break-all">{r.email.trim() || r.phone.trim()}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setConfirming(false)} disabled={sending} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg text-xs">← Edit</button>
+                  <button onClick={doSend} disabled={sending} className="flex-[2] bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-2">
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Confirm &amp; send
+                  </button>
+                </div>
+              </div>
+            )}
             {msg && <div className={`text-sm ${msg.ok ? "text-emerald-400" : "text-amber-300"}`}>{msg.text}</div>}
             <p className="text-[11px] text-slate-600">Sent sequentially — each signer is emailed/texted their turn. Best for authorizations &amp; agreements; for regulated disclosures (LE/CD) confirm compliance first.</p>
           </div>
@@ -180,18 +216,18 @@ export default function EsignPage() {
                   <div className="font-medium truncate">{r.title}</div>
                   <div className="text-xs text-slate-500 flex flex-wrap gap-x-2">
                     {(r.recipients || []).sort((a, b) => a.order - b.order).map((x) => (
-                      <span key={x.order}>{x.order}. {x.name} <span className={x.status === "signed" ? "text-emerald-400" : x.status === "declined" ? "text-red-400" : "text-slate-500"}>· {x.status}</span></span>
+                      <span key={x.order}>{x.order}. {x.name}{x.email ? ` <${x.email}>` : ""} <span className={x.status === "signed" ? "text-emerald-400" : x.status === "declined" ? "text-red-400" : "text-slate-500"}>· {x.status}</span>{x.delivery === "bounced" ? <span className="text-red-400 font-semibold"> · ✕ delivery failed</span> : x.delivery === "delivered" ? <span className="text-emerald-400"> · ✓ delivered</span> : null}</span>
                     ))}
                     <span>· {new Date(r.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${badge(r.status)}`}>{r.status.replace("_", " ")}</span>
-                  {r.status === "completed" ? (
-                    <span className="text-[11px] text-slate-500">on loan file</span>
-                  ) : (r.status !== "voided" && r.status !== "declined") ? (
+                  {r.has_signed && <a href={`/api/esign/requests/${r.token}/pdf?doc=signed`} target="_blank" rel="noreferrer" className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center gap-1" title="Download the signed PDF"><Download className="w-3.5 h-3.5" /> Signed</a>}
+                  {r.has_cert && <a href={`/api/esign/requests/${r.token}/pdf?doc=cert`} target="_blank" rel="noreferrer" className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1" title="Download the Certificate of Completion"><Download className="w-3.5 h-3.5" /> Certificate</a>}
+                  {(r.status !== "voided" && r.status !== "declined" && r.status !== "completed") && (
                     <button onClick={() => voidEnv(r.token)} className="text-slate-500 hover:text-red-400 flex items-center gap-1 text-xs" title="Void envelope"><Ban className="w-3.5 h-3.5" /> Void</button>
-                  ) : null}
+                  )}
                 </div>
               </div>
             ))}

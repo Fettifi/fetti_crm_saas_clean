@@ -17,8 +17,11 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { themeColor: "#0f172a" };
 
 import { Toaster } from 'sonner';
+import { Analytics } from '@vercel/analytics/next';
 import TrackingPixels from '@/components/TrackingPixels';
 import AttributionCapture from '@/components/AttributionCapture';
+import ConsentBanner from '@/components/ConsentBanner';
+import ClickTracker from '@/components/ClickTracker';
 import AppChrome from '@/components/AppChrome';
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -27,7 +30,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="bg-gray-50 text-gray-900">
         <TrackingPixels />
         <AttributionCapture />
+        <ClickTracker />
+        <Analytics />
         <AppChrome>{children}</AppChrome>
+        <ConsentBanner />
         <Toaster position="top-center" richColors />
       </body>
     </html>

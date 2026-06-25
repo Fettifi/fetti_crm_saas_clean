@@ -33,7 +33,7 @@ const DSCR_HEADLINES = [
 ];
 const DSCR_DESCRIPTIONS = [
   "Qualify on your property's cash flow, not your personal income or tax returns. Fast.",
-  "We lend direct and shop dozens of lenders to find your best DSCR fit. No games.",
+  "We fund DSCR loans with our own capital — the deals other lenders pass on. No games.",
   "Buy or refi 1-4 unit rentals nationwide. Close in an LLC. Pre-qualify, no credit pull.",
   "Financing built by people who've scaled real companies. We do money. Equal Housing.",
 ];
@@ -118,7 +118,7 @@ export default function AdsPage() {
             <List title="Headlines (mix for both)" items={["Cash-Out Your Rental Equity", "DSCR Cash-Out Refi", "Refi On Rental Income, No Tax Returns", "Lower Your Rate & Payment", "Tap Your Home Equity", "Pull Cash To Buy Your Next Deal", "Lender & Broker — Best Terms", "Pre-Qualify In 2 Minutes", "Shorten Your Term", "Fetti Financial · NMLS 2267023"]} />
             <List title="Descriptions" items={[
               "Pull equity from your rentals to fund the next deal. Qualify on cash flow, not tax returns.",
-              "Lower your payment or cash out. We shop dozens of lenders for your best refinance — no games.",
+              "Lower your payment or cash out. A nonbank lender that funds your refi directly — no games.",
               "DSCR refi closes in an LLC, nationwide. Pre-qualify with no credit pull to start.",
             ]} />
             <div className="grid grid-cols-1 gap-2">
@@ -145,7 +145,7 @@ export default function AdsPage() {
             </div>
             <List title="Retargeting — Primary text options" items={[
               "Still thinking about that next rental? Qualify on the property's cash flow — no tax returns. Pre-qualify in 2 minutes, no credit pull.",
-              "You looked, now let's fund it. DSCR loans that close in an LLC, nationwide. We lend direct AND shop the market for your best fit.",
+              "You looked, now let's fund it. DSCR loans that close in an LLC, nationwide. We're a nonbank lender — we fund it with our own capital.",
             ]} />
             <List title="Retargeting — Headlines" items={["Fund Your Next Rental", "DSCR — No Tax Returns", "Pre-Qualify in 2 Minutes"]} />
             <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">

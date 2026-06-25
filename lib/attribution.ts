@@ -6,7 +6,7 @@
 // submit with getAttribution(). Cookie-only, no PII — just the ad parameters.
 
 const KEY = "fetti_attr";
-const FIELDS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "gclid", "fbclid", "ref"] as const;
+const FIELDS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "gclid", "fbclid", "ttclid", "msclkid", "ref"] as const;
 export type Attribution = Partial<Record<(typeof FIELDS)[number], string>> & { landing?: string; ts?: string };
 
 function readCookie(name: string): string | null {

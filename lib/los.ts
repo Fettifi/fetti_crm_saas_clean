@@ -199,7 +199,7 @@ export async function maybeAdvanceStage(loanFileId: string): Promise<void> {
     if (file.lead_id) {
       try {
         await supabaseAdmin.from("leads")
-          .update({ stage: "Application", status: "APPLICATION" }).eq("id", file.lead_id);
+          .update({ stage: "Application" }).eq("id", file.lead_id);
       } catch (e) { console.warn("[los] mark lead application failed", e); }
     }
     await logActivity({

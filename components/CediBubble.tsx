@@ -8,12 +8,12 @@ export function CediBubble({
   return (
     <div className={`flex w-full max-w-full items-end gap-2 sm:gap-3 ${center ? "justify-center" : ""} ${className}`}>
       <img
-        src="/mark-golden-owl-512.png"
+        src="/mark-owl.png"
         alt="Mark. The all-knowing Fetti owl"
-        width={size}
+        width={Math.round(size * 0.69)}
         height={size}
-        style={{ width: size, height: size }}
-        className="shrink-0 drop-shadow-sm"
+        style={{ height: size, width: "auto" }}
+        className="shrink-0 drop-shadow-md"
       />
       <div className="relative min-w-0 max-w-[15rem] sm:max-w-sm rounded-2xl rounded-bl-sm border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-left text-sm font-medium text-slate-700 shadow-sm">
         {children}

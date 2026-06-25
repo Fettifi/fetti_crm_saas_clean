@@ -81,9 +81,13 @@ export default function PdfDoc({
       for (const p of pages) {
         const canvas = canvasRefs.current[p.num]; if (!canvas) continue;
         const page = await doc.getPage(p.num);
-        const scale = p.w / page.getViewport({ scale: 1 }).width;
-        const vp = page.getViewport({ scale });
-        canvas.width = vp.width; canvas.height = vp.height;
+        const cssScale = p.w / page.getViewport({ scale: 1 }).width;
+        // Oversample the canvas backing store (2–3×) so the document stays CRISP and
+        // readable when the signer zooms/enlarges it. CSS size stays p.w × p.h.
+        const RES = Math.min(3, Math.max(2, (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1) * 1.5));
+        const vp = page.getViewport({ scale: cssScale * RES });
+        canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+        canvas.style.width = `${p.w}px`; canvas.style.height = `${p.h}px`;
         const ctx = canvas.getContext("2d"); if (!ctx) continue;
         try { await page.render({ canvasContext: ctx, viewport: vp }).promise; } catch { /* */ }
         if (cancelled) return;

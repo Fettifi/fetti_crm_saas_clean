@@ -6,6 +6,12 @@ import { logActivity } from "@/lib/activity";
 import { BRAND } from "@/lib/brand";
 import { buildPreApprovalPdf } from "@/lib/preapprovalPdf";
 import { sendPreapprovalEmails } from "@/lib/notify/sendPreapproval";
+import { setSetting } from "@/lib/settings";
+
+// Richer term-sheet fields the preapprovals table has no column for — persisted in
+// app_settings (keyed by letter id) and rendered on the letter so a full term sheet
+// comes through complete, not dropped.
+const EXTRA_KEYS = ["loan_purpose", "rate_type", "monthly_payment", "ltv", "points", "lender_fees", "prepay_penalty", "reserves", "dscr", "lock_period"];
 
 const validEmail = (e: any) => typeof e === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 
@@ -66,14 +72,24 @@ export async function POST(req: NextRequest) {
       borrower_email: validEmail(b.borrower_email) ? String(b.borrower_email).trim().toLowerCase() : null,
       agent_email: validEmail(b.agent_email) ? String(b.agent_email).trim().toLowerCase() : null,
     };
+    const extra: Record<string, string> = {};
+    if (b.extra_terms && typeof b.extra_terms === "object") {
+      for (const k of EXTRA_KEYS) { const v = b.extra_terms[k]; if (v != null && String(v).trim()) extra[k] = String(v).trim().slice(0, 80); }
+    }
+
     const { data, error } = await supabaseAdmin.from("preapprovals").insert([row]).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    if (Object.keys(extra).length) {
+      try { await setSetting(`PA_TERMS:${data.id}`, JSON.stringify(extra)); }
+      catch (e) { console.warn("[preapproval] terms persist failed:", e); }
+    }
 
     // Auto-email the PDF to whichever recipients were provided.
     let emailed: string[] = [];
     if (data.borrower_email || data.agent_email) {
       try {
-        const pdf = await buildPreApprovalPdf(data);
+        const pdf = await buildPreApprovalPdf(data, extra);
         emailed = await sendPreapprovalEmails(data, pdf, { borrower_email: data.borrower_email, agent_email: data.agent_email });
         if (emailed.length) await supabaseAdmin.from("preapprovals").update({ emailed_to: emailed }).eq("id", data.id);
       } catch (e) { console.warn("[preapproval] email failed:", e); }

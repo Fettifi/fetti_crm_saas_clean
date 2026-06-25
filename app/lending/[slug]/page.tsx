@@ -27,12 +27,12 @@ const PRODUCTS: Record<string, Product> = {
   "home-purchase-loans": {
     label: "Home Purchase Loans",
     blurb: "Conventional, FHA, and VA financing to buy the home you'll live in.",
-    intro: "Buying a home in {state}? Fetti Financial Services helps you compare conventional, FHA, and VA loans, get pre-approved fast, and close with a specialist who actually picks up the phone. We fund directly when that's fastest and shop dozens of lenders when that gets you a better deal — so you see your real options, not one bank's menu.",
+    intro: "Buying a home in {state}? Fetti Financial Services is a nonbank lender — we fund conventional, FHA, and VA loans with our own capital, get you pre-approved fast, and close with a specialist who actually picks up the phone. Told no by a bank? That's exactly who we're built for.",
     bullets: ["Low-down-payment options (as little as 3–3.5%)", "First-time buyer programs", "Same-day pre-approval letters", "Competitive fixed rates"],
     requirements: ["Government-issued ID", "Recent pay stubs / proof of income", "2 months of bank statements", "A property or price range in {state}"],
     faqs: [
       { q: "How much do I need to put down to buy a home in {state}?", a: "Many buyers qualify with 3% down on conventional loans, 3.5% on FHA, and $0 down on VA loans if you're eligible. The right answer depends on your credit, income, and goals — we'll map it in a 2-minute conversation with no credit impact." },
-      { q: "How fast can I get pre-approved?", a: "Often the same day. Start your application online and a Fetti specialist follows up quickly with your numbers and a pre-approval letter you can shop with." },
+      { q: "How fast can I get pre-approved?", a: "Often the same day. Start your application online and a Fetti specialist follows up quickly with your numbers and a pre-approval letter so sellers take you seriously." },
       { q: "Does Fetti lend on home purchases in {state}?", a: "Yes — Fetti Financial Services (NMLS #2267023) originates home purchase loans in {state}. Start online and we'll confirm your options." },
     ],
     scope: "consumer",
@@ -40,7 +40,7 @@ const PRODUCTS: Record<string, Product> = {
   "refinance-loans": {
     label: "Refinance & Cash-Out Loans",
     blurb: "Lower your rate or tap your home's equity.",
-    intro: "Refinancing in {state} can lower your monthly payment, shorten your term, or turn your home's equity into cash for renovations, debt payoff, or your next investment. Fetti compares rate-and-term and cash-out options across lenders so you keep more of your money.",
+    intro: "Refinancing in {state} can lower your monthly payment, shorten your term, or turn your home's equity into cash for renovations, debt payoff, or your next investment. Fetti is a nonbank lender that funds rate-and-term and cash-out refinances directly — including the ones banks turn down.",
     bullets: ["Rate-and-term refinance", "Cash-out for renovations or debt payoff", "Debt consolidation", "Streamline programs for FHA/VA"],
     requirements: ["Recent mortgage statement", "Proof of income", "Homeowner's insurance declarations", "Estimated home value in {state}"],
     faqs: [
