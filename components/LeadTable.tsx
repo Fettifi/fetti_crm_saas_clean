@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import DeleteConfirm from "@/components/DeleteConfirm";
+import { leadQuality } from "@/lib/leadQuality";
 
 type Lead = {
   id: string;
@@ -16,7 +17,18 @@ type Lead = {
   stage: string | null;
   source: string | null;
   lead_source: string | null;
+  tier: string | null;
+  score: number | null;
 };
+
+// Lead QUALITY badge (how fundable) — distinct from the Stage badge (how far along).
+// Driven by the canonical tier/score so the 1–2 qualified leads jump out of a list
+// dominated by Tier-3 traffic.
+function QualityBadge({ tier, score }: { tier: string | null; score: number | null }) {
+  const q = leadQuality({ tier, score });
+  if (q.key === "unknown") return <span className="text-slate-600">—</span>;
+  return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${q.cls}`} title={`${tier || "untiered"}${score != null ? ` · score ${score}` : ""}`}>{q.label}</span>;
+}
 
 // A lead is "paid" if it came from an ad (LP paid_* source, or a paid traffic source).
 const PAID_RE = /google|bing|cpc|ppc|paid|adwords|gclid|fbclid|meta|facebook/i;
@@ -104,7 +116,7 @@ export default function LeadTable() {
         // exist, which made the whole query fail (PGRST200) and the leads page show
         // nothing. Select only real columns on the leads table.
         .select(
-          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, lead_source"
+          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, lead_source, tier, score"
         )
         .order("created_at", { ascending: false })
         .limit(200);
@@ -168,6 +180,14 @@ export default function LeadTable() {
   const shown = leads.filter((l) =>
     view === "all" ? true : view === "applications" ? lifecycle(l.stage) === "application" : lifecycle(l.stage) !== "application"
   );
+  // Surface the most fundable leads first (quality rank), then newest — so your
+  // 1–2 qualified leads sit at the top instead of being buried by Tier-3 traffic.
+  const sorted = [...shown].sort((a, b) => {
+    const rb = leadQuality({ tier: b.tier, score: b.score }).rank;
+    const ra = leadQuality({ tier: a.tier, score: a.score }).rank;
+    if (rb !== ra) return rb - ra;
+    return (b.created_at || "").localeCompare(a.created_at || "");
+  });
 
   const Tab = ({ id, label }: { id: typeof view; label: string }) => (
     <button onClick={() => setView(id)}
@@ -193,6 +213,7 @@ export default function LeadTable() {
           <tr>
             <th className="px-3 py-2">Created</th>
             <th className="px-3 py-2">Name</th>
+            <th className="px-3 py-2">Quality</th>
             <th className="px-3 py-2">Email</th>
             <th className="px-3 py-2">Phone</th>
             <th className="px-3 py-2">State</th>
@@ -205,7 +226,7 @@ export default function LeadTable() {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-800">
-          {shown.map((lead) => (
+          {sorted.map((lead) => (
             <tr key={lead.id} className="hover:bg-slate-900">
               <td className="px-3 py-2 text-slate-400">
                 {lead.created_at
@@ -213,6 +234,7 @@ export default function LeadTable() {
                   : "—"}
               </td>
               <td className="px-3 py-2">{lead.full_name ?? "—"}</td>
+              <td className="px-3 py-2"><QualityBadge tier={lead.tier} score={lead.score} /></td>
               <td className="px-3 py-2">{lead.email ?? "—"}</td>
               <td className="px-3 py-2">{lead.phone ?? "—"}</td>
               <td className="px-3 py-2">{lead.state ?? "—"}</td>

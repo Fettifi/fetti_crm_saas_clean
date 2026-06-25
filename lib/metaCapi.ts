@@ -91,3 +91,60 @@ export async function sendMetaLeadEvent(lead: any, opts?: { sourceUrl?: string }
     return { ok: false, detail: e instanceof Error ? e.message : "error" };
   }
 }
+
+// Fire a server-side "QualifiedLead" custom conversion AFTER the Qualify agent says a
+// lead is fundable. This is the quality feedback loop: tell Meta which leads were
+// actually good so campaigns can optimize delivery toward that profile (set the ad
+// set to optimize for the "QualifiedLead" custom event). A distinct event_id keeps it
+// from de-duping against the earlier "Lead" event. value scales with tier so it can
+// also drive value-based optimization later. Best-effort; never throws.
+export async function sendMetaQualifiedEvent(
+  lead: any,
+  opts?: { tier?: string; decision?: string; sourceUrl?: string }
+): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const pixel = await cfg("META_PIXEL_ID");
+    const token = (await cfg("META_CAPI_TOKEN")) || (await cfg("META_USER_TOKEN")) || (await cfg("META_ACCESS_TOKEN"));
+    if (!pixel || !token) return { ok: false, detail: "pixel/token not configured" };
+
+    const raw = lead?.raw && typeof lead.raw === "object" ? lead.raw : {};
+    const user_data: Record<string, any> = {};
+    if (lead?.email) user_data.em = [sha256(String(lead.email))];
+    const phoneDigits = lead?.phone ? String(lead.phone).replace(/\D/g, "") : null;
+    if (phoneDigits) user_data.ph = [sha256(phoneDigits)];
+    if (lead?.full_name) {
+      const parts = String(lead.full_name).trim().split(/\s+/);
+      if (parts[0]) user_data.fn = [sha256(parts[0])];
+      if (parts.length > 1) user_data.ln = [sha256(parts.slice(1).join(" "))];
+    }
+    if (lead?.state) user_data.st = [sha256(String(lead.state))];
+    const fbclid = raw.fbclid || raw.fbc;
+    if (fbclid) user_data.fbc = String(fbclid).startsWith("fb.") ? String(fbclid) : `fb.1.${Math.floor(Date.now() / 1000)}.${fbclid}`;
+
+    const tier = String(opts?.tier || "");
+    const value = /tier\s*1/i.test(tier) ? 100 : /tier\s*2/i.test(tier) ? 50 : 25;
+
+    const event = {
+      event_name: "QualifiedLead",
+      event_time: Math.floor(Date.now() / 1000),
+      action_source: "system_generated",
+      event_id: `${lead?.id || ""}:qualified`,   // distinct from the "Lead" event id
+      event_source_url: opts?.sourceUrl || raw.referrer || (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com"),
+      user_data,
+      custom_data: {
+        lead_quality: opts?.tier || "qualified",
+        decision: opts?.decision || "qualified",
+        value,
+        currency: "USD",
+        content_name: lead?.loan_purpose || "Mortgage inquiry",
+      },
+    };
+    const body = new URLSearchParams({ data: JSON.stringify([event]), access_token: token });
+    const r = await fetch(`${GRAPH}/${pixel}/events`, { method: "POST", body, signal: AbortSignal.timeout(12000) });
+    const j = await r.json();
+    if (typeof j?.events_received === "number" && j.events_received >= 1) return { ok: true, detail: `events_received=${j.events_received}` };
+    return { ok: false, detail: j?.error?.message || `HTTP ${r.status}` };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : "error" };
+  }
+}

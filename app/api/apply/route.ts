@@ -17,6 +17,7 @@ import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { sendMetaLeadEvent } from "@/lib/metaCapi";
 import { advanceLeadStage } from "@/lib/leadStage";
 import { scoreLead } from "@/lib/leadScore";
+import { applyQualification } from "@/lib/qualify";
 
 export const dynamic = "force-dynamic";
 // The full 5-agent pipeline runs post-response via after(); give the function
@@ -274,8 +275,14 @@ export async function POST(req: NextRequest) {
         // real leads and they show in ad reporting. Skip FB/IG-sourced leads — Meta
         // already counts those from the instant form (avoids double-counting).
         try {
+          // Honor the visitor's privacy opt-out for SERVER-SIDE measurement too: the GPC
+          // browser signal (Sec-GPC header) or an "essential only" cookie choice suppress
+          // the Meta share — keeping the CAPI consistent with the cookie banner, the GPC
+          // promise, and the privacy policy. (Accepted / never-opted-out visitors still report.)
+          const gpc = req.headers.get("sec-gpc") === "1";
+          const trackingOptedOut = gpc || req.cookies.get("fetti_consent")?.value === "essential";
           const src = String(row.source || "").toLowerCase();
-          if (!/facebook|instagram|meta_lead_ad/.test(src)) {
+          if (!trackingOptedOut && !/facebook|instagram|meta_lead_ad/.test(src)) {
             const res = await sendMetaLeadEvent(newLead, { sourceUrl: body.referrer || undefined });
             if (!res.ok) console.warn("[/api/apply] meta CAPI lead:", res.detail);
           }
@@ -293,6 +300,12 @@ export async function POST(req: NextRequest) {
               { lead_id: newLead.id, stage, summary: r.summary, output_json: r.output },
             ]);
             await logActivity({ entity_type: "agent", entity_id: newLead.id, lead_id: newLead.id, actor: `agent:${stage}`, action: "agent.ran", detail: { stage, summary: r.summary } });
+            // Make the Qualify verdict MATTER: write it onto the lead, raise a
+            // priority task for qualified/Tier-1 leads, and feed Meta the signal.
+            if (stage === "qualify") {
+              const optedOut = req.headers.get("sec-gpc") === "1" || req.cookies.get("fetti_consent")?.value === "essential";
+              await applyQualification(newLead, r, { fullName: full_name, phone, ruleTier: tier, loanPurpose: body.loan_purpose, optedOut });
+            }
           } catch (e) { console.warn(`[/api/apply] ${stage} agent failed:`, e); }
         }
       });
