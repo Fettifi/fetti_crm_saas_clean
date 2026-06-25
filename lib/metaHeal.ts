@@ -9,6 +9,7 @@ import { getSetting, setSetting, cfg } from "@/lib/settings";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
 import { scoreLead } from "@/lib/leadScore";
+import { parseMoney } from "@/lib/parseMoney";
 import crypto from "crypto";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
@@ -322,11 +323,12 @@ export async function importHistoricalLeads(): Promise<any> {
       state: get("state") || null,
       loan_purpose: get("loan_purpose", "purpose", "loan_type", "what_type") || null,
       // Scoring inputs (were dropped before, so every historical lead scored 0/Tier 3).
+      // parseMoney handles "$100k+" / "$50,000–$99,999" style answers.
       credit_band: (get("credit_band", "credit_score", "credit") || null) as string | null,
       credit_score: Number(String(getExact("credit_score") || "").replace(/[^0-9.]/g, "")) || null,
-      liquid_assets: Number(String(get("liquid_assets", "liquid_reserves", "reserves", "cash", "savings", "available_funds") || "").replace(/[^0-9.]/g, "")) || null,
-      property_value: Number(String(get("property_value", "home_value", "purchase_price") || "").replace(/[^0-9.]/g, "")) || null,
-      income: Number(String(get("annual_income", "monthly_income", "gross_income", "income") || "").replace(/[^0-9.]/g, "")) || null,
+      liquid_assets: parseMoney(get("liquid_assets", "liquid_reserves", "reserves", "cash", "savings", "available_funds")) ?? null,
+      property_value: parseMoney(get("property_value", "home_value", "purchase_price")) ?? null,
+      income: parseMoney(get("annual_income", "monthly_income", "gross_income", "income")) ?? null,
     };
   };
 
