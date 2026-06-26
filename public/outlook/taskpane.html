@@ -173,15 +173,19 @@
     var API = location.origin;
 
     // ---- token (rides in the manifest as ?k=..., never in shipped HTML) ----
+    function validTok(t){ return typeof t === "string" && /^[A-Za-z0-9._~+/=-]{16,512}$/.test(t); }
     function getToken(){
+      // sessionStorage (not localStorage): Office re-passes ?k= each time the
+      // pane opens, so we only need it for this session — and it clears on close.
       try{
         var q = new URLSearchParams(location.search).get("k");
         if(!q && location.hash){
           var h = new URLSearchParams(location.hash.replace(/^#/,""));
           q = h.get("k");
         }
-        if(q){ localStorage.setItem("fetti_outlook_k", q); return q; }
-        return localStorage.getItem("fetti_outlook_k") || "";
+        if(q && validTok(q)){ try{ sessionStorage.setItem("fetti_outlook_k", q); }catch(e){} return q; }
+        var s = ""; try{ s = sessionStorage.getItem("fetti_outlook_k") || ""; }catch(e){}
+        return validTok(s) ? s : "";
       }catch(e){ return ""; }
     }
     var TOKEN = getToken();
@@ -237,10 +241,20 @@
     function showBanner(kind, msg){ banner.className = "banner "+kind; banner.textContent = msg; }
 
     // ---- Office host wiring ----
+    var officeResolved = false;
     function bootOffice(){
       try{
         if(typeof Office === "undefined" || !Office.onReady){ standalone(); return; }
+        // If Office.onReady never fires (a known stall risk in some Outlook
+        // WebViews), fall back so the buttons aren't silently dead forever.
+        setTimeout(function(){
+          if(officeResolved) return;
+          officeResolved = true; composeReady = false;
+          showBanner("info","Couldn’t reach Outlook’s editor. You can still write a draft here and copy it in.");
+          updateInsertButtons();
+        }, 7000);
         Office.onReady(function(info){
+          officeResolved = true;
           try{
             var item = Office.context && Office.context.mailbox && Office.context.mailbox.item;
             if(item && item.body && typeof item.body.setAsync === "function"){
@@ -256,6 +270,8 @@
       }catch(e){ standalone(); }
     }
     function standalone(){
+      if(officeResolved) return;
+      officeResolved = true;
       composeReady = false;
       showBanner("info","Running outside Outlook — you can write a draft and copy it.");
       updateInsertButtons();
@@ -291,7 +307,8 @@
       navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
         recStream = stream; chunks = [];
         try{ mediaRecorder = mime ? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream); }
-        catch(e){ mediaRecorder = new MediaRecorder(stream); }
+        catch(e){ try{ mediaRecorder = new MediaRecorder(stream); }catch(e2){ mediaRecorder = null; } }
+        if(!mediaRecorder){ stopStream(); micUnsupported("Couldn’t start recording in this window"); return; }
         recExt = extFor((mediaRecorder.mimeType||mime||"audio/webm"));
         mediaRecorder.ondataavailable = function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
         mediaRecorder.onstop = function(){
@@ -304,7 +321,7 @@
         tStart = Date.now(); tickTimer(); tInt = setInterval(tickTimer, 250);
       }).catch(function(err){
         var n = (err && err.name) || "";
-        if(n==="NotAllowedError"||n==="SecurityError") micUnsupported("Microphone permission was blocked");
+        if(n==="NotAllowedError"||n==="SecurityError") micUnsupported("Microphone access denied or unavailable — check Outlook’s mic permission in System Settings");
         else if(n==="NotFoundError") micUnsupported("No microphone found");
         else micUnsupported();
       });
@@ -312,7 +329,8 @@
     function stopRec(){
       recording=false; mic.classList.remove("recording"); micLabel.textContent="Record";
       clearInterval(tInt); timer.textContent="";
-      try{ if(mediaRecorder && mediaRecorder.state!=="inactive") mediaRecorder.stop(); }catch(e){ stopStream(); }
+      if(!mediaRecorder){ stopStream(); return; }
+      try{ if(mediaRecorder.state!=="inactive") mediaRecorder.stop(); else stopStream(); }catch(e){ stopStream(); }
     }
     function stopStream(){ try{ if(recStream) recStream.getTracks().forEach(function(t){t.stop();}); }catch(e){} recStream=null; }
     function tickTimer(){
@@ -418,28 +436,34 @@
 
     $("insert").onclick = function(){
       if(!composeReady){ doCopy(); return; }
-      Office.context.mailbox.item.body.setSelectedDataAsync(toHtml(draft.value), {coercionType:htmlType()}, function(res){
-        if(res.status==="succeeded") toast("Inserted into your email ✓");
-        else { // fall back to replacing the whole body if there's no cursor target
-          Office.context.mailbox.item.body.setAsync(toHtml(draft.value), {coercionType:htmlType()}, function(r2){
-            toast(r2.status==="succeeded" ? "Inserted into your email ✓" : (r2.error&&r2.error.message)||"Couldn’t insert — copied instead", r2.status!=="succeeded");
-            if(r2.status!=="succeeded") doCopy(true);
-          });
-        }
-      });
+      try{
+        Office.context.mailbox.item.body.setSelectedDataAsync(toHtml(draft.value), {coercionType:htmlType()}, function(res){
+          if(res.status==="succeeded") toast("Inserted into your email ✓");
+          else { // fall back to replacing the whole body if there's no cursor target
+            Office.context.mailbox.item.body.setAsync(toHtml(draft.value), {coercionType:htmlType()}, function(r2){
+              toast(r2.status==="succeeded" ? "Inserted into your email ✓" : (r2.error&&r2.error.message)||"Couldn’t insert — copied instead", r2.status!=="succeeded");
+              if(r2.status!=="succeeded") doCopy(true);
+            });
+          }
+        });
+      }catch(e){ doCopy(); }
     };
     $("replace").onclick = function(){
       if(!composeReady){ doCopy(); return; }
-      Office.context.mailbox.item.body.setAsync(toHtml(draft.value), {coercionType:htmlType()}, function(res){
-        toast(res.status==="succeeded" ? "Draft replaced ✓" : (res.error&&res.error.message)||"Couldn’t replace", res.status!=="succeeded");
-      });
+      try{
+        Office.context.mailbox.item.body.setAsync(toHtml(draft.value), {coercionType:htmlType()}, function(res){
+          toast(res.status==="succeeded" ? "Draft replaced ✓" : (res.error&&res.error.message)||"Couldn’t replace", res.status!=="succeeded");
+        });
+      }catch(e){ doCopy(); }
     };
     $("setsubj").onclick = function(){
       if(!composeReady){ toast("Open while composing to set the subject.", true); return; }
       if(!subj.value.trim()){ toast("No subject to set.", true); return; }
-      Office.context.mailbox.item.subject.setAsync(subj.value.trim(), function(res){
-        toast(res.status==="succeeded" ? "Subject set ✓" : (res.error&&res.error.message)||"Couldn’t set subject", res.status!=="succeeded");
-      });
+      try{
+        Office.context.mailbox.item.subject.setAsync(subj.value.trim(), function(res){
+          toast(res.status==="succeeded" ? "Subject set ✓" : (res.error&&res.error.message)||"Couldn’t set subject", res.status!=="succeeded");
+        });
+      }catch(e){ toast("You’re no longer in the email composer — copy and paste instead.", true); }
     };
     function doCopy(silent){
       var text = (subj.value.trim() ? "Subject: "+subj.value.trim()+"\n\n" : "") + draft.value;

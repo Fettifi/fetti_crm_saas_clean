@@ -35,9 +35,8 @@ export async function POST(req: NextRequest) {
     // Whisper infers the format from the filename extension. Chromium/WebView2
     // records webm; Safari/WKWebView (Outlook for Mac) records mp4 — honor the
     // name the client sent so both transcribe correctly.
-    const fname = (file as any)?.name && /\.(webm|mp4|m4a|mp3|wav|ogg)$/i.test((file as any).name)
-      ? (file as any).name
-      : "speech.webm";
+    const base = String((file as any)?.name || "").split(/[/\\]/).pop() || "";
+    const fname = /^[\w.-]+\.(webm|mp4|m4a|mp3|wav|ogg)$/i.test(base) ? base : "speech.webm";
     out.append("file", file, fname);
     out.append("model", process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1");
     out.append("response_format", "json");

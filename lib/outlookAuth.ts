@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 
 // Shared bearer-token gate for the Outlook add-in's public endpoints
 // (/api/outlook/*). These routes are intentionally NOT behind the CRM login
@@ -19,21 +19,18 @@ export function requireAddinAuth(req: NextRequest): NextResponse | null {
   }
   const hdr = req.headers.get("authorization") || "";
   const m = hdr.match(/^Bearer\s+(.+)$/i);
-  const token = (m ? m[1] : req.headers.get("x-fetti-key") || "").trim();
+  const token = (m ? m[1] : "").trim();
   if (!token || !safeEqual(token, expected)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
   return null;
 }
 
-// Constant-time comparison so a wrong token can't be guessed by timing.
+// Constant-time comparison. Hashing both sides to a fixed 32-byte digest first
+// means the compare is constant-time AND leaks nothing about the token's length
+// (timingSafeEqual otherwise requires equal-length inputs).
 function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  try {
-    return timingSafeEqual(ab, bb);
-  } catch {
-    return false;
-  }
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
 }

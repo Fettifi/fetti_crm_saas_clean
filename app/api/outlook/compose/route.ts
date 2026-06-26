@@ -65,15 +65,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: j?.error?.message || "Writing failed." }, { status: 502 });
     }
 
+    const content = j.choices?.[0]?.message?.content || "{}";
     let parsed: any = {};
     try {
-      parsed = JSON.parse(j.choices?.[0]?.message?.content || "{}");
+      parsed = JSON.parse(content);
     } catch {
+      console.error("[outlook/compose] JSON parse failed on model content:", content.slice(0, 500));
       parsed = {};
     }
     const subject = String(parsed.subject || "").trim();
     const body = String(parsed.body || "").trim();
     if (!body) {
+      console.error("[outlook/compose] empty/invalid body from model. keys:", Object.keys(parsed));
       return NextResponse.json({ error: "Couldn't compose that — try rephrasing your note." }, { status: 502 });
     }
     return NextResponse.json({ subject, body });
