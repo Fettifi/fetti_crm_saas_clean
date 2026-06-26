@@ -49,15 +49,17 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
 
   // Letterhead
   try {
-    const bytes = await fetch(`${APP_URL}/fetti-logo.png`, { signal: AbortSignal.timeout(6000) }).then((r) => r.arrayBuffer());
+    // Clean EMBLEM mark (no text) — readable at letterhead size; the full stacked logo's
+    // internal text is illegible small and redundant with the company name beside it.
+    const bytes = await fetch(`${APP_URL}/fetti-emblem.png`, { signal: AbortSignal.timeout(6000) }).then((r) => r.arrayBuffer());
     const png = await doc.embedPng(bytes);
-    page.drawImage(png, { x: M, y: H - M - 40, width: 40, height: 40 });
+    page.drawImage(png, { x: M, y: H - M - 50, width: 50, height: 50 });
   } catch { /* logo optional */ }
-  page.drawText("Fetti Financial Services LLC", { x: M + 50, y: H - M - 16, size: 15, font: bold, color: EMERALD });
-  page.drawText("NMLS #2267023 · CA DFPI Financing Law License #60DBO-153798", { x: M + 50, y: H - M - 30, size: 7.5, font, color: GREY });
+  page.drawText("Fetti Financial Services LLC", { x: M + 58, y: H - M - 21, size: 15, font: bold, color: EMERALD });
+  page.drawText("NMLS #2267023 · CA DFPI Financing Law License #60DBO-153798", { x: M + 58, y: H - M - 34, size: 7.5, font, color: GREY });
   const dstr = d.date || new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   page.drawText(dstr, { x: RIGHT - font.widthOfTextAtSize(dstr, 8), y: H - M - 16, size: 8, font, color: GREY });
-  cur = M + 46;
+  cur = M + 56; // clears the 50px emblem
   page.drawLine({ start: { x: M, y: H - cur }, end: { x: RIGHT, y: H - cur }, thickness: 2, color: EMERALD });
   cur += 22;
 

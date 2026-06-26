@@ -500,7 +500,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
         </div>
 
         {/* Income & qualification — the income calc embedded in the file, prefilled from the 1003 */}
-        {mismo?.metrics && <IncomeQualifier metrics={mismo.metrics} loan={mismo.urla?.loan} fileId={id} />}
+        {mismo?.metrics && <IncomeQualifier metrics={mismo.metrics} loan={mismo.urla?.loan} fileId={id} borrowerEmail={file.email} />}
 
         {/* AI Deal Screen (Relip-style triage + lender match) */}
         <div className="bg-gradient-to-br from-emerald-950/40 to-slate-900/40 border border-emerald-800/40 rounded-2xl p-5 mt-4">

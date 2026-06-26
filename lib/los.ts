@@ -221,6 +221,66 @@ export async function ensureLoanFileForLead(lead: LoanFile): Promise<LoanFile | 
   return createLoanFileFromLead(lead);
 }
 
+// ---- Lead-scoped upload link + lazy LOS promotion ----
+// A lead can be handed a WORKING document-upload link without yet occupying the LOS.
+// The link's token lives on the LEAD (raw.upload_token). The borrower can upload any
+// time (never hindered); the loan file opens LAZILY on their first upload — the real
+// signal a lead is a loan — so tire-kickers who never upload never clutter the LOS.
+
+// Ensure the lead has a stable upload token (in raw.upload_token). Idempotent.
+export async function ensureLeadUploadToken(lead: any): Promise<string | null> {
+  if (!lead?.id) return null;
+  const raw = lead.raw && typeof lead.raw === "object" ? lead.raw : {};
+  if (raw.upload_token) return String(raw.upload_token);
+  const t = shareToken();
+  raw.upload_token = t;
+  const { error } = await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
+  if (error) { console.warn("[los] ensureLeadUploadToken failed:", error.message); return null; }
+  lead.raw = raw;
+  return t;
+}
+
+// Resolve a borrower-portal token to its target. A token belongs EITHER to an existing
+// loan file (loan_files.share_token) OR to a lead with no file yet (raw.upload_token).
+// A lead token keeps working AFTER a file opens (mapped via lead_id) so the borrower's
+// original link never breaks.
+export async function resolvePortalToken(token: string): Promise<{ file: any | null; lead: any | null }> {
+  if (!token || token.length < 12) return { file: null, lead: null };
+  const { data: file } = await supabaseAdmin.from("loan_files").select("*").eq("share_token", token).maybeSingle();
+  if (file) {
+    let lead: any = null;
+    if (file.lead_id) { const r = await supabaseAdmin.from("leads").select("*").eq("id", file.lead_id).maybeSingle(); lead = r.data; }
+    return { file, lead };
+  }
+  const { data: lead } = await supabaseAdmin.from("leads").select("*").eq("raw->>upload_token", token).maybeSingle();
+  if (lead) {
+    const { data: existing } = await supabaseAdmin.from("loan_files").select("*").eq("lead_id", lead.id).maybeSingle();
+    return { file: existing || null, lead };
+  }
+  return { file: null, lead: null };
+}
+
+// Promote a lead INTO the LOS — open its loan file the moment it shows real intent
+// (first document upload). Idempotent. The new file ADOPTS the lead's upload token as
+// its share_token, so the borrower's link is seamless before and after promotion.
+export async function promoteLeadToLoanFile(lead: any): Promise<LoanFile | null> {
+  if (!lead?.id) return null;
+  const { data: existing } = await supabaseAdmin.from("loan_files").select("*").eq("lead_id", lead.id).maybeSingle();
+  if (existing) return existing;
+  const file = await createLoanFileFromLead(lead);
+  if (!file) return null;
+  const leadToken = lead.raw && typeof lead.raw === "object" ? lead.raw.upload_token : null;
+  if (leadToken && leadToken !== file.share_token) {
+    const { error } = await supabaseAdmin.from("loan_files").update({ share_token: leadToken }).eq("id", file.id);
+    if (!error) file.share_token = leadToken;
+  }
+  await logActivity({
+    entity_type: "loan_file", entity_id: file.id, loan_file_id: file.id, lead_id: lead.id,
+    actor: "borrower", action: "lead.promoted", detail: { reason: "first document upload", file_number: file.file_number },
+  }).catch(() => {});
+  return file;
+}
+
 // ---- Permanent deletion (cascade) ----
 // Removes a loan file and EVERYTHING tied to it. When purgeStorage is true, the
 // uploaded files (borrower docs + e-signed PDFs) are erased from the loan-docs

@@ -23,17 +23,23 @@ export async function reconcile(): Promise<HealAction[]> {
   const leads = (leadsRaw || []).filter(isReal);
   const ids = leads.map((l: any) => l.id);
 
-  // 1) Every real lead should have a loan file. Open any that are missing.
-  if (ids.length) {
-    const { data: files } = await supabaseAdmin.from("loan_files").select("lead_id").in("lead_id", ids);
+  // 1) A loan file opens ONLY for a real loan — a lead that COMPLETED a full
+  //    application (stage "Application"). Plain leads STAY in the leads pipeline until
+  //    a teammate converts them (POST /api/los/files) or they finish the app, so the
+  //    healer no longer back-fills a file for every inquiry — it only completes files
+  //    for finished applications whose synchronous open was missed.
+  const applicationLeads = leads.filter((l: any) => String(l.stage || "") === "Application");
+  if (applicationLeads.length) {
+    const appIds = applicationLeads.map((l: any) => l.id);
+    const { data: files } = await supabaseAdmin.from("loan_files").select("lead_id").in("lead_id", appIds);
     const have = new Set((files || []).map((f: any) => f.lead_id));
     let made = 0;
-    for (const l of leads) {
+    for (const l of applicationLeads) {
       if (have.has(l.id)) continue;
       try { if (await ensureLoanFileForLead(l)) made++; } catch { /* */ }
       if (made >= 25) break;
     }
-    if (made) { repairs.push({ name: "loan_files", detail: `Opened ${made} missing loan file(s).` }); await logActivity({ entity_type: "org", actor: "agent:healer", action: "heal.loan_files", detail: { count: made } }); }
+    if (made) { repairs.push({ name: "loan_files", detail: `Opened ${made} loan file(s) for completed applications.` }); await logActivity({ entity_type: "org", actor: "agent:healer", action: "heal.loan_files", detail: { count: made } }); }
   }
 
   // 2) Every real lead should have its agent pipeline run. Re-run any with none.

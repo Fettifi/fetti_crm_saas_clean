@@ -55,13 +55,17 @@ export async function buildIncomeWorksheetPdf(d: WorksheetData): Promise<Uint8Ar
 
   // Letterhead
   try {
-    const bytes = await fetch(`${APP_URL}/fetti-logo.png`, { signal: AbortSignal.timeout(6000) }).then((r) => r.arrayBuffer());
-    const png = await doc.embedPng(bytes); const s = 34 / png.height;
-    page.drawImage(png, { x: M, y: y - 34, width: png.width * s, height: 34 });
+    // Use the clean EMBLEM mark (wreath + hexagon, no text) — it stays sharp + readable
+    // at letterhead size. The full stacked logo (fetti-logo.png) crams "FETTI / FINANCIAL
+    // SERVICES LLC / ANNUIT COEPTIS" into a tiny square that's illegible small AND redundant
+    // with the company-name text drawn beside it.
+    const bytes = await fetch(`${APP_URL}/fetti-emblem.png`, { signal: AbortSignal.timeout(6000) }).then((r) => r.arrayBuffer());
+    const png = await doc.embedPng(bytes);
+    page.drawImage(png, { x: M, y: y - 50, width: 50, height: 50 });
   } catch { /* logo optional */ }
-  dt("Fetti Financial Services LLC", { x: M + 44, y: y - 16, size: 14, font: bold, color: EMERALD });
-  dt("NMLS #2267023 · CA DFPI Financing Law License #60DBO-153798", { x: M + 44, y: y - 29, size: 7, font, color: GREY });
-  y -= 50;
+  dt("Fetti Financial Services LLC", { x: M + 58, y: y - 21, size: 14, font: bold, color: EMERALD });
+  dt("NMLS #2267023 · CA DFPI Financing Law License #60DBO-153798", { x: M + 58, y: y - 34, size: 7, font, color: GREY });
+  y -= 58;
 
   text(lender ? "Income Calculation & Verification Worksheet" : "Income Summary", 15, bold, SLATE);
   gap(2);

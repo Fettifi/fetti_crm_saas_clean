@@ -19,6 +19,7 @@ type Lead = {
   lead_source: string | null;
   tier: string | null;
   score: number | null;
+  portal_viewed_at: string | null; // borrower opened their upload link (leading "about to engage" signal)
 };
 
 // Lead QUALITY badge (how fundable) — distinct from the Stage badge (how far along).
@@ -116,7 +117,7 @@ export default function LeadTable() {
         // exist, which made the whole query fail (PGRST200) and the leads page show
         // nothing. Select only real columns on the leads table.
         .select(
-          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, lead_source, tier, score"
+          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, lead_source, tier, score, portal_viewed_at:raw->>portal_viewed_at"
         )
         .order("created_at", { ascending: false })
         .limit(200);
@@ -240,7 +241,13 @@ export default function LeadTable() {
               <td className="px-3 py-2">{lead.state ?? "—"}</td>
               <td className="px-3 py-2">{lead.loan_purpose ?? "—"}</td>
               <td className="px-3 py-2">{lead.credit_band ?? "—"}</td>
-              <td className="px-3 py-2"><StageBadge stage={lead.stage} /></td>
+              <td className="px-3 py-2">
+                <StageBadge stage={lead.stage} />
+                {lead.portal_viewed_at && lifecycle(lead.stage) === "lead" && (
+                  <span className="block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 w-fit"
+                    title={`Borrower opened their secure upload link — about to send documents (${new Date(lead.portal_viewed_at).toLocaleString()})`}>👀 Opened upload link</span>
+                )}
+              </td>
               <td className="px-3 py-2">
                 <span>{lead.source ?? "generated"}</span>
                 {isPaid(lead) && <span className="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300">Paid</span>}

@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
-import { maybeAdvanceStage } from "@/lib/los";
+import { maybeAdvanceStage, resolvePortalToken, promoteLeadToLoanFile } from "@/lib/los";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -15,13 +15,30 @@ const ALLOWED = /\.(pdf|png|jpe?g|heic|webp|doc|docx|xls|xlsx|csv|txt)$/i;
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   try {
-    const { data: file } = await supabaseAdmin
-      .from("loan_files").select("id, lead_id").eq("share_token", token).maybeSingle();
-    if (!file) return NextResponse.json({ error: "not found" }, { status: 404 });
+    // Resolve the token to a loan file OR a lead with no file yet. A borrower can
+    // upload from a lead-scoped link before any LOS file exists — and the FIRST
+    // upload is exactly what OPENS the file (promotes the lead into the LOS). This is
+    // how a lead enters the LOS only when it shows real intent, never just for existing.
+    const { file: existingFile, lead } = await resolvePortalToken(token);
+    let file: any = existingFile;
+    if (!file) {
+      if (!lead) return NextResponse.json({ error: "not found" }, { status: 404 });
+      file = await promoteLeadToLoanFile(lead);
+      if (!file) return NextResponse.json({ error: "Could not open your file — please contact your Fetti specialist." }, { status: 500 });
+    }
 
     const form = await req.formData();
     const upload = form.get("file");
-    const docId = form.get("doc_id") ? String(form.get("doc_id")) : null;
+    let docId = form.get("doc_id") ? String(form.get("doc_id")) : null;
+    // The lead-preview checklist (before a file exists) sends a synthetic id
+    // "needed:<name>"; now that the file exists, map it to the real seeded doc row so
+    // the borrower's first upload satisfies the item they intended.
+    if (docId && docId.startsWith("needed:")) {
+      const wantName = docId.slice("needed:".length);
+      const { data: match } = await supabaseAdmin.from("loan_documents")
+        .select("id").eq("loan_file_id", file.id).eq("name", wantName).order("created_at").limit(1).maybeSingle();
+      docId = match?.id || null;
+    }
     if (!(upload instanceof File)) return NextResponse.json({ error: "no file" }, { status: 400 });
     if (upload.size > MAX_BYTES) return NextResponse.json({ error: "File too large (max 25MB)." }, { status: 400 });
     const safeName = upload.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);

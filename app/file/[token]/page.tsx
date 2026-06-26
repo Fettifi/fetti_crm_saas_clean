@@ -65,7 +65,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
           <div className="text-emerald-600 font-extrabold text-lg">Fetti<span className="text-slate-900"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
         </div>
         <h1 className="text-2xl font-bold mt-4">Welcome{file.borrower_name ? `, ${file.borrower_name.split(" ")[0]}` : ""} 👋</h1>
-        <p className="text-slate-500 mt-1">Your secure loan file · <span className="font-mono text-slate-600">{file.file_number}</span></p>
+        <p className="text-slate-500 mt-1">{file.file_number ? <>Your secure loan file · <span className="font-mono text-slate-600">{file.file_number}</span></> : "Upload your documents securely below to get started."}</p>
 
         {/* Book a call */}
         {calendly && (

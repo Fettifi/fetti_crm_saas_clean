@@ -26,12 +26,16 @@ type Metrics = {
 type Tone = "ok" | "warn" | "bad" | "none";
 type Quote = { program: "conventional" | "fha"; label: string; maxPITIA: number; maxPI: number; maxLoan: number; maxPrice: number; mi: number; miMonthly: number; front: number; back: number; verdict: { tone: Tone; text: string } };
 
-export default function IncomeQualifier({ metrics, loan, fileId }: { metrics?: Metrics; loan?: { noteRatePercent?: number; termMonths?: number }; fileId?: string }) {
+export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }: { metrics?: Metrics; loan?: { noteRatePercent?: number; termMonths?: number }; fileId?: string; borrowerEmail?: string }) {
   const isInvestment = !!metrics?.isInvestment;
   const [verified, setVerified] = useState<any>(null);   // AI document-verified income result
   const [verifying, setVerifying] = useState(false);
   const [verifyErr, setVerifyErr] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailTo, setEmailTo] = useState(borrowerEmail || "");
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailMsg, setEmailMsg] = useState("");
   const rentalBase = metrics?.rental || 0;
   const proposedPI = metrics?.pi || 0;
   const amount = metrics?.amount || 0;
@@ -40,6 +44,7 @@ export default function IncomeQualifier({ metrics, loan, fileId }: { metrics?: M
   const defaultDown = ltv != null ? Math.max(0, Math.round(100 - ltv)) : 20;
 
   const [targetDti, setTargetDti] = useState("45");
+  const [fhaDti, setFhaDti] = useState("43"); // FHA back-end DTI target — adjustable (FHA AUS approves up to ~57%)
   const [targetDscr, setTargetDscr] = useState("1.0");
   const [rate, setRate] = useState(loan?.noteRatePercent ? String(loan.noteRatePercent) : "7");
   const [qualRate, setQualRate] = useState(""); // ARM/stress qualifying rate; blank => note rate
@@ -125,8 +130,13 @@ export default function IncomeQualifier({ metrics, loan, fileId }: { metrics?: M
 
   // ---- Consumer: Conventional vs FHA, computed independently ----
   function quote(program: "conventional" | "fha"): Quote {
-    const frontCap = program === "fha" ? 31 : undefined;
-    const backTarget = program === "fha" ? 43 : num(targetDti);
+    // Both programs are BACK-END governed at their chosen target DTI. We no longer
+    // impose the old hard 31% FHA front-ratio cap (which made FHA's max PITIA come out
+    // far lower than conventional and never respond to the DTI control) — FHA AUS / TOTAL
+    // Scorecard approves to high DTI without a separate front limit. The front ratio is
+    // still computed + shown for the LO's awareness, it just no longer caps the max.
+    const frontCap = undefined;
+    const backTarget = program === "fha" ? num(fhaDti) : num(targetDti);
     const mi = program === "fha" ? miAnnualFactor("fha", downN) : (downN < 20 ? miAnnualFactor("conventional", downN) : 0);
     const maxPITIA = maxHousingPayment(income, debts, backTarget, frontCap);
     const mlq = maxLoanFromPayment(maxPITIA, escrowN, qualRateN, term, downN, mi);
@@ -136,12 +146,12 @@ export default function IncomeQualifier({ metrics, loan, fileId }: { metrics?: M
     const back = income ? ((pitia + debts) / income) * 100 : 0;
     let verdict: { tone: Tone; text: string };
     if (!escrowKnown) verdict = { tone: "none", text: "Enter taxes + insurance + HOA to complete PITIA." };
-    else if (program === "fha") verdict = (front <= 31 && back <= 43) ? { tone: "ok", text: `✓ Qualifies — ${front.toFixed(0)}/${back.toFixed(0)} within 31/43` } : (front <= 40 && back <= 50) ? { tone: "warn", text: `▲ ${front.toFixed(0)}/${back.toFixed(0)} — needs compensating factors` } : { tone: "bad", text: `✕ ${front.toFixed(0)}/${back.toFixed(0)} over FHA 31/43` };
+    else if (program === "fha") verdict = (back <= num(fhaDti)) ? { tone: num(fhaDti) > 50 ? "warn" : "ok", text: `${num(fhaDti) > 50 ? "▲" : "✓"} Qualifies — ${front.toFixed(0)}/${back.toFixed(0)} ≤ ${num(fhaDti)}% back${num(fhaDti) > 43 ? " (FHA AUS / compensating factors)" : ""}` } : { tone: "bad", text: `✕ ${front.toFixed(0)}/${back.toFixed(0)} over ${num(fhaDti)}%` };
     else verdict = (back <= backTarget) ? { tone: "ok", text: `✓ Qualifies — DTI ${back.toFixed(0)}% ≤ ${backTarget}%` } : { tone: "bad", text: `✕ DTI ${back.toFixed(0)}% over ${backTarget}%` };
     return { program, label: program === "fha" ? "FHA" : "Conventional", maxPITIA, maxPI: mlq.maxPI, maxLoan: mlq.maxLoan, maxPrice: mlq.maxPrice, mi, miMonthly, front, back, verdict };
   }
   const conv = useMemo(() => quote("conventional"), [income, debts, targetDti, escrowN, qualRateN, term, downN, proposedPandI, amount, escrowKnown]); // eslint-disable-line
-  const fha = useMemo(() => quote("fha"), [income, debts, escrowN, qualRateN, term, downN, proposedPandI, amount, escrowKnown]); // eslint-disable-line
+  const fha = useMemo(() => quote("fha"), [income, debts, fhaDti, escrowN, qualRateN, term, downN, proposedPandI, amount, escrowKnown]); // eslint-disable-line
 
   // ---- Investment: DSCR on PITIA ----
   const proposedPITIA = proposedPandI + escrowN;
@@ -180,34 +190,36 @@ export default function IncomeQualifier({ metrics, loan, fileId }: { metrics?: M
       if (!r.ok) { setVerifyErr(j?.error || "Verification failed."); setVerified(null); } else { setVerified(j); setLineBorrower({}); setExcluded(new Set()); incomeEditedRef.current = false; setIncomeInput(""); }
     } catch (e: any) { setVerifyErr(e?.message || "Verification failed."); } finally { setVerifying(false); }
   }
-  async function downloadPdf(audience: "lender" | "borrower" = "lender") {
-    if (!fileId) return;
-    setPdfBusy(true); setVerifyErr("");
-    try {
-      // Build the PDF result from the EFFECTIVE on-screen state so the printed
-      // headline income AND breakdown match exactly what the LO sees — reflecting a
-      // typed income override, excluded borrowers, and any B1/B2 line reassignment.
-      // (Never ship the raw AI `verified.result`, which is frozen at verify time.)
-      const effLines = effBreakdown
-        .filter((l: any) => !excluded.has(l.borrower))
-        .map((l: any) => ({ label: l.label, basis: l.basis, monthly: l.monthly, flag: l.flag }));
-      const pdfResult = {
+  // The PDF/email payload built from the EFFECTIVE on-screen state so the printed
+  // headline income AND breakdown match exactly what the LO sees — reflecting a typed
+  // income override, excluded borrowers, and any B1/B2 line reassignment. (Never ship
+  // the raw AI `verified.result`, which is frozen at verify time.)
+  function worksheetBody(audience: "lender" | "borrower") {
+    const effLines = effBreakdown
+      .filter((l: any) => !excluded.has(l.borrower))
+      .map((l: any) => ({ label: l.label, basis: l.basis, monthly: l.monthly, flag: l.flag }));
+    return {
+      audience,
+      loanType: isInvestment ? "Investment / DSCR" : "Conventional & FHA",
+      result: {
         monthlyTotal: income,
         annualTotal: income * 12,
         lines: effLines.length ? effLines : (verified?.result?.lines || []),
         warnings: verified?.result?.warnings || [],
         derivedDebts: verified?.result?.derivedDebts,
-      };
+      },
+      report: audience === "lender" ? verified?.report : undefined,
+      docsRead: audience === "lender" ? verified?.docsRead : undefined,
+      comparison, qualification, borrowersNote,
+    };
+  }
+  async function downloadPdf(audience: "lender" | "borrower" = "lender") {
+    if (!fileId) return;
+    setPdfBusy(true); setVerifyErr("");
+    try {
       const r = await fetch(`/api/los/files/${fileId}/income-worksheet/pdf`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          audience,
-          loanType: isInvestment ? "Investment / DSCR" : "Conventional & FHA",
-          result: pdfResult,
-          report: audience === "lender" ? verified?.report : undefined,
-          docsRead: audience === "lender" ? verified?.docsRead : undefined,
-          comparison, qualification, borrowersNote,
-        }),
+        body: JSON.stringify(worksheetBody(audience)),
       });
       if (!r.ok) { const j = await r.json().catch(() => ({})); setVerifyErr(j?.error || "PDF failed."); return; }
       const blob = await r.blob();
@@ -215,6 +227,23 @@ export default function IncomeQualifier({ metrics, loan, fileId }: { metrics?: M
       const a = document.createElement("a"); a.href = url; a.download = audience === "borrower" ? "Income-Summary.pdf" : "Income-Worksheet.pdf"; a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) { setVerifyErr(e?.message || "PDF failed."); } finally { setPdfBusy(false); }
+  }
+  // Email the BORROWER income summary (PDF attached) straight to the borrower.
+  async function emailBorrower() {
+    if (!fileId) return;
+    const to = emailTo.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { setEmailMsg("⚠ Enter a valid email address."); return; }
+    setEmailBusy(true); setEmailMsg("");
+    try {
+      const r = await fetch(`/api/los/files/${fileId}/income-worksheet/email`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...worksheetBody("borrower"), to }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setEmailMsg("⚠ " + (j?.error || "Email failed.")); }
+      else { setEmailMsg(`✓ Sent to ${j.to}`); setEmailOpen(false); }
+    } catch (e: any) { setEmailMsg("⚠ " + (e?.message || "Email failed.")); }
+    finally { setEmailBusy(false); }
   }
 
   // Clearing the typed income override hands authority back to the per-borrower
@@ -329,6 +358,9 @@ export default function IncomeQualifier({ metrics, loan, fileId }: { metrics?: M
         ) : (
           <div><label className={lbl}>Conv. target DTI</label><select value={targetDti} onChange={(e) => setTargetDti(e.target.value)} className={inp}><option value="43">43%</option><option value="45">45%</option><option value="50">50%</option></select></div>
         )}
+        {!isInvestment && (
+          <div><label className={lbl}>FHA target DTI</label><select value={fhaDti} onChange={(e) => setFhaDti(e.target.value)} className={inp}><option value="43">43%</option><option value="50">50%</option><option value="55">55%</option><option value="57">57% (AUS)</option></select></div>
+        )}
         {/* Monthly debts — ALWAYS available to enter, in both consumer (DTI) and investment modes. */}
         <div><label className={lbl}>Monthly debts <span className="text-slate-600">(non-housing)</span></label><CurrencyInput value={debtsInput} onChange={(v) => setDebtsInput(v)} className={inp} placeholder="$0 / mo" /></div>
         <div>
@@ -362,13 +394,27 @@ export default function IncomeQualifier({ metrics, loan, fileId }: { metrics?: M
         </div>
       )}
 
-      {/* Download — prominent, by the results */}
+      {/* Income summary — download or email the borrower copy, plus the internal copy */}
       {fileId && (
-        <div className="mt-4 flex items-center gap-2 flex-wrap border-t border-slate-800 pt-3">
-          <span className="text-xs font-semibold text-slate-300">Download PDF:</span>
-          <button onClick={() => downloadPdf("borrower")} disabled={pdfBusy} className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg">{pdfBusy ? "Building…" : "⬇ Borrower income summary"}</button>
-          <button onClick={() => downloadPdf("lender")} disabled={pdfBusy} className="text-xs font-semibold bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-3 py-1.5 rounded-lg" title="Internal copy — includes the AI verification flags">{pdfBusy ? "Building…" : "⬇ Underwriting copy"}</button>
-          <span className="text-[11px] text-slate-500">Borrower copy shows Conventional + FHA, no internal flags.</span>
+        <div className="mt-4 border-t border-slate-800 pt-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold text-slate-300">Income summary:</span>
+            <button onClick={() => downloadPdf("borrower")} disabled={pdfBusy} className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg">{pdfBusy ? "Building…" : "⬇ Borrower copy"}</button>
+            <button onClick={() => { setEmailMsg(""); if (borrowerEmail && !emailTo) setEmailTo(borrowerEmail); setEmailOpen((v) => !v); }} disabled={pdfBusy} className="text-xs font-semibold bg-sky-600 hover:bg-sky-500 disabled:opacity-50 px-3 py-1.5 rounded-lg">✉️ Email to borrower</button>
+            <button onClick={() => downloadPdf("lender")} disabled={pdfBusy} className="text-xs font-semibold bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-3 py-1.5 rounded-lg" title="Internal copy — includes the AI verification flags">{pdfBusy ? "Building…" : "⬇ Underwriting copy"}</button>
+            <span className="text-[11px] text-slate-500">Borrower copy shows Conventional + FHA, no internal flags.</span>
+          </div>
+          {emailOpen && (
+            <div className="mt-2 flex items-center gap-2 flex-wrap bg-slate-900/40 border border-slate-800 rounded-lg px-3 py-2">
+              <span className="text-[11px] text-slate-400">Send to</span>
+              <input value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="borrower@email.com" type="email"
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 focus:outline-none w-60" />
+              <button onClick={emailBorrower} disabled={emailBusy} className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg">{emailBusy ? "Sending…" : "Send PDF"}</button>
+              <button onClick={() => { setEmailOpen(false); setEmailMsg(""); }} className="text-[11px] text-slate-400 hover:text-slate-200">Cancel</button>
+              <span className="text-[11px] text-slate-500">Attaches the borrower-facing summary as a PDF.</span>
+            </div>
+          )}
+          {emailMsg && <div className={`text-[11px] mt-1.5 ${emailMsg.startsWith("✓") ? "text-emerald-300" : "text-amber-300"}`}>{emailMsg}</div>}
         </div>
       )}
 
