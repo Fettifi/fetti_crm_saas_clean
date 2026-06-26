@@ -27,6 +27,29 @@ const csp = [
   "frame-src 'self' https://*.doubleclick.net https://*.googletagmanager.com https://*.facebook.com",
 ].join("; ");
 
+// Separate, deliberately frame-friendly policy for the Outlook add-in surface
+// (/outlook/*). The task pane is loaded INSIDE Outlook's own frame (web + the
+// desktop WebView), so it must NOT carry X-Frame-Options or a restrictive
+// frame-ancestors — those would block Outlook from hosting it at all. It must
+// also allow the Office.js CDN in script-src. Same-origin API calls ('self')
+// still cover /api/outlook/*. frame-ancestors is intentionally OMITTED (it does
+// not inherit from default-src) so any Office host can frame the pane.
+const officeHosts =
+  "https://appsforoffice.microsoft.com https://*.office.com https://*.officeapps.live.com https://*.microsoft.com https://*.office365.com https://*.outlook.com";
+const outlookCsp = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "form-action 'self'",
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${officeHosts}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  `connect-src 'self' ${officeHosts}`,
+  "media-src 'self' blob: data:",
+  "worker-src 'self' blob:",
+].join("; ");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -47,17 +70,32 @@ const nextConfig = {
   // (A full Content-Security-Policy is a recommended next step — it needs the
   // third-party allowlist tested against the live pixels/maps to avoid breakage.)
   async headers() {
+    const baseSecurity = [
+      { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "X-DNS-Prefetch-Control", value: "off" },
+    ];
     return [
       {
-        source: "/:path*",
+        // Everything EXCEPT the Outlook add-in surface keeps the strict policy
+        // (unchanged from before — same CSP, X-Frame-Options, permissions).
+        source: "/((?!outlook/).*)",
         headers: [
-          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+          ...baseSecurity,
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=(), browsing-topics=()" },
-          { key: "X-DNS-Prefetch-Control", value: "off" },
           { key: "Content-Security-Policy", value: csp },
+        ],
+      },
+      {
+        // The Outlook add-in pages are framed by Outlook — no X-Frame-Options,
+        // no frame-ancestors, Office.js CDN allowed, microphone permitted.
+        source: "/outlook/:path*",
+        headers: [
+          ...baseSecurity,
+          { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
+          { key: "Content-Security-Policy", value: outlookCsp },
         ],
       },
     ];

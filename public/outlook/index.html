@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fetti Dictate for Outlook — Install</title>
+  <style>
+    :root{--gold:#C9A24B;--gold-d:#A8842F;--ink:#14181D;--muted:#6b7280;--line:#e7e9ec;--soft:#f6f7f8}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:#fafafa;line-height:1.5}
+    .wrap{max-width:760px;margin:0 auto;padding:32px 20px 60px}
+    header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+    header img{width:40px;height:40px;border-radius:9px}
+    header h1{font-size:22px;margin:0}
+    .sub{color:var(--muted);margin:0 0 24px;font-size:15px}
+    .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:16px 0}
+    h2{font-size:16px;margin:0 0 12px}
+    ol{margin:0;padding-left:20px} li{margin:7px 0}
+    code{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px}
+    .tabbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+    .tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 14px;font:inherit;font-size:13px;cursor:pointer}
+    .tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+    .panel{display:none} .panel.on{display:block}
+    .note{font-size:13px;color:var(--muted)}
+    .kbd{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:12px}
+    .pill{display:inline-block;background:#fff7e6;border:1px solid #f0d999;color:#7a5b12;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600}
+    .foot{color:#b9bdc3;font-size:12px;text-align:center;margin-top:30px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <img src="/outlook/assets/icon-48.png" alt="Fetti" onerror="this.style.display='none'"/>
+      <h1>Fetti Dictate for Outlook</h1>
+    </header>
+    <p class="sub">Speak a rough note and get a polished, professional email — written and inserted right into your Outlook draft.</p>
+
+    <div class="card">
+      <h2>How to use it (after installing)</h2>
+      <ol>
+        <li>Start a <strong>new email</strong> or <strong>reply</strong> in Outlook.</li>
+        <li>On the ribbon/toolbar, click <strong>Fetti Dictate</strong> to open the side panel.</li>
+        <li>Tap <strong>Record</strong> and just talk — or type the gist. Pick a tone.</li>
+        <li>Hit <strong>“Write professional email,”</strong> review, then <strong>Insert into email</strong>.</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <h2>Install it once</h2>
+      <p class="note">Use the file Fetti placed on your Desktop: <code>Fetti-Outlook-Dictate.xml</code>. Pick your Outlook below.</p>
+      <div class="tabbar">
+        <button class="tab on" data-t="mac">New Outlook for Mac</button>
+        <button class="tab" data-t="web">Outlook on the web</button>
+        <button class="tab" data-t="win">Classic Outlook (Windows)</button>
+      </div>
+
+      <div class="panel on" data-p="mac">
+        <ol>
+          <li>Open Outlook and start a <strong>new email</strong>.</li>
+          <li>On the message ribbon, click <strong>Apps</strong> (or <strong>… More</strong> → <strong>Get Add-ins</strong>).</li>
+          <li>Choose <strong>My add-ins</strong> → scroll to <strong>Custom Add-ins</strong> → <strong>Add a custom add-in</strong> → <strong>Add from File…</strong></li>
+          <li>Select <code>~/Desktop/Fetti-Outlook-Dictate.xml</code> and confirm <strong>Install</strong>.</li>
+          <li>Close and reopen the compose window — <strong>Fetti Dictate</strong> appears on the ribbon.</li>
+        </ol>
+        <p class="note">If you don’t see “Apps,” update Outlook, or use Outlook on the web (next tab) — same account, same result.</p>
+      </div>
+
+      <div class="panel" data-p="web">
+        <ol>
+          <li>Go to <code>outlook.office.com</code> and click <strong>New mail</strong>.</li>
+          <li>In the compose window, click <strong>Apps</strong> (top toolbar) → <strong>Get Add-ins</strong>.</li>
+          <li><strong>My add-ins</strong> → <strong>Custom Add-ins</strong> → <strong>Add a custom add-in</strong> → <strong>Add from File…</strong></li>
+          <li>Upload <code>Fetti-Outlook-Dictate.xml</code> and confirm.</li>
+          <li>Reopen a draft — <strong>Fetti Dictate</strong> is in the <strong>Apps</strong> menu.</li>
+        </ol>
+      </div>
+
+      <div class="panel" data-p="win">
+        <ol>
+          <li>Open Outlook, <strong>Home</strong> → <strong>Get Add-ins</strong> (or <strong>All Apps</strong> → <strong>Add-ins</strong>).</li>
+          <li><strong>My add-ins</strong> → <strong>Custom Addins</strong> → <strong>Add a custom add-in</strong> → <strong>Add from File…</strong></li>
+          <li>Pick <code>Fetti-Outlook-Dictate.xml</code> → <strong>Install</strong>.</li>
+          <li>Start a new email — <strong>Fetti Dictate</strong> shows on the Message ribbon.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>About the microphone</h2>
+      <p class="note">The first time you record, your browser/Outlook may ask to allow the microphone — click <strong>Allow</strong>. If recording isn’t available in your version, you can still type the note (or use macOS dictation: press the <span class="kbd">🎤</span> key or <span class="kbd">Fn</span> <span class="kbd">Fn</span>) and Fetti will polish it.</p>
+    </div>
+
+    <div class="foot">Fetti Financial Services LLC · NMLS #2267023 · this is a private internal tool</div>
+  </div>
+  <script>
+    document.querySelector(".tabbar").addEventListener("click",function(e){
+      var b=e.target.closest(".tab"); if(!b) return;
+      document.querySelectorAll(".tab").forEach(function(x){x.classList.toggle("on",x===b);});
+      document.querySelectorAll(".panel").forEach(function(p){p.classList.toggle("on",p.dataset.p===b.dataset.t);});
+    });
+  </script>
+</body>
+</html>

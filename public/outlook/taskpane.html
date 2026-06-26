@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+  <title>Fetti Dictate</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
+  <style>
+    :root{
+      --gold:#C9A24B; --gold-d:#A8842F; --ink:#14181D; --muted:#6b7280;
+      --line:#e7e9ec; --soft:#f6f7f8; --ok:#16794a; --err:#b3261e; --rec:#d9342b;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      color:var(--ink); background:#fff; font-size:14px; line-height:1.45;
+      -webkit-font-smoothing:antialiased;
+    }
+    .wrap{max-width:560px; margin:0 auto; padding:14px 14px 28px}
+    header.app{display:flex; align-items:center; gap:10px; margin-bottom:6px}
+    header.app img{width:30px; height:30px; border-radius:7px}
+    header.app .t{font-weight:700; font-size:16px; letter-spacing:.2px}
+    header.app .s{color:var(--muted); font-size:12px; margin-top:-1px}
+    .banner{display:none; border-radius:9px; padding:9px 11px; font-size:12.5px; margin:8px 0}
+    .banner.warn{display:block; background:#fff7e6; border:1px solid #f0d999; color:#7a5b12}
+    .banner.info{display:block; background:#eef4ff; border:1px solid #cfe0ff; color:#274690}
+    .label{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin:14px 0 6px}
+    .chips{display:flex; flex-wrap:wrap; gap:6px}
+    .chip{border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:999px;
+      padding:6px 12px; font-size:12.5px; cursor:pointer; user-select:none; transition:.12s}
+    .chip:hover{border-color:var(--gold)}
+    .chip.on{background:var(--ink); color:#fff; border-color:var(--ink)}
+    details.opts{margin-top:12px; border:1px solid var(--line); border-radius:10px; overflow:hidden}
+    details.opts>summary{list-style:none; cursor:pointer; padding:9px 12px; font-size:12.5px; font-weight:600;
+      color:var(--muted); background:var(--soft)}
+    details.opts>summary::-webkit-details-marker{display:none}
+    .opts .body{padding:10px 12px; display:grid; gap:10px}
+    .field label{display:block; font-size:12px; color:var(--muted); margin-bottom:3px}
+    input[type=text], textarea{
+      width:100%; border:1px solid var(--line); border-radius:9px; padding:9px 10px;
+      font:inherit; color:var(--ink); background:#fff; resize:vertical
+    }
+    input[type=text]:focus, textarea:focus{outline:none; border-color:var(--gold); box-shadow:0 0 0 3px rgba(201,162,75,.15)}
+    .seg{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden}
+    .seg button{border:0; background:#fff; padding:7px 12px; font:inherit; font-size:12.5px; cursor:pointer; color:var(--ink)}
+    .seg button.on{background:var(--ink); color:#fff}
+    .row.check{display:flex; align-items:center; gap:8px; font-size:13px}
+    .notes-wrap{position:relative; margin-top:6px}
+    #notes{min-height:96px}
+    .mic-row{display:flex; align-items:center; gap:10px; margin-top:8px}
+    .mic{display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); background:#fff;
+      border-radius:999px; padding:9px 14px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; color:var(--ink)}
+    .mic:hover{border-color:var(--gold)}
+    .mic.recording{background:var(--rec); color:#fff; border-color:var(--rec)}
+    .mic .dot{width:9px; height:9px; border-radius:50%; background:var(--rec)}
+    .mic.recording .dot{background:#fff; animation:pulse 1s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+    .mic[disabled]{opacity:.5; cursor:not-allowed}
+    .link{background:none; border:0; color:var(--muted); font:inherit; font-size:12.5px; cursor:pointer; text-decoration:underline}
+    .timer{font-variant-numeric:tabular-nums; color:var(--muted); font-size:12.5px}
+    .primary{width:100%; margin-top:14px; border:0; border-radius:11px; padding:13px;
+      font:inherit; font-weight:700; font-size:15px; color:#1a1305; cursor:pointer;
+      background:linear-gradient(180deg,var(--gold),var(--gold-d))}
+    .primary:hover{filter:brightness(1.03)}
+    .primary[disabled]{opacity:.6; cursor:progress}
+    .result{display:none; margin-top:18px; border:1px solid var(--line); border-radius:12px; overflow:hidden}
+    .result .head{background:var(--soft); padding:8px 12px; font-size:11px; font-weight:700; text-transform:uppercase;
+      letter-spacing:.5px; color:var(--muted); display:flex; justify-content:space-between; align-items:center}
+    .result .pad{padding:12px}
+    #subj{font-weight:600; margin-bottom:8px}
+    #draft{min-height:200px}
+    .actions{display:flex; flex-wrap:wrap; gap:7px; margin-top:11px}
+    .btn{border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:9px;
+      padding:8px 12px; font:inherit; font-size:12.5px; font-weight:600; cursor:pointer}
+    .btn:hover{border-color:var(--gold)}
+    .btn.solid{background:var(--ink); color:#fff; border-color:var(--ink)}
+    .btn[disabled]{opacity:.45; cursor:not-allowed}
+    .adjust{display:flex; flex-wrap:wrap; gap:7px; margin-top:11px; padding-top:11px; border-top:1px dashed var(--line)}
+    .adjust .ad{border:1px dashed var(--line); background:#fff; border-radius:999px; padding:6px 11px;
+      font:inherit; font-size:12px; cursor:pointer; color:var(--muted)}
+    .adjust .ad:hover{border-color:var(--gold); color:var(--ink)}
+    #toast{position:fixed; left:50%; bottom:16px; transform:translateX(-50%) translateY(20px);
+      background:var(--ink); color:#fff; padding:10px 16px; border-radius:10px; font-size:13px;
+      opacity:0; transition:.25s; pointer-events:none; max-width:90%; text-align:center; z-index:50}
+    #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+    #toast.err{background:var(--err)}
+    .foot{margin-top:18px; text-align:center; color:#b9bdc3; font-size:11px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="app">
+      <img src="/outlook/assets/icon-48.png" alt="Fetti" onerror="this.style.display='none'"/>
+      <div>
+        <div class="t">Fetti Dictate</div>
+        <div class="s">Speak it. Send it polished.</div>
+      </div>
+    </header>
+
+    <div id="banner" class="banner"></div>
+
+    <div class="label">Tone</div>
+    <div class="chips" id="tones"></div>
+
+    <details class="opts">
+      <summary>Options — recipient, length, reply context</summary>
+      <div class="body">
+        <div class="field">
+          <label for="recipient">Recipient (optional)</label>
+          <input type="text" id="recipient" placeholder="e.g. Sarah at Acme, or a loan officer" />
+        </div>
+        <div class="field">
+          <label>Length</label>
+          <div class="seg" id="lenSeg">
+            <button data-len="short">Short</button>
+            <button data-len="medium" class="on">Standard</button>
+            <button data-len="long">Detailed</button>
+          </div>
+        </div>
+        <div class="row check">
+          <input type="checkbox" id="reply" />
+          <label for="reply" style="margin:0">This is a reply — use the open email as context</label>
+        </div>
+        <div class="field">
+          <label for="sender">Sign as (optional)</label>
+          <input type="text" id="sender" placeholder="Ramon Dent" />
+        </div>
+      </div>
+    </details>
+
+    <div class="label">Your note <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— talk or type the gist</span></div>
+    <div class="notes-wrap">
+      <textarea id="notes" placeholder="Tap the mic and just talk — &quot;tell the borrower we got their docs, we need two more pay stubs, and we'll have an update by Friday.&quot; Or type a rough note here."></textarea>
+    </div>
+    <div class="mic-row">
+      <button class="mic" id="mic"><span class="dot"></span><span id="micLabel">Record</span></button>
+      <span class="timer" id="timer"></span>
+      <span style="flex:1"></span>
+      <button class="link" id="clear">Clear</button>
+    </div>
+
+    <button class="primary" id="go">✨ Write professional email</button>
+
+    <div class="result" id="result">
+      <div class="head"><span>Polished draft</span><span id="resTone"></span></div>
+      <div class="pad">
+        <input type="text" id="subj" placeholder="Subject" />
+        <textarea id="draft"></textarea>
+        <div class="actions">
+          <button class="btn solid" id="insert">Insert into email</button>
+          <button class="btn" id="replace">Replace draft</button>
+          <button class="btn" id="setsubj">Set subject</button>
+          <button class="btn" id="copy">Copy</button>
+        </div>
+        <div class="adjust">
+          <button class="ad" data-adj="shorter">↧ Shorter</button>
+          <button class="ad" data-adj="longer">↥ More detail</button>
+          <button class="ad" data-adj="warmer">♥ Warmer</button>
+          <button class="ad" data-adj="formal">⊓ More formal</button>
+          <button class="ad" data-adj="regen">↻ Regenerate</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">Fetti Financial Services LLC · NMLS #2267023</div>
+  </div>
+  <div id="toast"></div>
+
+  <script>
+  (function(){
+    "use strict";
+    var API = location.origin;
+
+    // ---- token (rides in the manifest as ?k=..., never in shipped HTML) ----
+    function getToken(){
+      try{
+        var q = new URLSearchParams(location.search).get("k");
+        if(!q && location.hash){
+          var h = new URLSearchParams(location.hash.replace(/^#/,""));
+          q = h.get("k");
+        }
+        if(q){ localStorage.setItem("fetti_outlook_k", q); return q; }
+        return localStorage.getItem("fetti_outlook_k") || "";
+      }catch(e){ return ""; }
+    }
+    var TOKEN = getToken();
+    function authHeaders(extra){
+      var h = extra || {};
+      if(TOKEN) h["Authorization"] = "Bearer " + TOKEN;
+      return h;
+    }
+
+    // ---- element refs ----
+    var $ = function(id){ return document.getElementById(id); };
+    var banner=$("banner"), notes=$("notes"), mic=$("mic"), micLabel=$("micLabel"),
+        timer=$("timer"), go=$("go"), result=$("result"), subj=$("subj"), draft=$("draft"),
+        resTone=$("resTone"), toastEl=$("toast");
+
+    // ---- state ----
+    var tone = "professional";
+    var length = "medium";
+    var lastTranscript = "";
+    var composeReady = false;   // Office compose context available
+    var canReadBody = false;
+
+    var TONES = [
+      ["professional","Professional"],["warm","Warm"],["concise","Concise"],
+      ["firm","Firm"],["followup","Follow-up"],["apologetic","Apologetic"],["persuasive","Persuasive"]
+    ];
+    (function buildTones(){
+      var c = $("tones");
+      TONES.forEach(function(t){
+        var b = document.createElement("button");
+        b.className = "chip" + (t[0]===tone?" on":"");
+        b.textContent = t[1]; b.dataset.tone = t[0];
+        b.onclick = function(){
+          tone = t[0];
+          Array.prototype.forEach.call(c.children,function(x){ x.classList.toggle("on", x.dataset.tone===tone); });
+        };
+        c.appendChild(b);
+      });
+    })();
+
+    $("lenSeg").addEventListener("click", function(e){
+      var b = e.target.closest("button[data-len]"); if(!b) return;
+      length = b.dataset.len;
+      Array.prototype.forEach.call($("lenSeg").children,function(x){ x.classList.toggle("on", x===b); });
+    });
+
+    $("clear").onclick = function(){ notes.value=""; notes.focus(); };
+
+    function toast(msg, isErr){
+      toastEl.textContent = msg; toastEl.className = "show" + (isErr?" err":"");
+      clearTimeout(toast._t); toast._t = setTimeout(function(){ toastEl.className=""; }, 3200);
+    }
+    function showBanner(kind, msg){ banner.className = "banner "+kind; banner.textContent = msg; }
+
+    // ---- Office host wiring ----
+    function bootOffice(){
+      try{
+        if(typeof Office === "undefined" || !Office.onReady){ standalone(); return; }
+        Office.onReady(function(info){
+          try{
+            var item = Office.context && Office.context.mailbox && Office.context.mailbox.item;
+            if(item && item.body && typeof item.body.setAsync === "function"){
+              composeReady = true;
+              canReadBody = typeof item.body.getAsync === "function";
+            } else {
+              composeReady = false;
+              showBanner("info","Open this while composing or replying to an email to insert directly. You can still write and copy here.");
+            }
+          }catch(e){ composeReady=false; }
+          updateInsertButtons();
+        });
+      }catch(e){ standalone(); }
+    }
+    function standalone(){
+      composeReady = false;
+      showBanner("info","Running outside Outlook — you can write a draft and copy it.");
+      updateInsertButtons();
+    }
+    function updateInsertButtons(){
+      $("insert").disabled = !composeReady;
+      $("replace").disabled = !composeReady;
+      $("setsubj").disabled = !composeReady;
+      $("reply").disabled = !canReadBody;
+    }
+
+    // ---- microphone / recording ----
+    var mediaRecorder=null, chunks=[], recording=false, recStream=null, recExt="webm", tInt=null, tStart=0;
+    function pickMime(){
+      var cands=["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/mpeg"];
+      if(typeof MediaRecorder==="undefined" || !MediaRecorder.isTypeSupported) return "";
+      for(var i=0;i<cands.length;i++){ if(MediaRecorder.isTypeSupported(cands[i])) return cands[i]; }
+      return "";
+    }
+    function extFor(m){ if(/mp4/.test(m)) return "mp4"; if(/mpeg/.test(m)) return "mp3"; return "webm"; }
+
+    function micUnsupported(reason){
+      mic.disabled = true;
+      mic.title = reason || "Microphone unavailable here";
+      showBanner("warn","🎤 The mic isn’t available in this window. No problem — type your note above, or use your keyboard’s dictation (on Mac: press the 🎤 key or Fn‑Fn), then write the email.");
+    }
+
+    mic.onclick = function(){ recording ? stopRec() : startRec(); };
+
+    function startRec(){
+      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ micUnsupported(); return; }
+      var mime = pickMime();
+      navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+        recStream = stream; chunks = [];
+        try{ mediaRecorder = mime ? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream); }
+        catch(e){ mediaRecorder = new MediaRecorder(stream); }
+        recExt = extFor((mediaRecorder.mimeType||mime||"audio/webm"));
+        mediaRecorder.ondataavailable = function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
+        mediaRecorder.onstop = function(){
+          stopStream();
+          var blob = new Blob(chunks, {type:(mediaRecorder.mimeType||mime||"audio/webm")});
+          if(blob.size>0) transcribe(blob, recExt);
+        };
+        mediaRecorder.start();
+        recording = true; mic.classList.add("recording"); micLabel.textContent = "Stop"; banner.className="banner";
+        tStart = Date.now(); tickTimer(); tInt = setInterval(tickTimer, 250);
+      }).catch(function(err){
+        var n = (err && err.name) || "";
+        if(n==="NotAllowedError"||n==="SecurityError") micUnsupported("Microphone permission was blocked");
+        else if(n==="NotFoundError") micUnsupported("No microphone found");
+        else micUnsupported();
+      });
+    }
+    function stopRec(){
+      recording=false; mic.classList.remove("recording"); micLabel.textContent="Record";
+      clearInterval(tInt); timer.textContent="";
+      try{ if(mediaRecorder && mediaRecorder.state!=="inactive") mediaRecorder.stop(); }catch(e){ stopStream(); }
+    }
+    function stopStream(){ try{ if(recStream) recStream.getTracks().forEach(function(t){t.stop();}); }catch(e){} recStream=null; }
+    function tickTimer(){
+      var s = Math.floor((Date.now()-tStart)/1000);
+      timer.textContent = "● " + String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+    }
+
+    function transcribe(blob, ext){
+      micLabel.textContent = "…"; mic.disabled = true; timer.textContent = "transcribing…";
+      var fd = new FormData();
+      fd.append("audio", blob, "speech."+(ext||"webm"));
+      fetch(API+"/api/outlook/transcribe", {method:"POST", headers:authHeaders(), body:fd})
+        .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+        .then(function(res){
+          if(!res.ok){ toast(res.j.error || "Transcription failed", true); return; }
+          var t = (res.j.text||"").trim();
+          if(t){ notes.value = (notes.value ? notes.value.replace(/\s*$/,"") + " " : "") + t; }
+          else { toast("Didn’t catch that — try again", true); }
+        })
+        .catch(function(){ toast("Network error during transcription", true); })
+        .finally(function(){ mic.disabled=false; micLabel.textContent="Record"; timer.textContent=""; notes.focus(); });
+    }
+
+    // ---- compose ----
+    function gatherReplyContext(cb){
+      if(!($("reply").checked) || !canReadBody){ cb(undefined); return; }
+      try{
+        Office.context.mailbox.item.body.getAsync("text", function(res){
+          cb(res && res.status==="succeeded" ? (res.value||"").slice(0,6000) : undefined);
+        });
+      }catch(e){ cb(undefined); }
+    }
+
+    function callCompose(payload){
+      go.disabled = true; var orig = go.textContent; go.textContent = "Writing…";
+      fetch(API+"/api/outlook/compose", {
+        method:"POST", headers:authHeaders({"Content-Type":"application/json"}), body:JSON.stringify(payload)
+      })
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+      .then(function(res){
+        if(!res.ok){ toast(res.j.error || "Couldn’t write that", true); return; }
+        subj.value = res.j.subject || "";
+        draft.value = res.j.body || "";
+        resTone.textContent = (TONES.filter(function(t){return t[0]===payload.tone;})[0]||["",""])[1];
+        result.style.display = "block";
+        autoSize(draft);
+        result.scrollIntoView({behavior:"smooth", block:"nearest"});
+      })
+      .catch(function(){ toast("Network error", true); })
+      .finally(function(){ go.disabled=false; go.textContent=orig; });
+    }
+
+    go.onclick = function(){
+      var text = notes.value.trim();
+      if(!text){ toast("Tell me what to say first — tap the mic or type a note.", true); notes.focus(); return; }
+      lastTranscript = text;
+      gatherReplyContext(function(ctx){
+        callCompose({
+          transcript:text, tone:tone, length:length,
+          recipient:$("recipient").value.trim()||undefined,
+          sender:$("sender").value.trim()||undefined,
+          isReply: $("reply").checked && !!ctx,
+          context: ctx
+        });
+      });
+    };
+
+    // quick adjustments operate on the CURRENT draft
+    document.querySelector(".adjust").addEventListener("click", function(e){
+      var b = e.target.closest("button[data-adj]"); if(!b) return;
+      var kind = b.dataset.adj;
+      if(kind==="regen"){
+        if(!lastTranscript){ toast("Nothing to regenerate yet.", true); return; }
+        gatherReplyContext(function(ctx){
+          callCompose({transcript:lastTranscript, tone:tone, length:length,
+            recipient:$("recipient").value.trim()||undefined, sender:$("sender").value.trim()||undefined,
+            isReply:$("reply").checked && !!ctx, context:ctx});
+        });
+        return;
+      }
+      var cur = draft.value.trim();
+      if(!cur){ toast("Write a draft first.", true); return; }
+      var map = {
+        shorter:"Rewrite the email below to be noticeably more concise — keep every fact, name, and number, drop the filler.",
+        longer:"Expand the email below with a little more helpful detail and warmth — do not invent facts, names, numbers, or commitments.",
+        warmer:"Rewrite the email below in a warmer, friendlier tone while staying professional. Keep all facts.",
+        formal:"Rewrite the email below in a more formal, polished business tone. Keep all facts."
+      };
+      var instr = map[kind] + "\n\nDRAFT:\n" + cur;
+      callCompose({transcript:instr, tone:tone, length:length,
+        recipient:$("recipient").value.trim()||undefined, sender:$("sender").value.trim()||undefined});
+    });
+
+    // ---- insert into the email ----
+    function escapeHtml(s){ return s.replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
+    function toHtml(text){
+      var paras = text.replace(/\r\n/g,"\n").split(/\n{2,}/).map(function(p){
+        return "<p style=\"margin:0 0 10px\">"+escapeHtml(p).replace(/\n/g,"<br>")+"</p>";
+      });
+      return paras.join("");
+    }
+    function htmlType(){ try{ return Office.CoercionType.Html; }catch(e){ return "html"; } }
+
+    $("insert").onclick = function(){
+      if(!composeReady){ doCopy(); return; }
+      Office.context.mailbox.item.body.setSelectedDataAsync(toHtml(draft.value), {coercionType:htmlType()}, function(res){
+        if(res.status==="succeeded") toast("Inserted into your email ✓");
+        else { // fall back to replacing the whole body if there's no cursor target
+          Office.context.mailbox.item.body.setAsync(toHtml(draft.value), {coercionType:htmlType()}, function(r2){
+            toast(r2.status==="succeeded" ? "Inserted into your email ✓" : (r2.error&&r2.error.message)||"Couldn’t insert — copied instead", r2.status!=="succeeded");
+            if(r2.status!=="succeeded") doCopy(true);
+          });
+        }
+      });
+    };
+    $("replace").onclick = function(){
+      if(!composeReady){ doCopy(); return; }
+      Office.context.mailbox.item.body.setAsync(toHtml(draft.value), {coercionType:htmlType()}, function(res){
+        toast(res.status==="succeeded" ? "Draft replaced ✓" : (res.error&&res.error.message)||"Couldn’t replace", res.status!=="succeeded");
+      });
+    };
+    $("setsubj").onclick = function(){
+      if(!composeReady){ toast("Open while composing to set the subject.", true); return; }
+      if(!subj.value.trim()){ toast("No subject to set.", true); return; }
+      Office.context.mailbox.item.subject.setAsync(subj.value.trim(), function(res){
+        toast(res.status==="succeeded" ? "Subject set ✓" : (res.error&&res.error.message)||"Couldn’t set subject", res.status!=="succeeded");
+      });
+    };
+    function doCopy(silent){
+      var text = (subj.value.trim() ? "Subject: "+subj.value.trim()+"\n\n" : "") + draft.value;
+      function ok(){ if(!silent) toast("Copied — paste into your email ✓"); }
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(ok).catch(function(){ legacyCopy(text); ok(); });
+      } else { legacyCopy(text); ok(); }
+    }
+    function legacyCopy(text){
+      try{ draft.focus(); draft.select(); document.execCommand("copy"); draft.setSelectionRange(draft.value.length,draft.value.length); }catch(e){}
+    }
+    $("copy").onclick = function(){ doCopy(); };
+
+    function autoSize(el){ el.style.height="auto"; el.style.height=Math.min(el.scrollHeight+4, 520)+"px"; }
+    draft.addEventListener("input", function(){ autoSize(draft); });
+
+    // ---- boot ----
+    if(!TOKEN){ showBanner("warn","This add-in is missing its access key. Reinstall it from the file Fetti provided."); }
+    bootOffice();
+  })();
+  </script>
+</body>
+</html>
