@@ -11,7 +11,7 @@ import { respondToLead } from "@/lib/notify/leadResponder";
 import { getAgent } from "@/lib/agents/agents";
 import { runAgent } from "@/lib/agents/runner";
 import { logActivity } from "@/lib/activity";
-import { ensureLoanFileForLead } from "@/lib/los";
+import { ensureLoanFileForLead, ensureLeadUploadToken, docChecklistFor } from "@/lib/los";
 import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { sendMetaLeadEvent } from "@/lib/metaCapi";
@@ -199,20 +199,39 @@ export async function POST(req: NextRequest) {
     });
 
     let fileLink: string | undefined;
-    if (!deduped) {
-      const newLead = data;
-      // Open the loan file + secure document-upload link SYNCHRONOUSLY (idempotent,
-      // best-effort) so we can RETURN it and show it on the confirmation screen —
-      // the borrower gets their secure link on-screen AND in the auto email/SMS.
-      let loanFile: any = null;
+    let loanFile: any = null;
+    // LOS GATE: a lead STAYS in the leads pipeline and never auto-opens a loan file.
+    // The LOS is reserved for real loans — a file opens ONLY when the borrower
+    // COMPLETED the full application (app_completed), a teammate converts the lead
+    // manually (POST /api/los/files from the Leads table), or a 1003 is imported
+    // (import-mismo). A plain inquiry/quote no longer creates an LOS file. When a file
+    // IS opened we return its secure upload link for the confirmation screen + email.
+    // (ensureLoanFileForLead is idempotent + best-effort.)
+    if ((body as any).app_completed === true) {
       try {
-        loanFile = await ensureLoanFileForLead(newLead);
+        loanFile = await ensureLoanFileForLead(data);
         if (loanFile?.share_token) {
           const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
           fileLink = `${appUrl}/file/${loanFile.share_token}`;
         }
       } catch (e) { console.warn("[/api/apply] loan file create failed:", e); }
+    }
 
+    // A plain lead (no file opened) STILL gets a working, lead-scoped upload link so
+    // they're never hindered from sending documents — but their LOS file opens LAZILY
+    // on the first upload (real intent), so leads who never engage don't clutter the LOS.
+    if (!loanFile && !deduped && data?.id) {
+      try {
+        const upTok = await ensureLeadUploadToken(data);
+        if (upTok) {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+          fileLink = `${appUrl}/file/${upTok}`;
+        }
+      } catch (e) { console.warn("[/api/apply] lead upload token failed:", e); }
+    }
+
+    if (!deduped) {
+      const newLead = data;
       after(async () => {
         // Auto-screen investor deals — triaged + lender-matched before the LO
         // even opens the file (cached on the lead for instant display).
@@ -248,6 +267,10 @@ export async function POST(req: NextRequest) {
             const { data: ds } = await supabaseAdmin.from("loan_documents")
               .select("name").eq("loan_file_id", loanFile.id).eq("required", true).limit(6);
             needDocs = (ds || []).map((d: any) => d.name);
+          } else {
+            // No file yet — preview the product's required docs so the first touch still
+            // tells the borrower exactly what to upload at their lead-scoped link.
+            needDocs = docChecklistFor(body.loan_purpose, body.occupancy).filter((d) => d.required).map((d) => d.name).slice(0, 6);
           }
         } catch { /* */ }
         const docsLine = needDocs.length ? ` To get started fast, upload these at your secure link: ${needDocs.join(", ")}.` : "";
