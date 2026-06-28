@@ -120,6 +120,9 @@ export async function sendMetaQualifiedEvent(
     if (lead?.state) user_data.st = [sha256(String(lead.state))];
     const fbclid = raw.fbclid || raw.fbc;
     if (fbclid) user_data.fbc = String(fbclid).startsWith("fb.") ? String(fbclid) : `fb.1.${Math.floor(Date.now() / 1000)}.${fbclid}`;
+    // external_id (the lead's own id, hashed) raises Meta's match rate so it can attribute
+    // this qualified conversion back to the original ad click and optimize delivery better.
+    if (lead?.id) user_data.external_id = [sha256(String(lead.id))];
 
     const tier = String(opts?.tier || "");
     const value = /tier\s*1/i.test(tier) ? 100 : /tier\s*2/i.test(tier) ? 50 : 25;

@@ -53,6 +53,9 @@ export async function buildAndSendLeadDigest(): Promise<{ sent: string[]; counts
     `Last 7 days: ${leads.length} leads  (🔥 ${tier(leads, 1)} Tier 1 · ${tier(leads, 2)} Tier 2)`,
     `Pipeline: ${Object.entries(byStage).map(([s, c]) => `${s} ${c}`).join(" · ") || "—"}`,
     ``,
+    `Tier-1 ad optimization: ${tier(leads, 1) + tier(leads, 2)}/50 qualified signals this week.` +
+      ` ${tier(leads, 1) + tier(leads, 2) >= 50 ? "✅ Enough fuel — ready to switch Meta to hunt Tier 1." : "Meta can auto-target Tier 1 once this hits ~50/week."}`,
+    ``,
     `Board: https://app.fettifi.com/leads`,
   ].join("\n");
 
