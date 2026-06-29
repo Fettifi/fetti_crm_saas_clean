@@ -111,11 +111,64 @@ export async function tiktokStatus(): Promise<TikTokStatus> {
   }
 }
 
+export type TikTokPostOptions = {
+  privacyLevel: string;          // one of creator_info.privacy_level_options (required)
+  allowComment?: boolean;
+  allowDuet?: boolean;
+  allowStitch?: boolean;
+  brandOrganic?: boolean;        // "Your Brand" → labeled Promotional content
+  brandedContent?: boolean;      // "Branded Content" → labeled Paid partnership
+};
+
+export type TikTokCreatorInfo = {
+  ok: boolean;
+  nickname?: string;
+  username?: string;
+  avatarUrl?: string;
+  privacyOptions: string[];
+  commentDisabled: boolean;
+  duetDisabled: boolean;
+  stitchDisabled: boolean;
+  maxDurationSec?: number;
+  error?: string;
+};
+
+// Fresh creator_info for the Direct Post composer (privacy options, interaction
+// flags, nickname). TikTok's UX guidelines require this before every post.
+export async function tiktokCreatorInfo(): Promise<TikTokCreatorInfo> {
+  await tiktokHeal();
+  const token = await getSetting("TIKTOK_ACCESS_TOKEN");
+  const off = { ok: false, privacyOptions: [] as string[], commentDisabled: true, duetDisabled: true, stitchDisabled: true };
+  if (!token) return { ...off, error: "TikTok not connected" };
+  try {
+    const r = await fetch(`${API}/post/publish/creator_info/query/`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    const j = await r.json();
+    if (j.error && j.error.code && j.error.code !== "ok") return { ...off, error: j.error.message || "creator info failed" };
+    const d = j.data || {};
+    return {
+      ok: true,
+      nickname: d.creator_nickname || d.creator_username || undefined,
+      username: d.creator_username || undefined,
+      avatarUrl: d.creator_avatar_url || undefined,
+      privacyOptions: d.privacy_level_options || [],
+      commentDisabled: !!d.comment_disabled,
+      duetDisabled: !!d.duet_disabled,
+      stitchDisabled: !!d.stitch_disabled,
+      maxDurationSec: d.max_video_post_duration_sec,
+    };
+  } catch (e) {
+    return { ...off, error: e instanceof Error ? e.message : "error" };
+  }
+}
+
 // Direct-post a recorded video to TikTok. videoUrl is a publicly-fetchable URL
 // (e.g. Supabase Storage). Caption gets the compliance disclosure appended.
-// Returns the TikTok publish_id. Auto-picks the most public privacy level allowed
-// (PUBLIC once audited, SELF_ONLY while pending).
-export async function tiktokPublishVideo(videoUrl: string, caption: string): Promise<string> {
+// Returns the TikTok publish_id. When `opts` is supplied (the compliant composer)
+// the caller's explicit privacy + interaction + commercial choices are used;
+// otherwise it auto-picks the most public privacy level allowed.
+export async function tiktokPublishVideo(videoUrl: string, caption: string, opts?: TikTokPostOptions): Promise<string> {
   await tiktokHeal();
   const token = await getSetting("TIKTOK_ACCESS_TOKEN");
   if (!token) throw new Error("TikTok not connected");
@@ -133,15 +186,21 @@ export async function tiktokPublishVideo(videoUrl: string, caption: string): Pro
   });
   const ci = await ciRes.json();
   if (ci.error && ci.error.code && ci.error.code !== "ok") throw new Error(ci.error.message || "TikTok creator info failed");
-  const opts: string[] = ci?.data?.privacy_level_options || ["SELF_ONLY"];
-  const privacy = opts.includes("PUBLIC_TO_EVERYONE") ? "PUBLIC_TO_EVERYONE" : opts[0];
+  const allowed: string[] = ci?.data?.privacy_level_options || ["SELF_ONLY"];
+  const privacy = opts?.privacyLevel || (allowed.includes("PUBLIC_TO_EVERYONE") ? "PUBLIC_TO_EVERYONE" : allowed[0]);
+  if (!allowed.includes(privacy)) throw new Error("Selected audience isn't available for this account yet.");
+  if (opts?.brandedContent && privacy === "SELF_ONLY") throw new Error("Branded content can't be posted as Private (Only me).");
 
   const title = [caption, SOCIAL_DISCLOSURE].filter(Boolean).join("\n\n").slice(0, 2150);
   const initBody = {
     post_info: {
       title, privacy_level: privacy,
-      disable_duet: false, disable_comment: false, disable_stitch: false,
+      disable_comment: opts ? !opts.allowComment : false,
+      disable_duet: opts ? !opts.allowDuet : false,
+      disable_stitch: opts ? !opts.allowStitch : false,
       video_cover_timestamp_ms: 1000,
+      brand_organic_toggle: !!opts?.brandOrganic,
+      brand_content_toggle: !!opts?.brandedContent,
     },
     source_info: { source: "FILE_UPLOAD", video_size: size, chunk_size: size, total_chunk_count: 1 },
   };
@@ -163,4 +222,22 @@ export async function tiktokPublishVideo(videoUrl: string, caption: string): Pro
   });
   if (!put.ok) throw new Error(`TikTok upload failed (${put.status})`);
   return publishId;
+}
+
+// Poll a Direct Post's status: PROCESSING_UPLOAD → PUBLISH_COMPLETE / FAILED.
+export async function tiktokPublishStatus(publishId: string): Promise<{ status: string; detail?: string }> {
+  const token = await getSetting("TIKTOK_ACCESS_TOKEN");
+  if (!token) return { status: "ERROR", detail: "not connected" };
+  try {
+    const r = await fetch(`${API}/post/publish/status/fetch/`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ publish_id: publishId }),
+    });
+    const j = await r.json();
+    if (j.error && j.error.code && j.error.code !== "ok") return { status: "ERROR", detail: j.error.message };
+    const d = j.data || {};
+    return { status: d.status || "UNKNOWN", detail: d.fail_reason || undefined };
+  } catch (e) {
+    return { status: "ERROR", detail: e instanceof Error ? e.message : "error" };
+  }
 }
