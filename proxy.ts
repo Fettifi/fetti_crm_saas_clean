@@ -150,6 +150,8 @@ export const config = {
         '/api/doctor/:path*',
         '/api/preapprovals/:path*',
         '/api/tiktok/publish/:path*',
+        '/api/tiktok/publish-status/:path*',
+        '/api/tiktok/creator-info/:path*',
         '/api/chat/:path*',
         '/api/rupee/:path*',
         '/api/pricing/:path*',
