@@ -363,6 +363,34 @@ export async function importHistoricalLeads(): Promise<any> {
           if (seen.has(lgid)) { skipped++; pr.skipped++; continue; }
           const m = mapLead(lead.field_data || []);
           if (!m.email && !m.phone && !m.full_name) { skipped++; pr.skipped++; continue; }
+
+          // NO FRESH LEAD SLIPS: a lead the realtime webhook missed but that was submitted
+          // within the consent window gets the FULL speed-to-lead treatment — routed through
+          // /api/apply (instant auto-contact + 5-agent pipeline + qualification), exactly like
+          // the webhook. STALE leads stay silent (TCPA: a months-old Meta opt-in is NOT SMS
+          // consent) and fall through to the direct insert + "review before contacting" below.
+          const ageH = lead.created_time ? (Date.now() - new Date(lead.created_time).getTime()) / 3600000 : Infinity;
+          if (ageH <= 48) {
+            try {
+              const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+              const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+              if (process.env.CRON_SECRET) hdrs["x-fetti-internal"] = process.env.CRON_SECRET;
+              const ar = await fetch(`${appUrl}/api/apply`, {
+                method: "POST", headers: hdrs, signal: AbortSignal.timeout(15000),
+                body: JSON.stringify({
+                  full_name: m.full_name, email: m.email, phone: m.phone, state: m.state, loan_purpose: m.loan_purpose,
+                  credit_band: m.credit_band, credit_score: m.credit_score, liquid_assets: m.liquid_assets,
+                  property_value: m.property_value, income: m.income,
+                  source: "facebook", utm_source: "facebook", utm_medium: "paid_social",
+                  consent: true, consent_at: new Date().toISOString(),
+                  consent_text: "Submitted a Meta Lead Ad instant form requesting contact from Fetti Financial Services.",
+                  meta: { leadgen_id: lgid, form_id: form.id, page_id: page.id, created_time: lead.created_time },
+                }),
+              });
+              if (ar.ok) { seen.add(lgid); imported++; pr.imported++; continue; }
+            } catch { /* fall through to the direct insert below */ }
+          }
+
           // Score/tier through the SAME logic as /api/apply so imported paid leads
           // are prioritized for follow-up instead of sitting in the pipeline untiered.
           const { score, tier } = scoreLead({
