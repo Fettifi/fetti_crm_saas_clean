@@ -16,7 +16,7 @@ const CRM_PREFIXES = [
   "/agents", "/partners", "/requests", "/automations", "/task-list", "/roadmap",
   "/growth", "/content", "/doctor", "/preapprovals", "/rupee", "/pricing",
   "/funnel", "/ads", "/security", "/studio", "/dashboard", "/esign", "/pricer", "/income",
-  "/scenarios", "/compare",
+  "/scenarios", "/compare", "/show",
 ];
 
 export default function AppChrome({ children }: { children: ReactNode }) {
