@@ -121,7 +121,8 @@ export async function POST(req: NextRequest) {
             const firstAi = (await countRecentOutbound(leadId, "ai_reply", 365 * 86400000)) === 0;
             const { data: lf } = await supabaseAdmin.from("loan_files").select("share_token").eq("lead_id", leadId).limit(1).maybeSingle();
             const fileLink = (lf as any)?.share_token ? `${APP_URL}/file/${(lf as any).share_token}` : null;
-            const r = await markConciergeReply({ lead, history, fileLink, firstAiReply: firstAi });
+            const calendlyUrl = (await cfg("CALENDLY_URL")) || null;
+            const r = await markConciergeReply({ lead, history, fileLink, firstAiReply: firstAi, calendlyUrl });
             if (r.ok && r.reply) {
               const s = await sendSms(leadPhone, r.reply);
               if (s.ok) await logComms({ leadId, channel: "sms", direction: "outbound", type: "ai_reply", body: r.reply, to: leadPhone, providerId: s.sid, actor: "agent:mark" });

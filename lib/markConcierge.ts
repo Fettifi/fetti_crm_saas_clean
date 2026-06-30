@@ -24,13 +24,15 @@ const APPROVAL_PROMISE = /\b(guarantee|guaranteed)\b|\byou(?:'?re| are)\s+(pre-?
 // Returns a SAFE deferral (no numbers, drives to the secure app + a human follow-up)
 // if the draft promises rates/approvals or offers an out-of-area home loan, and forces
 // the CA SB 1001 AI disclosure on the first reply.
-function complianceGate(reply: string, ctx: { firstAiReply: boolean; state?: string | null; fileLink?: string | null }): { reply: string; flagged: boolean } {
+function complianceGate(reply: string, ctx: { firstAiReply: boolean; state?: string | null; fileLink?: string | null; calendlyUrl?: string | null }): { reply: string; flagged: boolean } {
   const stateOk = ctx.state ? OWNER_OCC_STATES.has(String(ctx.state).toUpperCase().trim()) : true;
   const offersOwnerOccOutOfArea = !stateOk && OWNER_OCC_KEYWORDS.test(reply);
   if (RATE_PROMISE.test(reply) || APPROVAL_PROMISE.test(reply) || offersOwnerOccOutOfArea) {
     const link = ctx.fileLink ? ` ${ctx.fileLink}` : "";
+    // Safe deferral always offers BOTH paths: finish the secure app, OR book a call.
+    const book = ctx.calendlyUrl ? ` Prefer to talk it through? Grab a time with us: ${ctx.calendlyUrl}` : ` I'll have a Fetti specialist follow up too.`;
     return {
-      reply: `It's Mark, Fetti's AI assistant. Your exact numbers depend on your scenario, so I won't quote something off — the fastest way to real options is to finish your secure application (about 2 minutes, no credit pull):${link} I'll have a Fetti specialist follow up too.`,
+      reply: `It's Mark, Fetti's AI assistant. Your exact numbers depend on your scenario, so I won't quote something off — the fastest way to real options is to finish your secure application (about 2 minutes, no credit pull):${link}${book}`,
       flagged: true,
     };
   }
@@ -40,13 +42,14 @@ function complianceGate(reply: string, ctx: { firstAiReply: boolean; state?: str
   return { reply, flagged: false };
 }
 
-function systemPrompt(lead: any, fileLink?: string | null, firstAiReply?: boolean): string {
+function systemPrompt(lead: any, fileLink?: string | null, firstAiReply?: boolean, calendlyUrl?: string | null): string {
   const name = (lead?.first_name || lead?.full_name || "").split(" ")[0] || "there";
   const ctx = [
     name ? `Their first name: ${name}.` : "",
     lead?.loan_purpose ? `What they came in for: ${lead.loan_purpose}.` : "",
     lead?.state ? `State: ${lead.state}.` : "",
     fileLink ? `Their secure file/application link (share it when it helps them move forward): ${fileLink}` : `If they're ready to start, point them to ${APP_URL}/apply.`,
+    calendlyUrl ? `Booking link — if they'd rather talk to a person, are stalling on the form, ask a question best answered live, or ask for a human, offer to book a quick call here: ${calendlyUrl}` : "",
   ].filter(Boolean).join(" ");
 
   return `${MARK_PERSONA}
@@ -57,7 +60,7 @@ STYLE: SMS-short. 1–3 sentences, warm, plain-English, ONE idea per text. No em
 
 DISCLOSURE: You are Mark, Fetti's AI assistant — NOT a human.${firstAiReply ? " Because this is your first reply in this conversation, make clear early and naturally that you're Fetti's AI assistant (e.g. \"It's Mark, Fetti's AI assistant\")." : " If they ask whether you're a bot/human, say plainly you're Fetti's AI assistant."} Any time they want a person, offer to connect them with the team.
 
-YOUR JOB: re-engage and help them move forward — answer their question simply, build confidence ("we fund the deals banks won't," "turned down before? that's exactly who we're built for"), and guide them to finish their application via their secure link. Don't be pushy; don't give up; lower friction ("about two minutes, no credit pull to start").
+YOUR JOB: re-engage and help them move forward — answer their question simply, build confidence ("we fund the deals banks won't," "turned down before? that's exactly who we're built for"), then drive to ONE of two next steps, whichever fits them: (A) finish their secure application (about two minutes, no credit pull to start), or (B) book a quick call using the booking link above. Read the signal: if they're ready/DIY, push the app; if they're hesitant, have questions best answered live, or ask to "talk to someone / a human," offer to book the call. Always give a clear next step. Don't be pushy; don't give up; lower friction.
 
 CONTEXT: ${ctx}
 
@@ -79,6 +82,7 @@ export async function markConciergeReply(opts: {
   history: ChatTurn[];
   fileLink?: string | null;
   firstAiReply?: boolean;
+  calendlyUrl?: string | null;
 }): Promise<{ ok: boolean; reply?: string; flagged?: boolean; detail: string }> {
   try {
     const key = process.env.OPENAI_API_KEY;
@@ -89,7 +93,7 @@ export async function markConciergeReply(opts: {
       .map((m) => ({ role: m.role, content: m.content.slice(0, 1200) }));
     if (!history.length || history[history.length - 1].role !== "user") return { ok: false, detail: "no inbound to answer" };
 
-    const messages = [{ role: "system", content: systemPrompt(opts.lead, opts.fileLink, opts.firstAiReply) }, ...history];
+    const messages = [{ role: "system", content: systemPrompt(opts.lead, opts.fileLink, opts.firstAiReply, opts.calendlyUrl) }, ...history];
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -102,7 +106,7 @@ export async function markConciergeReply(opts: {
     if (!reply) return { ok: false, detail: "empty reply" };
     // Deterministic compliance gate (never trust a temp>0 model with rate/approval/
     // licensing rules): swap in a safe deferral if needed + force first-reply disclosure.
-    const gate = complianceGate(reply, { firstAiReply: !!opts.firstAiReply, state: opts.lead?.state, fileLink: opts.fileLink });
+    const gate = complianceGate(reply, { firstAiReply: !!opts.firstAiReply, state: opts.lead?.state, fileLink: opts.fileLink, calendlyUrl: opts.calendlyUrl });
     reply = gate.reply;
     // SMS hygiene: cap length (~2 segments) and ensure a compliant opt-out cue.
     if (reply.length > 600) reply = reply.slice(0, 590).replace(/\s+\S*$/, "") + "…";
