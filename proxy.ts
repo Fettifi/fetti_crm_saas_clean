@@ -97,7 +97,7 @@ export async function proxy(request: NextRequest) {
 
     // Sensitive internal DATA APIs — return 401 (not a redirect) when unauthed.
     // Public APIs (apply, file portal, wizard, cron, sms) are NOT listed and stay open.
-    const apiProtected = ['/api/los', '/api/income', '/api/stats', '/api/tasks', '/api/players', '/api/bosses', '/api/growth/generate', '/api/content', '/api/doctor', '/api/preapprovals', '/api/tiktok/publish', '/api/tiktok/creator-info', '/api/chat', '/api/rupee', '/api/pricing', '/api/funnel', '/api/partners', '/api/agents', '/api/applications', '/api/tts', '/api/studio', '/api/settings', '/api/esign/requests', '/api/dashboard', '/api/pricer', '/api/referral', '/api/voice/messages', '/api/scenarios', '/api/wholesalers', '/api/conversations', '/api/compare', '/api/show']
+    const apiProtected = ['/api/los', '/api/income', '/api/stats', '/api/tasks', '/api/players', '/api/bosses', '/api/growth/generate', '/api/content', '/api/doctor', '/api/preapprovals', '/api/tiktok/publish', '/api/tiktok/creator-info', '/api/chat', '/api/rupee', '/api/pricing', '/api/funnel', '/api/partners', '/api/agents', '/api/applications', '/api/tts', '/api/studio', '/api/settings', '/api/esign/requests', '/api/dashboard', '/api/pricer', '/api/referral', '/api/voice/messages', '/api/scenarios', '/api/wholesalers', '/api/conversations', '/api/compare', '/api/show', '/api/admin']
     if (apiProtected.some(route => path.startsWith(route)) && !session) {
         return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
     }
@@ -173,5 +173,6 @@ export const config = {
         '/api/conversations/:path*',
         '/api/compare/:path*',
         '/api/show/:path*',
+        '/api/admin/:path*',
     ],
 }

@@ -11,6 +11,7 @@ export function SiteHeader() {
         </Link>
         <nav className="flex items-center gap-2 sm:gap-5 text-sm">
           <Link href="/lending" className="text-slate-600 hover:text-slate-900 transition hidden md:inline">Programs</Link>
+          <Link href="/calculator" className="text-slate-600 hover:text-slate-900 transition hidden md:inline">Calculator</Link>
           <Link href="/quote" className="text-slate-600 hover:text-slate-900 transition hidden sm:inline">Instant Quote</Link>
           <Link href="/apply/form" className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 rounded-full transition shadow-sm shadow-emerald-600/20">Apply</Link>
         </nav>
