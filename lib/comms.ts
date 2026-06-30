@@ -288,12 +288,27 @@ export async function listConversations(limit = 200): Promise<ConversationSummar
     .limit(1500);
 
   // Reduce to the most-recent message per lead.
+  // Pass 1: prefer the latest REAL message (comms.message has a human body).
   const latestByLead = new Map<string, ConversationMessage>();
   for (const r of acts || []) {
+    if ((r as any).action !== "comms.message") continue;
     const lid = (r as any).lead_id;
     if (!lid || latestByLead.has(lid)) continue; // rows are desc, first seen = latest
     const m = rowToMessage(r as Row);
     if (m) latestByLead.set(lid, m);
+  }
+  // Pass 2: leads whose ONLY activity is an automated nurture heartbeat still stay
+  // VISIBLE in the inbox (so every lead we've contacted shows up), with a CLEAN preview
+  // — no "(step 0) · doc_chase via email" cruft. The per-lead thread still hides the
+  // heartbeat entirely (rowToMessage → null), so conversations read human.
+  for (const r of acts || []) {
+    if ((r as any).action !== "nurture.sent") continue;
+    const lid = (r as any).lead_id;
+    if (!lid || latestByLead.has(lid)) continue;
+    const d = ((r as any).detail || {}) as any;
+    const channels: string[] = Array.isArray(d.channels) ? d.channels : [];
+    const ch: CommsChannel = channels.includes("email") && !channels.includes("sms") ? "email" : "sms";
+    latestByLead.set(lid, { id: (r as any).id, leadId: lid, direction: "outbound", channel: ch, type: "nurture", body: "Automated follow-up sent", at: (r as any).created_at, actor: (r as any).actor, status: "sent" });
   }
   const leadIds = Array.from(latestByLead.keys()).slice(0, limit);
   if (!leadIds.length) return [];
