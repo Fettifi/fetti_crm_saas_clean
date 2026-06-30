@@ -73,12 +73,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       : b.name ? [String(b.name).trim()] : [];
     if (!names.length) return NextResponse.json({ error: "name or items required" }, { status: 400 });
 
-    // Dedupe against docs already on this file (case-insensitive) so re-requesting an
-    // existing item (e.g. an auto-seeded "Bank statements") NEVER creates a duplicate.
+    // Per-borrower attribution: an item can be tracked SEPARATELY for each borrower on
+    // the file (each needs their own ID, pay stubs, etc.). The target borrower is passed
+    // as `borrowerName`; the doc->borrower map lives on lead.raw.doc_borrowers (no schema
+    // change). Untagged docs (seeded checklist, "someone else") belong to the primary/shared.
+    const borrowerName = typeof b.borrowerName === "string" && b.borrowerName.trim() ? b.borrowerName.trim() : null;
+    const { data: fileRow } = await supabaseAdmin.from("loan_files").select("lead_id").eq("id", id).maybeSingle();
+    const leadId = fileRow?.lead_id || null;
+    let leadRaw: any = {};
+    if (leadId) { const { data: l } = await supabaseAdmin.from("leads").select("raw").eq("id", leadId).maybeSingle(); leadRaw = (l?.raw && typeof l.raw === "object") ? l.raw : {}; }
+    const docBorrowers: Record<string, string> = (leadRaw.doc_borrowers && typeof leadRaw.doc_borrowers === "object") ? leadRaw.doc_borrowers : {};
+
+    // Dedupe WITHIN the same borrower bucket — so re-requesting an existing item for the
+    // SAME borrower never duplicates, but the same item CAN exist for a different borrower.
     const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
     const { data: existing } = await supabaseAdmin
-      .from("loan_documents").select("name").eq("loan_file_id", id);
-    const have = new Set((existing || []).map((d: any) => norm(String(d.name || ""))));
+      .from("loan_documents").select("id, name").eq("loan_file_id", id);
+    const have = new Set((existing || [])
+      .filter((d: any) => (docBorrowers[d.id] || null) === borrowerName)
+      .map((d: any) => norm(String(d.name || ""))));
     const fresh = names.filter((n) => !have.has(norm(n)));
     const alreadyOnFile = names.filter((n) => have.has(norm(n)));
     let docs: any[] = [];
@@ -91,7 +104,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       docs = data || [];
       for (const d of docs) {
-        await logActivity({ entity_type: "document", entity_id: d.id, loan_file_id: id, actor: "lo", action: "doc.requested", detail: { name: d.name } });
+        if (borrowerName) docBorrowers[d.id] = borrowerName;
+        await logActivity({ entity_type: "document", entity_id: d.id, loan_file_id: id, actor: "lo", action: "doc.requested", detail: { name: d.name, borrower: borrowerName } });
+      }
+      if (borrowerName && leadId) {
+        leadRaw.doc_borrowers = docBorrowers;
+        await supabaseAdmin.from("leads").update({ raw: leadRaw }).eq("id", leadId);
       }
     }
 
@@ -110,6 +128,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           to_phone: notify.to_phone || null,
           link, docs: names, note: notify.note || null,
           file_number: file.file_number || null, lo_name: notify.lo_name || null,
+          leadId: file.lead_id || null, loanFileId: id,
         });
         sent = res.sent;
         await logActivity({

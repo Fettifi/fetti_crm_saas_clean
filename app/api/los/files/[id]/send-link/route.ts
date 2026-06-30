@@ -19,7 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params;
     const { data: file } = await supabaseAdmin
       .from("loan_files")
-      .select("id, file_number, borrower_name, email, phone, share_token")
+      .select("id, file_number, borrower_name, email, phone, share_token, lead_id")
       .eq("id", id)
       .maybeSingle();
     if (!file) return NextResponse.json({ error: "Loan file not found." }, { status: 404 });
@@ -42,6 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       file_number: file.file_number,
       note: typeof body?.note === "string" && body.note.trim() ? body.note.trim() : null,
       calendly: (await cfg("CALENDLY_URL")) || null,
+      leadId: (file as any).lead_id || null, loanFileId: file.id,
     });
 
     await logActivity({

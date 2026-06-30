@@ -5,7 +5,7 @@
 // compounding guidance. Its `config` output is fed straight back into the live
 // wizard so each cohort of applicants benefits from what earlier ones taught us.
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
 export type OptimizerInput = {
   period: string;

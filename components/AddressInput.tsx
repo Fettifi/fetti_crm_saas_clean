@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MapPin, Check, Loader2, ExternalLink, AlertTriangle } from "lucide-react";
 
-type Result = { verified: boolean; standardized?: string; mapsUrl: string };
+type Result = { verified: boolean; standardized?: string; mapsUrl: string; city?: string; state?: string; zip?: string };
 const GKEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
 
 export default function AddressInput({
@@ -50,6 +50,15 @@ export default function AddressInput({
     timer.current = setTimeout(() => fetchSuggestions(v), 300);
   }
 
+  // Hand the caller the PARSED, standardized address — street line on its own PLUS
+  // city/state/zip — so a verified address fills structured fields completely (e.g. it
+  // populates the whole 1003 property/borrower address, not just the street).
+  function emit(r: Result, fallback: string) {
+    const std = r.standardized || fallback;
+    const street = std.split(",")[0]?.trim() || std;
+    onResolved?.({ formatted: std, street, city: r.city, state: r.state, zip: r.zip });
+  }
+
   async function verify(addr?: string) {
     const q = (addr ?? value ?? "").trim();
     if (q.length < 5) { setRes(null); return; }
@@ -57,7 +66,7 @@ export default function AddressInput({
     try {
       const r = await fetch(`/api/verify-address?q=${encodeURIComponent(q)}`);
       const j = (await r.json()) as Result;
-      setRes(j); onVerified?.(j); onResolved?.({ formatted: j.standardized || q, street: j.standardized || q });
+      setRes(j); onVerified?.(j); emit(j, q);
     } finally { setBusy(false); }
   }
 
@@ -103,7 +112,7 @@ export default function AddressInput({
             <div className="flex flex-wrap items-center gap-2 text-emerald-400">
               <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Verified</span>
               {res.standardized && res.standardized.toLowerCase() !== value.trim().toLowerCase() && (
-                <button type="button" onClick={() => onChange(res.standardized!)} className="text-indigo-300 hover:underline">use “{res.standardized}”</button>
+                <button type="button" onClick={() => { onChange(res.standardized!.split(",")[0]?.trim() || res.standardized!); emit(res, value); }} className="text-indigo-300 hover:underline">use “{res.standardized}”</button>
               )}
               <a href={res.mapsUrl} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-white flex items-center gap-0.5"><ExternalLink className="w-3 h-3" /> view on map</a>
             </div>

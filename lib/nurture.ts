@@ -103,7 +103,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         const fn = (l.first_name || l.full_name || "there").split(" ")[0];
         const msg = `Hi ${fn}, it's Mark — congrats on closing with Fetti Financial Services! 🎉 If we earned it, a quick Google review genuinely helps a small shop like ours: ${reviewUrl} — thank you! (Reply STOP to opt out.)`;
         try {
-          const res = await respondToLead({ name: fn, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg });
+          const res = await respondToLead({ id: l.id, kind: "nurture", name: fn, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg });
           const raw = l.raw && typeof l.raw === "object" ? l.raw : {};
           raw.review_requested = new Date().toISOString();
           await supabaseAdmin.from("leads").update({ raw }).eq("id", l.id);
@@ -138,7 +138,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       const list = missing.slice(0, 3).join(", ") + (missing.length > 3 ? `, +${missing.length - 3} more` : "");
       const message = `Hi ${name}, it's Mark — you're almost there on ${purpose}! Still need: ${list}. Upload securely here: ${link}${bookLine} (Reply STOP to opt out.)`;
       try {
-        const res = await respondToLead({ name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message });
+        const res = await respondToLead({ id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message });
         await supabaseAdmin.from("leads").update({ last_nurture_at: new Date().toISOString() }).eq("id", l.id);
         chased++; sent++;
         await logSent(l.id, "doc_chase", 0, res?.sent || []);
@@ -161,7 +161,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       try {
         const link = await leadFileLink(l.id);
         const finishLine = link ? ` Pick up where you left off: ${link}` : "";
-        const res = await respondToLead({ name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: due.msg(name, purpose) + finishLine + bookLine });
+        const res = await respondToLead({ id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: due.msg(name, purpose) + finishLine + bookLine });
         await supabaseAdmin.from("leads").update({ nurture_step: due.step, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
         sent++;
         await logSent(l.id, "drip", due.step, res?.sent || []);
@@ -175,7 +175,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     try {
       const link = await leadFileLink(l.id);
       const finishLine = link ? ` Pick up where you left off: ${link}` : "";
-      const res = await respondToLead({ name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg + finishLine + bookLine });
+      const res = await respondToLead({ id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg + finishLine + bookLine });
       await supabaseAdmin.from("leads").update({ nurture_step: curStep + 1, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
       reactivated++; sent++;
       await logSent(l.id, "reactivation", curStep + 1, res?.sent || []);

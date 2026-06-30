@@ -278,6 +278,7 @@ export async function POST(req: NextRequest) {
         let autoSent: string[] = [];
         try {
           const res = await respondToLead({
+            id: newLead.id, kind: "first_touch",
             name: full_name, email, phone, loan_purpose: body.loan_purpose, message: (draftReply || "") + docsLine, link: fileLink,
           });
           autoSent = res.sent;

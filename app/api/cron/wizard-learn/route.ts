@@ -117,7 +117,7 @@ async function learn() {
     insights: result.insights,
     recommendations: result.recommendations,
     config: result.config,
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: process.env.OPENAI_MODEL || "gpt-4o",
   }]);
 
   return { ok: true, sample, summary: result.summary, insights: result.insights, recommendations: result.recommendations, config: result.config };

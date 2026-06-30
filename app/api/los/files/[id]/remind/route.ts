@@ -39,6 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const res = await sendDocRequest({
       to_name, to_email, to_phone, link, docs: missing,
       note: b.note || null, file_number: file.file_number || null, lo_name: b.lo_name || null,
+      leadId: file.lead_id || null, loanFileId: id,
     });
     await logActivity({
       entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: file.lead_id,

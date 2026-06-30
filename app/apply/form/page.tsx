@@ -159,6 +159,19 @@ const DEFAULT_REBUTTALS: Record<string, string> = {
   high_balance: "Owe a lot relative to the value? There are still options. And improving your equity is a strategy we can plan toward. Let's keep going.",
 };
 
+// The "little to nothing down" objection is the buy flow's weakest point (it
+// converts ~50%). The generic "FHA/VA/USDA" floor ignores what we JUST learned
+// two questions earlier — whether they're a veteran or a first-time buyer. Speak
+// to the specific door already open to them and the rebuttal lands far harder.
+// (A learned config override, if present, still wins over this.)
+function lowDownMessage(a: Answers): string {
+  if (a.military === "yes")
+    return "Here's the good news: as a veteran you may qualify for a $0-down VA loan. Little to put down is exactly who this is built for. Let's confirm what you've earned. 🎖️";
+  if (a.firsttime === "yes")
+    return "First-time buyers get the most help here. Conventional loans go as low as 3% down, and down payment assistance grants can cover much of the rest. Little saved is a starting line, not a wall. Let's keep going. 🙌";
+  return "Little to put down? That's one of the easiest things to solve. FHA needs just 3.5%, and down payment assistance can cover much of the rest. Let's find the program that fits you. 🙌";
+}
+
 // Returns an obstacle key if this answer is a known friction point, else null.
 function detectObstacle(id: string, value: string, a: Answers): string | null {
   if (id === "credit" && value === "600") return "low_credit";
@@ -395,7 +408,7 @@ export default function ApplyWizard() {
   function maybeCoach(id: string, value: string, next: Answers, phaseName: string, advance: () => void): boolean {
     const key = detectObstacle(id, value, next);
     if (!key) return false;
-    const message = rebuttals[key] || DEFAULT_REBUTTALS[key];
+    const message = rebuttals[key] || (key === "low_down" ? lowDownMessage(next) : DEFAULT_REBUTTALS[key]);
     advanceRef.current = advance;
     setCoach({ key, message });
     track("objection", { phase: phaseName, step_id: id, goal: next.goal, occupancy: effectiveOccupancy(next), product: product(next), meta: { obstacle: key } });

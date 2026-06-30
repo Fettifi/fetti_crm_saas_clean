@@ -75,6 +75,7 @@ export default function AdsPage() {
               ["NEXT_PUBLIC_META_PIXEL_ID", "your Meta Pixel ID (Meta Events Manager → Data Sources → create pixel)"],
               ["NEXT_PUBLIC_GOOGLE_ADS_ID", "AW-XXXXXXXXX (Google Ads → Tools → Google tag)"],
               ["NEXT_PUBLIC_GOOGLE_CONVERSION", "AW-XXXXXXXXX/label (your 'Lead' conversion action)"],
+              ["NEXT_PUBLIC_GOOGLE_APP_CONVERSION", "AW-XXXXXXXXX/label (distinct 'SubmitApplication' conversion — bid harder on completed 1003s; falls back to Lead if unset)"],
             ].map(([k, d]) => (
               <div key={k} className="flex items-center justify-between gap-2 bg-slate-900/60 border border-slate-800 rounded px-2 py-1.5">
                 <div className="min-w-0"><span className="text-emerald-300">{k}</span> <span className="text-[11px] text-slate-500 font-sans">— {d}</span></div>

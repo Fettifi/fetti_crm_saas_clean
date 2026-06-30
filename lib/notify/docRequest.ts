@@ -6,6 +6,8 @@
 // LEAD_RESPONSE_FROM_EMAIL, SMS needs Twilio creds. No-ops safely if a channel
 // isn't configured, and never throws.
 
+import { logComms } from "@/lib/comms";
+
 export type DocRequest = {
   to_name?: string | null;
   to_email?: string | null;
@@ -15,6 +17,8 @@ export type DocRequest = {
   note?: string | null; // optional personal note from the loan officer
   file_number?: string | null;
   lo_name?: string | null; // who is asking (defaults to Fetti Financial Services)
+  leadId?: string | null;     // when set, the send is logged to the conversation thread
+  loanFileId?: string | null;
 };
 
 function escapeHtml(s: string): string {
@@ -55,6 +59,8 @@ async function emailDocRequest(r: DocRequest): Promise<boolean> {
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from, to: [r.to_email], subject, html }),
   });
+  const j = await res.json().catch(() => ({} as any));
+  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "email", direction: "outbound", type: "doc_request", subject, body: `Requested documents: ${r.docs.join(", ")}${r.note ? ` — ${r.note}` : ""}`, to: r.to_email, actor: "lo", providerId: j?.id }).catch(() => {});
   return res.ok;
 }
 
@@ -76,6 +82,8 @@ async function smsDocRequest(r: DocRequest): Promise<boolean> {
     },
     body: params.toString(),
   });
+  const j = await res.json().catch(() => ({} as any));
+  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "sms", direction: "outbound", type: "doc_request", body, to, actor: "lo", providerId: j?.sid }).catch(() => {});
   return res.ok;
 }
 
@@ -90,6 +98,8 @@ export type UploadLinkSend = {
   lo_name?: string | null;
   note?: string | null;
   calendly?: string | null; // optional "book a call" link
+  leadId?: string | null;
+  loanFileId?: string | null;
 };
 
 async function emailUploadLink(r: UploadLinkSend): Promise<boolean> {
@@ -113,6 +123,8 @@ async function emailUploadLink(r: UploadLinkSend): Promise<boolean> {
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from, to: [r.to_email], subject: "Your secure Fetti document portal", html }),
   });
+  const j = await res.json().catch(() => ({} as any));
+  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "email", direction: "outbound", type: "upload_link", subject: "Your secure Fetti document portal", body: `Sent secure document portal link${r.note ? ` — ${r.note}` : ""}: ${r.link}`, to: r.to_email, actor: "lo", providerId: j?.id }).catch(() => {});
   return res.ok;
 }
 
@@ -134,6 +146,8 @@ async function smsUploadLink(r: UploadLinkSend): Promise<boolean> {
     },
     body: params.toString(),
   });
+  const j = await res.json().catch(() => ({} as any));
+  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "sms", direction: "outbound", type: "upload_link", body, to, actor: "lo", providerId: j?.sid }).catch(() => {});
   return res.ok;
 }
 
@@ -151,6 +165,7 @@ export async function sendUploadLink(r: UploadLinkSend): Promise<{ sent: string[
 export type SignSend = {
   to_name?: string | null; to_email?: string | null; to_phone?: string | null;
   link: string; title: string; lo_name?: string | null;
+  leadId?: string | null; loanFileId?: string | null;
 };
 async function emailSign(r: SignSend): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
@@ -169,6 +184,8 @@ async function emailSign(r: SignSend): Promise<boolean> {
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from, to: [r.to_email], subject: `Please sign: ${r.title}`, html }),
   });
+  const j = await res.json().catch(() => ({} as any));
+  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "email", direction: "outbound", type: "esign_request", subject: `Please sign: ${r.title}`, body: `E-signature request: ${r.title} — ${r.link}`, to: r.to_email, actor: "lo", providerId: j?.id }).catch(() => {});
   return res.ok;
 }
 async function smsSign(r: SignSend): Promise<boolean> {
@@ -182,6 +199,8 @@ async function smsSign(r: SignSend): Promise<boolean> {
     headers: { Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ To: to, From: from, Body: body }).toString(),
   });
+  const j = await res.json().catch(() => ({} as any));
+  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "sms", direction: "outbound", type: "esign_request", body, to, actor: "lo", providerId: j?.sid }).catch(() => {});
   return res.ok;
 }
 /** Send an e-signature request over every configured channel. Never throws. */

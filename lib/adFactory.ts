@@ -41,7 +41,7 @@ Rules: the LAST beat's vo MUST end with "${MARK_COMPANY_SIGNOFF}" and its captio
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         response_format: { type: "json_object" },
         temperature: 0.85,
         messages: [{ role: "system", content: sys }, { role: "user", content: `Storyboard one ${n}-beat animated Mark short as JSON now${topic ? ` about: ${topic}` : ""}.` }],
@@ -92,7 +92,7 @@ Rules: vary the topics across the ${n} concepts; teach accurately so the how-to 
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         response_format: { type: "json_object" },
         temperature: 0.9,
         messages: [{ role: "system", content: sys }, { role: "user", content: `Generate ${n} fresh, varied informational short-video concepts as JSON now.` }],

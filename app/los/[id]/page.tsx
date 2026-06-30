@@ -12,10 +12,11 @@ import { borrowerCode } from "@/lib/borrowerCode";
 import DeleteConfirm from "@/components/DeleteConfirm";
 import ConditionsImporter from "@/components/los/ConditionsImporter";
 import IncomeQualifier from "@/components/los/IncomeQualifier";
+import CardAuthPanel from "@/components/los/CardAuthPanel";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
 
-type Doc = { id: string; name: string; category: string; required: boolean; status: string; file_name?: string; storage_path?: string; notes?: string };
+type Doc = { id: string; name: string; category: string; required: boolean; status: string; file_name?: string; storage_path?: string; notes?: string; borrowerName?: string | null };
 type Comp = { key: string; label: string; done: boolean };
 type FileT = { id: string; file_number: string; borrower_name: string; email?: string; phone?: string; product: string; occupancy?: string; property_address?: string; property_value?: number; loan_amount?: number; state?: string; stage: string; status: string; share_token: string; compliance: Comp[]; lead_id?: string };
 type Act = { id: string; actor: string; action: string; detail: any; created_at: string };
@@ -56,7 +57,9 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   }
   // In-file document request composer.
   const [reqList, setReqList] = useState<string[]>([]);
-  const [recipient, setRecipient] = useState<"borrower" | "other">("borrower");
+  // Recipient = a borrower INDEX ("0", "1", …) on this file, or "other" (custom).
+  const [recipient, setRecipient] = useState<string>("0");
+  const [docFilter, setDocFilter] = useState<string>("all"); // doc list filter: "all" or a borrower name
   const [other, setOther] = useState({ name: "", email: "", phone: "" });
   const [reqNote, setReqNote] = useState("");
   const [sendingReq, setSendingReq] = useState(false);
@@ -157,25 +160,44 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     setReqList((l) => (l.includes(n) ? l : [...l, n]));
     setNewDoc("");
   }
+  // The borrowers on this file (from the 1003), each with their OWN contact — so a
+  // co-borrower's link/request goes to THEIR email/phone, not the primary's.
+  const borrowers = ((mismo?.urla?.borrowers as any[]) || []).map((b: any, i: number) => ({
+    index: i,
+    name: b.fullName || [b.firstName, b.lastName].filter(Boolean).join(" ") || (i === 0 ? (file?.borrower_name || "Borrower 1") : `Borrower ${i + 1}`),
+    email: b.email || (i === 0 ? file?.email : null) || null,
+    phone: b.cellPhone || b.homePhone || (i === 0 ? file?.phone : null) || null,
+  }));
+  // Resolve the currently-selected recipient to { to_name, to_email, to_phone }.
+  function recipientContact(): { to_name: string | null; to_email: string | null; to_phone: string | null } {
+    if (recipient === "other") return { to_name: other.name || null, to_email: other.email || null, to_phone: other.phone || null };
+    const b = borrowers[Number(recipient)] || borrowers[0];
+    return { to_name: b?.name || file?.borrower_name || null, to_email: b?.email || null, to_phone: b?.phone || null };
+  }
+  // The borrower name to ATTRIBUTE requested docs to (null for "someone else" = shared).
+  function recipientBorrowerName(): string | null { return recipient === "other" ? null : (borrowers[Number(recipient)]?.name || null); }
+  // Doc list filtered by the borrower toggle. Untagged docs (seeded checklist) belong to
+  // the primary borrower's view. "all" shows everyone's, each with a borrower badge.
+  const primaryName = borrowers[0]?.name || null;
+  const shownDocs = docFilter === "all" ? docs : docs.filter((d) => (d.borrowerName || null) === docFilter || (docFilter === primaryName && !d.borrowerName));
+
   async function addOnly() {
     if (!reqList.length) { setReqMsg({ text: "Add at least one document." }); return; }
     setSendingReq(true); setReqMsg(null);
-    await fetch(`/api/los/files/${id}/docs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: reqList }) });
+    await fetch(`/api/los/files/${id}/docs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: reqList, borrowerName: recipientBorrowerName() }) });
     setReqList([]); setReqMsg({ ok: true, text: "Added to checklist." }); setSendingReq(false); await load();
   }
   async function sendRequest() {
     if (!reqList.length) { setReqMsg({ text: "Add at least one document to request." }); return; }
-    const notify: any = recipient === "borrower"
-      ? { to_name: file?.borrower_name, to_email: file?.email, to_phone: file?.phone }
-      : { to_name: other.name || null, to_email: other.email || null, to_phone: other.phone || null };
+    const notify: any = recipientContact();
     if (!notify.to_email && !notify.to_phone) {
-      setReqMsg({ text: recipient === "borrower" ? "No borrower email/phone on file — use “Someone else”." : "Add an email or phone for the recipient." });
+      setReqMsg({ text: recipient === "other" ? "Add an email or phone for the recipient." : "No email/phone on file for this borrower — add it on the 1003, or use “Someone else”." });
       return;
     }
     if (reqNote.trim()) notify.note = reqNote.trim();
     setSendingReq(true); setReqMsg(null);
     try {
-      const r = await fetch(`/api/los/files/${id}/docs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: reqList, notify }) });
+      const r = await fetch(`/api/los/files/${id}/docs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: reqList, notify, borrowerName: recipientBorrowerName() }) });
       const j = await r.json();
       if (r.ok) {
         const ch = (j.sent || []).join(" + ");
@@ -191,7 +213,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   async function remindMissing() {
     setSendingReq(true); setReqMsg(null);
     try {
-      const r = await fetch(`/api/los/files/${id}/remind`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const r = await fetch(`/api/los/files/${id}/remind`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(recipientContact()) });
       const j = await r.json();
       if (r.ok) {
         if (j.missing === 0) setReqMsg({ ok: true, text: "✓ All documents are already in — nothing to request." });
@@ -255,7 +277,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     if (!file) return;
     setSendingLink(true); setLinkMsg(null);
     try {
-      const r = await fetch(`/api/los/files/${id}/send-link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const r = await fetch(`/api/los/files/${id}/send-link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(recipientContact()) });
       const j = await r.json();
       setLinkMsg({ ok: r.ok && (j.sent?.length > 0), text: r.ok ? j.message : (j.error || "Failed to send.") });
     } catch { setLinkMsg({ text: "⚠️ Connection error." }); }
@@ -289,6 +311,17 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
             {file.property_address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(file.property_address)}`} target="_blank" rel="noreferrer" className="text-xs text-emerald-400 hover:underline">🗺️ View property on map</a>}
           </div>
           <div className="flex flex-col items-end gap-1">
+            {borrowers.length > 1 && (
+              <div className="flex items-center gap-1.5 flex-wrap justify-end mb-0.5">
+                <span className="text-[11px] text-slate-500">Send link to:</span>
+                {borrowers.map((b) => (
+                  <button key={b.index} onClick={() => setRecipient(String(b.index))} title={[b.email, b.phone].filter(Boolean).join(" · ") || "no contact on file"}
+                    className={`text-[11px] px-2 py-0.5 rounded-full ${recipient === String(b.index) ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 text-slate-300"}`}>
+                    {b.name.split(" ")[0]}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <button onClick={sendBorrowerLink} disabled={sendingLink} className="flex items-center gap-2 text-sm bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-3 py-2 rounded-lg">
                 {sendingLink ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send upload link
@@ -301,7 +334,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
               <button onClick={() => setDelOpen(true)} title="Delete this loan file permanently" className="flex items-center gap-1.5 text-sm bg-slate-800 hover:bg-red-900/60 text-red-300 px-3 py-2 rounded-lg"><Trash2 className="w-4 h-4" /> Delete</button>
             </div>
             {linkMsg && <span className={`text-xs ${linkMsg.ok ? "text-emerald-400" : "text-amber-300"}`}>{linkMsg.text}</span>}
-            <span className="text-[11px] text-slate-500">Texts/emails {file.borrower_name?.split(" ")[0] || "the borrower"} their secure link for file <span className="font-mono text-sky-300">{code}</span></span>
+            <span className="text-[11px] text-slate-500">Texts/emails {(recipient === "other" ? (other.name || "the recipient") : (borrowers[Number(recipient)]?.name || file.borrower_name || "the borrower")).split(" ")[0]} their secure link for file <span className="font-mono text-sky-300">{code}</span></span>
           </div>
         </div>
 
@@ -323,8 +356,19 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
               <div className="text-xs uppercase tracking-wide text-slate-500">Documents & conditions</div>
               <a href={`/esign?file=${id}`} className="text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1">✍️ Send for signature</a>
             </div>
+            {borrowers.length > 1 && (
+              <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                <span className="text-[11px] text-slate-500">Outstanding for:</span>
+                <button onClick={() => setDocFilter("all")} className={`text-[11px] px-2.5 py-1 rounded-full ${docFilter === "all" ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 text-slate-300"}`}>Both</button>
+                {borrowers.map((b) => {
+                  const cnt = docs.filter((d) => ((d.borrowerName || null) === b.name || (b.index === 0 && !d.borrowerName)) && (d.status === "needed" || d.status === "rejected")).length;
+                  return <button key={b.index} onClick={() => setDocFilter(b.name)} className={`text-[11px] px-2.5 py-1 rounded-full ${docFilter === b.name ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 text-slate-300"}`}>{b.name.split(" ")[0]}{cnt ? ` · ${cnt} open` : ""}</button>;
+                })}
+              </div>
+            )}
             <div className="space-y-2">
-              {docs.map((d) => {
+              {shownDocs.length === 0 && <div className="text-xs text-slate-500">No documents for this borrower yet.</div>}
+              {shownDocs.map((d) => {
                 const rejected = d.status === "rejected";
                 // "Provided" = a file is in AND not rejected. A rejected doc reads as
                 // NOT provided (re-upload needed) and stays in the missing queue.
@@ -332,7 +376,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                 return (
                   <div key={d.id} className={`flex items-center justify-between gap-2 border-b border-slate-800/50 pb-2 ${rejected ? "bg-red-950/20 -mx-2 px-2 rounded" : ""}`}>
                     <div className="min-w-0">
-                      <div className="font-medium truncate">{d.name} {d.required && !provided && <span className="text-[10px] text-amber-400/70">required</span>}</div>
+                      <div className="font-medium truncate">{d.name} {d.required && !provided && <span className="text-[10px] text-amber-400/70">required</span>}{borrowers.length > 1 && (d.borrowerName || primaryName) && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 align-middle">{(d.borrowerName || primaryName)!.split(" ")[0]}</span>}</div>
                       <div className={`text-xs ${badge(d.status)}`}>{rejected ? "rejected · not provided — awaiting new upload" : `${d.status}${d.file_name ? ` · ${d.file_name}` : ""}`}</div>
                       {rejected && d.notes && <div className="text-[11px] text-red-300/90 mt-0.5">↩︎ Sent back: {d.notes}</div>}
                     </div>
@@ -393,19 +437,24 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                 ))}
               </div>
 
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
                 <span className="text-slate-500 text-xs">Send to:</span>
-                <button onClick={() => setRecipient("borrower")} className={`text-xs px-2.5 py-1 rounded-full ${recipient === "borrower" ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 text-slate-300"}`}>Borrower</button>
+                {borrowers.map((b) => (
+                  <button key={b.index} onClick={() => setRecipient(String(b.index))} title={[b.email, b.phone].filter(Boolean).join(" · ") || "no contact on file"}
+                    className={`text-xs px-2.5 py-1 rounded-full ${recipient === String(b.index) ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 text-slate-300"}`}>
+                    {borrowers.length > 1 ? b.name : "Borrower"}
+                  </button>
+                ))}
                 <button onClick={() => setRecipient("other")} className={`text-xs px-2.5 py-1 rounded-full ${recipient === "other" ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 text-slate-300"}`}>Someone else</button>
               </div>
-              {recipient === "borrower" ? (
-                <div className="text-xs text-slate-500 mt-1.5">{[file.email, file.phone].filter(Boolean).join(" · ") || "No borrower email/phone on file — add one on the lead, or use “Someone else”."}</div>
-              ) : (
+              {recipient === "other" ? (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
                   <input value={other.name} onChange={(e) => setOther({ ...other, name: e.target.value })} placeholder="Name (e.g. CPA, title co.)" className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm focus:border-emerald-500 focus:outline-none" />
                   <input value={other.email} onChange={(e) => setOther({ ...other, email: e.target.value })} placeholder="Email" className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm focus:border-emerald-500 focus:outline-none" />
                   <input value={other.phone} onChange={(e) => setOther({ ...other, phone: e.target.value })} placeholder="Phone (optional)" className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm focus:border-emerald-500 focus:outline-none" />
                 </div>
+              ) : (
+                <div className="text-xs text-slate-500 mt-1.5">{(() => { const c = recipientContact(); return [c.to_email, c.to_phone].filter(Boolean).join(" · ") || "No email/phone on file for this borrower — add it on the 1003, or use “Someone else”."; })()}</div>
               )}
 
               <textarea value={reqNote} onChange={(e) => setReqNote(e.target.value)} rows={2} placeholder="Optional note (added to the email)…"
@@ -501,6 +550,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
 
         {/* Income & qualification — the income calc embedded in the file, prefilled from the 1003 */}
         {mismo?.metrics && <IncomeQualifier metrics={mismo.metrics} loan={mismo.urla?.loan} fileId={id} borrowerEmail={file.email} />}
+        <CardAuthPanel fileId={id} />
 
         {/* AI Deal Screen (Relip-style triage + lender match) */}
         <div className="bg-gradient-to-br from-emerald-950/40 to-slate-900/40 border border-emerald-800/40 rounded-2xl p-5 mt-4">

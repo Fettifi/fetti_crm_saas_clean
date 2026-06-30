@@ -1,9 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
 import { logHotLeadReply } from "@/lib/notify/hotLeadReply";
+import { logComms, sendSms, getLeadMessagesForAI, countRecentOutbound } from "@/lib/comms";
+import { markConciergeReply } from "@/lib/markConcierge";
+import { cfg } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
 // Twilio inbound SMS webhook ("A message comes in"). When a lead replies:
 //  - pause their automated nurture (they're engaged — a human takes over)
@@ -30,6 +35,7 @@ export async function POST(req: NextRequest) {
     const from = String(params["From"] || "");
     const body = String(params["Body"] || "").trim();
     const digits = from.replace(/\D/g, "").slice(-10);
+    const msgSid = String(params["MessageSid"] || ""); // Twilio's unique id for THIS inbound — used for retry idempotency
 
     // Keyword opt-in (e.g. "Text DEAL to ..." from The Lot). Because the viewer
     // texts US first, this is express written consent (TCPA-compliant). We log
@@ -61,11 +67,21 @@ export async function POST(req: NextRequest) {
     if (digits) {
       const { data: lead } = await supabaseAdmin
         .from("leads")
-        .select("id, full_name, phone")
+        .select("id, full_name, first_name, phone, loan_purpose, state")
         .eq("phone", digits)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
+
+      // Twilio retries the webhook if our response is slow — guard against
+      // double-processing (duplicate inbound log + duplicate AI text). If we've
+      // already recorded this exact inbound (by Twilio MessageSid), ack and stop.
+      if (lead && msgSid) {
+        const { data: seen } = await supabaseAdmin.from("activity_log")
+          .select("id").eq("lead_id", (lead as any).id).eq("action", "comms.message")
+          .filter("detail->>providerId", "eq", msgSid).limit(1).maybeSingle();
+        if (seen) return new NextResponse("<Response></Response>", { status: 200, headers: { "Content-Type": "text/xml" } });
+      }
 
       // Only a genuine opt-out pauses nurture (TCPA). A normal reply is a HOT
       // engagement signal — keep nurturing (throttled) and alert the team to jump
@@ -78,6 +94,41 @@ export async function POST(req: NextRequest) {
         // Persist it as a top-priority CRM task so the conversion moment lands
         // in the task list, not just an ephemeral Discord ping.
         await logHotLeadReply({ leadId: (lead as any).id, name: (lead as any).full_name, phone: from, body });
+      }
+
+      // Record the inbound text on the conversation timeline (Conversations inbox),
+      // so every reply — including opt-outs — shows in-thread next to what we sent.
+      if (lead) {
+        try { await logComms({ leadId: (lead as any).id, channel: "sms", direction: "inbound", type: isStop ? "optout" : "reply", body, from, status: "received", providerId: msgSid || null }); } catch { /* best-effort */ }
+      }
+
+      // AI concierge: Mark replies in real time so a nurture follow-up becomes a
+      // genuine two-way conversation, not a one-way drip. Runs AFTER the response
+      // (Next after()) so the webhook returns in ~200ms — under Twilio's timeout, so
+      // Twilio doesn't retry (a retry would double-text). Guardrails — never on an
+      // opt-out, kill-switch (AI_SMS_CONCIERGE=off), a per-lead daily cap, and a
+      // deterministic compliance gate inside markConcierge. Human team is alerted
+      // (hot-reply task above); if the AI errors we stay silent (no bad text).
+      if (lead && !isStop) {
+        const leadId = (lead as any).id;
+        const leadPhone = (lead as any).phone || from;
+        after(async () => {
+          try {
+            if ((await cfg("AI_SMS_CONCIERGE")) === "off") return;
+            const aiToday = await countRecentOutbound(leadId, "ai_reply", 24 * 3600000);
+            if (aiToday >= 8) return;
+            const history = await getLeadMessagesForAI(leadId);
+            const firstAi = (await countRecentOutbound(leadId, "ai_reply", 365 * 86400000)) === 0;
+            const { data: lf } = await supabaseAdmin.from("loan_files").select("share_token").eq("lead_id", leadId).limit(1).maybeSingle();
+            const fileLink = (lf as any)?.share_token ? `${APP_URL}/file/${(lf as any).share_token}` : null;
+            const r = await markConciergeReply({ lead, history, fileLink, firstAiReply: firstAi });
+            if (r.ok && r.reply) {
+              const s = await sendSms(leadPhone, r.reply);
+              if (s.ok) await logComms({ leadId, channel: "sms", direction: "outbound", type: "ai_reply", body: r.reply, to: leadPhone, providerId: s.sid, actor: "agent:mark" });
+              else console.warn("[sms/inbound] AI reply send failed:", s.detail);
+            } else { console.warn("[sms/inbound] AI concierge skipped:", r.detail); }
+          } catch (e) { console.warn("[sms/inbound] AI concierge error", e); }
+        });
       }
 
       const hook = process.env.LEAD_NOTIFY_WEBHOOK;

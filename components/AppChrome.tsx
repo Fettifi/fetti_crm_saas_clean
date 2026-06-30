@@ -12,10 +12,11 @@ import MarkChat from "@/components/MarkChat";
 // excluded: on the apex domain it is the public homepage (rewritten to /home),
 // so wrapping it in the CRM shell would be wrong.
 const CRM_PREFIXES = [
-  "/leads", "/pipeline", "/settings", "/training", "/team", "/command", "/los",
+  "/leads", "/conversations", "/pipeline", "/settings", "/training", "/team", "/command", "/los",
   "/agents", "/partners", "/requests", "/automations", "/task-list", "/roadmap",
   "/growth", "/content", "/doctor", "/preapprovals", "/rupee", "/pricing",
   "/funnel", "/ads", "/security", "/studio", "/dashboard", "/esign", "/pricer", "/income",
+  "/scenarios", "/compare",
 ];
 
 export default function AppChrome({ children }: { children: ReactNode }) {

@@ -191,7 +191,10 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     firstName: seededBorrower.firstName || firstName,
     lastName: seededBorrower.lastName || lastName,
     fullName: seededBorrower.fullName || lead?.full_name || [firstName, lastName].filter(Boolean).join(" ") || undefined,
-    ssn: decryptField(seededBorrower.ssn) || raw.ssn || n["ssn"] || undefined,
+    // Decrypt EVERY fallback — `raw.ssn` (the apply-form top-level SSN) is stored
+    // ENCRYPTED, so without decrypting it the 1003 showed the raw ciphertext ("jungle
+    // numbers"). decryptField passes legacy plaintext through untouched.
+    ssn: decryptField(seededBorrower.ssn) || decryptField(raw.ssn) || decryptField(n["ssn"]) || undefined,
     dob: seededBorrower.dob || n["dob"] || undefined,
     citizenship: seededBorrower.citizenship || n["citizenship"] || undefined,
     maritalStatus: seededBorrower.maritalStatus || n["marital"] || undefined,

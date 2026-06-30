@@ -15,7 +15,7 @@ const anthropicKey = process.env.ANTHROPIC_API_KEY;
 const openaiKey = process.env.OPENAI_API_KEY;
 const geminiKey = process.env.GEMINI_API_KEY;
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";        // cheap text path
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";        // cheap text path
 const OPENAI_AGENT_MODEL = process.env.OPENAI_AGENT_MODEL || "gpt-4o"; // tool-calling path
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-8";
 

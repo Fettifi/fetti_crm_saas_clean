@@ -38,6 +38,7 @@ export async function POST() {
         const res = await sendDocRequest({
           to_name: f.borrower_name || null, to_email: f.email || null, to_phone: f.phone || null,
           link, docs: missing, note: null, file_number: f.file_number || null, lo_name: null,
+          leadId: f.lead_id || null, loanFileId: f.id,
         });
         await logActivity({
           entity_type: "loan_file", entity_id: f.id, loan_file_id: f.id, lead_id: f.lead_id,

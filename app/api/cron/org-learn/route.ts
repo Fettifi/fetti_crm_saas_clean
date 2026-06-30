@@ -99,7 +99,7 @@ async function learn() {
     priorities: result.priorities,
     brand: result.brand,
     metrics,
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: process.env.OPENAI_MODEL || "gpt-4o",
   }]);
 
   // Turn the brain's next-best-actions into trackable tasks. OFF by default —

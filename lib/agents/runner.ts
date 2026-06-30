@@ -1,7 +1,7 @@
 import { AgentDef } from "@/lib/agents/agents";
 import { BRAND_BRIEF } from "@/lib/brand";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
 // Compact a lead record into the fields the agents care about.
 function leadContext(lead: Record<string, any>): string {

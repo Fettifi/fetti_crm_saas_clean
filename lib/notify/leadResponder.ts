@@ -5,8 +5,11 @@
 // needs RESEND_API_KEY (email) and/or Twilio creds (SMS).
 
 import { markSignatureHtml } from "@/lib/notify/emailSignature";
+import { logComms } from "@/lib/comms";
 
 export type LeadContact = {
+  id?: string | null;       // lead id — when set, the send is logged to the conversation thread
+  kind?: string | null;     // message type for the thread (first_touch | nurture | ...)
   name?: string | null;
   email?: string | null;
   phone?: string | null;
@@ -24,7 +27,7 @@ function defaultMessage(l: LeadContact): string {
 async function emailLead(l: LeadContact, body: string) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.LEAD_RESPONSE_FROM_EMAIL; // e.g. "Fetti <hello@fettifi.com>"
-  if (!key || !from || !l.email) return false;
+  if (!key || !from || !l.email) return { ok: false as boolean, id: undefined as string | undefined };
   const button = l.link
     ? `<div style="margin-top:18px"><a href="${l.link}" style="background:#10b981;color:#021;font-weight:700;text-decoration:none;padding:12px 22px;border-radius:9999px;display:inline-block">Open your secure file &amp; upload documents →</a></div><div style="margin-top:8px;color:#64748b;font-size:12px">Or paste this link: ${l.link}</div>`
     : "";
@@ -51,14 +54,15 @@ async function emailLead(l: LeadContact, body: string) {
       html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;color:#0f172a">${body.replace(/\n/g, "<br>")}${button}</div>${signature}`,
     }),
   });
-  return res.ok;
+  const j = await res.json().catch(() => ({} as any));
+  return { ok: res.ok, id: j?.id as string | undefined };
 }
 
 async function smsLead(l: LeadContact, body: string) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_FROM;
-  if (!sid || !token || !from || !l.phone) return false;
+  if (!sid || !token || !from || !l.phone) return { ok: false as boolean, id: undefined as string | undefined };
   const to = l.phone.startsWith("+") ? l.phone : `+1${l.phone.replace(/\D/g, "")}`;
   const params = new URLSearchParams({ To: to, From: from, Body: body });
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
@@ -69,7 +73,8 @@ async function smsLead(l: LeadContact, body: string) {
     },
     body: params.toString(),
   });
-  return res.ok;
+  const j = await res.json().catch(() => ({} as any));
+  return { ok: res.ok, id: j?.sid as string | undefined };
 }
 
 /** Instantly respond to a lead via every configured channel. Never throws. */
@@ -78,9 +83,14 @@ export async function respondToLead(lead: LeadContact): Promise<{ sent: string[]
   // SMS gets the link inline; email gets a styled button (added in emailLead).
   const smsBody = lead.link ? `${body}\n\nUpload your documents securely here: ${lead.link}` : body;
   const sent: string[] = [];
+  const kind = lead.kind || "first_touch";
   await Promise.all([
-    emailLead(lead, body).then((ok) => { if (ok) sent.push("email"); }).catch((e) => console.warn("[responder] email", e)),
-    smsLead(lead, smsBody).then((ok) => { if (ok) sent.push("sms"); }).catch((e) => console.warn("[responder] sms", e)),
+    emailLead(lead, body).then(async (r) => {
+      if (r.ok) { sent.push("email"); if (lead.id) await logComms({ leadId: lead.id, channel: "email", direction: "outbound", type: kind, body, to: lead.email, providerId: r.id }).catch(() => {}); }
+    }).catch((e) => console.warn("[responder] email", e)),
+    smsLead(lead, smsBody).then(async (r) => {
+      if (r.ok) { sent.push("sms"); if (lead.id) await logComms({ leadId: lead.id, channel: "sms", direction: "outbound", type: kind, body: smsBody, to: lead.phone, providerId: r.id }).catch(() => {}); }
+    }).catch((e) => console.warn("[responder] sms", e)),
   ]);
   if (sent.length === 0) {
     console.log("[responder] no channels configured — lead not auto-contacted (team alert still sent).");

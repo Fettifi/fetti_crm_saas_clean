@@ -5,7 +5,7 @@
 // actions, and brand guidance — so every part of the CRM pulls one direction.
 import { BRAND, BRAND_BRIEF } from "@/lib/brand";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
 export type OrgBrainInput = {
   period: string;

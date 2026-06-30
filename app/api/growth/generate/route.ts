@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { BRAND_BRIEF } from "@/lib/brand";
 
 export const dynamic = "force-dynamic";
-const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
 export async function POST(req: NextRequest) {
   const key = process.env.OPENAI_API_KEY;

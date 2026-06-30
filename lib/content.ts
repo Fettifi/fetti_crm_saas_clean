@@ -24,7 +24,7 @@ async function brandWithCedi(jpeg: Buffer): Promise<Buffer> {
   }
 }
 
-const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
 export type Post = { hook: string; script: string; caption: string; hashtags: string };
 

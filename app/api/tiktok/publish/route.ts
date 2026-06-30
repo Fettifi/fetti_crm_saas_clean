@@ -11,9 +11,14 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    const { videoUrl, caption, id } = await req.json();
+    const { videoUrl, caption, id, privacyLevel, allowComment, allowDuet, allowStitch, brandOrganic, brandedContent } = await req.json();
     if (!videoUrl) return NextResponse.json({ error: "videoUrl required" }, { status: 400 });
-    const publishId = await tiktokPublishVideo(videoUrl, String(caption || ""));
+    // Compliant composer sends an explicit privacy level + interaction/commercial
+    // choices; legacy callers (no privacyLevel) fall back to auto privacy.
+    const opts = privacyLevel
+      ? { privacyLevel: String(privacyLevel), allowComment: !!allowComment, allowDuet: !!allowDuet, allowStitch: !!allowStitch, brandOrganic: !!brandOrganic, brandedContent: !!brandedContent }
+      : undefined;
+    const publishId = await tiktokPublishVideo(videoUrl, String(caption || ""), opts);
     if (id) {
       await supabaseAdmin.from("content_posts").update({ status: "posted" }).eq("id", id);
     }
