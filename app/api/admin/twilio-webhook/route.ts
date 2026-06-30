@@ -32,16 +32,19 @@ async function findNumber() {
 export async function GET() {
   const c = creds();
   if (!c.ok) return NextResponse.json({ configured: false, missing: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM"].filter((k) => !process.env[k]) });
+  // Non-secret cred shape, to diagnose auth failures (AC = Account SID, SK = API key,
+  // MG = Messaging Service). The actual values are never returned.
+  const shape = { sidPrefix: c.sid.slice(0, 2), sidLen: c.sid.length, tokenLen: c.token.length, from: c.from };
   try {
     const n = await findNumber();
-    if (!n) return NextResponse.json({ configured: true, from: c.from, numberFound: false, expected: WEBHOOK });
+    if (!n) return NextResponse.json({ configured: true, shape, numberFound: false, expected: WEBHOOK });
     return NextResponse.json({
-      configured: true, from: c.from, numberFound: true, numberSid: n.sid,
+      configured: true, shape, from: c.from, numberFound: true, numberSid: n.sid,
       currentSmsUrl: n.sms_url || null, smsMethod: n.sms_method || null,
       expected: WEBHOOK, pointsAtUs: n.sms_url === WEBHOOK,
     });
   } catch (e: any) {
-    return NextResponse.json({ configured: true, error: e?.message || "lookup failed" }, { status: 502 });
+    return NextResponse.json({ configured: true, shape, error: e?.message || "lookup failed", hint: "Twilio rejected the SID/Auth Token — likely a rotated/wrong TWILIO_AUTH_TOKEN, or TWILIO_ACCOUNT_SID is an API key (SK) not the Account SID (AC)." }, { status: 502 });
   }
 }
 
