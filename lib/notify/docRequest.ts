@@ -60,7 +60,11 @@ async function emailDocRequest(r: DocRequest): Promise<boolean> {
     body: JSON.stringify({ from, to: [r.to_email], subject, html }),
   });
   const j = await res.json().catch(() => ({} as any));
-  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "email", direction: "outbound", type: "doc_request", subject, body: `Requested documents: ${r.docs.join(", ")}${r.note ? ` — ${r.note}` : ""}`, to: r.to_email, actor: "lo", providerId: j?.id }).catch(() => {});
+  if (res.ok && r.leadId) {
+    const who = (r.to_name || "there").split(" ")[0];
+    const human = `Hey ${who}, it's Mark — to keep your file moving I just need a couple things: ${r.docs.join(", ")}. Easiest is to drop them at your secure link.${r.note ? ` ${r.note}` : ""}`;
+    await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "email", direction: "outbound", type: "doc_request", subject, body: human, to: r.to_email, actor: "agent:mark", providerId: j?.id }).catch(() => {});
+  }
   return res.ok;
 }
 

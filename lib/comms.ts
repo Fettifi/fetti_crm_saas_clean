@@ -175,17 +175,10 @@ function rowToMessage(r: Row): ConversationMessage | null {
       actor: r.actor,
     };
   }
-  // Surface legacy automated sends (nurture drips) that predate body capture so the
-  // thread isn't blank for older leads — compact, no body available.
-  if (r.action === "nurture.sent") {
-    const channels: string[] = Array.isArray(d.channels) ? d.channels : [];
-    const ch: CommsChannel = channels.includes("email") && !channels.includes("sms") ? "email" : "sms";
-    return {
-      id: r.id, leadId: r.lead_id, direction: "outbound", channel: ch, type: "nurture",
-      body: `Automated follow-up sent${d.step != null ? ` (step ${d.step})` : ""}${d.lane ? ` · ${d.lane}` : ""} via ${channels.join(" + ") || ch}.`,
-      at: r.created_at, actor: r.actor, status: "sent",
-    };
-  }
+  // `nurture.sent` is an internal cron/metric heartbeat — NOT a message. The actual
+  // message body is logged separately as a `comms.message` row, so surfacing this here
+  // would leak a robotic "Automated follow-up sent (step 0)…" log line into the thread
+  // alongside the real text. Keep the conversation human: never render it.
   return null;
 }
 

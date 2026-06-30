@@ -20,8 +20,10 @@ export type LeadContact = {
 
 function defaultMessage(l: LeadContact): string {
   const first = (l.name || "there").split(" ")[0];
-  const purpose = l.loan_purpose ? ` about your ${l.loan_purpose} financing` : "";
-  return `Hi ${first}, it's Mark with Fetti Financial Services — thanks for reaching out${purpose}. I'm reviewing your details now and a specialist will follow up shortly. Reply here anytime with questions!`;
+  const purpose = l.loan_purpose ? ` about ${l.loan_purpose}` : "";
+  // Human opener that starts a real conversation — no canned "a specialist will follow up",
+  // no document asks. Used only if the AI draft is unavailable.
+  return `Hey ${first}, it's Mark with Fetti — saw you reached out${purpose}. Quick q so I can point you the right way: what are you looking to do, and what's your timeline?`;
 }
 
 async function emailLead(l: LeadContact, body: string) {
@@ -80,10 +82,12 @@ async function smsLead(l: LeadContact, body: string) {
 /** Instantly respond to a lead via every configured channel. Never throws. */
 export async function respondToLead(lead: LeadContact): Promise<{ sent: string[] }> {
   const body = (lead.message && lead.message.trim()) || defaultMessage(lead);
-  // SMS gets the link inline; email gets a styled button (added in emailLead).
-  const smsBody = lead.link ? `${body}\n\nUpload your documents securely here: ${lead.link}` : body;
-  const sent: string[] = [];
   const kind = lead.kind || "first_touch";
+  // The FIRST text stays a pure human opener — no link dump. Mark shares the secure
+  // link naturally once they reply (concierge). Later touches (nurture/doc-chase) may
+  // append it inline since the conversation is already going.
+  const smsBody = (lead.link && kind !== "first_touch") ? `${body}\n\nUpload your documents securely here: ${lead.link}` : body;
+  const sent: string[] = [];
   await Promise.all([
     emailLead(lead, body).then(async (r) => {
       if (r.ok) { sent.push("email"); if (lead.id) await logComms({ leadId: lead.id, channel: "email", direction: "outbound", type: kind, body, to: lead.email, providerId: r.id }).catch(() => {}); }

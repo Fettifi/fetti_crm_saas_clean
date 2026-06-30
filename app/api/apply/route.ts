@@ -11,7 +11,7 @@ import { respondToLead } from "@/lib/notify/leadResponder";
 import { getAgent } from "@/lib/agents/agents";
 import { runAgent } from "@/lib/agents/runner";
 import { logActivity } from "@/lib/activity";
-import { ensureLoanFileForLead, ensureLeadUploadToken, docChecklistFor } from "@/lib/los";
+import { ensureLoanFileForLead, ensureLeadUploadToken } from "@/lib/los";
 import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { sendMetaLeadEvent } from "@/lib/metaCapi";
@@ -258,28 +258,15 @@ export async function POST(req: NextRequest) {
           }
         } catch (e) { console.warn("[/api/apply] capture agent failed:", e); }
 
-        // Full-auto funnel: tell the borrower exactly what to upload, with their
-        // secure link, in the very first touch — so they self-serve and the
-        // engagement loop (upload → Engaged → doc-chaser) starts with no human.
-        let needDocs: string[] = [];
-        try {
-          if (loanFile?.id) {
-            const { data: ds } = await supabaseAdmin.from("loan_documents")
-              .select("name").eq("loan_file_id", loanFile.id).eq("required", true).limit(6);
-            needDocs = (ds || []).map((d: any) => d.name);
-          } else {
-            // No file yet — preview the product's required docs so the first touch still
-            // tells the borrower exactly what to upload at their lead-scoped link.
-            needDocs = docChecklistFor(body.loan_purpose, body.occupancy).filter((d) => d.required).map((d) => d.name).slice(0, 6);
-          }
-        } catch { /* */ }
-        const docsLine = needDocs.length ? ` To get started fast, upload these at your secure link: ${needDocs.join(", ")}.` : "";
-
+        // First touch reads like a real person opening a conversation — NO document
+        // checklist dump and no "please upload" demands. Mark surfaces the secure link
+        // and asks for docs naturally once the lead engages (SMS/website concierge),
+        // so the opener stays human and starts a real back-and-forth.
         let autoSent: string[] = [];
         try {
           const res = await respondToLead({
             id: newLead.id, kind: "first_touch",
-            name: full_name, email, phone, loan_purpose: body.loan_purpose, message: (draftReply || "") + docsLine, link: fileLink,
+            name: full_name, email, phone, loan_purpose: body.loan_purpose, message: draftReply || "", link: fileLink,
           });
           autoSent = res.sent;
         } catch (e) { console.warn("[/api/apply] auto-response failed:", e); }
