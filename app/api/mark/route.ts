@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { MARK_PERSONA, MARK_CONVERSATION } from "@/lib/markPersona";
 import { markReplyViolates, markSafeDeferral } from "@/lib/markCompliance";
+import { cfg } from "@/lib/settings";
 
 // PUBLIC website chat with Mark — Fetti's spokesperson AI. SEPARATE from /api/chat
 // (that's Rupee, the INTERNAL co-founder with terminal/file tools — never exposed to
@@ -124,8 +125,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "no message" }, { status: 400 });
   }
 
+  const calendlyUrl = (await cfg("CALENDLY_URL")) || null;
+  const sysContent = SYSTEM + (calendlyUrl
+    ? `\n\nBOOKING A CALL: if they'd rather talk to a real person, are hesitant, or ask for a human, warmly offer to book a quick call here: ${calendlyUrl} — present it as an easy option alongside the application, their choice.`
+    : "");
   try {
-    const messages: any[] = [{ role: "system", content: SYSTEM }, ...history];
+    const messages: any[] = [{ role: "system", content: sysContent }, ...history];
     const m1 = await openaiChat(messages, key);
     let reply = m1.content || "";
     let captured = false;
@@ -148,7 +153,7 @@ export async function POST(req: NextRequest) {
     if (!reply) reply = "Tell me a bit about what you're trying to finance and I'll point you the right way.";
     // Deterministic compliance net — a licensed lender's AI must never quote a rate,
     // a specific payment, or guarantee approval, no matter what the model generates.
-    if (markReplyViolates(reply)) reply = markSafeDeferral({ applyUrl: `${APP_URL}/apply` });
+    if (markReplyViolates(reply)) reply = markSafeDeferral({ applyUrl: `${APP_URL}/apply`, calendlyUrl });
     return NextResponse.json({ reply, captured });
   } catch (e: any) {
     console.error("[mark] chat error:", e?.message);
