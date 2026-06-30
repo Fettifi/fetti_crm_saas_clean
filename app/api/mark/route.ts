@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { MARK_PERSONA, MARK_CONVERSATION } from "@/lib/markPersona";
+import { markReplyViolates, markSafeDeferral } from "@/lib/markCompliance";
 
 // PUBLIC website chat with Mark — Fetti's spokesperson AI. SEPARATE from /api/chat
 // (that's Rupee, the INTERNAL co-founder with terminal/file tools — never exposed to
@@ -145,6 +146,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (!reply) reply = "Tell me a bit about what you're trying to finance and I'll point you the right way.";
+    // Deterministic compliance net — a licensed lender's AI must never quote a rate,
+    // a specific payment, or guarantee approval, no matter what the model generates.
+    if (markReplyViolates(reply)) reply = markSafeDeferral({ applyUrl: `${APP_URL}/apply` });
     return NextResponse.json({ reply, captured });
   } catch (e: any) {
     console.error("[mark] chat error:", e?.message);

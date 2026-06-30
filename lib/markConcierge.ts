@@ -19,6 +19,8 @@ const OWNER_OCC_KEYWORDS = /\b(fha|va loan|va mortgage|usda|reverse mortgage|hec
 // approval guarantee. Plain talk of "rates depend on your scenario" is fine (no number).
 const RATE_PROMISE = /(\b\d{1,2}(\.\d{1,3})?\s?%)|\bapr\b|\b\d(\.\d+)?\s?percent\b/i;
 const APPROVAL_PROMISE = /\b(guarantee|guaranteed)\b|\byou(?:'?re| are)\s+(pre-?)?approved\b|\bguaranteed approval\b|\b100%\s+approv/i;
+// A specific monthly PAYMENT quote (implies a rate) — also forbidden.
+const PAYMENT_PROMISE = /(\$\s?\d[\d,]*(\.\d+)?\s*(\/\s?mo\b|per month|a month|monthly|\bmo\b))|((monthly payment|your payment|the payment|payment would|payment could|principal and interest)[^.!?\n]{0,40}\$\s?\d[\d,]*)/i;
 
 // Deterministic post-generation safety net — runs regardless of model temperature.
 // Returns a SAFE deferral (no numbers, drives to the secure app + a human follow-up)
@@ -27,7 +29,7 @@ const APPROVAL_PROMISE = /\b(guarantee|guaranteed)\b|\byou(?:'?re| are)\s+(pre-?
 function complianceGate(reply: string, ctx: { firstAiReply: boolean; state?: string | null; fileLink?: string | null; calendlyUrl?: string | null }): { reply: string; flagged: boolean } {
   const stateOk = ctx.state ? OWNER_OCC_STATES.has(String(ctx.state).toUpperCase().trim()) : true;
   const offersOwnerOccOutOfArea = !stateOk && OWNER_OCC_KEYWORDS.test(reply);
-  if (RATE_PROMISE.test(reply) || APPROVAL_PROMISE.test(reply) || offersOwnerOccOutOfArea) {
+  if (RATE_PROMISE.test(reply) || APPROVAL_PROMISE.test(reply) || PAYMENT_PROMISE.test(reply) || offersOwnerOccOutOfArea) {
     const link = ctx.fileLink ? ` ${ctx.fileLink}` : "";
     // Safe deferral always offers BOTH paths: finish the secure app, OR book a call.
     const book = ctx.calendlyUrl ? ` Prefer to talk it through? Grab a time with us: ${ctx.calendlyUrl}` : ` I'll have a Fetti specialist follow up too.`;
