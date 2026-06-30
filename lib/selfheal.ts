@@ -28,7 +28,10 @@ export async function reconcile(): Promise<HealAction[]> {
   //    a teammate converts them (POST /api/los/files) or they finish the app, so the
   //    healer no longer back-fills a file for every inquiry — it only completes files
   //    for finished applications whose synchronous open was missed.
-  const applicationLeads = leads.filter((l: any) => String(l.stage || "") === "Application");
+  // Skip leads whose loan file was DELIBERATELY deleted (raw.los_deleted_at) — otherwise
+  // the healer resurrects a file the LO just removed. A real new borrower upload can still
+  // re-open one; this only blocks automatic re-creation.
+  const applicationLeads = leads.filter((l: any) => String(l.stage || "") === "Application" && !(l.raw && l.raw.los_deleted_at));
   if (applicationLeads.length) {
     const appIds = applicationLeads.map((l: any) => l.id);
     const { data: files } = await supabaseAdmin.from("loan_files").select("lead_id").in("lead_id", appIds);

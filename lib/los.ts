@@ -293,6 +293,8 @@ export async function deleteLoanFileCascade(
   opts: { purgeStorage?: boolean } = {},
 ): Promise<{ files: number; docs: number; storage: number }> {
   const out = { files: 0, docs: 0, storage: 0 };
+  const { data: fileRow } = await supabaseAdmin
+    .from("loan_files").select("lead_id").eq("id", fileId).maybeSingle();
   const { data: docs } = await supabaseAdmin
     .from("loan_documents").select("id, storage_path").eq("loan_file_id", fileId);
 
@@ -318,6 +320,17 @@ export async function deleteLoanFileCascade(
   await supabaseAdmin.from("preapprovals").delete().eq("loan_file_id", fileId);
   await supabaseAdmin.from("loan_files").delete().eq("id", fileId);
   out.files = 1;
+  // Flag the lead so the hourly self-heal cron doesn't resurrect this deleted file
+  // (ensureLoanFileForLead backfills "Application" leads that lack a file). A genuine
+  // new borrower upload can still re-open a file; this only blocks auto-recreation.
+  if ((fileRow as any)?.lead_id) {
+    try {
+      const { data: lead } = await supabaseAdmin.from("leads").select("raw").eq("id", (fileRow as any).lead_id).maybeSingle();
+      const raw = (lead as any)?.raw && typeof (lead as any).raw === "object" ? (lead as any).raw : {};
+      raw.los_deleted_at = new Date().toISOString();
+      await supabaseAdmin.from("leads").update({ raw }).eq("id", (fileRow as any).lead_id);
+    } catch { /* best-effort */ }
+  }
   return out;
 }
 
