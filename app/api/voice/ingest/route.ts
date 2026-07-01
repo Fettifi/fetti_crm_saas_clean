@@ -32,16 +32,23 @@ export async function POST(req: NextRequest) {
 
   try {
     const b = await req.json().catch(() => ({}));
+    // A booking request (book_call tool) carries the Calendly link so whoever follows up
+    // — or a future auto-send once SMS is live — has it in hand.
+    let reason = b.reason || undefined;
+    if (b.wants_booking) {
+      const calendly = (await cfg("CALENDLY_URL")) || "";
+      reason = `${reason || "Wants to book a call"}${calendly ? `\nScheduling link to send: ${calendly}` : ""}`;
+    }
     const msg = await addMessage({
       caller_name: b.caller_name || undefined,
       callback_number: b.callback_number || undefined,
       for_whom: b.for_whom || "Ramon",
-      reason: b.reason || undefined,
+      reason,
       urgency: ["low", "normal", "high"].includes(b.urgency) ? b.urgency : "normal",
       transcript: b.transcript || undefined,
       call_sid: b.call_sid || undefined,
     });
-    await alertTeam(`From: ${b.caller_name || "Unknown"} (${b.callback_number || "?"})\nUrgency: ${msg.urgency}\nReason: ${b.reason || "(see transcript)"}`);
+    await alertTeam(`From: ${b.caller_name || "Unknown"} (${b.callback_number || "?"})\nUrgency: ${msg.urgency}\nReason: ${reason || "(see transcript)"}`);
     return NextResponse.json({ ok: true, id: msg.id });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "ingest failed" }, { status: 500 });
