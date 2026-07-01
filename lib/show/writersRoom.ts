@@ -81,6 +81,13 @@ export async function deleteEpisode(id: string): Promise<void> {
   await writeJson(EP_KEY, arr.filter((e) => e.id !== id));
 }
 
+// Wipe the library + case log (used to clear stale/old-canon content). Next read reseeds.
+export async function resetShow(): Promise<void> {
+  await writeJson(EP_KEY, []);
+  await writeJson(LEDGER_KEY, []);
+  seedChecked = false;
+}
+
 // ---- Owl's Ledger ----
 export async function getLedger(): Promise<string[]> {
   const arr = await readJson<string[]>(LEDGER_KEY, []);

@@ -5,7 +5,7 @@
 //   DELETE /api/show?id=ID    -> delete
 // Auth-gated by the /api/show matcher in proxy.ts.
 import { NextRequest, NextResponse } from "next/server";
-import { listEpisodes, getEpisode, generateEpisode, deleteEpisode, getLedger, conceptList } from "@/lib/show/writersRoom";
+import { listEpisodes, getEpisode, generateEpisode, deleteEpisode, resetShow, getLedger, conceptList } from "@/lib/show/writersRoom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  if (id === "__reset__") { await resetShow(); return NextResponse.json({ ok: true, reset: true }); }
   await deleteEpisode(id);
   return NextResponse.json({ ok: true });
 }
