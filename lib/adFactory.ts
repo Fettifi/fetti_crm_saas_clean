@@ -61,7 +61,7 @@ Rules: the LAST beat's vo MUST end with "${MARK_COMPANY_SIGNOFF}" and its captio
     if (beats.length < 3) return null;
     // enforce the company sign-off on the final spoken line
     const last = beats[beats.length - 1];
-    last.vo = `${last.vo.replace(/\s*Fetti[^.!?]*we do money[.!?]*\s*$/i, "").trim()} ${MARK_COMPANY_SIGNOFF}`.trim();
+    last.vo = `${last.vo.replace(/\s*Fetti Financial Services[.,]?\s*we do money[.!]*\s*$/i, "").trim()} ${MARK_COMPANY_SIGNOFF}`.trim();
     return { title: String(parsed.title || topic || "Mark Short").slice(0, 80), product: String(parsed.product || topic || "Fetti Loan").slice(0, 48), beats };
   } catch {
     return null;
@@ -109,7 +109,7 @@ Rules: vary the topics across the ${n} concepts; teach accurately so the how-to 
       sub: String(c.sub || "").slice(0, 140),
       cta: String(c.cta || "Apply now").slice(0, 30),
       hooks: (Array.isArray(c.hooks) ? c.hooks : []).slice(0, 3).map((h) => String(h).slice(0, 60)),
-      line: `${String(c.line || "").replace(/\s*Fetti[^.!?]*we do money[.!?]*\s*$/i, "").trim()} ${MARK_COMPANY_SIGNOFF}`.trim(),
+      line: `${String(c.line || "").replace(/\s*Fetti Financial Services[.,]?\s*we do money[.!]*\s*$/i, "").trim()} ${MARK_COMPANY_SIGNOFF}`.trim(),
       prompt: String(c.prompt || "attractive American home exterior, bright daylight").slice(0, 240),
     })).filter((c) => c.headline && c.line && c.hooks.length === 3);
   } catch {

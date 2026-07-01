@@ -1,10 +1,11 @@
 // MARK — the Fetti Financial Services spokesperson owl 🦉. One source of truth for
 // his character so every ad, video script, and AI-written line stays in voice.
 // Personality: COOL & INSIGHTFUL ADVISOR — calm, sharp, articulate; the wise guide
-// in your corner. Not flashy, not street. Signature sign-off: "Fetti Financial Services, we do money!"
+// in your corner. Not flashy, not street. Signature sign-off: "Fetti Financial Services. We Do Money!"
 
-// Mark's trademark/signature sign-off — always closes with this exact line.
-export const MARK_SIGNOFF = "Fetti Financial Services, we do money!";
+// Mark's trademark/signature sign-off — always closes with this EXACT line (period after
+// "Services", "We Do Money!" capitalized — the punctuation is deliberate so it reads right).
+export const MARK_SIGNOFF = "Fetti Financial Services. We Do Money!";
 
 // Mark's OWN ElevenLabs voice — DISTINCT from Rupee's custom voice
 // (NBA1cQRTWFj793Oifdaj is Rupee; never use it for Mark). Calm, confident,
@@ -14,7 +15,7 @@ export const MARK_VOICE_ID = "nPczCjzI2devNBz1zQrb";
 // Video outros use the same trademark signature. NMLS #2267023 is shown
 // VISUALLY on every studio export (+ footer disclosures), so it's covered
 // without saying the number aloud in the signature.
-export const MARK_COMPANY_SIGNOFF = "Fetti Financial Services, we do money!";
+export const MARK_COMPANY_SIGNOFF = "Fetti Financial Services. We Do Money!";
 
 // Tone block for INFORMATIONAL short-form videos (the default content style):
 // teach one true, useful thing fast — Mark as the trusted licensed-company voice.
@@ -50,6 +51,6 @@ GOLDEN RULE: they should feel like they're talking to a real, sharp, likeable pe
 // Ensure a Mark voiceover/script ends with his sign-off (no duplicate).
 export function withMarkSignoff(script: string): string {
   // strip any existing "Fetti … we do money" ending so we don't double it
-  const s = script.trim().replace(/\s*Fetti[^.!?]*we do money[.!?]*\s*$/i, "").trim();
+  const s = script.trim().replace(/\s*Fetti Financial Services[.,]?\s*we do money[.!]*\s*$/i, "").trim();
   return `${s} ${MARK_SIGNOFF}`;
 }

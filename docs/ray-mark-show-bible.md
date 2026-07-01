@@ -12,7 +12,7 @@
 - **Format:** short-form vertical (9:16), ~50 seconds — a genuine conversation breaking down one lending scenario.
 - **For:** Fetti Financial Services LLC, NMLS #2267023 — the nonbank lender that funds the deals big banks won't.
 - **Channels:** TikTok, Instagram Reels, YouTube Shorts.
-- **LOCKED sign-off (every episode):** **"Fetti Financial Services, we do money!"**
+- **LOCKED sign-off (every episode):** **"Fetti Financial Services. We Do Money!"**
 
 ## The Two
 
@@ -40,7 +40,7 @@ questions; Ray, the founder, breaks down how Fetti gets it done. Warm, natural s
 2. **Why it's hard (10–20s):** Mark surfaces the wrinkle — why a normal bank balks (write-offs, needs speed, messy returns, vacant unit, no US credit).
 3. **Ray solves it (20–38s):** Ray calmly breaks down how Fetti gets it done — names the right product + the mechanism in plain English. The core.
 4. **The insight (38–46s):** Ray lands the reframe that makes it click. Name the exact borrower so a viewer self-identifies.
-5. **CTA + locked sign-off (46–50s):** apply invitation, then **"Fetti Financial Services, we do money!"**
+5. **CTA + locked sign-off (46–50s):** apply invitation, then **"Fetti Financial Services. We Do Money!"**
 
 ## DOs
 - Ray is the authority + problem-solver — he delivers the solution and the insight.
@@ -75,7 +75,7 @@ building a growing library of real case studies.
 > **RAY:** Only at a bank stuck on one formula. We built Fetti for exactly that borrower — the one everyone else says no to.
 > **MARK:** So if your write-offs are working against you—
 > **RAY:** Let the property do the qualifying. Apply at fettifi.com and we'll show you what it carries.
-> **MARK:** Fetti Financial Services, we do money!
+> **MARK:** Fetti Financial Services. We Do Money!
 
 ---
 *The Writers' Room (`/show`) generates new episodes in this canon on demand, keeps the

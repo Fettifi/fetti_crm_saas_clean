@@ -25,7 +25,7 @@ export const LP_CONFIGS: Record<string, LpConfig> = {
     headline: "You watch The Lot.",
     accent: "Now let's get you the money.",
     subhead: "Buying a home, lowering your payment, or grabbing an investment property? Fetti is a nonbank lender — we've got our own capital and we do the deals banks won't. No stress, no runaround.",
-    bullets: ["⚡ See what you qualify for in 2 minutes — no credit pull to start", "🏠 Home loans & refis (CA/FL/MI) · investment property nationwide", "🦉 Straight answers from Mark and the Fetti team. We do money."],
+    bullets: ["⚡ See what you qualify for in 2 minutes — no credit pull to start", "🏠 Home loans & refis (CA/FL/MI) · investment property nationwide", "🦉 Straight answers from Mark and the Fetti team. We Do Money!"],
     occupancy: "Owner", productType: "Residential",
     purposes: [
       { value: "purchase", label: "Buy a home", loanPurpose: "Purchase" },

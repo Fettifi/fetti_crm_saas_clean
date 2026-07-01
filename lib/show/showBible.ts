@@ -11,7 +11,7 @@ export const SHOW = {
   brand: "Fetti Financial Services LLC",
   nmls: "2267023",
   product: "DSCR & investor/business-purpose loans, plus owner-occupied home loans (CA/FL/MI) — Fetti funds the deals big banks won't.",
-  signoff: "Fetti Financial Services, we do money!", // LOCKED — every episode ends here.
+  signoff: "Fetti Financial Services. We Do Money!", // LOCKED — exact punctuation (period + "We Do Money!"); every episode ends here.
   ctaFraming: "Apply at fettifi.com — framed as an INVITATION (apply / see if the deal qualifies), NEVER a promised outcome.",
 };
 
@@ -100,7 +100,7 @@ export const FLAGSHIP = {
     { speaker: "RAY", text: "Only at a bank stuck on one formula. We built Fetti for exactly that borrower — the one everyone else says no to.", onscreen: "Built for the borrower banks turn away." },
     { speaker: "MARK", text: "So if your write-offs are working against you—", onscreen: "" },
     { speaker: "RAY", text: "Let the property do the qualifying. Apply at fettifi.com and we'll show you what it carries.", onscreen: "Apply → fettifi.com" },
-    { speaker: "MARK", text: "Fetti Financial Services, we do money!", onscreen: "FETTI FINANCIAL SERVICES — NMLS #2267023" },
+    { speaker: "MARK", text: "Fetti Financial Services. We Do Money!", onscreen: "FETTI FINANCIAL SERVICES — NMLS #2267023" },
   ],
   cta: "Self-employed and getting denied over your tax write-offs? On a DSCR loan the property's rent can qualify the deal — not your returns. Apply at fettifi.com.",
   ledgerSeed: "self-employed investor, heavy write-offs, bank said no — DSCR",

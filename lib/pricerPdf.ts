@@ -109,7 +109,7 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
 
   text(d.officerName || "Fetti Financial Services LLC", 10.5, bold); cur += 13;
   text(`${d.officerName ? "Mortgage Loan Originator · " : ""}NMLS #${d.officerNmls || "2267023"} · Fetti Financial Services LLC`, 8, font, GREY); cur += 16;
-  page.drawText("Fetti Financial Services, we do money!", { x: M, y: H - cur - 10, size: 9, font: bold, color: EMERALD }); cur += 18;
+  page.drawText("Fetti Financial Services. We Do Money!", { x: M, y: H - cur - 10, size: 9, font: bold, color: EMERALD }); cur += 18;
   page.drawLine({ start: { x: M, y: H - cur }, end: { x: RIGHT, y: H - cur }, thickness: 0.5, color: rgb(0.85, 0.87, 0.9) });
   cur += 10;
   para(`Equal Housing Opportunity. ${LICENSING_NOTE}`, 7, font, GREY, CW, 1.4);
