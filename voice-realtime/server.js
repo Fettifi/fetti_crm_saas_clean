@@ -1,32 +1,35 @@
-// Realtime "Mark" voice bridge — Twilio Media Streams <-> OpenAI Realtime API.
+// Realtime "Mark" voice bridge — Twilio Media Streams <-> OpenAI Realtime API (GA).
 //
-// This is the engine that makes Mark REAL to talk to: full-duplex, talk-over-him
-// (barge-in), zero-lag speech-to-speech. It CANNOT run on Vercel (serverless can't
-// hold a live audio websocket) — deploy it on a tiny always-on host (Render, Fly,
-// Railway; free/$7 tiers are plenty). See README.md.
+// Full-duplex, talk-over-him (barge-in), zero-lag speech-to-speech. CANNOT run on Vercel
+// (serverless can't hold a live audio websocket) — deploy on a tiny always-on host
+// (Render/Fly/Railway). See README.md.
 //
 // Flow: Twilio number's voice webhook (Fetti CRM /api/voice/incoming, once
 // REALTIME_VOICE_WSS is set) returns <Connect><Stream url="wss://THIS_HOST/media"/>.
-// Twilio streams caller audio here; we relay it to OpenAI Realtime and stream
-// Mark's audio back. When Mark has the message he calls save_message → we POST it
-// to the CRM (/api/voice/ingest). g711_ulaw on both sides → no transcoding.
+// Twilio streams caller audio here; we relay it to OpenAI Realtime and stream Mark's
+// audio back. When Mark has the message he calls save_message → POST to the CRM
+// (/api/voice/ingest). g711_ulaw (audio/pcmu) both sides → no transcoding.
+//
+// NOTE: uses the OpenAI Realtime GA API (the old "beta" shape was retired 2025 — it
+// returns beta_api_shape_disabled). GA = NO "OpenAI-Beta" header; session config nests
+// under session.audio.*; audio events are response.output_audio*.
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 
 const PORT = process.env.PORT || 8080;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime"; // GA (2025-08-28); override via env
-const VOICE = process.env.OPENAI_REALTIME_VOICE || "verse"; // warm, natural OpenAI voice (verse/cedar/ash)
+const MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime"; // GA model
+const VOICE = process.env.OPENAI_REALTIME_VOICE || "verse"; // GA voice (verse/cedar/marin…)
 const CRM_INGEST_URL = process.env.CRM_INGEST_URL || "https://app.fettifi.com/api/voice/ingest";
 const VOICE_INGEST_TOKEN = process.env.VOICE_INGEST_TOKEN || "";
 
-// MANDATORY opening line — delivered as Mark's FIRST utterance and NON-INTERRUPTIBLE
-// (barge-in is ignored until it finishes). Combines California SB 1001 (automated-AI
-// disclosure) + CA §632 (call recorded/transcribed → continuing = implied consent).
+// MANDATORY opening line — Mark's FIRST utterance, NON-INTERRUPTIBLE (barge-in ignored
+// until it finishes). Combines CA SB 1001 (automated-AI disclosure) + CA §632 (recorded/
+// transcribed → continuing = implied consent).
 const OPENING = "You've reached Fetti Financial Services. Quick heads-up — I'm Mark, an automated A.I. assistant, and this call is recorded and transcribed for quality and record-keeping. Now — who am I speaking with, and what can I help you with today?";
 
 const INSTRUCTIONS = `You are Mark, the warm, sharp, confident virtual assistant for Fetti Financial Services LLC (a licensed mortgage lender & broker, NMLS 2267023). California-cool, intelligent, smooth — never robotic. You are an automated A.I. assistant and must never claim to be human.
-Your FIRST line is a legally required disclosure (that you're an automated A.I. assistant and the call is recorded/transcribed). It is delivered automatically at the start — never skip it, rush it, or talk over it.
+Your VERY FIRST words on the call must be, word for word: "${OPENING}" — say exactly that before anything else (it is a legally required disclosure that you're an automated A.I. assistant and the call is recorded), then continue naturally. Never skip it, shorten it, or talk over it.
 After the opening, talk like a real person on the phone: natural, brief, conversational; let the caller interrupt you and roll with it.
 Ramon Dent is NOT available for a live transfer. For ANYONE asking for Ramon (or anyone at Fetti), warmly take a detailed message — never promise a transfer, never give out a direct line/email/personal contact.
 Get the caller's name, best callback number, and the FULL, specific reason for the call (loan type, property, dollar amount, timeline, who referred them, urgency). Ask natural follow-ups until it's genuinely detailed.
@@ -80,27 +83,34 @@ const wss = new WebSocketServer({ server, path: "/media" });
 wss.on("connection", (twilio) => {
   let streamSid = null;
   let callSid = null;
-  let greeted = false; // becomes true once the opening disclosure finishes → barge-in allowed
+  let greeted = false; // true once the opening disclosure finishes → barge-in allowed
   const transcript = [];
   const oai = new WebSocket(`wss://api.openai.com/v1/realtime?model=${MODEL}`, {
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "OpenAI-Beta": "realtime=v1" },
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` }, // GA: NO "OpenAI-Beta" header
   });
 
   oai.on("open", () => {
+    // GA Realtime session shape: audio config nested under session.audio.*, formats are
+    // objects (audio/pcmu = g711 u-law), modalities -> output_modalities.
     oai.send(JSON.stringify({ type: "session.update", session: {
-      instructions: INSTRUCTIONS, voice: VOICE,
-      input_audio_format: "g711_ulaw", output_audio_format: "g711_ulaw",
-      turn_detection: { type: "server_vad", silence_duration_ms: 500 },
-      input_audio_transcription: { model: "whisper-1" },
-      tools: TOOLS, tool_choice: "auto", modalities: ["audio", "text"],
+      type: "realtime",
+      instructions: INSTRUCTIONS,
+      output_modalities: ["audio"],
+      audio: {
+        input: { format: { type: "audio/pcmu" }, turn_detection: { type: "server_vad" }, transcription: { model: "whisper-1" } },
+        output: { format: { type: "audio/pcmu" }, voice: VOICE },
+      },
+      tools: TOOLS, tool_choice: "auto",
     } }));
-    // Opening = the required SB 1001 + §632 disclosure, said verbatim, non-interruptible.
-    oai.send(JSON.stringify({ type: "response.create", response: { instructions: `Say this warmly and clearly, word for word, then stop and wait: "${OPENING}"` } }));
+    // The verbatim SB 1001 + §632 disclosure is mandated as Mark's first utterance inside
+    // INSTRUCTIONS (GA response.create doesn't take per-response instructions like beta did);
+    // a bare response.create kicks it off. Non-interruptible via the `greeted` gate below.
+    oai.send(JSON.stringify({ type: "response.create" }));
   });
 
   oai.on("message", async (raw) => {
     let m; try { m = JSON.parse(raw.toString()); } catch { return; }
-    if (m.type === "response.audio.delta" && m.delta && streamSid) {
+    if (m.type === "response.output_audio.delta" && m.delta && streamSid) {
       twilio.send(JSON.stringify({ event: "media", streamSid, media: { payload: m.delta } }));
     } else if (m.type === "response.done") {
       greeted = true; // opening disclosure (and every later turn) done → allow barge-in
@@ -110,7 +120,7 @@ wss.on("connection", (twilio) => {
       oai.send(JSON.stringify({ type: "response.cancel" }));
     } else if (m.type === "conversation.item.input_audio_transcription.completed" && m.transcript) {
       transcript.push("Caller: " + m.transcript.trim());
-    } else if (m.type === "response.audio_transcript.done" && m.transcript) {
+    } else if (m.type === "response.output_audio_transcript.done" && m.transcript) {
       transcript.push("Mark: " + m.transcript.trim());
     } else if (m.type === "response.function_call_arguments.done") {
       try {
@@ -145,4 +155,4 @@ wss.on("connection", (twilio) => {
   oai.on("error", (e) => console.error("OpenAI ws error", e?.message));
 });
 
-server.listen(PORT, () => console.log(`Fetti realtime voice bridge listening on :${PORT} (path /media, model ${MODEL})`));
+server.listen(PORT, () => console.log(`Fetti realtime voice bridge listening on :${PORT} (path /media, model ${MODEL}, GA)`));
