@@ -20,7 +20,8 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
 
   // Ray (Cartesia) reads too fast at normal speed — slow him down. Tunable via the
   // RAY_VOICE_SPEED setting ("slowest"|"slow"|"normal"|"fast" or a float in [-1,1]).
-  const raySpeed = (await cfg("RAY_VOICE_SPEED")) || "slow";
+  const raw = await cfg("RAY_VOICE_SPEED");
+  const raySpeed: string | number = raw ? (isNaN(Number(raw)) ? raw : Number(raw)) : -0.6;
   const out: { speaker: string; text: string; provider: string | null; audio: string | null }[] = [];
   let voiced = 0;
   for (const line of ep.lines as EpisodeLine[]) {
