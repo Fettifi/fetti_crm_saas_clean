@@ -1,0 +1,30 @@
+# Render Blueprint for the realtime "Mark" voice bridge (voice-realtime/server.js).
+# The Next.js CRM stays on Vercel; ONLY this always-on WebSocket bridge runs here
+# (Vercel serverless can't hold a call-duration socket). One-click: in Render, "New +"
+# -> "Blueprint" -> connect the Fettifi/fetti_crm_saas_clean repo on this branch. Render
+# provisions the service below and prompts for the two secrets (sync:false).
+#
+# NOTE: use the "starter" plan (always-on). The free plan SLEEPS after ~15 min idle,
+# which would make the first call after a quiet stretch fail — unacceptable for a phone
+# line. Starter (~$7/mo) keeps Mark instantly answering 24/7.
+services:
+  - type: web
+    name: fetti-realtime-voice
+    runtime: node
+    rootDir: voice-realtime
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeploy: false
+    envVars:
+      - key: OPENAI_API_KEY          # same key the CRM uses (paste on deploy)
+        sync: false
+      - key: VOICE_INGEST_TOKEN      # = app_settings VOICE_INGEST_TOKEN (paste on deploy)
+        sync: false
+      - key: OPENAI_REALTIME_MODEL
+        value: gpt-realtime
+      - key: OPENAI_REALTIME_VOICE
+        value: verse
+      - key: CRM_INGEST_URL
+        value: https://app.fettifi.com/api/voice/ingest
