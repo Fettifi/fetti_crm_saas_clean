@@ -98,7 +98,7 @@ export default function ShowPage() {
           <span className="text-3xl">🦉</span>
           <h1 className="text-2xl md:text-3xl font-bold">Ray &amp; Mark Studio</h1>
         </div>
-        <p className="text-slate-400 mb-6 text-sm">The Writers&apos; Room for <span className="text-emerald-400 font-semibold">&ldquo;Ray &amp; Mark — We Do Money&rdquo;</span> — short-form animated brand comedy. Every episode runs the 5-beat <em>Owl Always Knew</em> engine and ends on the locked sign-off.</p>
+        <p className="text-slate-400 mb-6 text-sm">The Writers&apos; Room for <span className="text-emerald-400 font-semibold">&ldquo;Ray &amp; Mark — We Do Money&rdquo;</span> — short-form videos where <strong>Ray</strong> (Fetti&apos;s founder, the brains) and <strong>Mark</strong> (the owl co-host) break down a real lending scenario. Mark brings the deal; Ray solves it.</p>
 
         {err && <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-300">{err}</div>}
         {msg && <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300">{msg}</div>}
@@ -115,7 +115,7 @@ export default function ShowPage() {
                 className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm placeholder:text-slate-500 focus:border-emerald-500 outline-none"
               />
               <div className="mt-2">
-                <div className="text-xs text-slate-500 mb-1">Or start from a canon prank:</div>
+                <div className="text-xs text-slate-500 mb-1">Or start from a scenario:</div>
                 <div className="flex flex-wrap gap-1.5">
                   {concepts.map((c) => (
                     <button key={c.name} title={c.premise} onClick={() => setConcept(concept === c.name ? null : c.name)}
@@ -150,8 +150,8 @@ export default function ShowPage() {
             </div>
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <div className="font-semibold mb-2 text-sm flex items-center gap-2">🦉 The Owl&apos;s Ledger</div>
-              <p className="text-[11px] text-slate-500 mb-2">Everything Mark has caught Ray doing. Each episode calls one back and adds a new one.</p>
+              <div className="font-semibold mb-2 text-sm flex items-center gap-2">📁 Case Log</div>
+              <p className="text-[11px] text-slate-500 mb-2">The running list of real scenarios Ray &amp; Mark have broken down. Each episode adds one and can call a past one back.</p>
               <ul className="space-y-1">
                 {ledger.map((l, i) => <li key={i} className="text-xs text-slate-300 flex gap-2"><span className="text-emerald-500">•</span>{l}</li>)}
               </ul>
@@ -183,10 +183,10 @@ export default function ShowPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4 text-xs">
-                  <Meta label="The deal (lesson)" value={sel.borrower} />
-                  <Meta label="Money mechanism" value={sel.lessonTag} />
-                  <Meta label="Ray's signature move" value={sel.signatureMove} />
-                  <Meta label="Owl's-Ledger callback" value={sel.ledgerCallback} />
+                  <Meta label="The scenario" value={sel.borrower} />
+                  <Meta label="Takeaway" value={sel.lessonTag} />
+                  <Meta label="Fetti solution" value={sel.signatureMove} />
+                  <Meta label="Callback to a past case" value={sel.ledgerCallback} />
                 </div>
 
                 {/* the script */}
@@ -210,7 +210,7 @@ export default function ShowPage() {
                 </div>
 
                 {sel.newLedgerEntry && (
-                  <div className="mt-3 text-xs text-slate-500">🦉 New to the ledger this episode: <span className="text-slate-300">{sel.newLedgerEntry}</span></div>
+                  <div className="mt-3 text-xs text-slate-500">📁 New case logged: <span className="text-slate-300">{sel.newLedgerEntry}</span></div>
                 )}
               </div>
             )}

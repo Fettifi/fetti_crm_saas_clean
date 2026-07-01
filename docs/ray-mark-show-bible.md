@@ -1,102 +1,82 @@
 # Ray & Mark — *We Do Money* · Show Bible
 
-> The permanent canon for Fetti's animated brand comedy. Captured 2026-06-30 from
-> Ramon's build session. This is the polished reference; the raw verbatim source is in
-> `ray-mark-show-bible-source.md`, and the machine-usable version the Writers' Room reads
-> is `lib/show/showBible.ts`. **Nothing here gets watered down — these rules are Ramon's.**
+> Fetti's short-form video series. **Corrected canon (2026-06-30):** Ray is Fetti's
+> **founder and the brains** — the real problem-solver. Mark is the **owl co-host** who
+> brings the scenario and asks the questions. Every episode is a **real conversation**
+> between them breaking down one lending scenario — Ray solves it. No pranks, no fool.
+> Machine-usable source: `lib/show/showBible.ts`. (The old prank-based version — "Owl
+> Always Knew," frantic Ray — is scrapped; ignore `ray-mark-show-bible-source.md`.)
 
 ## The Show
 - **Title:** *Ray & Mark — We Do Money*
-- **Format:** short-form vertical (9:16), ~50 seconds, animated.
-- **Genre:** brand comedy — a Batman & Robin buddy duo, but funny.
-- **For:** Fetti Financial Services LLC, NMLS #2267023.
-- **Product taught:** DSCR / investor & business-purpose loans — qualify on the property's rent, not tax returns.
+- **Format:** short-form vertical (9:16), ~50 seconds — a genuine conversation breaking down one lending scenario.
+- **For:** Fetti Financial Services LLC, NMLS #2267023 — the nonbank lender that funds the deals big banks won't.
 - **Channels:** TikTok, Instagram Reels, YouTube Shorts.
-- **LOCKED sign-off (every episode ends here):** **"Fetti Financial Services, we do money!"**
+- **LOCKED sign-off (every episode):** **"Fetti Financial Services, we do money!"**
 
-## The Duo
+## The Two
 
-### RAY — the Batman (CEO, front-man)
-Fetti's CEO. Swaggering, hip-finance front-man. Big, flashy, warm, makes money look
-effortless. He's always locked onto the **wrong number** — panicking a deal will die or
-over-flexing — which is exactly the bait Mark already saw coming. Busted-but-delighted
-when pranked. **Ray gets the swagger and the slang.**
-- **Signature moves** (Mark has catalogued them all): cape-swish hero entrance · secret two-step victory dance · window sprint when panicked · rehearsing his entrance · parks crooked when he's scheming.
-- **Voice:** Cartesia (cloned) — `1ed1cd09-8aca-4d9d-8f5f-ada926a8b534`.
+### RAY — founder, CEO, the brains
+The real problem-solver. Composed, sharp, deeply knowledgeable about lending; a warm
+authority (never arrogant). When a tough scenario comes up, Ray sees the path and breaks
+it down in plain English. He's the closer — he has the answer. **Never frantic, never
+panicked, never the punchline.**
+- **Voice:** Cartesia — `1ed1cd09-8aca-4d9d-8f5f-ada926a8b534`.
 
-### MARK — the Robin (the owl, the brain)
-The all-seeing owl. **ICE-COLD deadpan — never moves, never blinks.** Brilliant, calm,
-all-knowing. Lands **one** razor-sharp line. Pranks Ray *affectionately* — because he's
-**already** solved the problem and wants to protect Ray from his own bad angle. The owl
-always knew.
-- **NEVER give Mark:** swagger, slang, street energy, movement/blinking/emoting, meanness, or a power trip. Breaking this breaks the duo.
+### MARK — the owl, brand co-host
+Personable and curious. He brings the real (anonymized) borrower scenario and asks the
+sharp questions the audience is thinking, then reacts with genuine interest — making
+Ray's insight land. Quick and likeable, **but Ray is the one who solves it.** Mark sets
+Ray up; he never upstages him, and he's never dumb — Ray is just the expert.
 - **Voice:** ElevenLabs — `nPczCjzI2devNBz1zQrb`.
 
 ### The dynamic
-Batman & Robin, but funny. **Ray brings the fire; Mark brings the wisdom.** Never mean —
-Mark pranks *because* he's already protected Ray. The bond escalates across the series:
-gotcha → Ray tries (and fails) to out-prank the owl → Ray anticipates it and leans in
-because he trusts Mark had the win ready. Grows into genuine ride-or-die.
+Two colleagues who respect each other — like listening in on the smartest guy at the
+company explaining a real deal to a sharp friend. Mark hosts and brings the deal + the
+questions; Ray, the founder, breaks down how Fetti gets it done. Warm, natural shop-talk.
 
-## The Engine — "THE OWL ALWAYS KNEW" (5 beats, ~50s)
-1. **Cold-Open Misdirect (0–8s):** Ray bursts in at full swagger, locked on the WRONG number, panicking or over-flexing. End on a signature move.
-2. **Swagger Peaks / Trap Live (8–20s):** Ray commits to the wrong solve. Mark — not moving, not blinking — drops one deadpan line that springs the prank he pre-rigged. Establish that Mark already had the answer **before** Ray worried.
-3. **All-Seeing Payoff (20–32s):** The prank lands. Mark reveals he saw it coming with a *specific* detail ("I saw you at 9:14 — you park crooked when you're scheming" / "You always do the cape thing"). One snap flips Ray from wrong to right.
-4. **Money Lesson, Welded to the Gag (32–44s):** Mark delivers the DSCR/cash-flow lesson in one tight line, using the prank as its metaphor ("We didn't read his tax returns. We read the property"). Name the exact (anonymized) borrower. Land the mechanism by ~15s for cold viewers.
-5. **Busted-but-Bonded + CTA + Locked Sign-off (44–50s):** Ray's self-deprecating tag ("Okay, that's cold-blooded, little buddy"). Mark, dead center to camera, gives the apply CTA as an invitation, then: **"Fetti Financial Services, we do money!"**
-
-## Series Memory (makes the show compound)
-- **The Owl's Ledger** — a running tally of everything Mark's caught Ray doing. Each episode **calls one back** and **adds one new entry.** The joke gets funnier the more episodes you've seen. Seeds: the cape-swish · the secret two-step (hidden since April) · parks crooked at 9:14 · the window sprint · rehearses his entrance.
-- **The Bond Meter** — every episode ends warmer than it began; the affection arc visibly escalates across the series.
+## The Conversation Format (~50s, ~5 beats)
+1. **The scenario (0–10s):** Mark brings a real anonymized borrower situation — the kind that gets turned down elsewhere.
+2. **Why it's hard (10–20s):** Mark surfaces the wrinkle — why a normal bank balks (write-offs, needs speed, messy returns, vacant unit, no US credit).
+3. **Ray solves it (20–38s):** Ray calmly breaks down how Fetti gets it done — names the right product + the mechanism in plain English. The core.
+4. **The insight (38–46s):** Ray lands the reframe that makes it click. Name the exact borrower so a viewer self-identifies.
+5. **CTA + locked sign-off (46–50s):** apply invitation, then **"Fetti Financial Services, we do money!"**
 
 ## DOs
-- Make the prank **active** — Mark springs a trap he rigged on purpose (bait Ray, switch name tags, cue the room). A passive reveal is a no-op.
-- **Weld** the lesson to the gag's metaphor — the joke and the DSCR teach are the same object.
-- Keep Mark ice-cold deadpan and all-seeing; one razor line; his prank proves he saw Ray's exact move coming.
-- Land the money mechanism early (~15s).
-- Name the exact (anonymized) borrower out loud — converts a laugh into a tap.
-- Give Ray one signature move per episode that Mark has secretly catalogued.
-- End every episode on the locked sign-off. Keep the prank affectionate — always close the bond.
+- Ray is the authority + problem-solver — he delivers the solution and the insight.
+- Mark brings the scenario, asks the sharp questions, reacts — sets Ray up, makes it land.
+- Weld the lesson to a real, specific anonymized scenario; name the exact borrower.
+- Explain the mechanism plainly (DSCR = qualify on rent; bank-statement = qualify on deposits; bridge = speed).
+- Keep it a natural conversation between two smart people; end on the locked sign-off.
 
 ## DON'Ts
-- DON'T let the prank smother the lesson — if you cut for time, cut prank dialogue, never the money mechanism.
-- DON'T give Mark swagger or slang — that's Ray's lane.
-- DON'T make the prank mean — no humiliation, no power trip.
-- DON'T promise rates, approval, or qualification — frame qualifying as a *program*, and the CTA as an *invitation* ("apply / see if the deal qualifies").
-- DON'T ever say "find the money" — Fetti **has** it. Use the slip as Ray's mistake that Mark corrects.
-- DON'T put real Fetti branding on any in-fiction fake alert; keep spoofs obviously bogus.
-- DON'T re-litigate the joke after the reveal; DON'T lean on tired props as the gag itself.
-- DON'T use a real/identifiable borrower — always "an investor", "a flipper".
+- DON'T make Mark the genius or have him out-think Ray. DON'T make Ray frantic, clueless, or the punchline.
+- DON'T do pranks, gotchas, or comedy-of-errors.
+- DON'T promise rates/approval — CTA is an invitation. DON'T say "find the money." DON'T use a real/identifiable borrower.
 
-## The 5 Canonical Prank Concepts (ranked)
-1. **The Empty Chair (Mark Already Funded It)** — *flagship.* Ray sprints in to "save" a dying deal; Mark funded it 20 minutes ago and texted the fake "URGENT" so Ray would have someone to save.
-2. **The Phantom Alert** — Ray's about to pass on a self-employed flipper; Mark rigged a fake market alert with escalating absurd numbers. The fake scary number misdirects into the real one: the property's cash flow.
-3. **The Cash-Flow Two-Step** — Ray's secret victory dance; Mark trained the whole office to perform it in unison the second a deal closes. The deal "danced on its own cash flow, not the W-2."
-4. **The Vacancy** — Ray stresses an empty unit kills the deal; Mark deadpans "your tenant's already covering it." The property qualifies on projected rent.
-5. **Reverse Uno: The Whoopee Cushion Heist** — Ray finally tries to prank the owl; Mark saw it coming and Ray pranks himself — "like a borrower who tries to *find* money. We don't find it. We **have** it."
+## The 5 Scenario Concepts
+1. **The Write-Offs Trap** *(flagship)* — self-employed investor denied over write-offs → DSCR qualifies on the rent.
+2. **The 10-Day Close** — flipper needs speed a bank can't match → bridge / hard money.
+3. **Great Business, Ugly Returns** — profitable owner, strong deposits, messy returns → bank-statement loan.
+4. **Cash Trapped in a Rental** — equity-rich, cash-poor investor → cash-out DSCR refi.
+5. **No US Credit, Real Money** — foreign national investor → business-purpose path, no US FICO.
 
-## Catchphrases
-- "You bring the fire, Ray. I bring the wisdom — that's why we're unstoppable, my wise feathered friend."
-- "Owls don't blink, Ray."
-- "You always do the cape thing."
-- "We don't find the money. We have it."
-- "Okay. That's cold-blooded, little buddy."
-- "You were magnificent, Ray. To an empty chair."
+## Series continuity — the Case Log
+A running list of the scenarios Ray & Mark have broken down. Each episode adds its
+scenario and can call back a prior one ("like that self-employed flipper we covered"),
+building a growing library of real case studies.
 
-## Flagship Script — "The Empty Chair"
-> **RAY** *(bursting in, cape-swish):* Nobody PANIC. Investor's W-2 won't carry this rental — but the CEO is HERE. Where is he? I'll SAVE the deal!
-> **MARK** *(deadpan, not looking up):* He left. Twenty minutes ago. Happy.
-> **RAY:** ...Left?! The deal's DEAD, Mark — his tax returns are a horror movie!
-> **MARK:** We didn't read his tax returns. We read the property. DSCR — the rental qualifies on the rent it earns, not his W-2.
-> **RAY** *(cape slowly lowering):* So while I was... rehearsing my entrance—
-> **MARK:** I funded it. Then I texted you "URGENT — deal dying" so you'd sprint in. *(beat)* You always do the cape thing.
-> **RAY** *(betrayed and delighted):* You LURED me?! You set the whole thing up!
-> **MARK:** Self-employed, write-offs, thin paycheck, even a vacant unit — doesn't matter. The rent carries it. You were magnificent, Ray. To an empty chair.
-> **RAY** *(laughing, busted):* Okay. That's cold-blooded, little buddy.
-> **MARK** *(dead center, one piece of confetti drifting off his wing):* We don't find the money. We have it. Apply at fettifi.com.
+## Flagship script — "The Write-Offs Trap"
+> **MARK:** Ray, got one for you. Self-employed investor, solid properties — but after his write-offs his tax returns show almost nothing. Bank shut him down. What do we do with that?
+> **RAY:** The bank was never the right tool for him. We don't read his tax returns — on a DSCR loan the property qualifies on the rent it earns, not his personal income.
+> **MARK:** So the write-offs that sank him at the bank—
+> **RAY:** —don't matter here. If the rent covers the payment, the deal works. He keeps his tax strategy and still gets the financing.
+> **MARK:** That's what people miss — they think being smart on taxes has to cost them the loan.
+> **RAY:** Only at a bank stuck on one formula. We built Fetti for exactly that borrower — the one everyone else says no to.
+> **MARK:** So if your write-offs are working against you—
+> **RAY:** Let the property do the qualifying. Apply at fettifi.com and we'll show you what it carries.
 > **MARK:** Fetti Financial Services, we do money!
 
 ---
-*The Writers' Room (`/show` in the CRM) generates new episodes in this canon on demand,
-keeps the Owl's Ledger going, and can voice the read (Ray → Cartesia, Mark → ElevenLabs).
-Animation is gated on `FAL_KEY`.*
+*The Writers' Room (`/show`) generates new episodes in this canon on demand, keeps the
+Case Log, and voices the read (Ray → Cartesia, Mark → ElevenLabs). Animation gated on FAL_KEY.*

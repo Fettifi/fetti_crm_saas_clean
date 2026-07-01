@@ -93,7 +93,7 @@ async function addLedgerEntry(entry: string): Promise<void> {
   if (!arr.some((x) => x.toLowerCase() === e.toLowerCase())) { arr.push(e); await writeJson(LEDGER_KEY, arr); }
 }
 
-// Seed the flagship "The Empty Chair" as episode #1 the first time the library is read.
+// Seed the flagship "The Write-Offs Trap" as episode #1 the first time the library is read.
 let seedChecked = false;
 export async function ensureSeeded(): Promise<void> {
   if (seedChecked) return;
@@ -106,10 +106,10 @@ export async function ensureSeeded(): Promise<void> {
       number: 1,
       title: FLAGSHIP.title,
       logline: clean(FLAGSHIP.hook),
-      borrower: "A self-employed investor whose W-2/tax returns won't qualify a rental — but the property's rent does (DSCR).",
-      lessonTag: "DSCR — the rental qualifies on the rent it earns, not the borrower's W-2.",
-      signatureMove: "cape-swish hero entrance",
-      ledgerCallback: "(series opener — establishes the ledger)",
+      borrower: "A self-employed investor with solid properties, denied by his bank because tax write-offs zero out his income.",
+      lessonTag: "DSCR qualifies the deal on the property's rent, not the borrower's tax returns.",
+      signatureMove: "DSCR loan",
+      ledgerCallback: "(series opener)",
       newLedgerEntry: FLAGSHIP.ledgerSeed,
       beats: [],
       lines: FLAGSHIP.lines.map((l) => ({ speaker: l.speaker as EpisodeLine["speaker"], text: clean(l.text), onscreen: l.onscreen ? clean(l.onscreen) : undefined })),
@@ -132,17 +132,17 @@ export function voiceFor(speaker: string): { provider: "cartesia" | "elevenlabs"
 const EPISODE_SCHEMA = `Return ONLY valid JSON, no markdown, in EXACTLY this shape:
 {
  "title": string (punchy, 2-5 words),
- "logline": string (one sentence — the prank hook),
- "borrower": string (the ANONYMIZED deal this episode teaches, e.g. "a self-employed flipper between W-2s with a vacant unit"),
- "lessonTag": string (the money mechanism in one phrase, e.g. "DSCR qualifies on the property's rent, not the W-2"),
- "signatureMove": string (Ray's ONE signature physical move this episode),
- "ledgerCallback": string (which PRIOR Owl's-Ledger entry Mark calls back),
- "newLedgerEntry": string (the ONE new thing Mark catalogues about Ray this episode — short),
- "beats": [ {"beat":"BEAT 1 — COLD OPEN MISDIRECT","summary": string}, ... all 5 beats ],
- "lines": [ {"speaker":"RAY"|"MARK","text": string, "onscreen": string} ],  // the full ~50s script, 9-13 lines
- "cta": string (the apply caption — an INVITATION, e.g. "Self-employed? The rent can carry it. Apply at fettifi.com.")
+ "logline": string (one sentence describing the scenario Ray breaks down),
+ "borrower": string (the ANONYMIZED borrower scenario, e.g. "a self-employed investor denied over heavy tax write-offs"),
+ "lessonTag": string (the takeaway/insight in one phrase, e.g. "DSCR qualifies on the property's rent, not tax returns"),
+ "signatureMove": string (the FETTI PRODUCT/SOLUTION Ray uses, e.g. "DSCR loan", "bank-statement loan", "bridge loan"),
+ "ledgerCallback": string (optional — a PRIOR case from the Case Log Mark briefly calls back; "" if none),
+ "newLedgerEntry": string (this episode's scenario as a short case-log tag),
+ "beats": [ {"beat":"BEAT 1 — THE SCENARIO","summary": string}, ... all 5 beats ],
+ "lines": [ {"speaker":"RAY"|"MARK","text": string, "onscreen": string} ],  // the full ~50s conversation, 8-12 lines
+ "cta": string (the apply caption — an INVITATION, e.g. "Self-employed? The rent can qualify it. Apply at fettifi.com.")
 }
-RULES: Mark is ICE-COLD deadpan (never swagger/slang). Weld the lesson to the prank's metaphor. Land the money mechanism early. Name the exact (anonymized) borrower out loud. End the LAST line with MARK saying EXACTLY: "${SHOW.signoff}". Never promise rates/approval. Never say "find the money".`;
+RULES: This is a real conversation — MARK brings the scenario and asks the sharp questions; RAY (the founder, the brains) calmly solves it and lands the insight. NEVER make Mark out-think Ray; NEVER make Ray frantic or foolish; no pranks. Name the exact (anonymized) borrower out loud. End the LAST line with EXACTLY: "${SHOW.signoff}" (Mark or Ray). Never promise rates/approval. Never say "find the money".`;
 
 export async function generateEpisode(input: { brief?: string; concept?: string }): Promise<Episode> {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -154,11 +154,11 @@ export async function generateEpisode(input: { brief?: string; concept?: string 
   const ledger = await getLedger();
 
   const conceptHint = input.concept
-    ? `Build on this canonical prank concept: ${input.concept}.`
+    ? `Build the conversation around this scenario concept: ${input.concept}.`
     : "";
   const briefHint = input.brief
-    ? `Base the deal/lesson on this (anonymize any real borrower — never a real name/address/exact figures): ${input.brief}`
-    : `Pick a fresh DSCR / investor-loan scenario (self-employed borrower, write-offs, thin paycheck, vacant unit, cash-out on a rental, fix-and-flip, etc.).`;
+    ? `Base the scenario on this (anonymize any real borrower — never a real name/address/exact figures): ${input.brief}`
+    : `Pick a fresh real lending scenario (self-employed with write-offs, flipper needing speed, business owner with strong deposits but messy returns, cash-out on a paid-off rental, foreign national investor, etc.).`;
 
   const system = buildWritersRoomSystemPrompt({ ledger, episodeNumber });
   const user = `Write EPISODE #${episodeNumber} of "${SHOW.title}". ${conceptHint} ${briefHint}\n\n${EPISODE_SCHEMA}`;
@@ -189,13 +189,13 @@ export async function generateEpisode(input: { brief?: string; concept?: string 
     })
     .filter((l: EpisodeLine) => l.text);
 
-  // Enforce the LOCKED sign-off as the final line (Mark, dead center).
+  // Enforce the LOCKED sign-off as the final line (Mark or Ray may deliver it).
   const last = lines[lines.length - 1];
-  if (!last || last.speaker !== "MARK" || !last.text.toLowerCase().includes("we do money")) {
+  if (!last || !last.text.toLowerCase().includes("we do money")) {
     lines.push({ speaker: "MARK", text: SHOW.signoff, onscreen: `FETTI FINANCIAL SERVICES - NMLS #${SHOW.nmls}` });
   } else {
-    // normalize the wording of the final line to the exact locked phrase
-    lines[lines.length - 1] = { speaker: "MARK", text: SHOW.signoff, onscreen: last.onscreen || `FETTI FINANCIAL SERVICES - NMLS #${SHOW.nmls}` };
+    // normalize the wording of the final line to the exact locked phrase, keep the speaker
+    lines[lines.length - 1] = { speaker: last.speaker, text: SHOW.signoff, onscreen: last.onscreen || `FETTI FINANCIAL SERVICES - NMLS #${SHOW.nmls}` };
   }
 
   const beats = (Array.isArray(raw.beats) ? raw.beats : [])
