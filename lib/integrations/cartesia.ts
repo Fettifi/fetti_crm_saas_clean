@@ -15,18 +15,22 @@ export function isCartesiaVoiceId(id: string): boolean {
 }
 
 // Synthesize speech with a Cartesia voice id. modelId defaults to Sonic 2.
-export async function cartesiaSpeak(text: string, voiceId: string, modelId = "sonic-2"): Promise<Buffer | null> {
+// `speed` slows/speeds the delivery — "slowest"|"slow"|"normal"|"fast"|"fastest" or a
+// float in [-1,1] (negative = slower). Used to slow Ray's read down.
+export async function cartesiaSpeak(text: string, voiceId: string, modelId = "sonic-2", speed?: string | number): Promise<Buffer | null> {
   const key = await cfg("CARTESIA_API_KEY");
   if (!key) { console.error("[Cartesia] CARTESIA_API_KEY not set"); return null; }
   if (!text?.trim() || !voiceId) { console.error("[Cartesia] missing text or voiceId"); return null; }
   try {
+    const voice: any = { mode: "id", id: voiceId };
+    if (speed !== undefined) voice.__experimental_controls = { speed };
     const r = await fetch(TTS_BYTES_URL, {
       method: "POST",
       headers: { "X-API-Key": key, "Cartesia-Version": CARTESIA_VERSION, "Content-Type": "application/json" },
       body: JSON.stringify({
         model_id: modelId,
         transcript: text.slice(0, 5000),
-        voice: { mode: "id", id: voiceId },
+        voice,
         language: "en",
         output_format: { container: "mp3", sample_rate: 44100, bit_rate: 128000 },
       }),

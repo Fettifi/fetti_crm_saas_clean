@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getEpisode, voiceFor, type EpisodeLine } from "@/lib/show/writersRoom";
 import { cartesiaSpeak } from "@/lib/integrations/cartesia";
 import { streamAudio } from "@/lib/integrations/elevenlabs";
+import { cfg } from "@/lib/settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,9 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   const ep = await getEpisode(id);
   if (!ep) return NextResponse.json({ error: "not found" }, { status: 404 });
 
+  // Ray (Cartesia) reads too fast at normal speed — slow him down. Tunable via the
+  // RAY_VOICE_SPEED setting ("slowest"|"slow"|"normal"|"fast" or a float in [-1,1]).
+  const raySpeed = (await cfg("RAY_VOICE_SPEED")) || "slow";
   const out: { speaker: string; text: string; provider: string | null; audio: string | null }[] = [];
   let voiced = 0;
   for (const line of ep.lines as EpisodeLine[]) {
@@ -25,7 +29,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     let b64: string | null = null;
     try {
       if (v.provider === "cartesia") {
-        const buf = await cartesiaSpeak(line.text, v.voiceId);
+        const buf = await cartesiaSpeak(line.text, v.voiceId, "sonic-2", raySpeed);
         if (buf) b64 = buf.toString("base64");
       } else {
         const ab = await streamAudio(line.text, v.voiceId);
