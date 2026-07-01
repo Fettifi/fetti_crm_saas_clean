@@ -92,7 +92,11 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     // TCPA SMS consent — so these are nurtured EMAIL-ONLY (never SMS). They still get the
     // full email drip/touches; texting is suppressed by forcing phone=null below.
     // (Owner-approved 2026-06-23.) A historical lead with no email gets no touch (held).
-    const sendPhone = l.raw?.historical_import ? null : l.phone;
+    // Also suppress SMS for any lead who did NOT opt into texts (sms_consent === false)
+    // — the optional SMS checkbox is the TCPA/A2P consent record; declines are always
+    // honored (they still get the full email drip). Legacy leads with no flag keep
+    // prior behavior; an explicit decline is never texted.
+    const sendPhone = (l.raw?.historical_import || l.raw?.sms_consent === false) ? null : l.phone;
     const stage = (l.stage || "").toLowerCase();
 
     // --- Review lane: ask funded/closed borrowers for a Google review (map-pack fuel).

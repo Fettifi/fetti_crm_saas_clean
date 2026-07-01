@@ -326,6 +326,10 @@ function appSteps(a: Answers): Q[] {
 }
 
 const field = "w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none";
+// OPTIONAL SMS consent (TCPA + carrier A2P/toll-free rule: agreeing to texts must NOT
+// be a condition of service). Collected via a separate, unchecked checkbox — never
+// bundled into form submission. When unchecked, we do not text the lead.
+const SMS_CONSENT = "Text me too — I agree to receive account, application, and appointment text messages (SMS) from Fetti Financial Services LLC (NMLS #2267023) at the number provided, including automated messages. Consent is not a condition of any service. Message frequency varies; Msg & data rates may apply. Reply STOP to opt out, HELP for help.";
 
 export default function ApplyWizard() {
   const [answers, setAnswers] = useState<Answers>({});
@@ -509,10 +513,12 @@ export default function ApplyWizard() {
       // Mark ad-sourced wizard leads as paid so they're visible as paid in the CRM
       // (first-touch utm survives navigation; ignore the LP success-CTA's lp_* tag).
       source: av("ref") ? "referral" : (av("utm_source") && !/^lp_/.test(String(av("utm_source")))) ? `paid_${av("utm_source")}` : "wizard",
-      // TCPA/CAN-SPAM consent record: submitting the contact form is the agreement.
+      // TCPA/CAN-SPAM: submitting authorizes phone & email contact about the inquiry.
+      // SMS (text) consent is SEPARATE and OPTIONAL — it rides in via the sms_optin
+      // checkbox (spread from `extra`/contact), never bundled into form submission.
       consent: true,
       consent_at: new Date().toISOString(),
-      consent_text: "By submitting, borrower agreed Fetti Financial Services may contact by phone, email & text (SMS), including automated. Consent not required to buy. STOP to opt out.",
+      consent_text: "By submitting, borrower agreed Fetti Financial Services may contact them by phone & email about their inquiry. Consent not required to buy.",
     };
   }
 
@@ -532,9 +538,13 @@ export default function ApplyWizard() {
     const fd = new FormData(e.currentTarget);
     const p = product(answers);
     setProd(p);
+    const smsOptin = fd.get("sms_optin") === "on";
     const c = {
       full_name: fd.get("full_name"), email: fd.get("email"), phone: fd.get("phone"),
       state: fd.get("state"), hp: String(fd.get("company") || ""),
+      sms_consent: smsOptin,
+      sms_consent_at: smsOptin ? new Date().toISOString() : null,
+      sms_consent_text: smsOptin ? SMS_CONSENT : null,
     };
     setContact(c);
     try {
@@ -633,13 +643,16 @@ export default function ApplyWizard() {
             <p className="text-[11px] text-emerald-600/80">Investment &amp; business-purpose loans are available in all 50 states.</p>
           )}
           {error && <p className="text-red-400 text-sm">{error}</p>}
+          <label className="flex items-start gap-2 text-left cursor-pointer">
+            <input type="checkbox" name="sms_optin" className="mt-1 h-4 w-4 shrink-0 accent-emerald-600" />
+            <span className="text-[11px] text-slate-400 leading-relaxed">{SMS_CONSENT}</span>
+          </label>
           <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3 rounded-full">
             {submitting ? "Submitting…" : "See my options →"}
           </button>
           <p className="text-[11px] text-slate-400 text-center">
-            By submitting, you agree Fetti Financial Services LLC (NMLS #2267023) may contact you by phone, email &amp; text (SMS) — including automated —
-            at the number provided, about your inquiry and application. Consent isn&apos;t required to buy. Msg &amp; data rates may apply; message frequency varies.
-            Reply STOP to opt out, HELP for help. See our <a href="/privacy" className="underline hover:text-slate-300">Privacy Policy</a> &amp; <a href="/terms" className="underline hover:text-slate-300">Terms</a>.
+            By submitting, you agree Fetti Financial Services LLC (NMLS #2267023) may contact you by phone &amp; email about your inquiry and application.
+            Consent isn&apos;t required to buy. Texts are optional (checkbox above). See our <a href="/privacy" className="underline hover:text-slate-300">Privacy Policy</a> &amp; <a href="/terms" className="underline hover:text-slate-300">Terms</a>.
           </p>
           <p className="text-[10px] text-slate-400 text-center">{LICENSING_SHORT}</p>
         </form>

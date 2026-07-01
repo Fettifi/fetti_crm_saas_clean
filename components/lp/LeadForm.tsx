@@ -12,7 +12,10 @@ import ReferShare from "@/components/ReferShare";
 import type { LpConfig } from "@/lib/lpConfigs";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 
-const CONSENT = "By submitting, you agree Fetti Financial Services LLC (NMLS #2267023) may contact you by phone, email & text (SMS) — including automated — at the number provided, about your inquiry and application. Consent isn't required to buy. Msg & data rates may apply; message frequency varies. Reply STOP to opt out, HELP for help.";
+const CONSENT = "By submitting, you agree Fetti Financial Services LLC (NMLS #2267023) may contact you by phone & email about your inquiry and application. Consent isn't required to buy.";
+// OPTIONAL SMS consent — separate unchecked checkbox (carrier A2P/toll-free rule + TCPA:
+// agreeing to texts must not be a condition of service). No box checked = we don't text.
+const SMS_CONSENT = "Text me too — I agree to receive account, application, and appointment text messages (SMS) from Fetti Financial Services LLC (NMLS #2267023) at the number provided, including automated messages. Consent is not a condition of any service. Message frequency varies; Msg & data rates may apply. Reply STOP to opt out, HELP for help.";
 
 export default function LeadForm({ config }: { config: LpConfig }) {
   const [done, setDone] = useState(false);
@@ -31,6 +34,7 @@ export default function LeadForm({ config }: { config: LpConfig }) {
     const a = (k: string) => (attr as Record<string, string>)[k] || sp.get(k) || undefined;
     const purpose = config.purposes.find((p) => p.value === fd.get("purpose")) || config.purposes[0];
     const value = Number(propVal.replace(/[^0-9.]/g, "")) || undefined;
+    const smsOptin = fd.get("sms_optin") === "on";
     try {
       const res = await fetch("/api/apply", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -42,6 +46,7 @@ export default function LeadForm({ config }: { config: LpConfig }) {
           utm_term: a("utm_term"), utm_content: a("utm_content"), gclid: a("gclid"), fbclid: a("fbclid"),
           referrer: a("ref"),
           consent: true, consent_at: new Date().toISOString(), consent_text: CONSENT,
+          sms_consent: smsOptin, sms_consent_at: smsOptin ? new Date().toISOString() : null, sms_consent_text: smsOptin ? SMS_CONSENT : null,
           hp: String(fd.get("company") || ""),
         }),
       });
@@ -89,6 +94,10 @@ export default function LeadForm({ config }: { config: LpConfig }) {
           </select>
         )}
         {err && <p className="text-red-500 text-sm">{err}</p>}
+        <label className="flex items-start gap-2 text-left cursor-pointer">
+          <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" />
+          <span className="text-[11px] text-slate-400 leading-relaxed">{SMS_CONSENT}</span>
+        </label>
         <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3.5 rounded-full text-lg shadow-lg shadow-emerald-600/25">
           {submitting ? "Submitting…" : "See my options →"}
         </button>

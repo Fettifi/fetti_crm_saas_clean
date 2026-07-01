@@ -8,7 +8,10 @@ import { getAttribution } from "@/lib/attribution";
 import { referralCode } from "@/lib/referral";
 import ReferShare from "@/components/ReferShare";
 
-const CONSENT = "By submitting, you agree Fetti Financial Services LLC (NMLS #2267023) may contact you by phone, email & text (SMS), including automated, about your inquiry. Consent isn't required to buy. Msg & data rates may apply. Reply STOP to opt out.";
+const CONSENT = "By submitting, you agree Fetti Financial Services LLC (NMLS #2267023) may contact you by phone & email about your inquiry. Consent isn't required to buy.";
+// OPTIONAL SMS consent — separate unchecked checkbox (carrier A2P/toll-free rule + TCPA:
+// agreeing to texts must not be a condition of service). No box checked = we don't text.
+const SMS_CONSENT = "Text me too — I agree to receive account, application, and appointment text messages (SMS) from Fetti Financial Services LLC (NMLS #2267023) at the number provided, including automated messages. Consent is not a condition of any service. Message frequency varies; Msg & data rates may apply. Reply STOP to opt out, HELP for help.";
 
 export default function HeroCapture({ source = "homepage_hero" }: { source?: string }) {
   const [done, setDone] = useState(false);
@@ -19,6 +22,7 @@ export default function HeroCapture({ source = "homepage_hero" }: { source?: str
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true); setErr(null);
     const fd = new FormData(e.currentTarget);
+    const smsOptin = fd.get("sms_optin") === "on";
     const attr = getAttribution(); const a = (k: string) => (attr as Record<string, string>)[k] || undefined;
     try {
       const r = await fetch("/api/apply", {
@@ -28,7 +32,9 @@ export default function HeroCapture({ source = "homepage_hero" }: { source?: str
           source: a("ref") ? "referral" : a("utm_source") ? `paid_${a("utm_source")}` : source,
           utm_source: a("utm_source"), utm_medium: a("utm_medium"), utm_campaign: a("utm_campaign"),
           utm_term: a("utm_term"), utm_content: a("utm_content"), gclid: a("gclid"), fbclid: a("fbclid"), referrer: a("ref"),
-          consent: true, consent_at: new Date().toISOString(), consent_text: CONSENT, hp: String(fd.get("company") || ""),
+          consent: true, consent_at: new Date().toISOString(), consent_text: CONSENT,
+          sms_consent: smsOptin, sms_consent_at: smsOptin ? new Date().toISOString() : null, sms_consent_text: smsOptin ? SMS_CONSENT : null,
+          hp: String(fd.get("company") || ""),
         }),
       });
       const j = await r.json();
@@ -63,6 +69,10 @@ export default function HeroCapture({ source = "homepage_hero" }: { source?: str
         <input name="phone" required placeholder="Phone" className={field} />
       </div>
       <input name="email" type="email" placeholder="Email (optional)" className={`${field} mt-2.5`} />
+      <label className="flex items-start gap-2 mt-2.5 text-left cursor-pointer">
+        <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" />
+        <span className="text-[10px] text-slate-400 leading-relaxed">{SMS_CONSENT}</span>
+      </label>
       <button type="submit" disabled={busy} className="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold px-8 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">
         {busy ? "Sending…" : "See what you qualify for →"}
       </button>

@@ -186,8 +186,20 @@ export async function POST(req: NextRequest) {
     //   4. Qualify agent pre-screens
     // Log the intake either way so the enterprise brain sees all activity.
     // Capture consent metadata (TCPA/CAN-SPAM proof) when the form supplies it.
-    const consent = (body as any).consent === true
-      ? { consented: true, consent_at: (body as any).consent_at || new Date().toISOString(), consent_text: (body as any).consent_text || null }
+    // SMS (text) consent is SEPARATE and OPTIONAL from the phone/email inquiry consent
+    // (carrier A2P/toll-free rule + TCPA: agreeing to texts must not be required). We
+    // only text a lead when sms_consent === true; it also persists on lead.raw (via the
+    // rawBody spread) so first-touch + nurture gate every future SMS send on it.
+    const smsConsent = (body as any).sms_consent === true;
+    const consent = ((body as any).consent === true || smsConsent)
+      ? {
+          consented: (body as any).consent === true,
+          consent_at: (body as any).consent_at || new Date().toISOString(),
+          consent_text: (body as any).consent_text || null,
+          sms_consent: smsConsent,
+          sms_consent_at: (body as any).sms_consent_at || (smsConsent ? new Date().toISOString() : null),
+          sms_consent_text: (body as any).sms_consent_text || null,
+        }
       : null;
 
     after(async () => {
@@ -262,11 +274,14 @@ export async function POST(req: NextRequest) {
         // checklist dump and no "please upload" demands. Mark surfaces the secure link
         // and asks for docs naturally once the lead engages (SMS/website concierge),
         // so the opener stays human and starts a real back-and-forth.
+        // TEXT the first touch ONLY if the lead opted into SMS (checked the optional
+        // box). Otherwise pass phone:null so it's email-only — same gating pattern
+        // nurture uses. Consent-not-given ≠ no follow-up; they still get the email.
         let autoSent: string[] = [];
         try {
           const res = await respondToLead({
             id: newLead.id, kind: "first_touch",
-            name: full_name, email, phone, loan_purpose: body.loan_purpose, message: draftReply || "", link: fileLink,
+            name: full_name, email, phone: smsConsent ? phone : null, loan_purpose: body.loan_purpose, message: draftReply || "", link: fileLink,
           });
           autoSent = res.sent;
         } catch (e) { console.warn("[/api/apply] auto-response failed:", e); }
