@@ -52,19 +52,27 @@ export async function markSignatureHtml(): Promise<string> {
 // Includes the CAN-SPAM essentials: identity, mailing address, and a working
 // one-click unsubscribe when a URL is provided.
 export async function markSignatureLite(unsubscribeUrl?: string): Promise<string> {
-  const phone = ((await cfg("OFFICE_PHONE")) || "").trim();
-  const address = ((await cfg("COMPANY_MAILING_ADDRESS")) || "").trim();
-  const bits = [
-    "Fetti Financial Services LLC",
-    [`NMLS #2267023`, phone || null, "fettifi.com"].filter(Boolean).join(" · "),
-  ];
+  // Ramon's REAL email-signature format (his ask, 2026-07-02), adapted for Mark:
+  // Fetti logo (full stacked green/gold mark) → WE DO MONEY! → Mark (no title) →
+  // company → NMLS + CA license → office address → office line. The tiny unsubscribe
+  // link stays for CAN-SPAM. Values fall back to his authoritative signature if the
+  // app_settings aren't set.
+  const phone = ((await cfg("OFFICE_PHONE")) || "+1 424.675.6295").trim();
+  const address = ((await cfg("COMPANY_MAILING_ADDRESS")) || "5777 W Century Blvd Suite 1435\nLos Angeles, CA 90045").trim();
+  const addressHtml = address.split(/\n|,\s*(?=Los Angeles)/).map((l) => l.trim()).filter(Boolean).join("<br>");
   const unsub = unsubscribeUrl
-    ? ` · <a href="${unsubscribeUrl}" style="color:#94a3b8">unsubscribe</a>`
+    ? `<div style="margin-top:10px;font-size:10px;color:#cbd5e1"><a href="${unsubscribeUrl}" style="color:#cbd5e1">unsubscribe</a></div>`
     : "";
   return `
-  <div style="margin-top:26px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#64748b">
-    <div>${bits[0]}</div>
-    <div style="color:#94a3b8">${bits[1]}</div>
-    <div style="margin-top:8px;font-size:10px;color:#cbd5e1">${address ? address : ""}${unsub}</div>
+  <div style="margin-top:28px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.55;color:#334155">
+    <img src="${ASSET_BASE}/fetti-logo.png" width="120" alt="Fetti Financial Services LLC" style="display:block;height:auto;margin-bottom:6px" />
+    <div style="font-weight:800;color:#0c7a52;letter-spacing:.5px">WE DO MONEY!</div>
+    <div style="margin-top:10px;font-weight:700;color:#0f172a">Mark</div>
+    <div style="font-weight:700">FETTI FINANCIAL SERVICES LLC</div>
+    <div>NMLS# 2267023</div>
+    <div>CA# 60DBO-153798</div>
+    <div>${addressHtml}</div>
+    <div>Office:&nbsp;&nbsp;<a href="tel:${phone.replace(/[^0-9+]/g, "")}" style="color:#334155;text-decoration:none">${phone}</a></div>
+    ${unsub}
   </div>`;
 }
