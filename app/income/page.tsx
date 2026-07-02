@@ -40,13 +40,37 @@ export default function IncomeCalcPage() {
   const [borrowerName, setBorrowerName] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfErr, setPdfErr] = useState("");
+  // Liabilities — populated from an uploaded credit report (AI-extracted) or added
+  // manually. Included rows sum into DTI alongside the free-form "other debts" field.
+  type Liab = { id: string; creditor: string; type: string; monthly: number; balance: number | null; status: string; include: boolean; note?: string };
+  const [liabs, setLiabs] = useState<Liab[]>([]);
+  const [crBusy, setCrBusy] = useState(false);
+  const [crErr, setCrErr] = useState("");
+
+  async function uploadCreditReport(files: FileList | null) {
+    if (!files || !files.length) return;
+    setCrBusy(true); setCrErr("");
+    try {
+      const fd = new FormData();
+      for (const f of Array.from(files).slice(0, 4)) fd.append("files", f);
+      const res = await fetch("/api/income/credit-report", { method: "POST", body: fd });
+      const j = await res.json();
+      if (!res.ok) { setCrErr(j?.error || "Couldn't read that report."); return; }
+      setLiabs((prev) => [...prev, ...(j.liabilities || [])]);
+      if (j.borrower && !borrowerName) setBorrowerName(j.borrower);
+    } catch { setCrErr("Upload failed — please try again."); } finally { setCrBusy(false); }
+  }
+  const updLiab = (id: string, patch: Partial<Liab>) => setLiabs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const delLiab = (id: string) => setLiabs((ls) => ls.filter((l) => l.id !== id));
+  const addLiab = () => setLiabs((ls) => [...ls, { id: uid(), creditor: "", type: "other", monthly: 0, balance: null, status: "open", include: true }]);
+  const liabTotal = liabs.reduce((s, l) => s + (l.include ? l.monthly : 0), 0);
 
   function update(id: string, patch: Partial<IncomeSource>) { setSources((s) => s.map((x) => (x.id === id ? { ...x, ...patch } : x))); }
   function addSource() { setSources((s) => [...s, { id: uid(), borrower: 1, type: "salary" }]); }
   function removeSource(id: string) { setSources((s) => (s.length > 1 ? s.filter((x) => x.id !== id) : s)); }
 
   const r = useMemo(() => computeIncome(sources, loanType), [sources, loanType]);
-  const enteredDebts = num(monthlyDebts);
+  const enteredDebts = num(monthlyDebts) + liabTotal;
   const debts = enteredDebts + r.derivedDebts;            // rental losses count as debt
   const housing = num(housingPayment);
   const frontCap = loanType === "fha" ? 31 : undefined;
@@ -162,8 +186,49 @@ export default function IncomeCalcPage() {
             </div>
 
             <div className="text-xs uppercase tracking-wide text-slate-500 pt-2">DTI &amp; affordability</div>
+
+            {/* Liabilities — from a credit report (AI-extracted) or entered manually */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div className="text-sm font-semibold text-slate-200">Liabilities</div>
+                  <div className="text-[11px] text-slate-500">Upload the credit report — every tradeline&apos;s payment lands here and rolls into DTI.</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className={`text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer ${crBusy ? "bg-slate-700 text-slate-400" : "bg-emerald-600 hover:bg-emerald-500 text-white"}`}>
+                    {crBusy ? "Reading report…" : "⬆ Upload credit report"}
+                    <input type="file" accept="application/pdf,image/*" multiple className="hidden" disabled={crBusy}
+                      onChange={(e) => { uploadCreditReport(e.target.files); e.currentTarget.value = ""; }} />
+                  </label>
+                  <button onClick={addLiab} className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">+ Add</button>
+                </div>
+              </div>
+              {crErr && <p className="text-xs text-red-300 mt-2">{crErr}</p>}
+              {liabs.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {liabs.map((l) => (
+                    <div key={l.id} className={`rounded-lg px-2 py-1.5 ${l.include ? "bg-slate-800/70" : "bg-slate-900 opacity-60"}`}>
+                      <div className="flex items-center gap-2">
+                        <input type="checkbox" checked={l.include} onChange={(e) => updLiab(l.id, { include: e.target.checked })} className="h-4 w-4 shrink-0 accent-emerald-500" title="Include in DTI" />
+                        <input value={l.creditor} onChange={(e) => updLiab(l.id, { creditor: e.target.value })} placeholder="Creditor" className="flex-1 min-w-0 bg-transparent text-sm text-white focus:outline-none" />
+                        <span className="text-[10px] uppercase text-slate-500 shrink-0">{l.type}</span>
+                        <CurrencyInput value={l.monthly ? String(l.monthly) : ""} onChange={(v) => updLiab(l.id, { monthly: num(v) })} className="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white text-right" placeholder="$/mo" />
+                        <button onClick={() => delLiab(l.id)} className="text-slate-500 hover:text-red-400 shrink-0" title="Remove"><X className="w-4 h-4" /></button>
+                      </div>
+                      {(l.note || l.balance) && (
+                        <div className="text-[10px] text-slate-500 mt-0.5 ml-6">
+                          {l.balance ? `bal ${money(l.balance)}` : ""}{l.balance && l.note ? " · " : ""}{l.note || ""}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <div className="text-xs text-slate-400 text-right pt-1">Included liabilities: <span className="font-bold text-white">{money(liabTotal)}/mo</span></div>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <div><label className={lbl}>Monthly debts <span className="text-slate-600">(non-housing)</span></label><CurrencyInput value={monthlyDebts} onChange={setMonthlyDebts} className={inp} placeholder="$0 / mo" /></div>
+              <div><label className={lbl}>Other monthly debts <span className="text-slate-600">(not listed above)</span></label><CurrencyInput value={monthlyDebts} onChange={setMonthlyDebts} className={inp} placeholder="$0 / mo" /></div>
               <div><label className={lbl}>Proposed housing <span className="text-slate-600">(PITIA)</span></label><CurrencyInput value={housingPayment} onChange={setHousingPayment} className={inp} placeholder="$0 / mo" /></div>
             </div>
             <div><label className={lbl}>Target back-end DTI (for max payment){frontCap ? " · FHA front cap 31%" : ""}</label><select value={targetDti} onChange={(e) => setTargetDti(e.target.value)} className={inp}>{DTI_TARGETS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
