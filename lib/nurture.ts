@@ -9,6 +9,10 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { cfg } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
+// EMAIL ≠ SMS: the msg() strings below are SMS copy ("Reply YES/STOP"). Emails get their
+// own panel-crafted personal notes (subject + body) from the email touch-set, keyed to
+// the same cadence — so an email never reads like a pasted text message again.
+import { renderTouch, EMAIL_TOUCHES, STEP_TOUCH, REACTIVATION_KEYS } from "@/lib/notify/emailCopy";
 
 // Record every follow-up that actually goes out, so sends are AUDITABLE in
 // activity_log (the blind spot that let the phantom-status bug send 0 unnoticed).
@@ -21,6 +25,7 @@ const logSent = (leadId: string, lane: string, step: number | string, channels: 
 type Lead = {
   id: string; full_name: string | null; first_name: string | null;
   email: string | null; phone: string | null; loan_purpose: string | null;
+  state: string | null; property_value: number | null;
   stage: string | null; status: string | null; created_at: string;
   nurture_step: number | null; nurture_paused: boolean | null; last_nurture_at: string | null;
   raw: any;
@@ -73,7 +78,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   const cutoff = new Date(Date.now() - 365 * 86400000).toISOString();
   const { data: leads } = await supabaseAdmin
     .from("leads")
-    .select("id, full_name, first_name, email, phone, loan_purpose, stage, created_at, nurture_step, nurture_paused, last_nurture_at, raw")
+    .select("id, full_name, first_name, email, phone, loan_purpose, state, property_value, stage, created_at, nurture_step, nurture_paused, last_nurture_at, raw")
     .gte("created_at", cutoff)
     .limit(800);
 
@@ -106,8 +111,12 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       if (!l.raw?.review_requested) {
         const fn = (l.first_name || l.full_name || "there").split(" ")[0];
         const msg = `Hi ${fn}, it's Mark — congrats on closing with Fetti Financial Services! 🎉 If we earned it, a quick Google review genuinely helps a small shop like ours: ${reviewUrl} — thank you! (Reply STOP to opt out.)`;
+        const reviewEmail = `Hey ${fn} — congrats again on closing. Genuinely glad we got it done.\n\nOne small ask: if we earned it, a quick Google review makes a real difference for a small shop like ours. Two sentences is plenty: ${reviewUrl}\n\nEither way — thank you for trusting us with it.`;
         try {
-          const res = await respondToLead({ id: l.id, kind: "nurture", name: fn, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg });
+          const res = await respondToLead({
+            id: l.id, kind: "nurture", name: fn, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg,
+            emailSubject: "a quick favor", emailBody: reviewEmail,
+          });
           const raw = l.raw && typeof l.raw === "object" ? l.raw : {};
           raw.review_requested = new Date().toISOString();
           await supabaseAdmin.from("leads").update({ raw }).eq("id", l.id);
@@ -141,8 +150,12 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       const link = `${baseUrl()}/file/${file.share_token}`;
       const list = missing.slice(0, 3).join(", ") + (missing.length > 3 ? `, +${missing.length - 3} more` : "");
       const message = `Hi ${name}, it's Mark — you're almost there on ${purpose}! Still need: ${list}. Upload securely here: ${link}${bookLine} (Reply STOP to opt out.)`;
+      const emailBody = `Hey ${name} — you're genuinely close on ${purpose}. Still open on my side: ${list}.\n\nUpload them here whenever suits: ${link}\n\nIf one of these is a pain to get, tell me which — there's usually a workaround.`;
       try {
-        const res = await respondToLead({ id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message });
+        const res = await respondToLead({
+          id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message,
+          emailSubject: "what's left on your file", emailBody,
+        });
         await supabaseAdmin.from("leads").update({ last_nurture_at: new Date().toISOString() }).eq("id", l.id);
         chased++; sent++;
         await logSent(l.id, "doc_chase", 0, res?.sent || []);
@@ -165,7 +178,13 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       try {
         const link = await leadFileLink(l.id);
         const finishLine = link ? ` Pick up where you left off: ${link}` : "";
-        const res = await respondToLead({ id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: due.msg(name, purpose) + finishLine + bookLine });
+        const emailT = renderTouch(EMAIL_TOUCHES[STEP_TOUCH[due.step]] || EMAIL_TOUCHES.d30, l);
+        const emailBody = emailT.body + (link ? `\n\nP.S. Your secure file link, whenever you're ready: ${link}` : "");
+        const res = await respondToLead({
+          id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
+          message: due.msg(name, purpose) + finishLine + bookLine,   // SMS copy
+          emailSubject: emailT.subject, emailBody,                    // email copy
+        });
         await supabaseAdmin.from("leads").update({ nurture_step: due.step, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
         sent++;
         await logSent(l.id, "drip", due.step, res?.sent || []);
@@ -179,7 +198,12 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     try {
       const link = await leadFileLink(l.id);
       const finishLine = link ? ` Pick up where you left off: ${link}` : "";
-      const res = await respondToLead({ id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg + finishLine + bookLine });
+      const emailT = renderTouch(EMAIL_TOUCHES[REACTIVATION_KEYS[curStep % REACTIVATION_KEYS.length]] || EMAIL_TOUCHES.r1, l);
+      const res = await respondToLead({
+        id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
+        message: msg + finishLine + bookLine,                        // SMS copy
+        emailSubject: emailT.subject, emailBody: emailT.body,         // email copy
+      });
       await supabaseAdmin.from("leads").update({ nurture_step: curStep + 1, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
       reactivated++; sent++;
       await logSent(l.id, "reactivation", curStep + 1, res?.sent || []);

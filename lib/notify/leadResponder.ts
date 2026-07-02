@@ -4,7 +4,9 @@
 // configured it no-ops (and the team still gets the alert). Actual delivery
 // needs RESEND_API_KEY (email) and/or Twilio creds (SMS).
 
-import { markSignatureHtml } from "@/lib/notify/emailSignature";
+import { markSignatureLite } from "@/lib/notify/emailSignature";
+import { scrubSmsIsms, unsubUrl, renderTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
+import { cfg } from "@/lib/settings";
 import { logComms } from "@/lib/comms";
 
 export type LeadContact = {
@@ -16,6 +18,11 @@ export type LeadContact = {
   loan_purpose?: string | null;
   message?: string | null; // AI-drafted first-touch; falls back to a template
   link?: string | null;    // borrower's custom loan-file / document-upload link
+  // EMAIL ≠ SMS. When set, these override `message` for the email channel so each
+  // channel gets copy written for it (emails: human subject + personal note, never
+  // "(Reply STOP)" strings; SMS: short + STOP language).
+  emailSubject?: string | null;
+  emailBody?: string | null;
 };
 
 function defaultMessage(l: LeadContact): string {
@@ -26,38 +33,46 @@ function defaultMessage(l: LeadContact): string {
   return `Hey ${first}, it's Mark with Fetti — saw you reached out${purpose}. Quick q so I can point you the right way: what are you looking to do, and what's your timeline?`;
 }
 
-async function emailLead(l: LeadContact, body: string) {
+async function emailLead(l: LeadContact, fallbackBody: string) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.LEAD_RESPONSE_FROM_EMAIL; // e.g. "Fetti <hello@fettifi.com>"
-  if (!key || !from || !l.email) return { ok: false as boolean, id: undefined as string | undefined };
-  const button = l.link
-    ? `<div style="margin-top:18px"><a href="${l.link}" style="background:#10b981;color:#021;font-weight:700;text-decoration:none;padding:12px 22px;border-radius:9999px;display:inline-block">Open your secure file &amp; upload documents →</a></div><div style="margin-top:8px;color:#64748b;font-size:12px">Or paste this link: ${l.link}</div>`
+  if (!key || !from || !l.email) return { ok: false as boolean, id: undefined as string | undefined, body: "" };
+
+  // Channel-correct body: prefer email-specific copy; always scrub SMS-isms
+  // ("Reply STOP/YES") that make an email read like spam.
+  const body = scrubSmsIsms((l.emailBody && l.emailBody.trim()) || fallbackBody);
+
+  // Human subject: prefer the touch-specific one; fall back to the panel's first-touch
+  // subject pattern ("about your dscr loan") — short, lowercase, person-to-person.
+  const subject = (l.emailSubject && l.emailSubject.trim()) ||
+    renderTouch(EMAIL_TOUCHES.first_touch, { first_name: l.name, loan_purpose: l.loan_purpose }).subject;
+
+  // First touch stays a pure personal note (no CTA button — that's what made these read
+  // as automation). Later kinds may carry the secure-link button since a doc/file
+  // conversation is already underway.
+  const kind = l.kind || "first_touch";
+  const button = l.link && kind !== "first_touch"
+    ? `<div style="margin-top:16px;font-size:14px;color:#475569">Your secure file link (uploads, status): <a href="${l.link}" style="color:#0c7a52">${l.link}</a></div>`
     : "";
-  const signature = await markSignatureHtml();
-  // Speed-to-lead subject lines lift open rates when they lead with the borrower's
-  // first name + what they actually asked about. Fall back gracefully when either
-  // field is missing so the line always reads cleanly.
-  const first = (l.name || "").trim().split(/\s+/)[0];
-  const purpose = (l.loan_purpose || "").trim();
-  const prettyPurpose = purpose
-    ? purpose.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-    : "";
-  let subject = "Your Fetti Financial Services LLC inquiry — next steps";
-  if (first && prettyPurpose) subject = `${first}, your ${prettyPurpose} financing — next steps from Fetti`;
-  else if (first) subject = `${first}, your Fetti financing inquiry — next steps`;
-  else if (prettyPurpose) subject = `Your ${prettyPurpose} financing with Fetti — next steps`;
+
+  // Light personal signature + CAN-SPAM footer (one-click unsubscribe when we have a lead id).
+  const signature = await markSignatureLite(l.id ? unsubUrl(l.id) : undefined);
+  // Replies should land where a human reads them (Ramon), not a send-only alias.
+  const replyTo = ((await cfg("CONTACT_EMAIL")) || "ramon@fettifi.com").trim();
+
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from,
       to: [l.email],
+      reply_to: [replyTo],
       subject,
-      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;color:#0f172a">${body.replace(/\n/g, "<br>")}${button}</div>${signature}`,
+      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#0f172a;max-width:560px">${body.replace(/\n/g, "<br>")}${button}</div>${signature}`,
     }),
   });
   const j = await res.json().catch(() => ({} as any));
-  return { ok: res.ok, id: j?.id as string | undefined };
+  return { ok: res.ok, id: j?.id as string | undefined, body };
 }
 
 async function smsLead(l: LeadContact, body: string) {
@@ -90,7 +105,7 @@ export async function respondToLead(lead: LeadContact): Promise<{ sent: string[]
   const sent: string[] = [];
   await Promise.all([
     emailLead(lead, body).then(async (r) => {
-      if (r.ok) { sent.push("email"); if (lead.id) await logComms({ leadId: lead.id, channel: "email", direction: "outbound", type: kind, body, to: lead.email, providerId: r.id }).catch(() => {}); }
+      if (r.ok) { sent.push("email"); if (lead.id) await logComms({ leadId: lead.id, channel: "email", direction: "outbound", type: kind, body: r.body || body, to: lead.email, providerId: r.id }).catch(() => {}); }
     }).catch((e) => console.warn("[responder] email", e)),
     smsLead(lead, smsBody).then(async (r) => {
       if (r.ok) { sent.push("sms"); if (lead.id) await logComms({ leadId: lead.id, channel: "sms", direction: "outbound", type: kind, body: smsBody, to: lead.phone, providerId: r.id }).catch(() => {}); }

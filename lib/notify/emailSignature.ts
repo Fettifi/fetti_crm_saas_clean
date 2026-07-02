@@ -46,3 +46,25 @@ export async function markSignatureHtml(): Promise<string> {
     This email is from Fetti Financial Services LLC and may contain confidential information intended only for the addressee. If you received it in error, please notify us and delete it. This is an advertisement, not a commitment to lend; all loans are subject to credit approval and program guidelines. To stop receiving these emails, reply &ldquo;unsubscribe.&rdquo;
   </div>`;
 }
+
+// LIGHT personal signature for borrower-facing follow-ups — reads like a person's
+// email footer, not a corporate banner (no logo table, no button, no boilerplate).
+// Includes the CAN-SPAM essentials: identity, mailing address, and a working
+// one-click unsubscribe when a URL is provided.
+export async function markSignatureLite(unsubscribeUrl?: string): Promise<string> {
+  const phone = ((await cfg("OFFICE_PHONE")) || "").trim();
+  const address = ((await cfg("COMPANY_MAILING_ADDRESS")) || "").trim();
+  const bits = [
+    "Fetti Financial Services LLC",
+    [`NMLS #2267023`, phone || null, "fettifi.com"].filter(Boolean).join(" · "),
+  ];
+  const unsub = unsubscribeUrl
+    ? ` · <a href="${unsubscribeUrl}" style="color:#94a3b8">unsubscribe</a>`
+    : "";
+  return `
+  <div style="margin-top:26px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#64748b">
+    <div>${bits[0]}</div>
+    <div style="color:#94a3b8">${bits[1]}</div>
+    <div style="margin-top:8px;font-size:10px;color:#cbd5e1">${address ? address : ""}${unsub}</div>
+  </div>`;
+}
