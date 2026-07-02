@@ -65,6 +65,26 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   const incomeEditedRef = useRef(false);
   const [rentInput, setRentInput] = useState("");
   const rentEditedRef = useRef(false);
+  // Liabilities pulled straight from the credit report ALREADY uploaded to this file's
+  // documents (no re-upload). Included rows sum with the manual debts field into DTI.
+  type CreditLiab = { id: string; creditor: string; type: string; monthly: number; balance: number | null; status: string; include: boolean; note?: string };
+  const [liabs, setLiabs] = useState<CreditLiab[]>([]);
+  const [liabBusy, setLiabBusy] = useState(false);
+  const [liabErr, setLiabErr] = useState("");
+  const [liabDocs, setLiabDocs] = useState<string[]>([]);
+  async function pullCreditLiabilities() {
+    if (!fileId) return;
+    setLiabBusy(true); setLiabErr("");
+    try {
+      const r = await fetch(`/api/los/files/${fileId}/credit-liabilities`, { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) { setLiabErr(j?.error || "Couldn't read the credit report."); return; }
+      setLiabs(j.liabilities || []);
+      setLiabDocs(j.docsRead || []);
+    } catch { setLiabErr("Read failed — please try again."); } finally { setLiabBusy(false); }
+  }
+  const updLiab = (id: string, patch: Partial<CreditLiab>) => setLiabs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const liabTotal = liabs.reduce((s, l) => s + (l.include ? l.monthly : 0), 0);
 
   // Refine escrow to ZIP-accurate county tax + insurance via the SAME resolver the
   // Quick Pricer uses (/api/pricer/location), unless the LO already edited the field.
@@ -122,7 +142,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   const qualRateN = num(qualRate) || num(rate); // qualify at the stress rate if given
   const term = num(termYears) * 12;
   const downN = num(downPct);
-  const debts = num(debtsInput) + incomeCalc.rentalDebt; // file/manual debts + any net rental loss
+  const debts = num(debtsInput) + liabTotal + incomeCalc.rentalDebt; // manual + credit-report liabilities + net rental loss
   const noRate = qualRateN <= 0;
 
   // Proposed payment on the loan currently on file (IO uses interest-only at qual rate).
@@ -362,7 +382,17 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
           <div><label className={lbl}>FHA target DTI</label><select value={fhaDti} onChange={(e) => setFhaDti(e.target.value)} className={inp}><option value="43">43%</option><option value="50">50%</option><option value="55">55%</option><option value="57">57% (AUS)</option></select></div>
         )}
         {/* Monthly debts — ALWAYS available to enter, in both consumer (DTI) and investment modes. */}
-        <div><label className={lbl}>Monthly debts <span className="text-slate-600">(non-housing)</span></label><CurrencyInput value={debtsInput} onChange={(v) => setDebtsInput(v)} className={inp} placeholder="$0 / mo" /></div>
+        <div>
+          <label className={lbl}>Monthly debts <span className="text-slate-600">{liabs.length ? "(other — credit-report rows below)" : "(non-housing)"}</span></label>
+          <CurrencyInput value={debtsInput} onChange={(v) => setDebtsInput(v)} className={inp} placeholder="$0 / mo" />
+          {fileId && (
+            <button onClick={pullCreditLiabilities} disabled={liabBusy}
+              className="mt-1.5 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 disabled:text-slate-500">
+              {liabBusy ? "Reading credit report…" : "💳 Pull liabilities from the file's credit report"}
+            </button>
+          )}
+          {liabErr && <p className="text-[11px] text-red-300 mt-1">{liabErr}</p>}
+        </div>
         <div>
           <label className={lbl}>Taxes + ins + HOA /mo {escrowEstimated && escrowKnown && <span className="text-amber-500/80" title={metrics?.zip ? `Taxes + insurance estimated from ZIP ${metrics.zip} (same rates as the Quick Pricer)` : "Estimated"}>est.{metrics?.zip ? ` · ${metrics.zip}` : ""}</span>}</label>
           <CurrencyInput value={escrow} onChange={(v) => { escrowEditedRef.current = true; setEscrow(v); setEscrowEstimated(false); }} className={inp} placeholder="$0 / mo" />
@@ -418,6 +448,29 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         </div>
       )}
 
+      {liabs.length > 0 && (
+        <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-200">Credit-report liabilities {liabDocs.length ? <span className="text-[10px] text-slate-500 font-normal">from {liabDocs.join(", ")}</span> : null}</div>
+            <div className="text-xs text-slate-400">Included: <span className="font-bold text-white">{money(liabTotal)}/mo</span></div>
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {liabs.map((l) => (
+              <div key={l.id} className={`rounded-lg px-2 py-1.5 ${l.include ? "bg-slate-800/70" : "bg-slate-900 opacity-60"}`}>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={l.include} onChange={(e) => updLiab(l.id, { include: e.target.checked })} className="h-4 w-4 shrink-0 accent-emerald-500" title="Include in DTI" />
+                  <input value={l.creditor} onChange={(e) => updLiab(l.id, { creditor: e.target.value })} className="flex-1 min-w-0 bg-transparent text-sm text-white focus:outline-none" />
+                  <span className="text-[10px] uppercase text-slate-500 shrink-0">{l.type}</span>
+                  <CurrencyInput value={l.monthly ? String(l.monthly) : ""} onChange={(v) => updLiab(l.id, { monthly: num(v) })} className="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white text-right" placeholder="$/mo" />
+                </div>
+                {(l.note || l.balance) && (
+                  <div className="text-[10px] text-slate-500 mt-0.5 ml-6">{l.balance ? `bal ${money(l.balance)}` : ""}{l.balance && l.note ? " · " : ""}{l.note || ""}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <p className="text-[10px] text-slate-600 mt-3">Estimate for pre-qualification only — not an income determination or credit decision. Income/debts from the 1003{borrowersNote ? ` (${borrowersNote})` : ""}; escrow {escrowEstimated ? "estimated from the property ZIP — enter actuals for precision" : "as entered"}. FHA MIP / conventional MI, DTI caps, and qualifying rate vary by program/lender. Final figures set by AUS, documentation, and underwriting.</p>
     </div>
   );
