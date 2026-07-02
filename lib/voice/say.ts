@@ -1,14 +1,15 @@
-// Lifelike TTS for the phone receptionist — ElevenLabs (Mark's voice) instead of
+// Lifelike TTS for the phone receptionist — ElevenLabs (Penny's voice) instead of
 // the robotic default. Generates the reply audio server-side, stashes the mp3
 // bytes briefly in app_settings, and returns a Twilio <Play> verb pointing at the
 // audio route. Falls back to a neural <Say> if ElevenLabs is unavailable so the
-// call never breaks.
+// call never breaks. (The phone receptionist is PENNY — female. Mark stays the
+// brand mascot for SMS/web chat; his voice id lives in the show/concierge config.)
 import "server-only";
 import { getSetting, setSetting } from "@/lib/settings";
 import crypto from "crypto";
 
 const APP = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
-const VOICE = process.env.ELEVENLABS_VOICE_ID || "nPczCjzI2devNBz1zQrb"; // Mark
+const VOICE = process.env.ELEVENLABS_PHONE_VOICE_ID || "21m00Tcm4TlvDq8ikWAM"; // Penny (Rachel — ElevenLabs premade female)
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export function audioUrl(id: string) { return `${APP}/api/voice/audio/${id}`; }
@@ -35,5 +36,5 @@ async function synthToStore(text: string): Promise<string | null> {
 /** Returns a TwiML speak verb: <Play> ElevenLabs audio, or a neural <Say> fallback. */
 export async function voiceVerb(text: string): Promise<string> {
   const id = await synthToStore(text);
-  return id ? `<Play>${audioUrl(id)}</Play>` : `<Say voice="Polly.Matthew-Neural">${esc(text)}</Say>`;
+  return id ? `<Play>${audioUrl(id)}</Play>` : `<Say voice="Polly.Joanna-Neural">${esc(text)}</Say>`;
 }

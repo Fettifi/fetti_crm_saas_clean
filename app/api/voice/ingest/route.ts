@@ -3,8 +3,8 @@ import { addMessage } from "@/lib/phoneMessages";
 import { cfg } from "@/lib/settings";
 import crypto from "crypto";
 
-// Machine-to-machine receiver for the realtime "Mark" voice agent (the OpenAI
-// Realtime bridge server, or a platform like Vapi/Retell). When Mark finishes a
+// Machine-to-machine receiver for the realtime "Penny" voice agent (the OpenAI
+// Realtime bridge server, or a platform like Vapi/Retell). When Penny finishes a
 // call he POSTs the captured message here and it lands in the same /messages
 // queue + alerts. Token-authed (Bearer VOICE_INGEST_TOKEN); public so the
 // external voice server can call it without a login session. Fails closed.
@@ -18,7 +18,7 @@ function tokenOk(provided: string, expected: string): boolean {
 
 async function alertTeam(summary: string) {
   const hook = process.env.LEAD_NOTIFY_WEBHOOK;
-  if (hook) { try { await fetch(hook, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: `📞 New phone message (Mark, live)\n${summary}`, text: `📞 New phone message\n${summary}` }) }); } catch { /* */ } }
+  if (hook) { try { await fetch(hook, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: `📞 New phone message (Penny, live)\n${summary}`, text: `📞 New phone message\n${summary}` }) }); } catch { /* */ } }
   const key = process.env.RESEND_API_KEY, to = process.env.LEAD_NOTIFY_EMAIL_TO, from = process.env.LEAD_NOTIFY_EMAIL_FROM;
   if (key && to && from) { try { await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ from, to: to.split(",").map((s) => s.trim()), subject: "📞 New phone message — Fetti", html: `<pre style="font:14px ui-monospace,monospace">${summary.replace(/</g, "&lt;")}</pre>` }) }); } catch { /* */ } }
 }

@@ -1,4 +1,4 @@
-# Render Blueprint for the realtime "Mark" voice bridge (voice-realtime/server.js).
+# Render Blueprint for the realtime "Penny" voice bridge (voice-realtime/server.js).
 # The Next.js CRM stays on Vercel; ONLY this always-on WebSocket bridge runs here
 # (Vercel serverless can't hold a call-duration socket). One-click: in Render, "New +"
 # -> "Blueprint" -> connect the Fettifi/fetti_crm_saas_clean repo on this branch. Render
@@ -25,6 +25,6 @@ services:
       - key: OPENAI_REALTIME_MODEL
         value: gpt-realtime
       - key: OPENAI_REALTIME_VOICE
-        value: verse
+        value: marin   # female — the phone receptionist is Penny
       - key: CRM_INGEST_URL
         value: https://app.fettifi.com/api/voice/ingest

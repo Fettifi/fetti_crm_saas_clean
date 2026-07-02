@@ -3,10 +3,10 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { cfg } from "@/lib/settings";
 import crypto from "crypto";
 
-// Caller identification for the realtime "Mark" voice agent. The bridge POSTs the
+// Caller identification for the realtime "Penny" voice agent. The bridge POSTs the
 // inbound caller's phone number here on call start; we match it to a lead and return
 // ONLY greeting-safe context (first name, what they're inquiring about, pipeline stage)
-// so Mark can open personally — never sensitive PII (a phone number isn't proof of
+// so Penny can open personally — never sensitive PII (a phone number isn't proof of
 // identity). Token-authed (same Bearer VOICE_INGEST_TOKEN as the ingest sink). Fails safe
 // (returns { known:false } on any miss/error so the call always proceeds).
 export const runtime = "nodejs";

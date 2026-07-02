@@ -1,4 +1,4 @@
-// Realtime "Mark" voice bridge — Twilio Media Streams <-> OpenAI Realtime API (GA).
+// Realtime "Penny" voice bridge — Twilio Media Streams <-> OpenAI Realtime API (GA).
 //
 // Full-duplex, talk-over-him (barge-in), zero-lag speech-to-speech. CANNOT run on Vercel
 // (serverless can't hold a live audio websocket) — deploy on a tiny always-on host
@@ -6,8 +6,8 @@
 //
 // Flow: Twilio number's voice webhook (Fetti CRM /api/voice/incoming, once
 // REALTIME_VOICE_WSS is set) returns <Connect><Stream url="wss://THIS_HOST/media"/>.
-// Twilio streams caller audio here; we relay it to OpenAI Realtime and stream Mark's
-// audio back. When Mark has the message he calls save_message → POST to the CRM
+// Twilio streams caller audio here; we relay it to OpenAI Realtime and stream Penny's
+// audio back. When Penny has the message she calls save_message → POST to the CRM
 // (/api/voice/ingest). g711_ulaw (audio/pcmu) both sides → no transcoding.
 //
 // NOTE: uses the OpenAI Realtime GA API (the old "beta" shape was retired 2025 — it
@@ -19,17 +19,17 @@ import { WebSocketServer, WebSocket } from "ws";
 const PORT = process.env.PORT || 8080;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime"; // GA model
-const VOICE = process.env.OPENAI_REALTIME_VOICE || "verse"; // GA voice (verse/cedar/marin…)
+const VOICE = process.env.OPENAI_REALTIME_VOICE || "marin"; // female GA voice for Penny (marin; alt: coral, sage, shimmer)
 const CRM_INGEST_URL = process.env.CRM_INGEST_URL || "https://app.fettifi.com/api/voice/ingest";
 const VOICE_INGEST_TOKEN = process.env.VOICE_INGEST_TOKEN || "";
 const CRM_LOOKUP_URL = process.env.CRM_LOOKUP_URL || "https://app.fettifi.com/api/voice/lookup";
 
-// MANDATORY opening line — Mark's FIRST utterance, NON-INTERRUPTIBLE (barge-in ignored
+// MANDATORY opening line — Penny's FIRST utterance, NON-INTERRUPTIBLE (barge-in ignored
 // until it finishes). Combines CA SB 1001 (automated-AI disclosure) + CA §632 (recorded/
 // transcribed → continuing = implied consent).
-const OPENING = "You've reached Fetti Financial Services. Quick heads-up — I'm Mark, an automated A.I. assistant, and this call is recorded and transcribed for quality and record-keeping. Now — who am I speaking with, and what can I help you with today?";
+const OPENING = "You've reached Fetti Financial Services. Quick heads-up — this is Penny, an automated A.I. assistant, and this call is recorded and transcribed for quality and record-keeping. Now — who am I speaking with, and what can I help you with today?";
 
-const INSTRUCTIONS = `You are Mark, the warm, sharp, confident virtual assistant for Fetti Financial Services LLC (a licensed mortgage lender & broker, NMLS 2267023). California-cool, intelligent, smooth — never robotic. You are an automated A.I. assistant and must never claim to be human.
+const INSTRUCTIONS = `You are Penny, the warm, sharp, professional receptionist and virtual assistant for Fetti Financial Services LLC (a licensed mortgage lender & broker, NMLS 2267023). California-cool, intelligent, smooth — never robotic. You are an automated A.I. assistant and must never claim to be human.
 Your VERY FIRST words on the call must be, word for word: "${OPENING}" — say exactly that before anything else (it is a legally required disclosure that you're an automated A.I. assistant and the call is recorded), then continue naturally. Never skip it, shorten it, or talk over it.
 After the opening, talk like a real person on the phone: natural, brief, conversational; let the caller interrupt you and roll with it.
 Ramon Dent is NOT available for a live transfer. For ANYONE asking for Ramon (or anyone at Fetti), warmly take a detailed message — never promise a transfer, never give out a direct line/email/personal contact.
@@ -93,7 +93,7 @@ wss.on("connection", (twilio) => {
   });
 
   // Begin the OpenAI session only once BOTH the OpenAI socket is open AND Twilio's "start"
-  // (which carries the caller number) has arrived — so Mark can do a quick CRM lookup and
+  // (which carries the caller number) has arrived — so Penny can do a quick CRM lookup and
   // greet personally. The lookup is bounded (fast fallback to a generic greeting) and
   // one-time at connect, so it never adds per-turn conversation latency.
   async function beginSession() {
@@ -127,7 +127,7 @@ wss.on("connection", (twilio) => {
       },
       tools: TOOLS, tool_choice: "auto",
     } }));
-    // The verbatim SB 1001 + §632 disclosure is mandated as Mark's first utterance inside
+    // The verbatim SB 1001 + §632 disclosure is mandated as Penny's first utterance inside
     // INSTRUCTIONS; a bare response.create kicks it off (non-interruptible via `greeted`).
     oai.send(JSON.stringify({ type: "response.create" }));
   }
@@ -142,12 +142,12 @@ wss.on("connection", (twilio) => {
       greeted = true; // opening disclosure (and every later turn) done → allow barge-in
     } else if (m.type === "input_audio_buffer.speech_started" && streamSid) {
       if (!greeted) return; // never let the caller cut off the legal disclosure
-      twilio.send(JSON.stringify({ event: "clear", streamSid }));   // barge-in: stop Mark
+      twilio.send(JSON.stringify({ event: "clear", streamSid }));   // barge-in: stop Penny
       oai.send(JSON.stringify({ type: "response.cancel" }));
     } else if (m.type === "conversation.item.input_audio_transcription.completed" && m.transcript) {
       transcript.push("Caller: " + m.transcript.trim());
     } else if (m.type === "response.output_audio_transcript.done" && m.transcript) {
-      transcript.push("Mark: " + m.transcript.trim());
+      transcript.push("Penny: " + m.transcript.trim());
     } else if (m.type === "response.function_call_arguments.done") {
       try {
         const args = JSON.parse(m.arguments || "{}");

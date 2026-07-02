@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   const replyVerb = await voiceVerb(res.reply);
 
   if (res.complete) {
-    const transcript = history.map((h: Turn) => `${h.role === "user" ? "Caller" : "Mark(AI)"}: ${h.content}`).join("\n");
+    const transcript = history.map((h: Turn) => `${h.role === "user" ? "Caller" : "Penny(AI)"}: ${h.content}`).join("\n");
     try {
       await addMessage({
         caller_name: res.caller_name || undefined,
