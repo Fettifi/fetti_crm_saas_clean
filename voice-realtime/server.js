@@ -22,6 +22,7 @@ const MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime"; // GA model
 const VOICE = process.env.OPENAI_REALTIME_VOICE || "verse"; // GA voice (verse/cedar/marin…)
 const CRM_INGEST_URL = process.env.CRM_INGEST_URL || "https://app.fettifi.com/api/voice/ingest";
 const VOICE_INGEST_TOKEN = process.env.VOICE_INGEST_TOKEN || "";
+const CRM_LOOKUP_URL = process.env.CRM_LOOKUP_URL || "https://app.fettifi.com/api/voice/lookup";
 
 // MANDATORY opening line — Mark's FIRST utterance, NON-INTERRUPTIBLE (barge-in ignored
 // until it finishes). Combines CA SB 1001 (automated-AI disclosure) + CA §632 (recorded/
@@ -83,18 +84,42 @@ const wss = new WebSocketServer({ server, path: "/media" });
 wss.on("connection", (twilio) => {
   let streamSid = null;
   let callSid = null;
-  let greeted = false; // true once the opening disclosure finishes → barge-in allowed
+  let caller = null;              // caller's phone number (from Twilio start customParameters)
+  let greeted = false;            // true once the opening disclosure finishes → barge-in allowed
+  let oaiOpen = false, startSeen = false, started = false;
   const transcript = [];
   const oai = new WebSocket(`wss://api.openai.com/v1/realtime?model=${MODEL}`, {
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}` }, // GA: NO "OpenAI-Beta" header
   });
 
-  oai.on("open", () => {
+  // Begin the OpenAI session only once BOTH the OpenAI socket is open AND Twilio's "start"
+  // (which carries the caller number) has arrived — so Mark can do a quick CRM lookup and
+  // greet personally. The lookup is bounded (fast fallback to a generic greeting) and
+  // one-time at connect, so it never adds per-turn conversation latency.
+  async function beginSession() {
+    if (started || !oaiOpen || !startSeen) return;
+    started = true;
+    let ctx = "";
+    if (caller) {
+      try {
+        const r = await fetch(CRM_LOOKUP_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${VOICE_INGEST_TOKEN}` },
+          body: JSON.stringify({ phone: caller }),
+          signal: AbortSignal.timeout(1200),
+        });
+        const j = await r.json();
+        if (j && j.known) {
+          const bits = [j.first_name ? `first name: ${j.first_name}` : null, j.loan_purpose ? `working on: ${j.loan_purpose}` : null, j.stage ? `pipeline stage: ${j.stage}` : null].filter(Boolean).join("; ");
+          ctx = `\n\nCALLER CONTEXT (matched from the CRM by their phone number — this is NOT proof of identity): ${bits}. Right after the required disclosure, warmly greet them by first name and naturally reference what they're working on (e.g. "…and it looks like you're on your ${j.loan_purpose || "loan"} — how can I help today?"). Do NOT reveal sensitive specifics (loan amounts, SSN, documents, addresses) — keep it a warm, general acknowledgment. If they indicate they're someone else, drop this context and treat them as a new caller.`;
+        }
+      } catch { /* lookup slow/failed → generic greeting, call still proceeds */ }
+    }
     // GA Realtime session shape: audio config nested under session.audio.*, formats are
     // objects (audio/pcmu = g711 u-law), modalities -> output_modalities.
     oai.send(JSON.stringify({ type: "session.update", session: {
       type: "realtime",
-      instructions: INSTRUCTIONS,
+      instructions: INSTRUCTIONS + ctx,
       output_modalities: ["audio"],
       audio: {
         input: { format: { type: "audio/pcmu" }, turn_detection: { type: "server_vad" }, transcription: { model: "whisper-1" } },
@@ -103,10 +128,11 @@ wss.on("connection", (twilio) => {
       tools: TOOLS, tool_choice: "auto",
     } }));
     // The verbatim SB 1001 + §632 disclosure is mandated as Mark's first utterance inside
-    // INSTRUCTIONS (GA response.create doesn't take per-response instructions like beta did);
-    // a bare response.create kicks it off. Non-interruptible via the `greeted` gate below.
+    // INSTRUCTIONS; a bare response.create kicks it off (non-interruptible via `greeted`).
     oai.send(JSON.stringify({ type: "response.create" }));
-  });
+  }
+
+  oai.on("open", () => { oaiOpen = true; beginSession(); });
 
   oai.on("message", async (raw) => {
     let m; try { m = JSON.parse(raw.toString()); } catch { return; }
@@ -144,7 +170,11 @@ wss.on("connection", (twilio) => {
 
   twilio.on("message", (raw) => {
     let m; try { m = JSON.parse(raw.toString()); } catch { return; }
-    if (m.event === "start") { streamSid = m.start.streamSid; callSid = m.start.callSid; }
+    if (m.event === "start") {
+      streamSid = m.start.streamSid; callSid = m.start.callSid;
+      caller = (m.start.customParameters && m.start.customParameters.caller) || null;
+      startSeen = true; beginSession();
+    }
     else if (m.event === "media" && oai.readyState === WebSocket.OPEN) {
       oai.send(JSON.stringify({ type: "input_audio_buffer.append", audio: m.media.payload }));
     } else if (m.event === "stop") { try { oai.close(); } catch {} }
