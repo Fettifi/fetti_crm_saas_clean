@@ -7,6 +7,7 @@
 // broken.
 import { getSetting, setSetting, cfg } from "@/lib/settings";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
 import { scoreLead } from "@/lib/leadScore";
 import { parseMoney } from "@/lib/parseMoney";
@@ -363,6 +364,21 @@ export async function importHistoricalLeads(): Promise<any> {
           if (seen.has(lgid)) { skipped++; pr.skipped++; continue; }
           const m = mapLead(lead.field_data || []);
           if (!m.email && !m.phone && !m.full_name) { skipped++; pr.skipped++; continue; }
+          // DEDUP by contact details too (not just leadgen_id): the same person from a
+          // different form/submission — or already in the CRM from the website — must
+          // NOT become a second lead row (that caused double drip emails).
+          m.phone = canonicalPhone(m.phone);
+          if (m.email) m.email = String(m.email).trim().toLowerCase();
+          {
+            const orParts: string[] = [];
+            if (m.email) orParts.push(`email.eq.${m.email}`);
+            if (m.phone) for (const f of phoneMatchForms(m.phone)) orParts.push(`phone.eq.${f}`);
+            if (orParts.length) {
+              const { data: dup } = await supabaseAdmin
+                .from("leads").select("id").or(orParts.join(",")).limit(1).maybeSingle();
+              if (dup) { seen.add(lgid); skipped++; pr.skipped++; continue; }
+            }
+          }
           // Score/tier through the SAME logic as /api/apply so imported paid leads
           // are prioritized for follow-up instead of sitting in the pipeline untiered.
           const { score, tier } = scoreLead({

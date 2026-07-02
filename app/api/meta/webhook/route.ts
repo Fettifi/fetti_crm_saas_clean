@@ -3,6 +3,7 @@ import { cfg } from "@/lib/settings";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
 import { parseMoney } from "@/lib/parseMoney";
+import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
 import crypto from "crypto";
 
 // Meta Lead Ads webhook. Receives `leadgen` events when someone submits a
@@ -100,11 +101,34 @@ async function saveFallbackLead(v: any, partial: Record<string, any>, reason: st
   try {
     const platform = String(v?.platform || "facebook").toLowerCase();
     const src = platform === "ig" || platform === "instagram" ? "instagram" : "facebook";
-    const digits = partial.phone ? String(partial.phone).replace(/\D/g, "") : "";
+    const phone = canonicalPhone(partial.phone);
+    const emailNorm = partial.email ? String(partial.email).trim().toLowerCase() : null;
+
+    // DEDUP before inserting (same email-or-phone check as /api/apply, both phone forms):
+    // this missing check is how one person became two lead rows + got double-contacted.
+    const orParts: string[] = [];
+    if (emailNorm) orParts.push(`email.eq.${emailNorm}`);
+    if (phone) for (const f of phoneMatchForms(phone)) orParts.push(`phone.eq.${f}`);
+    if (orParts.length) {
+      const { data: existing } = await supabaseAdmin
+        .from("leads").select("id, full_name").or(orParts.join(",")).limit(1).maybeSingle();
+      if (existing) {
+        const mismatch = partial.full_name && existing.full_name &&
+          String(partial.full_name).trim().toLowerCase() !== String(existing.full_name).trim().toLowerCase();
+        await notifyNewLead({
+          lead_id: existing.id as string, full_name: partial.full_name ?? existing.full_name, email: emailNorm, phone,
+          state: partial.state, loan_purpose: partial.loan_purpose, score: 0, tier: "Tier 3",
+          source: `${src} — DUPLICATE lead-ad submission (already lead ${String(existing.id).slice(0, 8)})${mismatch ? ` ⚠️ DIFFERENT name (was "${existing.full_name}") — possible fake` : ""}`,
+          returning: true, auto_sent: [],
+        });
+        return; // never a second row, never a second auto-contact
+      }
+    }
+
     const row = {
       full_name: partial.full_name ?? null,
-      email: partial.email ?? null,
-      phone: digits.length >= 7 ? digits : null,
+      email: emailNorm,
+      phone,
       state: partial.state ?? null,
       loan_purpose: partial.loan_purpose ?? null,
       notes: `⚠️ Facebook Lead Ad received but ${reason}. ${partial.notes || ""}`.trim(),

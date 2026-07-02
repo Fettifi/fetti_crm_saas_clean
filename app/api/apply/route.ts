@@ -14,6 +14,8 @@ import { logActivity } from "@/lib/activity";
 import { ensureLoanFileForLead, ensureLeadUploadToken } from "@/lib/los";
 import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
+import { renderTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
 import { sendMetaLeadEvent } from "@/lib/metaCapi";
 import { advanceLeadStage } from "@/lib/leadStage";
 import { scoreLead } from "@/lib/leadScore";
@@ -76,10 +78,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, lead_id: null }, { status: 200 });
     }
 
-    // Normalize + validate contact info.
+    // Normalize + validate contact info. Phone is CANONICALIZED (bare 10 digits, no
+    // leading country code) — mixed "1XXXXXXXXXX"/"XXXXXXXXXX" storage across ingest
+    // paths is what let the same person become two leads (the Midy/Forrest dups).
     const email = body.email ? String(body.email).trim().toLowerCase() : null;
-    const phoneDigits = body.phone ? String(body.phone).replace(/\D/g, "") : null;
-    const phone = phoneDigits && phoneDigits.length >= 7 ? phoneDigits : null;
+    const phone = canonicalPhone(body.phone);
 
     if (!email && !phone) {
       return NextResponse.json(
@@ -139,14 +142,20 @@ export async function POST(req: NextRequest) {
     // lead's pipeline stage.
     const orParts: string[] = [];
     if (email) orParts.push(`email.eq.${email}`);
-    if (phone) orParts.push(`phone.eq.${phone}`);
+    // Match BOTH stored phone forms (with/without leading "1") — historical rows are mixed.
+    if (phone) for (const f of phoneMatchForms(phone)) orParts.push(`phone.eq.${f}`);
     let existingId: string | null = null;
     let existingRaw: Record<string, unknown> | null = null;
+    let existingName: string | null = null;
     if (orParts.length) {
       const { data: existing } = await supabaseAdmin
-        .from("leads").select("id, raw").or(orParts.join(",")).limit(1).maybeSingle();
-      if (existing) { existingId = existing.id as string; existingRaw = (existing as any).raw ?? null; }
+        .from("leads").select("id, raw, full_name").or(orParts.join(",")).limit(1).maybeSingle();
+      if (existing) { existingId = existing.id as string; existingRaw = (existing as any).raw ?? null; existingName = (existing as any).full_name ?? null; }
     }
+    // Same contact details under a DIFFERENT name (e.g. "Karamel Midy" then "Marie Midy",
+    // one minute apart) is the signature of junk/fraud form fills — surface it on the alert.
+    const nameMismatch = !!(existingId && full_name && existingName &&
+      full_name.trim().toLowerCase() !== existingName.trim().toLowerCase());
 
     let data: any;
     let error: any;
@@ -279,9 +288,13 @@ export async function POST(req: NextRequest) {
         // nurture uses. Consent-not-given ≠ no follow-up; they still get the email.
         let autoSent: string[] = [];
         try {
+          // EMAIL gets the panel-crafted first-touch note (subject + body, personalized);
+          // the capture agent's shorter conversational draft stays the SMS opener.
+          const emailT = renderTouch(EMAIL_TOUCHES.first_touch, newLead);
           const res = await respondToLead({
             id: newLead.id, kind: "first_touch",
             name: full_name, email, phone: smsConsent ? phone : null, loan_purpose: body.loan_purpose, message: draftReply || "", link: fileLink,
+            emailSubject: emailT.subject, emailBody: emailT.body,
           });
           autoSent = res.sent;
         } catch (e) { console.warn("[/api/apply] auto-response failed:", e); }
@@ -338,12 +351,15 @@ export async function POST(req: NextRequest) {
     } else {
       // A KNOWN lead came back — strong intent. Alert the team so it gets worked
       // (we intentionally do NOT auto-text again, to avoid duplicate messages).
+      // A different NAME on the same contact details gets flagged as a likely
+      // duplicate/junk form fill so Ramon can spot fake leads (and dispute ad charges).
       after(async () => {
         try {
           await notifyNewLead({
             lead_id: data.id, full_name, email, phone,
             state: body.state, loan_purpose: body.loan_purpose, score, tier,
-            source: row.source as string, returning: true, auto_sent: [],
+            source: (row.source as string) + (nameMismatch ? ` ⚠️ SAME phone/email, DIFFERENT name (was "${existingName}") — possible duplicate/fake submission` : ""),
+            returning: true, auto_sent: [],
           });
         } catch (e) { console.warn("[/api/apply] returning-lead alert failed:", e); }
       });
