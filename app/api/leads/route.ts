@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
 import { deleteLeadCascade } from "@/lib/los";
 
 const INTERNAL_TOKEN = process.env.INTERNAL_LEAD_API_TOKEN;
@@ -116,14 +117,27 @@ export async function POST(req: NextRequest) {
 
     const stage = "New Lead";
 
-    // 4) Insert into leads table
+    // 4) Normalize + dedupe like EVERY other ingest path (this token intake used to
+    // bypass all safeguards: formatted phones, uppercase emails, duplicate rows).
+    const phoneNorm = canonicalPhone(phone);
+    const emailNorm = email ? String(email).trim().toLowerCase() : null;
+    const orParts: string[] = [];
+    if (emailNorm) orParts.push(`email.eq.${emailNorm}`);
+    if (phoneNorm) for (const f of phoneMatchForms(phoneNorm)) orParts.push(`phone.eq.${f}`);
+    if (orParts.length) {
+      const { data: existing } = await supabaseAdmin
+        .from("leads").select("id").or(orParts.join(",")).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (existing) {
+        return NextResponse.json({ success: true, lead_id: (existing as any).id, deduped: true }, { status: 200 });
+      }
+    }
     const { data, error } = await supabaseAdmin
       .from("leads")
       .insert([
         {
           full_name,
-          email,
-          phone,
+          email: emailNorm,
+          phone: phoneNorm,
           state,
           loan_purpose,
           occupancy,
@@ -134,6 +148,7 @@ export async function POST(req: NextRequest) {
           stage,
           source: source || "api",
           score,
+          tier,
         },
       ])
       .select()

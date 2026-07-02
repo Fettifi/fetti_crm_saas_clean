@@ -3,7 +3,7 @@ import { runNurture } from "@/lib/nurture";
 import { recordHeartbeat } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300; // the daily list can exceed what 60s covers — 300s is the plan max
 
 // Triggered daily by Vercel Cron (vercel.json). Vercel sends
 // Authorization: Bearer <CRON_SECRET> automatically when CRON_SECRET is set.

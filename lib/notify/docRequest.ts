@@ -57,7 +57,7 @@ async function emailDocRequest(r: DocRequest): Promise<boolean> {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to: [r.to_email], subject, html }),
+    body: JSON.stringify({ from, reply_to: ["frank@fettifi.com"], to: [r.to_email], subject, html }),
   });
   const j = await res.json().catch(() => ({} as any));
   if (res.ok && r.leadId) {
@@ -125,7 +125,7 @@ async function emailUploadLink(r: UploadLinkSend): Promise<boolean> {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to: [r.to_email], subject: "Your secure Fetti document portal", html }),
+    body: JSON.stringify({ from, reply_to: ["frank@fettifi.com"], to: [r.to_email], subject: "Your secure Fetti document portal", html }),
   });
   const j = await res.json().catch(() => ({} as any));
   if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "email", direction: "outbound", type: "upload_link", subject: "Your secure Fetti document portal", body: `Sent secure document portal link${r.note ? ` — ${r.note}` : ""}: ${r.link}`, to: r.to_email, actor: "lo", providerId: j?.id }).catch(() => {});
@@ -186,7 +186,7 @@ async function emailSign(r: SignSend): Promise<boolean> {
   </div>`;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to: [r.to_email], subject: `Please sign: ${r.title}`, html }),
+    body: JSON.stringify({ from, reply_to: ["frank@fettifi.com"], to: [r.to_email], subject: `Please sign: ${r.title}`, html }),
   });
   const j = await res.json().catch(() => ({} as any));
   if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "email", direction: "outbound", type: "esign_request", subject: `Please sign: ${r.title}`, body: `E-signature request: ${r.title} — ${r.link}`, to: r.to_email, actor: "lo", providerId: j?.id }).catch(() => {});

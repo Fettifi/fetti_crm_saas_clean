@@ -68,8 +68,10 @@ export function renderTouch(t: EmailTouch, lead: EmailLead): EmailTouch {
 // Strip SMS-isms if any legacy/shared copy reaches an email body.
 export function scrubSmsIsms(body: string): string {
   return body
-    .replace(/\s*\(?\s*Reply\s+STOP[^).\n]*\)?\.?/gi, "")
-    .replace(/\s*Reply\s+YES\b[^.\n]*\.?/gi, " Just hit reply.")
+    // consume the whole "(Reply STOP to opt out.)" including inner dots + close paren
+    .replace(/\s*\(?\s*Reply\s+STOP[^)\n]*\)?\s*\.?/gi, "")
+    // consume a leading "Just " so the replacement never yields "Just Just hit reply."
+    .replace(/\s*(?:Just\s+)?[Rr]eply\s+YES\b[^.\n]*\.?/g, " Just hit reply.")
     .replace(/\s*Text\s+HELP\b[^.\n]*\.?/gi, "")
     .replace(/[ \t]{2,}/g, " ")
     .trim();

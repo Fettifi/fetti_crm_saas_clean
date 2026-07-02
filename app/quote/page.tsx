@@ -60,7 +60,10 @@ export default function QuotePage() {
           hp: String(fd.get("company") || ""),
           consent: true,
           consent_at: new Date().toISOString(),
-          consent_text: "By submitting, borrower agreed Fetti Financial Services may contact by phone, email & text (SMS), including automated. Consent not required to buy. STOP to opt out.",
+          consent_text: "By submitting, borrower agreed Fetti Financial Services may contact them by phone & email about their inquiry. Consent not required to buy.",
+          sms_consent: fd.get("sms_optin") === "on",
+          sms_consent_at: fd.get("sms_optin") === "on" ? new Date().toISOString() : null,
+          sms_consent_text: fd.get("sms_optin") === "on" ? "Optional SMS consent checkbox on /quote" : null,
         }),
       });
       const j = await res.json();
@@ -115,6 +118,10 @@ export default function QuotePage() {
               <input name="full_name" required placeholder="Full name" className={field} />
               <input name="email" type="email" required placeholder="Email" className={field} />
               <input name="phone" required placeholder="Phone" className={field} />
+              <label className="flex items-start gap-2 text-left cursor-pointer">
+                <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" />
+                <span className="text-[10px] text-slate-400 leading-relaxed">Text me too — I agree to receive account, application, and appointment text messages (SMS) from Fetti Financial Services LLC at the number provided. Consent is not a condition of any service. Msg &amp; data rates may apply. Reply STOP to opt out.</span>
+              </label>
               <AddressInput value={addr} onChange={setAddr} placeholder="Property address (optional)" />
               {err && <p className="text-red-400 text-sm">{err}</p>}
               <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3 rounded-full">
@@ -122,7 +129,7 @@ export default function QuotePage() {
               </button>
               <p className="text-xs text-slate-400 text-center">
                 Estimate only. Not a commitment to lend. By submitting, you agree Fetti Financial Services LLC (NMLS #2267023)
-                may contact you by phone, email &amp; text (SMS) — including automated — at the number provided, about your inquiry and application.
+                may contact you by phone &amp; email about your inquiry and application. Texts are optional (checkbox above).
                 Consent isn&apos;t required to buy. Msg &amp; data rates may apply; message frequency varies. Reply STOP to opt out, HELP for help.
                 See our <a href="/privacy" className="underline hover:text-slate-300">Privacy Policy</a> &amp; <a href="/terms" className="underline hover:text-slate-300">Terms</a>.
               </p>

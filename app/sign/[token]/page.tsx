@@ -90,7 +90,8 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
     setSubmitting(false);
   }
   async function decline() {
-    const reason = prompt("Decline to sign — optional reason:") ?? "";
+    const reason = prompt("Decline to sign — optional reason:");
+    if (reason === null) return; // Cancel pressed — do NOT decline the envelope
     if (reason === null) return;
     setSubmitting(true);
     try { const r = await fetch(`/api/esign/sign/${token}/decline`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }); if (r.ok) setDeclined(true); } catch { /* */ }

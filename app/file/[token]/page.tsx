@@ -37,17 +37,29 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
   // satisfies the request; each additional file is kept as its own document (the server
   // never overwrites). Sequential so the request→satisfied transition lands before the
   // next file, which then attaches as an additional doc to that same item.
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
   async function uploadMany(docId: string | null, files: File[]) {
     if (!files.length) return;
     setBusyDoc(docId || "new");
+    setUploadErr(null);
+    const failed: string[] = [];
     try {
       for (const f of files) {
         const fd = new FormData();
         fd.append("file", f);
         if (docId) fd.append("doc_id", docId);
-        await fetch(`/api/file/${token}/upload`, { method: "POST", body: fd });
+        try {
+          const res = await fetch(`/api/file/${token}/upload`, { method: "POST", body: fd });
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({} as any));
+            failed.push(`${f.name}${j?.error ? ` (${j.error})` : res.status === 413 ? " (too large)" : ""}`);
+          }
+        } catch { failed.push(`${f.name} (connection failed)`); }
       }
       await load();
+      // A silent failure here meant borrowers walked away believing their documents
+      // went through (audit P1) — always tell them exactly which files didn't land.
+      if (failed.length) setUploadErr(`These didn't upload: ${failed.join(", ")}. Please try again — smaller files or photos usually work.`);
     } finally { setBusyDoc(null); }
   }
 
@@ -57,8 +69,14 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
   const received = docs.filter((d) => d.status === "received" || d.status === "accepted").length;
   const stageIdx = Math.max(0, STAGES.indexOf(file.stage));
 
+  const errBanner = uploadErr ? (
+    <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] rounded-xl bg-red-50 border border-red-300 px-4 py-3 shadow-lg">
+      <p className="text-sm text-red-700">{uploadErr}</p>
+    </div>
+  ) : null;
   return (
     <div className="min-h-screen bg-white text-slate-900">
+      {errBanner}
       <div className="max-w-2xl mx-auto px-4 py-10">
         <div className="flex items-center gap-2">
           <img src="/fetti-emblem.png" alt="Fetti Financial Services LLC logo" width={34} height={34} className="w-[34px] h-[34px]" />

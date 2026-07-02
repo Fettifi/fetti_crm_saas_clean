@@ -30,7 +30,7 @@ async function buildTwiml(caller: string | null) {
     return twiml(`<Connect><Stream url="${url}">${param}</Stream></Connect>`);
   }
 
-  const greeting = "Hey, thanks for calling Fetti Financial Services — this is Penny, the virtual assistant. I've got you. Who am I speaking with, and what can I help you out with today?";
+  const greeting = "Thanks for calling Fetti Financial Services — this is Penny, an automated A.I. assistant, and this call is recorded and transcribed for quality and record-keeping. Now — who am I speaking with, and what can I help you out with today?";
   const verb = await voiceVerb(greeting);
   return twiml(
     `<Gather input="speech" action="/api/voice/turn" method="POST" speechTimeout="auto" speechModel="phone_call" language="en-US">` +

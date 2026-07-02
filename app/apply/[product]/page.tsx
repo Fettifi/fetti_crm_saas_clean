@@ -9,8 +9,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { product: productSlug } = await params;
     const product = productSlug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     return {
-        title: `Apply for ${product} | Fetti CRM`,
-        description: `Get funded fast with our ${product} program. Verified leads get instant approval.`,
+        title: `Apply for ${product} | Fetti Financial Services`,
+        description: `Start your ${product} application with Fetti Financial Services LLC (NMLS #2267023) — fast answers, no credit pull to start.`,
     };
 }
 
@@ -31,8 +31,8 @@ export default async function ProductApplyPage({ params }: Props) {
         <main className="flex min-h-screen flex-col items-center justify-center p-4 md:p-24 bg-slate-950">
             <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex mb-8">
                 <p className="fixed left-0 top-0 flex w-full justify-center border-b border-slate-800 bg-gradient-to-b from-slate-900 pb-6 pt-8 backdrop-blur-2xl lg:static lg:w-auto lg:rounded-xl lg:border lg:bg-slate-900/50 lg:p-4 text-emerald-400">
-                    Fetti CRM &nbsp;
-                    <span className="font-bold text-white">Autonomous Closer</span>
+                    Fetti Financial Services &nbsp;
+                    <span className="font-bold text-white">Loan Application</span>
                 </p>
             </div>
 

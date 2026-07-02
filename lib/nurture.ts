@@ -12,7 +12,8 @@ import { logActivity } from "@/lib/activity";
 // EMAIL ≠ SMS: the msg() strings below are SMS copy ("Reply YES/STOP"). Emails get their
 // own panel-crafted personal notes (subject + body) from the email touch-set, keyed to
 // the same cadence — so an email never reads like a pasted text message again.
-import { renderTouch, EMAIL_TOUCHES, STEP_TOUCH, REACTIVATION_KEYS } from "@/lib/notify/emailCopy";
+import { renderTouch, EMAIL_TOUCHES, STEP_TOUCH, REACTIVATION_KEYS, prettyPurpose } from "@/lib/notify/emailCopy";
+import { getSetting, setSetting } from "@/lib/settings";
 
 // Record every follow-up that actually goes out, so sends are AUDITABLE in
 // activity_log (the blind spot that let the phantom-status bug send 0 unnoticed).
@@ -73,6 +74,15 @@ async function leadFileLink(leadId: string): Promise<string | null> {
 }
 
 export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number }> {
+  // OVERLAP GUARD: the daily cron and the Funnel-page "Run follow-ups" button can
+  // overlap and double-send to every unprocessed lead. A 10-minute soft lock in
+  // app_settings makes the second entrant a no-op.
+  const lock = await getSetting("NURTURE_RUN_LOCK");
+  if (lock && Date.now() - new Date(lock).getTime() < 10 * 60000) {
+    console.warn("[nurture] another run is in progress (lock", lock, ") — skipping");
+    return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0 };
+  }
+  await setSetting("NURTURE_RUN_LOCK", new Date().toISOString());
   // Look back a full year so the dormant database keeps getting reactivated,
   // not just leads from the last 30 days.
   const cutoff = new Date(Date.now() - 365 * 86400000).toISOString();
@@ -80,7 +90,9 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     .from("leads")
     .select("id, full_name, first_name, email, phone, loan_purpose, state, property_value, stage, created_at, nurture_step, nurture_paused, last_nurture_at, raw")
     .gte("created_at", cutoff)
-    .limit(800);
+    .order("created_at", { ascending: true })
+    .limit(2000);
+  if ((leads || []).length === 2000) console.warn("[nurture] lead window hit the 2000 cap — oldest-first order guarantees coverage across runs, but consider paging");
 
   const calendly = (await cfg("CALENDLY_URL")) || "";
   const bookLine = calendly ? ` Prefer to talk? Book a call: ${calendly}` : "";
@@ -93,15 +105,13 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     considered++;
     if (l.nurture_paused) continue;
     if (!l.phone && !l.email) continue;
-    // Stale Meta opt-in (historically recovered FB leads): Meta Lead Ad consent is NOT
-    // TCPA SMS consent — so these are nurtured EMAIL-ONLY (never SMS). They still get the
-    // full email drip/touches; texting is suppressed by forcing phone=null below.
-    // (Owner-approved 2026-06-23.) A historical lead with no email gets no touch (held).
-    // Also suppress SMS for any lead who did NOT opt into texts (sms_consent === false)
-    // — the optional SMS checkbox is the TCPA/A2P consent record; declines are always
-    // honored (they still get the full email drip). Legacy leads with no flag keep
-    // prior behavior; an explicit decline is never texted.
-    const sendPhone = (l.raw?.historical_import || l.raw?.sms_consent === false) ? null : l.phone;
+    // TCPA: automated texts require EXPLICIT consent — the optional SMS checkbox
+    // (raw.sms_consent === true) or a texted-in keyword opt-in (raw.consent.sms_optin).
+    // UNDEFINED consent (Meta instant forms, legacy rows) = email-only. Never text
+    // historical imports. This gate flipped from "not declined" to "expressly opted in"
+    // 2026-07-02 so the day A2P approves, no unconsented lead gets a drip text.
+    const smsOk = !l.raw?.historical_import && (l.raw?.sms_consent === true || l.raw?.consent?.sms_optin === true);
+    const sendPhone = smsOk ? l.phone : null;
     const stage = (l.stage || "").toLowerCase();
 
     // --- Review lane: ask funded/closed borrowers for a Google review (map-pack fuel).
@@ -117,11 +127,13 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
             id: l.id, kind: "nurture", name: fn, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg,
             emailSubject: "a quick favor", emailBody: reviewEmail,
           });
-          const raw = l.raw && typeof l.raw === "object" ? l.raw : {};
-          raw.review_requested = new Date().toISOString();
-          await supabaseAdmin.from("leads").update({ raw }).eq("id", l.id);
-          reviewsRequested++; sent++;
-          await logSent(l.id, "review", 0, res?.sent || []);
+          if ((res?.sent || []).length) {
+            const raw = l.raw && typeof l.raw === "object" ? l.raw : {};
+            raw.review_requested = new Date().toISOString();
+            await supabaseAdmin.from("leads").update({ raw }).eq("id", l.id);
+            reviewsRequested++; sent++;
+            await logSent(l.id, "review", 0, res.sent);
+          } else console.warn("[nurture] review ask delivered on no channel for", l.id, "— will retry next run");
         } catch (e) { console.warn("[nurture] review request failed for", l.id, e); }
       }
       continue;
@@ -132,7 +144,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     if (APP_STAGES.some((s) => stage.includes(s))) continue;
 
     const name = (l.first_name || l.full_name || "there").split(" ")[0];
-    const purpose = l.loan_purpose ? `your ${l.loan_purpose} financing` : "your financing";
+    const purpose = l.loan_purpose ? `your ${prettyPurpose(l.loan_purpose)}` : "your financing";
     const sinceLast = l.last_nurture_at ? (Date.now() - new Date(l.last_nurture_at).getTime()) / 86400000 : Infinity;
 
     // --- Lane 2: Engaged → doc-chaser (keep them moving, never give up) ---
@@ -140,7 +152,9 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       if (sinceLast < DOC_CHASE_THROTTLE_DAYS) continue;
       const { data: file } = await supabaseAdmin
         .from("loan_files").select("id, share_token").eq("lead_id", l.id).limit(1).maybeSingle();
-      if (!file?.share_token) continue;
+      // No loan file (e.g. booked a call, never uploaded): DON'T exit follow-up forever —
+      // fall through to the drip lane below so a warm no-show still gets worked.
+      if (file?.share_token) {
       const { data: docs } = await supabaseAdmin
         .from("loan_documents").select("name, status, required").eq("loan_file_id", file.id);
       const missing = (docs || [])
@@ -156,11 +170,14 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
           id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message,
           emailSubject: "what's left on your file", emailBody,
         });
-        await supabaseAdmin.from("leads").update({ last_nurture_at: new Date().toISOString() }).eq("id", l.id);
-        chased++; sent++;
-        await logSent(l.id, "doc_chase", 0, res?.sent || []);
+        if ((res?.sent || []).length) {
+          await supabaseAdmin.from("leads").update({ last_nurture_at: new Date().toISOString() }).eq("id", l.id);
+          chased++; sent++;
+          await logSent(l.id, "doc_chase", 0, res.sent);
+        } else console.warn("[nurture] doc-chase delivered on no channel for", l.id);
       } catch (e) { console.warn("[nurture] doc-chase failed for", l.id, e); }
       continue;
+      }
     }
 
     // --- Lane 1: Cold lead → 90-day drip, then long-term reactivation ---
@@ -175,6 +192,9 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       let due: typeof STEPS[number] | null = null;
       for (const s of STEPS) if (s.step > curStep && ageDays >= s.afterDays) { due = s; break; }
       if (!due) continue;
+      // Throttle: a lead whose backlog makes multiple steps "due" (old import, re-opt-in)
+      // still gets at most one touch every 2 days — never seven emails in seven days.
+      if (sinceLast < 2) continue;
       try {
         const link = await leadFileLink(l.id);
         const finishLine = link ? ` Pick up where you left off: ${link}` : "";
@@ -185,28 +205,36 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
           message: due.msg(name, purpose) + finishLine + bookLine,   // SMS copy
           emailSubject: emailT.subject, emailBody,                    // email copy
         });
-        await supabaseAdmin.from("leads").update({ nurture_step: due.step, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
-        sent++;
-        await logSent(l.id, "drip", due.step, res?.sent || []);
+        if ((res?.sent || []).length) {
+          await supabaseAdmin.from("leads").update({ nurture_step: due.step, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
+          sent++;
+          await logSent(l.id, "drip", due.step, res.sent);
+        } else console.warn("[nurture] drip step", due.step, "delivered on no channel for", l.id, "— not advancing");
       } catch (e) { console.warn("[nurture] drip failed for", l.id, e); }
       continue;
     }
 
     // Drip done → reactivate every ~45 days, forever, until they reply or STOP.
     if (sinceLast < REACTIVATE_THROTTLE_DAYS) continue;
-    const msg = REACTIVATION[curStep % REACTIVATION.length](name, purpose);
+    // Rotation: r1 -> r2 -> r3 once, then alternate r1/r2 forever — r3 says "genuinely
+    // the last one" and must never repeat (the brand can't be caught lying about stopping).
+    const rSteps = curStep - lastStep; // 0-based reactivation counter
+    const rIdx = rSteps < REACTIVATION.length ? rSteps : (rSteps % 2);
+    const msg = REACTIVATION[rIdx](name, purpose);
     try {
       const link = await leadFileLink(l.id);
       const finishLine = link ? ` Pick up where you left off: ${link}` : "";
-      const emailT = renderTouch(EMAIL_TOUCHES[REACTIVATION_KEYS[curStep % REACTIVATION_KEYS.length]] || EMAIL_TOUCHES.r1, l);
+      const emailT = renderTouch(EMAIL_TOUCHES[REACTIVATION_KEYS[rIdx]] || EMAIL_TOUCHES.r1, l);
       const res = await respondToLead({
         id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
         message: msg + finishLine + bookLine,                        // SMS copy
         emailSubject: emailT.subject, emailBody: emailT.body,         // email copy
       });
-      await supabaseAdmin.from("leads").update({ nurture_step: curStep + 1, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
-      reactivated++; sent++;
-      await logSent(l.id, "reactivation", curStep + 1, res?.sent || []);
+      if ((res?.sent || []).length) {
+        await supabaseAdmin.from("leads").update({ nurture_step: curStep + 1, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
+        reactivated++; sent++;
+        await logSent(l.id, "reactivation", curStep + 1, res.sent);
+      } else console.warn("[nurture] reactivation delivered on no channel for", l.id, "— not advancing");
     } catch (e) { console.warn("[nurture] reactivation failed for", l.id, e); }
   }
   // Log every run so cron health + send volume are VISIBLE (the heartbeats table
@@ -215,5 +243,6 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.ran",
     detail: { cron: "nurture", considered, sent, chased, reactivated, reviewsRequested },
   }).catch(() => {});
+  await setSetting("NURTURE_RUN_LOCK", "");
   return { considered, sent, chased, reactivated, reviewsRequested };
 }

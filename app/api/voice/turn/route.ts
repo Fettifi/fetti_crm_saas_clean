@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
 import { getCallState, saveCallState, clearCallState, receptionistTurn, type Turn } from "@/lib/voice/receptionist";
 import { addMessage } from "@/lib/phoneMessages";
 import { voiceVerb } from "@/lib/voice/say";
@@ -32,9 +33,20 @@ export async function POST(req: NextRequest) {
   let sid = "", speech = "", from = "";
   try {
     const form = await req.formData();
-    sid = String(form.get("CallSid") || "");
-    speech = String(form.get("SpeechResult") || "").trim();
-    from = String(form.get("From") || "");
+    const params: Record<string, string> = {};
+    form.forEach((v, k) => { params[k] = String(v); });
+    // Reject forged webhooks (each request otherwise burns OpenAI/ElevenLabs money and
+    // can plant fake "phone messages"). Fail-open only if no auth token configured.
+    const token = process.env.TWILIO_AUTH_TOKEN || "";
+    if (token) {
+      const sig = req.headers.get("x-twilio-signature") || "";
+      if (!twilioSignatureValid(token, sig, webhookCandidateUrls(req, "/api/voice/turn"), params)) {
+        return new NextResponse("Forbidden", { status: 403 });
+      }
+    }
+    sid = params["CallSid"] || "";
+    speech = String(params["SpeechResult"] || "").trim();
+    from = params["From"] || "";
   } catch { /* */ }
 
   if (!sid) return twiml(`<Say voice="${VOICE}">Sorry, something went wrong. Please call back. Goodbye.</Say>`);

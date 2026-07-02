@@ -71,11 +71,23 @@ const TOOLS = [
 ];
 
 async function postToCrm(payload) {
-  return fetch(CRM_INGEST_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${VOICE_INGEST_TOKEN}` },
-    body: JSON.stringify(payload),
-  });
+  // Retry 3x with backoff — a transient Vercel/network blip must never lose a
+  // borrower's message. Returns true only on a 2xx.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await fetch(CRM_INGEST_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${VOICE_INGEST_TOKEN}` },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (r.ok) return true;
+      console.error(`ingest attempt ${attempt} HTTP ${r.status}`);
+    } catch (e) { console.error(`ingest attempt ${attempt}:`, e?.message); }
+    await new Promise((res) => setTimeout(res, attempt * 1500));
+  }
+  console.error("INGEST FAILED after retries — payload:", JSON.stringify(payload).slice(0, 500));
+  return false;
 }
 
 const server = http.createServer((_req, res) => { res.writeHead(200); res.end("Fetti realtime voice bridge — OK"); });
@@ -87,7 +99,25 @@ wss.on("connection", (twilio) => {
   let caller = null;              // caller's phone number (from Twilio start customParameters)
   let greeted = false;            // true once the opening disclosure finishes → barge-in allowed
   let oaiOpen = false, startSeen = false, started = false;
+  let messageSaved = false;       // save_message succeeded → no salvage needed
+  let salvaged = false;
   const transcript = [];
+  // On ANY teardown (caller hung up early, OpenAI dropped, bridge restart): if Penny
+  // heard something real but never saved a message, persist the partial transcript —
+  // a dropped call must still surface in /messages instead of vanishing.
+  async function salvageIfNeeded(why) {
+    if (messageSaved || salvaged) return;
+    const callerLines = transcript.filter((t) => t.startsWith("Caller:"));
+    if (!callerLines.length) return;
+    salvaged = true;
+    try {
+      await postToCrm({
+        caller_name: null, callback_number: caller || null,
+        reason: `⚠️ CALL ENDED EARLY (${why}) — partial transcript below; call back`, urgency: "high",
+        call_sid: callSid, transcript: transcript.join("\n"),
+      });
+    } catch { /* postToCrm already retries + logs */ }
+  }
   const oai = new WebSocket(`wss://api.openai.com/v1/realtime?model=${MODEL}`, {
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}` }, // GA: NO "OpenAI-Beta" header
   });
@@ -152,7 +182,7 @@ wss.on("connection", (twilio) => {
       try {
         const args = JSON.parse(m.arguments || "{}");
         if (m.name === "save_message") {
-          await postToCrm({ ...args, call_sid: callSid, transcript: transcript.join("\n") });
+          messageSaved = (await postToCrm({ ...args, call_sid: callSid, transcript: transcript.join("\n") })) === true;
         } else if (m.name === "book_call") {
           await postToCrm({
             caller_name: args.caller_name, callback_number: args.callback_number,
@@ -180,9 +210,9 @@ wss.on("connection", (twilio) => {
     } else if (m.event === "stop") { try { oai.close(); } catch {} }
   });
 
-  twilio.on("close", () => { try { oai.close(); } catch {} });
-  oai.on("close", () => { try { twilio.close(); } catch {} });
-  oai.on("error", (e) => console.error("OpenAI ws error", e?.message));
+  twilio.on("close", () => { salvageIfNeeded("caller disconnected"); try { oai.close(); } catch {} });
+  oai.on("close", () => { salvageIfNeeded("AI connection dropped"); try { twilio.close(); } catch {} });
+  oai.on("error", (e) => { console.error("OpenAI ws error", e?.message); salvageIfNeeded("AI error"); });
 });
 
 server.listen(PORT, () => console.log(`Fetti realtime voice bridge listening on :${PORT} (path /media, model ${MODEL}, GA)`));

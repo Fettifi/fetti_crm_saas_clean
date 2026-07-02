@@ -4,6 +4,7 @@
 // 3) Feed the funnel + outcomes + PRIOR insights to the optimizer agent so its
 //    learning compounds, then bank the new insight (config feeds the live wizard).
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { runOptimizer } from "@/lib/agents/optimizer";
 import { recordHeartbeat } from "@/lib/heartbeat";
@@ -139,7 +140,12 @@ export async function GET(req: NextRequest) {
 // Manual trigger from the Command Center. No cron secret (the browser can't hold
 // it), but debounced: refuse to re-run if we learned in the last 2 minutes, so it
 // can't be spammed into repeated OpenAI calls.
-export async function POST() {
+export async function POST(req: NextRequest) {
+  // Unauthenticated manual trigger (Command Center button) — bound abuse: this endpoint
+  // burns paid OpenAI calls, so cap per-IP invocations hard.
+  if (!(await rateLimit(`learn:${clientIp(req)}`, 3, 3600))) {
+    return NextResponse.json({ error: "rate limited" }, { status: 429 });
+  }
   try {
     const { data: last } = await supabaseAdmin
       .from("wizard_insights").select("created_at").order("created_at", { ascending: false }).limit(1).maybeSingle();

@@ -28,3 +28,5 @@ services:
         value: marin   # female — the phone receptionist is Penny
       - key: CRM_INGEST_URL
         value: https://app.fettifi.com/api/voice/ingest
+      - key: BRIDGE_REV            # bump to trigger a blueprint-sync redeploy
+        value: '2026-07-02-audit-fixes' 

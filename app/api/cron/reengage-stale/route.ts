@@ -54,9 +54,10 @@ async function sendEmail(to: string, subject: string, html: string): Promise<boo
 
 async function run(dry: boolean) {
   const { data: leads } = await supabaseAdmin
-    .from("leads").select("id, full_name, email, stage, raw, source").limit(5000);
+    .from("leads").select("id, full_name, email, stage, raw, source, nurture_paused").limit(5000);
   const targets = (leads || []).filter((l: any) => {
     const raw = l.raw || {};
+    if (l.nurture_paused) return false;               // unsubscribed/opted-out: never email again
     if (!raw.historical_import) return false;        // only the recovered/stale Meta leads
     if (raw.historical_outreach_at) return false;    // already emailed once — never repeat
     if (!l.email) return false;                      // email-only outreach

@@ -358,6 +358,13 @@ export default function ApplyWizard() {
         ? crypto.randomUUID()
         : `s_${Math.random().toString(36).slice(2)}${Date.now()}`;
     track("start", { phase: "flow" });
+    // Deep links (/links bio page, ads) pass ?goal= — honor it so an investor CTA
+    // actually lands on the investor flow, not the generic first question.
+    try {
+      const g = new URLSearchParams(window.location.search).get("goal");
+      const valid = ["buy", "refi", "invest", "flip", "equity", "business", "reverse"];
+      if (g && valid.includes(g)) { setAnswers((a) => ({ ...a, goal: g })); setI(1); }
+    } catch { /* ignore */ }
     // Pull what the Application Coach has learned, and adapt this session to it.
     fetch("/api/wizard/event")
       .then((r) => r.json())
@@ -427,7 +434,11 @@ export default function ApplyWizard() {
 
   function answerFlow(id: string, raw: string, kind: Q["kind"]) {
     const value = kind === "number" ? raw.replace(/[^0-9.]/g, "") : raw;
-    const next = { ...answers, [id]: value };
+    // Switching GOAL mid-flow must clear downstream answers — a stale occupancy from
+    // the old flow silently drives the wrong product + wrong licensing (audit P1).
+    const next = (id === "goal" && answers.goal && answers.goal !== value)
+      ? ({ goal: value } as Answers)
+      : { ...answers, [id]: value };
     setAnswers(next);
     setInput("");
     track("answer", { phase: "flow", step_id: id, step_index: i, goal: next.goal, occupancy: effectiveOccupancy(next), product: next.goal ? product(next) : undefined });
@@ -445,6 +456,16 @@ export default function ApplyWizard() {
     const advance = () => { if (ai + 1 >= aSteps.length) submitApplication(next); else setAi(ai + 1); };
     if (!maybeCoach(id, value, next, "app", advance)) advance();
   }
+
+  // Restore the saved answer into the input whenever the current question changes —
+  // going Back used to show blank fields and force re-typing (audit P2).
+  const currentQId = phase === "app" ? aSteps[ai]?.id : phase === "flow" ? steps[i]?.id : null;
+  useEffect(() => {
+    if (!currentQId) return;
+    const saved = (answers as Record<string, string | undefined>)[currentQId];
+    setInput(saved != null ? String(saved) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQId, phase]);
 
   function back() {
     setError(null);
@@ -562,11 +583,16 @@ export default function ApplyWizard() {
   async function submitApplication(finalAnswers: Answers) {
     setSubmitting(true); setError(null);
     try {
-      await post({ ...buildPayload(finalAnswers, contact), app_completed: true });
+      const j = await post({ ...buildPayload(finalAnswers, contact), app_completed: true });
+      if (j.file_link) setFileLink(j.file_link); // returning borrowers get the upload CTA too
       trackApplication(finalAnswers.loan_amount_requested ? Number(finalAnswers.loan_amount_requested) : undefined); // completed-1003 conversion
       track("complete", { phase: "app", goal: finalAnswers.goal, occupancy: effectiveOccupancy(finalAnswers), product: product(finalAnswers) });
-    } catch { /* lead already exists; non-fatal. Specialist follows up */ } finally {
       setSubmitting(false); setPhase("done");
+    } catch (err) {
+      // NEVER show "You're all set!" when the application didn't save — the borrower
+      // walks away believing it's done and the data is gone (audit P2).
+      setSubmitting(false);
+      setError(err instanceof Error ? err.message : "We couldn't submit your application. Please retry.");
     }
   }
 
@@ -588,15 +614,10 @@ export default function ApplyWizard() {
               <a href={fileLink} className="inline-block bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-full">
                 Upload your documents securely →
               </a>
-              <p className="text-xs text-slate-500 max-w-sm">This is your private, secure upload link — we&apos;ve also sent it to your email{contact.phone ? " and phone" : ""}. Uploading now gets your file moving fastest.</p>
-              {leadId && <Link href={`/portal/${leadId}`} className="text-sm text-emerald-700 hover:text-emerald-600 font-semibold">Or track my application →</Link>}
+              <p className="text-xs text-slate-500 max-w-sm">This is your private, secure upload link — we&apos;ve also sent it to your email{contact.sms_consent ? " and phone" : ""}. Uploading now gets your file moving fastest.</p>
             </div>
           ) : (
-            leadId && (
-              <Link href={`/portal/${leadId}`} className="inline-block mt-7 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-full">
-                Track my application
-              </Link>
-            )
+            <p className="mt-7 text-sm text-slate-500">A specialist is reviewing your application now — keep an eye on your email.</p>
           )}
         </div>
       </Shell>
@@ -609,7 +630,7 @@ export default function ApplyWizard() {
       <Shell pct={pct} onBack={() => { advanceRef.current = null; setCoach(null); }}>
         <div className="rounded-2xl bg-gradient-to-b from-emerald-500/15 to-white/0 border border-emerald-200 p-6">
           <div className="flex items-center gap-2 text-emerald-700 font-semibold"><Lightbulb className="w-5 h-5" /> Good news. There's a path here</div>
-          <p className="text-slate-100 text-lg leading-relaxed mt-3">{coach.message}</p>
+          <p className="text-slate-800 text-lg leading-relaxed mt-3">{coach.message}</p>
         </div>
         <button onClick={continueCoach} className="w-full mt-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-full">
           Keep going →
@@ -638,7 +659,7 @@ export default function ApplyWizard() {
             {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           {isConsumer(answers) ? (
-            <p className="text-[11px] text-amber-400/80">Owner-occupied home loans are offered in FL, MI &amp; CA. Other states: we'll connect you with the right option.</p>
+            <p className="text-[11px] text-amber-700">Owner-occupied home loans are offered in FL, MI &amp; CA. Other states: we'll connect you with the right option.</p>
           ) : (
             <p className="text-[11px] text-emerald-600/80">Investment &amp; business-purpose loans are available in all 50 states.</p>
           )}
@@ -671,7 +692,13 @@ export default function ApplyWizard() {
             <p className="text-xs text-emerald-700">Nice. You pre-qualify! A few quick details and your pre-approval is ready.</p>
           </div>
         )}
-        <QuestionView q={q} input={input} setInput={setInput} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerApp(q.id, "", q.kind) : undefined} />
+        <QuestionView q={q} input={input} setInput={setInput} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerApp(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
+        {error && (
+          <div className="mt-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
+            <p className="text-sm text-red-600">{error}</p>
+            <button onClick={() => submitApplication(answers)} className="mt-2 text-sm font-bold text-red-700 underline">Tap to retry</button>
+          </div>
+        )}
         {submitting && <p className="text-slate-400 text-sm mt-4">Saving…</p>}
       </Shell>
     );
@@ -682,7 +709,7 @@ export default function ApplyWizard() {
   const displayQ = q.id === "goal" ? goalQ : q; // apply learned goal ordering
   return (
     <Shell pct={pct} onBack={i > 0 ? back : undefined}>
-      <QuestionView q={displayQ} input={input} setInput={setInput} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerFlow(q.id, "", q.kind) : undefined} />
+      <QuestionView q={displayQ} input={input} setInput={setInput} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerFlow(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
       {q.id === "goal" && tip && (
         <p className="mt-4 text-xs text-emerald-700/80 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 shrink-0" /> {tip}</p>
       )}

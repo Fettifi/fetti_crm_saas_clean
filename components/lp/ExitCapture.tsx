@@ -15,6 +15,7 @@ export default function ExitCapture({ slug }: { slug: string }) {
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const shown = useRef(false);
 
   useEffect(() => {
@@ -49,8 +50,9 @@ export default function ExitCapture({ slug }: { slug: string }) {
           hp: String(fd.get("company") || ""),
         }),
       });
-      if (r.ok) setDone(true); else setBusy(false);
-    } catch { setBusy(false); }
+      if (r.ok) setDone(true);
+      else { const j = await r.json().catch(() => ({} as any)); setErr(j.error || "Something went wrong — double-check your phone number and try again."); setBusy(false); }
+    } catch { setErr("Connection hiccup — please try again."); setBusy(false); }
   }
 
   if (!open) return null;
@@ -81,6 +83,7 @@ export default function ExitCapture({ slug }: { slug: string }) {
               <button type="submit" disabled={busy} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3.5 rounded-full text-lg">
                 {busy ? "Sending…" : "See my options →"}
               </button>
+              {err && <p className="text-red-500 text-sm text-center">{err}</p>}
               <p className="text-[10px] text-slate-400 text-center">{CONSENT}</p>
             </form>
           </>

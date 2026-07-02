@@ -4,8 +4,17 @@
 // liability. This catches it AFTER generation and swaps in a safe, still-human deferral.
 // Mirrors (and shares intent with) the SMS concierge gate in lib/markConcierge.
 
-// A specific rate/APR/percent.
-const RATE = /(\b\d{1,2}(\.\d{1,3})?\s?%)|\bapr\b|\b\d(\.\d+)?\s?percent\b/i;
+// A specific rate/APR/percent — digits ("6.5%", "11 percent", "11 to 12 percent"),
+// AND spelled-out numbers ("six and a half percent"), which models love to use to
+// dodge digit filters.
+const NUM_WORD = "(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)";
+const RATE = new RegExp(
+  String.raw`(\b\d{1,2}(\.\d{1,3})?\s?%)` +
+  String.raw`|\bapr\b` +
+  String.raw`|\b\d{1,2}(\.\d{1,3})?(\s?(to|-|–)\s?\d{1,2}(\.\d{1,3})?)?\s?percent\b` +
+  `|\\b${NUM_WORD}(\\s+and\\s+a\\s+(half|quarter))?(\\s+(to|-)\\s+${NUM_WORD})?\\s+percent\\b` +
+  String.raw`|\brates?\s+(are|run|start|go|sit)\s+(at|around|about|near)?\s*\d`,
+  "i");
 // An approval/outcome guarantee.
 const APPROVAL = /\b(guarantee|guaranteed)\b|\byou(?:'?re| are)\s+(pre-?)?approved\b|\bguaranteed approval\b|\b100%\s+approv/i;
 // A specific monthly PAYMENT quote — a dollar figure tied to payment/month language.

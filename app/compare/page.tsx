@@ -1,4 +1,5 @@
 "use client";
+import CurrencyInput from "@/components/ui/CurrencyInput";
 
 // Loan Comparison — upload several lender price-quote PDFs (e.g. AD Mortgage Quick
 // Pricer), Claude extracts each, the LO reviews/edits a side-by-side grid, then
@@ -158,7 +159,7 @@ export default function ComparePage() {
                     {quotes.map((q, i) => (
                       <td key={q.id} className="p-1.5">
                         {row.key === "loanAmount"
-                          ? <input value={q.loanAmount ?? ""} onChange={(e) => setAmount(i, e.target.value)} placeholder="—" className={input} />
+                          ? <CurrencyInput value={String(q.loanAmount ?? "")} onChange={(v) => setAmount(i, v)} placeholder="—" className={input} />
                           : <input value={(q[row.key] as string) ?? ""} onChange={(e) => setStr(i, row.key, e.target.value)} placeholder="—" className={input} />}
                       </td>
                     ))}

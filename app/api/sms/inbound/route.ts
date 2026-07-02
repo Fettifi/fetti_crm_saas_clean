@@ -5,6 +5,7 @@ import { logHotLeadReply } from "@/lib/notify/hotLeadReply";
 import { logComms, sendSms, getLeadMessagesForAI, countRecentOutbound } from "@/lib/comms";
 import { markConciergeReply } from "@/lib/markConcierge";
 import { cfg } from "@/lib/settings";
+import { phoneMatchForms } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -46,13 +47,14 @@ export async function POST(req: NextRequest) {
     if (digits && OPTIN_KEYWORDS.includes(word)) {
       const consent = { sms_optin: true, keyword: word, campaign: "youtube_thelot", at: new Date().toISOString(), text: body.slice(0, 200) };
       try {
-        const { data: existing } = await supabaseAdmin.from("leads").select("id, raw").eq("phone", digits).limit(1).maybeSingle();
+        const { data: existing } = await supabaseAdmin.from("leads").select("id, raw").in("phone", phoneMatchForms(digits)).order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (existing) {
           const raw = (existing as any).raw && typeof (existing as any).raw === "object" ? (existing as any).raw : {};
           raw.consent = consent;
+          raw.sms_consent = true; // texting us first = express written consent (TCPA)
           await supabaseAdmin.from("leads").update({ raw, nurture_paused: false }).eq("id", (existing as any).id);
         } else {
-          await supabaseAdmin.from("leads").insert([{ phone: digits, source: "youtube_thelot", lead_source: "sms_optin", stage: "New Lead", raw: { consent } }]);
+          await supabaseAdmin.from("leads").insert([{ phone: digits, source: "youtube_thelot", lead_source: "sms_optin", stage: "New Lead", raw: { consent, sms_consent: true } }]);
         }
       } catch (e) { console.warn("[sms/inbound] optin save failed", e); }
 
@@ -68,7 +70,7 @@ export async function POST(req: NextRequest) {
       const { data: lead } = await supabaseAdmin
         .from("leads")
         .select("id, full_name, first_name, phone, loan_purpose, state")
-        .eq("phone", digits)
+        .in("phone", phoneMatchForms(digits))
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -86,9 +88,20 @@ export async function POST(req: NextRequest) {
       // Only a genuine opt-out pauses nurture (TCPA). A normal reply is a HOT
       // engagement signal — keep nurturing (throttled) and alert the team to jump
       // in; don't silently kill follow-up forever just because they asked a question.
-      const isStop = /\b(STOP|STOPALL|UNSUBSCRIBE|CANCEL|END|QUIT|OPTOUT|REVOKE)\b/.test(body.toUpperCase());
-      if (lead && isStop) {
-        await supabaseAdmin.from("leads").update({ nurture_paused: true }).eq("id", (lead as any).id);
+      // Carrier-standard opt-out: the keyword must BE the message (allowing trailing
+      // punctuation), not merely appear in it — "yes, cancel my 3pm and call me" is a
+      // HOT reply, not an opt-out.
+      const isStop = /^(STOP|STOPALL|UNSUBSCRIBE|CANCEL|END|QUIT|OPTOUT|OPT[- ]?OUT|REVOKE)[.!]?$/.test(body.trim().toUpperCase());
+      if (isStop && digits) {
+        // Revoke on EVERY row sharing this phone (dup groups, legacy forms) — an
+        // opt-out that only hits the newest row is a TCPA violation waiting on the rest.
+        const { data: rows } = await supabaseAdmin.from("leads").select("id, raw").in("phone", phoneMatchForms(digits));
+        for (const r of rows || []) {
+          const raw = (r as any).raw && typeof (r as any).raw === "object" ? (r as any).raw : {};
+          raw.sms_consent = false;
+          raw.sms_optout_at = new Date().toISOString();
+          await supabaseAdmin.from("leads").update({ nurture_paused: true, raw }).eq("id", (r as any).id);
+        }
       } else if (lead) {
         // Non-STOP reply from a known lead = hottest signal in the funnel.
         // Persist it as a top-priority CRM task so the conversion moment lands

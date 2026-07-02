@@ -102,7 +102,9 @@ export async function respondToLead(lead: LeadContact): Promise<{ sent: string[]
   // The FIRST text stays a pure human opener — no link dump. Mark shares the secure
   // link naturally once they reply (concierge). Later touches (nurture/doc-chase) may
   // append it inline since the conversation is already going.
-  const smsBody = (lead.link && kind !== "first_touch") ? `${body}\n\nUpload your documents securely here: ${lead.link}` : body;
+  let smsBody = (lead.link && kind !== "first_touch") ? `${body}\n\nUpload your documents securely here: ${lead.link}` : body;
+  // Every automated text carries opt-out language (carrier requirement + TCPA hygiene).
+  if (lead.phone && !/reply\s+stop/i.test(smsBody)) smsBody += " (Reply STOP to opt out.)";
   const sent: string[] = [];
   await Promise.all([
     emailLead(lead, body).then(async (r) => {

@@ -57,7 +57,7 @@ export default function MarkChat() {
               <button onClick={() => setOpen(false)} className="ml-auto text-slate-300 hover:text-white" aria-label="Close chat"><X className="w-5 h-5" /></button>
             </div>
 
-            <a href="/apply" className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 shrink-0 transition">
+            <a href="/apply/form" className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 shrink-0 transition">
               Start my application <ArrowRight className="w-3.5 h-3.5" />
             </a>
 

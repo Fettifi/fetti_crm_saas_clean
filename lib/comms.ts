@@ -12,6 +12,7 @@
 // configured. They return the provider message id so delivery status can be
 // correlated later (Twilio StatusCallback -> /api/sms/status).
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { cfg } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
@@ -102,7 +103,9 @@ export async function sendEmail(
     const from = process.env.LEAD_RESPONSE_FROM_EMAIL;
     if (!key || !from) return { ok: false, detail: "resend not configured" };
     if (!to) return { ok: false, detail: "no recipient email" };
-    const payload: Record<string, unknown> = { from, to: [to], subject };
+    // Borrower replies must land where a human reads them, not the raw send alias.
+    const replyTo = ((await cfg("REPLY_TO_EMAIL")) || "frank@fettifi.com").trim();
+    const payload: Record<string, unknown> = { from, to: [to], subject, reply_to: [replyTo] };
     if (opts.html) payload.html = opts.html; else payload.text = opts.text || "";
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",

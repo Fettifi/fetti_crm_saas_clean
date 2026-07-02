@@ -302,12 +302,20 @@ export async function importHistoricalLeads(): Promise<any> {
     await setSetting("META_PAGE_TOKENS", JSON.stringify(map));
   } catch { /* */ }
 
-  // Already-imported leadgen ids → never double-import.
+  // Already-imported leadgen ids → never double-import. EXCEPTION: a webhook-fallback
+  // "shell" row (saved with no contact info when the Graph fetch failed) must NOT block
+  // recovery — we track shells so the importer can fill them in with the real lead.
   const seen = new Set<string>();
+  const shells = new Map<string, string>(); // leadgen_id -> shell lead row id
   try {
-    const { data } = await supabaseAdmin.from("leads").select("raw")
+    const { data } = await supabaseAdmin.from("leads").select("id, email, phone, raw")
       .or("source.in.(facebook,instagram,meta_lead_ad),lead_source.in.(facebook,instagram,meta_lead_ad)").limit(20000);
-    for (const r of data || []) { const id = (r as any)?.raw?.meta?.leadgen_id; if (id) seen.add(String(id)); }
+    for (const r of data || []) {
+      const id = (r as any)?.raw?.meta?.leadgen_id; if (!id) continue;
+      const isShell = (r as any)?.raw?.fallback_reason && !(r as any).email && !(r as any).phone;
+      if (isShell) shells.set(String(id), (r as any).id);
+      else seen.add(String(id));
+    }
   } catch { /* */ }
 
   const norm = (s: any) => String(s || "").toLowerCase().replace(/[\s\-]+/g, "_");
@@ -394,6 +402,46 @@ export async function importHistoricalLeads(): Promise<any> {
             stage: "New Lead", source: "facebook", lead_source: "facebook",
             raw: { meta: { leadgen_id: lgid, form_id: form.id, form_name: form.name, page_id: page.id, created_time: lead.created_time }, historical_import: true, field_data: lead.field_data },
           };
+          // SHELL RECOVERY: the webhook saved a contactless placeholder for this
+          // leadgen_id — fill it in with the real borrower instead of skipping forever.
+          const shellId = shells.get(lgid);
+          if (shellId) {
+            const { error: upErr } = await supabaseAdmin.from("leads").update({
+              full_name: row.full_name, email: row.email, phone: row.phone, state: row.state,
+              loan_purpose: row.loan_purpose, credit_band: row.credit_band, credit_score: row.credit_score,
+              liquid_assets: row.liquid_assets, property_value: row.property_value, income: row.income,
+              score, tier, raw: row.raw,
+            }).eq("id", shellId);
+            if (!upErr) {
+              seen.add(lgid); shells.delete(lgid); imported++; pr.imported++;
+              try { await notifyNewLead({ lead_id: shellId, full_name: row.full_name, email: row.email, phone: row.phone, state: row.state, loan_purpose: row.loan_purpose, score, tier, source: "facebook (shell recovered — details filled in)", auto_sent: [] }); } catch { /* */ }
+            } else { skipped++; pr.skipped++; }
+            continue;
+          }
+
+          // FRESH lead (webhook missed it minutes ago, not months): route through
+          // /api/apply so it gets the IDENTICAL speed-to-lead treatment as a webhook
+          // delivery — instant first-touch email, scoring, agents — instead of being
+          // mislabeled historical (no first touch, review-gated).
+          const ageH = lead.created_time ? (Date.now() - new Date(lead.created_time).getTime()) / 3600000 : 9999;
+          if (ageH <= 48 && process.env.CRON_SECRET) {
+            try {
+              const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+              const ar = await fetch(`${appUrl}/api/apply`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-fetti-internal": process.env.CRON_SECRET },
+                body: JSON.stringify({
+                  full_name: row.full_name, email: row.email, phone: row.phone, state: row.state,
+                  loan_purpose: row.loan_purpose, credit_band: row.credit_band, credit_score: row.credit_score,
+                  liquid_assets: row.liquid_assets, property_value: row.property_value, income: row.income,
+                  source: "facebook", notes: `Recovered by the 15-min importer (webhook missed it) — page "${page.name}", form "${form.name}".`,
+                }),
+                signal: AbortSignal.timeout(30000),
+              });
+              if (ar.ok) { seen.add(lgid); imported++; pr.imported++; continue; }
+            } catch { /* fall through to the direct-insert safety net */ }
+          }
+
           const { data: ins, error } = await supabaseAdmin.from("leads").insert([row]).select("id").single();
           if (error) { skipped++; pr.skipped++; } else {
             seen.add(lgid); imported++; pr.imported++;

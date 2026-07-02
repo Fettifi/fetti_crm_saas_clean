@@ -16,6 +16,7 @@ import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
 import { renderTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
+import { markReplyViolates } from "@/lib/markCompliance";
 import { sendMetaLeadEvent } from "@/lib/metaCapi";
 import { advanceLeadStage } from "@/lib/leadStage";
 import { scoreLead } from "@/lib/leadScore";
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (email && !/^[^\s@,()]+@[^\s@,()]+\.[^\s@,()]+$/.test(email)) {
       return NextResponse.json({ error: "Please provide a valid email address." }, { status: 400 });
     }
 
@@ -147,10 +148,14 @@ export async function POST(req: NextRequest) {
     let existingId: string | null = null;
     let existingRaw: Record<string, unknown> | null = null;
     let existingName: string | null = null;
+    let existingScore: number | null = null;
     if (orParts.length) {
-      const { data: existing } = await supabaseAdmin
-        .from("leads").select("id, raw, full_name").or(orParts.join(",")).limit(1).maybeSingle();
-      if (existing) { existingId = existing.id as string; existingRaw = (existing as any).raw ?? null; existingName = (existing as any).full_name ?? null; }
+      const { data: matches } = await supabaseAdmin
+        .from("leads").select("id, raw, full_name, stage, score")
+        .or(orParts.join(",")).order("created_at", { ascending: false }).limit(5);
+      // Prefer a LIVE row; a returning borrower must never merge into a Dead/junk row.
+      const existing = (matches || []).find((m: any) => !/dead|lost/i.test(m.stage || "")) || (matches || [])[0];
+      if (existing) { existingId = existing.id as string; existingRaw = (existing as any).raw ?? null; existingName = (existing as any).full_name ?? null; existingScore = (existing as any).score ?? null; }
     }
     // Same contact details under a DIFFERENT name (e.g. "Karamel Midy" then "Marie Midy",
     // one minute apart) is the signature of junk/fraud form fills — surface it on the alert.
@@ -163,6 +168,10 @@ export async function POST(req: NextRequest) {
       const updateRow = Object.fromEntries(
         Object.entries(row).filter(([k, v]) => v !== null && k !== "stage" && k !== "raw")
       );
+      // A later, sparser submission must never DEMOTE the lead: keep the higher
+      // score/tier, and keep first-touch attribution (source/lead_source) intact.
+      if (existingScore != null && (score ?? 0) <= existingScore) { delete updateRow.score; delete updateRow.tier; }
+      delete updateRow.source; delete updateRow.lead_source;
       // MERGE raw so the multi-step application accumulates (contact step + the full
       // 1003 step: DOB, citizenship, employment, assets, SSN…). Previously `raw` was
       // excluded on update, so everything collected after the contact step was lost.
@@ -172,13 +181,27 @@ export async function POST(req: NextRequest) {
     } else {
       ({ data, error } = await supabaseAdmin
         .from("leads").insert([row]).select().single());
+      // RACE GUARD (no DB unique constraint available): if a concurrent submission
+      // slipped in between our SELECT and INSERT, keep the oldest row and neutralize
+      // ours so the borrower is never double-contacted.
+      if (!error && data && orParts.length) {
+        try {
+          const { data: dupes } = await supabaseAdmin
+            .from("leads").select("id, created_at").or(orParts.join(",")).order("created_at", { ascending: true }).limit(2);
+          if ((dupes || []).length > 1 && (dupes as any)[0].id !== data.id) {
+            const raw2 = { ...(row.raw as object || {}), duplicate_of: (dupes as any)[0].id, duplicate_key: "race" };
+            await supabaseAdmin.from("leads").update({ nurture_paused: true, stage: "Dead", raw: raw2 }).eq("id", data.id);
+            existingId = (dupes as any)[0].id; // treat as dedupe: no first-touch below
+          }
+        } catch { /* best-effort */ }
+      }
     }
 
     if (error) {
       console.error("[/api/apply] write error:", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    const deduped = !!existingId;
+    const deduped = !!existingId; // (also true when the race guard re-pointed us at an older row)
 
     // A completed full 1003 advances the lead to "Application" (new OR returning lead).
     // This is the signal the pipeline was previously discarding — leads sat at "New Lead"
@@ -283,6 +306,13 @@ export async function POST(req: NextRequest) {
         // checklist dump and no "please upload" demands. Mark surfaces the secure link
         // and asks for docs naturally once the lead engages (SMS/website concierge),
         // so the opener stays human and starts a real back-and-forth.
+        // COMPLIANCE GATE: the AI-drafted first touch must never quote a rate/payment
+        // or promise approval (licensed lender). A violating draft falls back to the
+        // safe template in respondToLead.
+        if (draftReply && markReplyViolates(draftReply)) {
+          console.warn("[/api/apply] capture draft failed compliance gate — using template");
+          draftReply = "";
+        }
         // TEXT the first touch ONLY if the lead opted into SMS (checked the optional
         // box). Otherwise pass phone:null so it's email-only — same gating pattern
         // nurture uses. Consent-not-given ≠ no follow-up; they still get the email.
