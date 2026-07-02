@@ -29,7 +29,7 @@ Each tradeline: {
  "balance": number|null (current balance in dollars; null if not shown),
  "status": one of "open","closed","collection","chargeoff","disputed","unknown"
 }
-RULES: List each unique account ONCE (tri-merge reports repeat the same account per bureau — deduplicate by creditor+balance). Include open accounts, collections, and charge-offs. Mark paid/closed/transferred accounts status "closed". NEVER invent numbers — null when a figure isn't on the report. Do NOT return SSNs, dates of birth, addresses, or account numbers.`;
+RULES: List each unique account ONCE (tri-merge reports repeat the same account per bureau — deduplicate by creditor+balance). Merged reports (e.g. Factual Data) also contain RECAP sections ("Adverse Summary", "Account Summary") that REPEAT accounts already listed in the tradeline sections — never count those again. Include open accounts, collections, and charge-offs. Mark paid/closed/transferred accounts status "closed". NEVER invent numbers — null when a figure isn't on the report. Do NOT return SSNs, dates of birth, addresses, or account numbers.`;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const numf = (v: unknown): number | null => { const n = Number(String(v ?? "").replace(/[^0-9.]/g, "")); return isFinite(n) && n > 0 ? Math.round(n) : null; };
@@ -53,7 +53,16 @@ export function normalizeTradelines(ex: any): CreditLiability[] {
     }
     if (type === "mortgage") { include = false; note = "housing debt — counted in the housing payment, toggle on only for OTHER properties"; }
     if (status === "collection" || status === "chargeoff" || type === "collection") { include = false; monthly = monthly || 0; note = "derogatory — usually no monthly obligation; verify payoff requirements"; }
-    if (!monthly && include) { include = false; note = note || "no payment or balance reported"; }
+    // DEFERRED/no-payment student loans: agencies still count them — FHA 0.5% of balance,
+    // conventional 1% (or a documented payment), VA may exclude if deferred >12mo past
+    // closing. Pre-compute the FHA 0.5% so toggling the row on applies a defensible
+    // number instantly; left OFF by default because the right % is program-specific.
+    if (!monthly && type === "student" && balance) {
+      monthly = Math.round(balance * 0.005);
+      include = false;
+      note = `deferred student loan — $0 reported; FHA counts 0.5% of balance (shown: $${monthly}/mo), conventional 1% or documented payment, VA may exclude if deferred >12mo past closing`;
+    }
+    if (!monthly && include) { include = false; note = note || (balance ? "no payment reported — verify the obligation" : "no payment or balance reported"); }
     liabilities.push({ id: uid(), creditor, type, monthly, balance, status, include, note });
   }
   return liabilities;
