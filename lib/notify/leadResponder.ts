@@ -57,8 +57,9 @@ async function emailLead(l: LeadContact, fallbackBody: string) {
 
   // Light personal signature + CAN-SPAM footer (one-click unsubscribe when we have a lead id).
   const signature = await markSignatureLite(l.id ? unsubUrl(l.id) : undefined);
-  // Replies should land where a human reads them (Ramon), not a send-only alias.
-  const replyTo = ((await cfg("CONTACT_EMAIL")) || "ramon@fettifi.com").trim();
+  // Replies should land where a human reads them — frank@fettifi.com (Ramon's routing
+  // choice 2026-07-02). Overridable via the REPLY_TO_EMAIL setting without a redeploy.
+  const replyTo = ((await cfg("REPLY_TO_EMAIL")) || "frank@fettifi.com").trim();
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
