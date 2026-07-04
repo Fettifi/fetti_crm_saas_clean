@@ -15,7 +15,9 @@ import { ensureLoanFileForLead, ensureLeadUploadToken } from "@/lib/los";
 import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
-import { renderTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
+import { renderTouch, renderFirstTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
+import { magicApplyLink } from "@/lib/magicLink";
+import { cfg } from "@/lib/settings";
 import { markReplyViolates } from "@/lib/markCompliance";
 import { sendMetaLeadEvent } from "@/lib/metaCapi";
 import { advanceLeadStage } from "@/lib/leadStage";
@@ -175,7 +177,26 @@ export async function POST(req: NextRequest) {
       // MERGE raw so the multi-step application accumulates (contact step + the full
       // 1003 step: DOB, citizenship, employment, assets, SSN…). Previously `raw` was
       // excluded on update, so everything collected after the contact step was lost.
-      updateRow.raw = { ...(existingRaw && typeof existingRaw === "object" ? existingRaw : {}), ...rawBody };
+      const priorRaw = (existingRaw && typeof existingRaw === "object" ? existingRaw : {}) as Record<string, any>;
+      const mergedRaw: Record<string, any> = { ...priorRaw, ...rawBody };
+      // CONSENT IS A RATCHET: a later submission with the SMS box unchecked must never
+      // erase a consent already on file — only STOP (sms/inbound) revokes. Restore the
+      // original grant + its proof fields if the new payload would downgrade them.
+      if (priorRaw.sms_consent === true && mergedRaw.sms_consent !== true) {
+        mergedRaw.sms_consent = true;
+        mergedRaw.sms_consent_at = priorRaw.sms_consent_at ?? mergedRaw.sms_consent_at;
+        mergedRaw.sms_consent_text = priorRaw.sms_consent_text ?? mergedRaw.sms_consent_text;
+      }
+      // CONSENT EVIDENCE INTEGRITY: the ORIGINAL consent timestamp is the proof record —
+      // a re-submission (or a webhook redelivery) must never overwrite it. Keep the
+      // earliest; note the renewal separately.
+      if (priorRaw.consent_at && mergedRaw.consent_at && mergedRaw.consent_at !== priorRaw.consent_at) {
+        mergedRaw.consent_renewed_at = mergedRaw.consent_at;
+        mergedRaw.consent_at = priorRaw.consent_at;
+      }
+      // Preserve the alert throttle + other system markers a fresh submission body lacks.
+      if (priorRaw.returning_alert_at && !mergedRaw.returning_alert_at) mergedRaw.returning_alert_at = priorRaw.returning_alert_at;
+      updateRow.raw = mergedRaw;
       ({ data, error } = await supabaseAdmin
         .from("leads").update(updateRow).eq("id", existingId).select().single());
     } else {
@@ -318,12 +339,26 @@ export async function POST(req: NextRequest) {
         // nurture uses. Consent-not-given ≠ no follow-up; they still get the email.
         let autoSent: string[] = [];
         try {
-          // EMAIL gets the panel-crafted first-touch note (subject + body, personalized);
-          // the capture agent's shorter conversational draft stays the SMS opener.
-          const emailT = renderTouch(EMAIL_TOUCHES.first_touch, newLead);
+          // CONVERSION FIRST TOUCH: acknowledge the exact deal they described, give one
+          // purpose-specific mechanic free, and hand them their PRE-FILLED application
+          // (magic link — ~3 min, nothing re-typed). Email + SMS both carry the link;
+          // the capture agent's conversational draft stays the SMS opener above it.
+          // EXCEPTION: a wizard lead who already COMPLETED the 1003 doesn't need the
+          // "finish your application" push — they keep the doc-upload link instead.
+          const appDone = (body as any).app_completed === true;
+          const appLink = appDone ? null : magicApplyLink(newLead);
+          const calendly = ((await cfg("CALENDLY_URL")) || "").trim() || null;
+          const emailT = appDone
+            ? renderTouch(EMAIL_TOUCHES.first_touch, newLead)
+            : renderFirstTouch(newLead, { appLink, calendly });
+          // The capture agent writes {app_link} where the pre-filled application link
+          // belongs; substitute it (or strip the sentence if there's no link to give).
+          const smsDraft = appLink
+            ? draftReply.replace(/\{app_link\}/g, appLink)
+            : draftReply.replace(/[^.!?\n]*\{app_link\}[^.!?\n]*[.!?]?/g, "").trim();
           const res = await respondToLead({
             id: newLead.id, kind: "first_touch",
-            name: full_name, email, phone: smsConsent ? phone : null, loan_purpose: body.loan_purpose, message: draftReply || "", link: fileLink,
+            name: full_name, email, phone: smsConsent ? phone : null, loan_purpose: body.loan_purpose, message: smsDraft, link: fileLink, appLink,
             emailSubject: emailT.subject, emailBody: emailT.body,
           });
           autoSent = res.sent;
@@ -383,14 +418,25 @@ export async function POST(req: NextRequest) {
       // (we intentionally do NOT auto-text again, to avoid duplicate messages).
       // A different NAME on the same contact details gets flagged as a likely
       // duplicate/junk form fill so Ramon can spot fake leads (and dispute ad charges).
+      // THROTTLED to one alert per lead per 24h: webhook redeliveries / double-submits
+      // re-enter this path, and unthrottled it paged the owner every 15 minutes for
+      // two days straight on a single lead (Medrano loop, 2026-07-04).
       after(async () => {
         try {
+          const lastAlert = (data?.raw as any)?.returning_alert_at;
+          if (lastAlert && Date.now() - new Date(lastAlert).getTime() < 24 * 3600000) {
+            console.log("[/api/apply] returning-lead alert throttled for", data.id, "(last:", lastAlert + ")");
+            return;
+          }
           await notifyNewLead({
             lead_id: data.id, full_name, email, phone,
             state: body.state, loan_purpose: body.loan_purpose, score, tier,
             source: (row.source as string) + (nameMismatch ? ` ⚠️ SAME phone/email, DIFFERENT name (was "${existingName}") — possible duplicate/fake submission` : ""),
             returning: true, auto_sent: [],
           });
+          const raw2 = data?.raw && typeof data.raw === "object" ? data.raw : {};
+          (raw2 as any).returning_alert_at = new Date().toISOString();
+          await supabaseAdmin.from("leads").update({ raw: raw2 }).eq("id", data.id);
         } catch (e) { console.warn("[/api/apply] returning-lead alert failed:", e); }
       });
     }

@@ -119,7 +119,9 @@ async function learn() {
         toInsert.push({ title: String(p).slice(0, 200), source: "brain", status: "open", priority: (result.priorities.length - idx), dedup_key: key });
       }
     });
-    if (toInsert.length) {
+    // Kill-switch (owner request 2026-07-02: "no quest, nothing"): the AI coach's
+    // auto-generated advice tasks stay OFF unless ORG_TASKS_AUTOGEN is flipped to "on".
+    if (toInsert.length && (await cfg("ORG_TASKS_AUTOGEN")) === "on") {
       await supabaseAdmin.from("org_tasks").insert(toInsert);
       tasksCreated = toInsert.length;
       await logActivity({ entity_type: "org", actor: "agent:brain", action: "tasks.created", detail: { count: tasksCreated } });

@@ -6,6 +6,7 @@ import { logComms, sendSms, getLeadMessagesForAI, countRecentOutbound } from "@/
 import { markConciergeReply } from "@/lib/markConcierge";
 import { cfg } from "@/lib/settings";
 import { phoneMatchForms } from "@/lib/phone";
+import { magicApplyLink } from "@/lib/magicLink";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
     if (digits) {
       const { data: lead } = await supabaseAdmin
         .from("leads")
-        .select("id, full_name, first_name, phone, loan_purpose, state")
+        .select("id, full_name, first_name, phone, loan_purpose, state, stage")
         .in("phone", phoneMatchForms(digits))
         .order("created_at", { ascending: false })
         .limit(1)
@@ -135,7 +136,11 @@ export async function POST(req: NextRequest) {
             const { data: lf } = await supabaseAdmin.from("loan_files").select("share_token").eq("lead_id", leadId).limit(1).maybeSingle();
             const fileLink = (lf as any)?.share_token ? `${APP_URL}/file/${(lf as any).share_token}` : null;
             const calendlyUrl = (await cfg("CALENDLY_URL")) || null;
-            const r = await markConciergeReply({ lead, history, fileLink, firstAiReply: firstAi, calendlyUrl });
+            // Pre-filled application link = the conversion CTA — but only while they're
+            // still pre-application; past that the doc-upload link is the next step.
+            const stageNow = String((lead as any).stage || "").toLowerCase();
+            const appLink = /application|processing|underwriting|approved|clear|closed|won|funded|dead|lost/.test(stageNow) ? null : magicApplyLink(lead as any);
+            const r = await markConciergeReply({ lead, history, fileLink, appLink, firstAiReply: firstAi, calendlyUrl });
             if (r.ok && r.reply) {
               const s = await sendSms(leadPhone, r.reply);
               if (s.ok) await logComms({ leadId, channel: "sms", direction: "outbound", type: "ai_reply", body: r.reply, to: leadPhone, providerId: s.sid, actor: "agent:mark" });

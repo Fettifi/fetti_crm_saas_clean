@@ -18,6 +18,7 @@ export type LeadContact = {
   loan_purpose?: string | null;
   message?: string | null; // AI-drafted first-touch; falls back to a template
   link?: string | null;    // borrower's custom loan-file / document-upload link
+  appLink?: string | null; // magic PRE-FILLED application link (the conversion CTA)
   // EMAIL ≠ SMS. When set, these override `message` for the email channel so each
   // channel gets copy written for it (emails: human subject + personal note, never
   // "(Reply STOP)" strings; SMS: short + STOP language).
@@ -27,10 +28,12 @@ export type LeadContact = {
 
 function defaultMessage(l: LeadContact): string {
   const first = (l.name || "there").split(" ")[0];
-  const purpose = l.loan_purpose ? ` about ${l.loan_purpose}` : "";
-  // Human opener that starts a real conversation — no canned "a specialist will follow up",
-  // no document asks. Used only if the AI draft is unavailable.
-  return `Hey ${first}, it's Mark with Fetti — saw you reached out${purpose}. Quick q so I can point you the right way: what are you looking to do, and what's your timeline?`;
+  // KNOW-FIRST: they told us what they're doing — acknowledge it, never re-ask it.
+  // Only when the purpose is genuinely unknown does the opener ask what they're working on.
+  if (l.loan_purpose) {
+    return `Hey ${first}, it's Mark with Fetti — your ${String(l.loan_purpose).toLowerCase()} inquiry just hit my desk and I'm on it. What's your timeline looking like?`;
+  }
+  return `Hey ${first}, it's Mark with Fetti — saw you reached out. Quick q so I can point you the right way: what are you working on, and what's your timeline?`;
 }
 
 async function emailLead(l: LeadContact, fallbackBody: string) {
@@ -99,10 +102,14 @@ async function smsLead(l: LeadContact, body: string) {
 export async function respondToLead(lead: LeadContact): Promise<{ sent: string[] }> {
   const body = (lead.message && lead.message.trim()) || defaultMessage(lead);
   const kind = lead.kind || "first_touch";
-  // The FIRST text stays a pure human opener — no link dump. Mark shares the secure
-  // link naturally once they reply (concierge). Later touches (nurture/doc-chase) may
-  // append it inline since the conversation is already going.
+  // The FIRST text stays a human opener — no doc-upload dump. But when we have their
+  // PRE-FILLED application link, the first text DOES carry it: it's the one tap that
+  // converts, and "your application is already started" is service, not a demand.
+  // Later touches (nurture/doc-chase) append the file link since the conversation is going.
   let smsBody = (lead.link && kind !== "first_touch") ? `${body}\n\nUpload your documents securely here: ${lead.link}` : body;
+  if (kind === "first_touch" && lead.appLink && !smsBody.includes(lead.appLink)) {
+    smsBody += `\n\nI started your application for you — finishing takes ~3 min, everything you gave us is already filled in: ${lead.appLink}`;
+  }
   // Every automated text carries opt-out language (carrier requirement + TCPA hygiene).
   if (lead.phone && !/reply\s+stop/i.test(smsBody)) smsBody += " (Reply STOP to opt out.)";
   const sent: string[] = [];

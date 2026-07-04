@@ -13,6 +13,7 @@ import { logActivity } from "@/lib/activity";
 // own panel-crafted personal notes (subject + body) from the email touch-set, keyed to
 // the same cadence — so an email never reads like a pasted text message again.
 import { renderTouch, EMAIL_TOUCHES, STEP_TOUCH, REACTIVATION_KEYS, prettyPurpose } from "@/lib/notify/emailCopy";
+import { magicApplyLink } from "@/lib/magicLink";
 import { getSetting, setSetting } from "@/lib/settings";
 
 // Record every follow-up that actually goes out, so sends are AUDITABLE in
@@ -35,23 +36,26 @@ type Lead = {
 // Multi-week drip. Most mortgage leads convert on touch 5–12, not touch 1 — so
 // we work each lead for ~90 days, then hand off to the long-term reactivation
 // loop below. STOP opt-out is always honored (TCPA/CAN-SPAM).
+// KNOW-FIRST SMS copy: they already told us what they're doing — never ask if they're
+// interested, never "reply YES" hoops. Each text acknowledges THEIR deal and the saved
+// application; the magic-link finish line + "(Reply STOP…)" are appended downstream.
 const STEPS: { step: number; afterDays: number; msg: (name: string, purpose: string) => string }[] = [
-  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's Mark with Fetti Financial Services — checking in on ${p}. Want a quick quote or to see your options? Just reply YES. (Reply STOP to opt out.)` },
-  { step: 2, afterDays: 3, msg: (n, p) => `Hi ${n}, Mark again at Fetti — still here to help with ${p}. Reply YES and I'll pull your real numbers. (Reply STOP to opt out.)` },
-  { step: 3, afterDays: 7, msg: (n, p) => `Hi ${n}, Mark here — quick nudge on ${p}. Even if you're early, I can map out exactly what you'd qualify for. Want me to? (Reply STOP to opt out.)` },
-  { step: 4, afterDays: 14, msg: (n, p) => `Hi ${n}, it's Mark — rates move daily. Want me to run ${p} at today's numbers so you know exactly where you stand? (Reply STOP to opt out.)` },
-  { step: 5, afterDays: 30, msg: (n, p) => `Hi ${n}, Mark circling back on ${p}. If it's still on your radar, I'll get you real options in minutes. (Reply STOP to opt out.)` },
-  { step: 6, afterDays: 60, msg: (n, p) => `Hi ${n}, Mark here — still considering ${p}? No pressure; whenever you're ready, we move fast. (Reply STOP to opt out.)` },
-  { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, one more check-in from Mark on ${p}. I'll keep your details handy — reply anytime and we pick right back up. (Reply STOP to opt out.)` },
+  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's Mark at Fetti — I'm holding your ${p} file open, ready when you are.` },
+  { step: 2, afterDays: 3, msg: (n, p) => `${n}, Mark again — about 3 minutes left on your ${p} application, then I can pull real options. No credit pull.` },
+  { step: 3, afterDays: 7, msg: (n, p) => `Hi ${n} — even if you're early on the ${p}, finishing now means your numbers are ready the day you are.` },
+  { step: 4, afterDays: 14, msg: (n, p) => `${n}, it's Mark — markets move, your saved ${p} application doesn't. Whenever you finish, we work with that day's numbers.` },
+  { step: 5, afterDays: 30, msg: (n, p) => `Hi ${n}, Mark here — still have your ${p} saved. If plans changed, tell me and I'll close it out; if not, you're minutes from done.` },
+  { step: 6, afterDays: 60, msg: (n, p) => `${n} — two months since you asked about the ${p}. Rents and values drift; deals that didn't pencil then sometimes do now.` },
+  { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, last nudge from Mark on the ${p} — your file stays open, nothing expires. Pick it up any time.` },
 ];
 
 // After the 90-day drip, keep mining the lead forever: a value re-touch every
 // ~45 days until they reply or opt out. This reactivates the dormant database —
 // money from leads already paid for, with no new ad spend. Rotates by step.
 const REACTIVATION: ((name: string, purpose: string) => string)[] = [
-  (n, p) => `Hi ${n}, it's Mark at Fetti — rates and loan programs change constantly. Want a fresh look at ${p}? Reply YES. (Reply STOP to opt out.)`,
-  (n, p) => `Hi ${n}, Mark here — still in the market for ${p}? I can pull current options in minutes. Reply YES. (Reply STOP to opt out.)`,
-  (n, p) => `Hi ${n}, Mark checking in from Fetti — if ${p} is back on your radar, I'm here and fast. (Reply STOP to opt out.)`,
+  (n, p) => `Hi ${n}, Mark at Fetti — lending guidelines have moved since you asked about ${p}. Programs that didn't fit then sometimes fit now.`,
+  (n, p) => `${n}, Mark here — that ${p}: dead, delayed, or handled elsewhere? Any of those is a fine answer. If delayed, you're minutes from done.`,
+  (n, p) => `Hi ${n} — genuinely the last one from me on the ${p}. Your info stays saved; finish or reply any time and you start warm, not cold.`,
 ];
 const REACTIVATE_THROTTLE_DAYS = 45;
 
@@ -60,18 +64,9 @@ const APP_STAGES = ["application", "processing", "underwriting", "approved", "cl
 const baseUrl = () => (process.env.NEXT_PUBLIC_SITE_URL || "https://app.fettifi.com").replace(/\/$/, "");
 const DOC_CHASE_THROTTLE_DAYS = 2;
 
-// A cold lead almost always has a loan file + secure upload link opened at intake
-// (see /api/apply). The instant first-touch includes that link, but the later drip
-// touches used to drop it — leaving the borrower with "reply YES" friction instead
-// of a one-tap way to finish. Re-attach the link to every cold/reactivation touch so
-// the path to "Engaged" is always one click away (lower friction = higher conversion).
-async function leadFileLink(leadId: string): Promise<string | null> {
-  try {
-    const { data: file } = await supabaseAdmin
-      .from("loan_files").select("share_token").eq("lead_id", leadId).limit(1).maybeSingle();
-    return file?.share_token ? `${baseUrl()}/file/${file.share_token}` : null;
-  } catch { return null; }
-}
+// Cold/reactivation touches carry the lead's MAGIC APPLICATION LINK (pre-filled,
+// ~3 min, nothing re-typed) — the one-tap path from "interested" to "application".
+// Engaged leads with an open file get their doc-upload link in the doc-chase lane.
 
 export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number }> {
   // OVERLAP GUARD: the daily cron and the Funnel-page "Run follow-ups" button can
@@ -196,10 +191,12 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       // still gets at most one touch every 2 days — never seven emails in seven days.
       if (sinceLast < 2) continue;
       try {
-        const link = await leadFileLink(l.id);
-        const finishLine = link ? ` Pick up where you left off: ${link}` : "";
+        // Conversion CTA: the PRE-FILLED application (magic link), not the bare doc-upload
+        // page — a drip lead hasn't finished applying, so "finish the app" IS the next step.
+        const link = magicApplyLink(l);
+        const finishLine = ` Finish your application (everything you gave us is saved): ${link}`;
         const emailT = renderTouch(EMAIL_TOUCHES[STEP_TOUCH[due.step]] || EMAIL_TOUCHES.d30, l);
-        const emailBody = emailT.body + (link ? `\n\nP.S. Your secure file link, whenever you're ready: ${link}` : "");
+        const emailBody = emailT.body + `\n\nP.S. Your application's already started — finishing takes about 3 minutes, nothing re-types: ${link}`;
         const res = await respondToLead({
           id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
           message: due.msg(name, purpose) + finishLine + bookLine,   // SMS copy
@@ -222,13 +219,14 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     const rIdx = rSteps < REACTIVATION.length ? rSteps : (rSteps % 2);
     const msg = REACTIVATION[rIdx](name, purpose);
     try {
-      const link = await leadFileLink(l.id);
-      const finishLine = link ? ` Pick up where you left off: ${link}` : "";
+      const link = magicApplyLink(l);
+      const finishLine = ` Your application's still saved — finish any time: ${link}`;
       const emailT = renderTouch(EMAIL_TOUCHES[REACTIVATION_KEYS[rIdx]] || EMAIL_TOUCHES.r1, l);
       const res = await respondToLead({
         id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
         message: msg + finishLine + bookLine,                        // SMS copy
-        emailSubject: emailT.subject, emailBody: emailT.body,         // email copy
+        emailSubject: emailT.subject,                                 // email copy
+        emailBody: emailT.body + `\n\nP.S. Your application's still saved — finishing takes about 3 minutes: ${link}`,
       });
       if ((res?.sent || []).length) {
         await supabaseAdmin.from("leads").update({ nurture_step: curStep + 1, last_nurture_at: new Date().toISOString() }).eq("id", l.id);

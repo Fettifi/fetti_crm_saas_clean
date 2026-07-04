@@ -343,6 +343,9 @@ export default function ApplyWizard() {
   const [fileLink, setFileLink] = useState<string | null>(null); // secure document-upload link
   const [prod, setProd] = useState<string>("");
   const [contact, setContact] = useState<Record<string, unknown>>({});
+  // Magic-link prefill (?lead=&t=): the lead's known contact info, so a nurtured
+  // borrower lands with everything already typed — one confirm click, zero friction.
+  const [prefill, setPrefill] = useState<{ full_name: string; first_name: string; email: string; phone: string; state: string } | null>(null);
 
   // ---- Learning loop: telemetry + learned config -----------------------------
   const sid = useRef<string>("");
@@ -361,9 +364,33 @@ export default function ApplyWizard() {
     // Deep links (/links bio page, ads) pass ?goal= — honor it so an investor CTA
     // actually lands on the investor flow, not the generic first question.
     try {
-      const g = new URLSearchParams(window.location.search).get("goal");
+      const params = new URLSearchParams(window.location.search);
+      const g = params.get("goal");
       const valid = ["buy", "refi", "invest", "flip", "equity", "business", "reverse"];
-      if (g && valid.includes(g)) { setAnswers((a) => ({ ...a, goal: g })); setI(1); }
+      if (g && valid.includes(g)) {
+        setAnswers((a) => ({ ...a, goal: g }));
+        setI(1);
+        // Attribute the session to its goal up front. Deep-linked/ad traffic
+        // (?goal=invest, paid_lp_dscr, etc.) skips the goal question, so a bounce
+        // on the first qualify step otherwise logs as "unknown" — polluting the
+        // per-goal conversion stats the Application Coach learns from. No
+        // step_index: this must not claim a drop-off step it didn't reach.
+        track("answer", { phase: "flow", step_id: "goal", goal: g });
+      }
+      // Magic application link (?lead=&t=): fetch the lead's known info so the
+      // contact step arrives pre-filled and the goal flow is already chosen.
+      const leadParam = params.get("lead");
+      const tok = params.get("t");
+      if (leadParam && tok) {
+        fetch(`/api/apply/prefill?lead=${encodeURIComponent(leadParam)}&t=${encodeURIComponent(tok)}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((p) => {
+            if (!p?.ok) return;
+            setPrefill(p);
+            if (!g && p.goal && valid.includes(p.goal)) { setAnswers((a) => (a.goal ? a : { ...a, goal: p.goal })); setI((cur) => (cur === 0 ? 1 : cur)); track("answer", { phase: "flow", step_id: "goal", goal: p.goal }); }
+          })
+          .catch(() => {});
+      }
     } catch { /* ignore */ }
     // Pull what the Application Coach has learned, and adapt this session to it.
     fetch("/api/wizard/event")
@@ -560,12 +587,17 @@ export default function ApplyWizard() {
     const p = product(answers);
     setProd(p);
     const smsOptin = fd.get("sms_optin") === "on";
+    // Only SEND the sms_consent keys when the box is CHECKED: a returning borrower
+    // (magic link) who leaves it unchecked must never OVERWRITE a consent they already
+    // gave — unchecked means "no new grant", not "revoke" (STOP is the revocation path).
     const c = {
       full_name: fd.get("full_name"), email: fd.get("email"), phone: fd.get("phone"),
       state: fd.get("state"), hp: String(fd.get("company") || ""),
-      sms_consent: smsOptin,
-      sms_consent_at: smsOptin ? new Date().toISOString() : null,
-      sms_consent_text: smsOptin ? SMS_CONSENT : null,
+      ...(smsOptin ? {
+        sms_consent: true,
+        sms_consent_at: new Date().toISOString(),
+        sms_consent_text: SMS_CONSENT,
+      } : {}),
     };
     setContact(c);
     try {
@@ -644,17 +676,17 @@ export default function ApplyWizard() {
   if (phase === "contact") {
     return (
       <Shell pct={pct} onBack={back}>
-        <h1 className="text-2xl font-bold">Where should we send your options?</h1>
-        <p className="text-slate-500 mt-1 text-sm">No impact to your credit. A real specialist follows up fast.</p>
-        <CediBubble size={48} className="mt-4">Almost there. Drop your info and I&apos;ll get your options moving. 😎</CediBubble>
-        <form onSubmit={submitContact} className="space-y-3 mt-5">
+        <h1 className="text-2xl font-bold">{prefill ? `Welcome back${prefill.first_name ? `, ${prefill.first_name}` : ""} 👋` : "Where should we send your options?"}</h1>
+        <p className="text-slate-500 mt-1 text-sm">{prefill ? "We saved everything — confirm your info and keep going. No impact to your credit." : "No impact to your credit. A real specialist follows up fast."}</p>
+        <CediBubble size={48} className="mt-4">{prefill ? "I kept your file warm. One click and we pick up right where we left off. 😎" : "Almost there. Drop your info and I'll get your options moving. 😎"}</CediBubble>
+        <form key={prefill ? "prefilled" : "blank"} onSubmit={submitContact} className="space-y-3 mt-5">
           <input type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: "absolute", left: "-9999px" }} />
-          <input name="full_name" required placeholder="Full name" className={field} />
+          <input name="full_name" required placeholder="Full name" defaultValue={prefill?.full_name || ""} className={field} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input name="email" type="email" required placeholder="Email" className={field} />
-            <input name="phone" required placeholder="Phone" className={field} />
+            <input name="email" type="email" required placeholder="Email" defaultValue={prefill?.email || ""} className={field} />
+            <input name="phone" required placeholder="Phone" defaultValue={prefill?.phone || ""} className={field} />
           </div>
-          <select name="state" required defaultValue="" className={field}>
+          <select name="state" required defaultValue={prefill?.state && STATES.includes(prefill.state) ? prefill.state : ""} className={field}>
             <option value="" disabled>Property state</option>
             {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { cfg } from "@/lib/settings";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
@@ -175,8 +175,11 @@ export async function POST(req: NextRequest) {
   const internalHeaders: Record<string, string> = { "Content-Type": "application/json" };
   if (process.env.CRON_SECRET) internalHeaders["x-fetti-internal"] = process.env.CRON_SECRET;
 
-  // Process leadgen changes. Always 200 fast so Meta doesn't retry-storm; do the
-  // Graph fetch + intake best-effort — and NEVER drop a lead silently.
+  // ACK Meta IMMEDIATELY, process in the background (after()). Doing the Graph fetch
+  // + intake BEFORE responding pushed the response past Meta's webhook timeout, so Meta
+  // marked deliveries FAILED and kept redelivering the same event — every redelivery
+  // re-ran intake and re-alerted the team (the Medrano 15-minute ding loop, 2026-07-04).
+  after(async () => {
   try {
     for (const entry of payload.entry || []) {
       for (const change of entry.changes || []) {
@@ -184,6 +187,16 @@ export async function POST(req: NextRequest) {
         const v = change.value || {};
         const leadgenId = v.leadgen_id;
         if (!leadgenId) { console.warn("[meta/webhook] leadgen change with no leadgen_id"); continue; }
+        // IDEMPOTENCY: Meta redelivers events it thinks failed (and can redeliver on
+        // subscription refreshes). A leadgen_id we already processed is a no-op —
+        // never a second intake, never a second alert.
+        try {
+          const { data: already } = await supabaseAdmin
+            .from("leads").select("id")
+            .filter("raw->meta->>leadgen_id", "eq", String(leadgenId))
+            .limit(1).maybeSingle();
+          if (already) { console.log("[meta/webhook] redelivery of", leadgenId, "→ already lead", (already as any).id, "— skipped"); continue; }
+        } catch { /* check is best-effort — worst case the alert throttle below still holds */ }
         const pageToken = tokenMap[v.page_id] || fallbackToken;
         if (!pageToken) {
           console.warn("[meta/webhook] no page token — saving fallback lead");
@@ -225,6 +238,7 @@ export async function POST(req: NextRequest) {
       }
     }
   } catch (e: any) { console.error("[meta/webhook] processing error:", e?.message); }
+  });
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

@@ -346,8 +346,16 @@ export async function importHistoricalLeads(): Promise<any> {
   for (const page of pages) {
     const pr: any = { page: page.name, pageId: page.id, forms: 0, claimedLeads: 0, retrieved: 0, imported: 0, skipped: 0, subscribed: false };
     try {
-      const s: any = await fetch(`${GRAPH}/${page.id}/subscribed_apps?subscribed_fields=leadgen&access_token=${page.token}`, { method: "POST", signal: AbortSignal.timeout(10000) }).then((x: any) => x.json()).catch(() => ({}));
-      pr.subscribed = !!s?.success;
+      // Subscribe ONLY when missing. Blind re-POSTing every 15-min run made Meta
+      // refresh the subscription each time, which redelivered queued/failed leadgen
+      // events on every cycle (the Medrano returning-lead ding loop, 2026-07-04).
+      const cur: any = await fetch(`${GRAPH}/${page.id}/subscribed_apps?access_token=${page.token}`, { signal: AbortSignal.timeout(10000) }).then((x: any) => x.json()).catch(() => ({}));
+      const hasLeadgen = (cur?.data || []).some((a: any) => (a.subscribed_fields || []).includes("leadgen"));
+      if (hasLeadgen) { pr.subscribed = true; }
+      else {
+        const s: any = await fetch(`${GRAPH}/${page.id}/subscribed_apps?subscribed_fields=leadgen&access_token=${page.token}`, { method: "POST", signal: AbortSignal.timeout(10000) }).then((x: any) => x.json()).catch(() => ({}));
+        pr.subscribed = !!s?.success;
+      }
     } catch { /* */ }
     const forms: Array<{ id: string; name: string; count: number }> = [];
     let furl: string | null = `${GRAPH}/${page.id}/leadgen_forms?fields=id,name,leads_count&limit=100&access_token=${page.token}`;

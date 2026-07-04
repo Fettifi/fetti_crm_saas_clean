@@ -28,9 +28,14 @@ export function prettyPurpose(raw?: string | null): string {
   const p = (raw || "").replace(/[-_]+/g, " ").trim().toLowerCase();
   if (!p) return "financing";
   if (/dscr/.test(p)) return "DSCR loan";
-  if (/cash ?out/.test(p)) return "cash-out refi";
+  if (/cash.?out/.test(p)) return "cash-out refi";
   if (/refi/.test(p)) return "refinance";
-  if (/purchase/.test(p)) return "purchase";
+  if (/first.?time|homebuyer/.test(p)) return "home purchase";
+  if (/fha/.test(p)) return "FHA purchase";
+  if (/\bva\b/.test(p)) return "VA purchase";
+  if (/multi.?family/.test(p)) return "multi-family loan";
+  if (/equipment/.test(p)) return "equipment financing";
+  if (/purchase|buy/.test(p)) return "home purchase";
   if (/bridge|fix|flip/.test(p)) return "bridge loan";
   if (/bank ?statement/.test(p)) return "bank-statement loan";
   if (/heloc|equity/.test(p)) return "equity loan";
@@ -139,3 +144,60 @@ export const EMAIL_TOUCHES: Record<string, EmailTouch> = {
 // Map nurture drip step numbers -> touch keys.
 export const STEP_TOUCH: Record<number, string> = { 1: "d1", 2: "d3", 3: "d7", 4: "d14", 5: "d30", 6: "d60", 7: "d90" };
 export const REACTIVATION_KEYS = ["r1", "r2", "r3"];
+
+// ---------------------------------------------------------------------------
+// CONVERSION FIRST TOUCH (know-first). The lead just told us WHO they are and
+// WHAT they're doing — so the opener never asks if they're interested or what
+// they want. It acknowledges the exact deal, gives ONE purpose-specific true
+// mechanic free, and moves them to their PRE-FILLED application (magic link,
+// ~3 min, no credit pull) with booking/reply as the secondary path.
+// ---------------------------------------------------------------------------
+
+// One true mechanic per purpose — value first, zero rates/promises. Panel-crafted
+// (3 competing writers × 2 judges × synthesis, 2026-07-02 — "advisor" angle won).
+export const FIRST_TOUCH_INSIGHTS: Record<string, string> = {
+  dscr: "A DSCR loan qualifies on the property's rent covering the payment, not your tax returns — so the write-offs that make your income look small on paper never enter the conversation.",
+  flip: "Fix-and-flip financing is sized against the after-repair value, not just the purchase price — the deal gets judged on your numbers and your exit, not your W-2.",
+  cashout: "Cash-out is driven by today's appraised value rather than what you paid, so any appreciation since you bought is equity you can actually borrow against.",
+  refi: "A refinance is really a break-even problem: the monthly savings has to outrun the closing costs within the time you'll keep the loan, and that break-even month is the number that matters most.",
+  purchase: "The offer that wins is usually the one with a completed application behind it, because sellers read a fully documented buyer as a buyer who actually closes.",
+  equity: "A HELOC sits in second position behind your current mortgage, so you can draw on your equity while your existing first loan stays exactly as it is.",
+  bankstatement: "Bank-statement loans qualify you on 12 to 24 months of real deposits instead of tax returns, so the deductions that shrink your taxable income stop working against you.",
+  default: "A lender's math starts with the same two numbers no matter the goal — the property's value and what's owed against it — so having those handy makes everything downstream faster.",
+};
+
+// Pick the insight for a stored loan_purpose string.
+export function purposeInsight(raw?: string | null): string {
+  const p = (raw || "").toLowerCase();
+  if (/dscr|rental|invest/.test(p)) return FIRST_TOUCH_INSIGHTS.dscr;
+  if (/flip|bridge|rehab|fix|hard/.test(p)) return FIRST_TOUCH_INSIGHTS.flip;
+  if (/cash.?out/.test(p)) return FIRST_TOUCH_INSIGHTS.cashout;
+  if (/refi/.test(p)) return FIRST_TOUCH_INSIGHTS.refi;
+  if (/bank ?statement|self.?employ/.test(p)) return FIRST_TOUCH_INSIGHTS.bankstatement;
+  if (/heloc|equity|second/.test(p)) return FIRST_TOUCH_INSIGHTS.equity;
+  if (/purchase|buy/.test(p)) return FIRST_TOUCH_INSIGHTS.purchase;
+  return FIRST_TOUCH_INSIGHTS.default;
+};
+
+/**
+ * Render the conversion first-touch email. Falls back to the classic template
+ * when no app link is available (should be rare — every lead gets one).
+ */
+export function renderFirstTouch(lead: EmailLead, opts: { appLink?: string | null; calendly?: string | null }): EmailTouch {
+  if (!opts.appLink) return renderTouch(EMAIL_TOUCHES.first_touch, lead);
+  let first = (lead.first_name || lead.full_name || "").trim().split(/\s+/)[0] || "";
+  // Merge hygiene: "MARIA —" screams mail-merge; junk/non-name strings drop the greeting.
+  if (first && first === first.toUpperCase() && first.length > 1) first = first[0] + first.slice(1).toLowerCase();
+  if (!/^[A-Za-z][A-Za-z'.-]*$/.test(first)) first = "";
+  const greet = first ? `${first} — your` : "Your"; // broken merge = loudest automation tell
+  const purpose = prettyPurpose(lead.loan_purpose);
+  const insight = purposeInsight(lead.loan_purpose);
+  const ps = opts.calendly
+    ? `P.S. Rather talk it through first? Grab a time here: ${opts.calendly}, or just reply and ask me anything.`
+    : `P.S. Rather talk it through first? Just reply and ask me anything — I read these.`;
+  // Identity/NMLS live in the signature footer (markSignatureLite) — body stays personal.
+  return {
+    subject: `your ${purpose}`,
+    body: `${greet} ${purpose} request just came through, so let me skip the pleasantries and give you the one thing worth knowing up front.\n\n${insight}\n\nYour application is already started: what you sent is loaded in, and finishing takes about 3 minutes with no credit pull at this step.\n${opts.appLink}\n\n— Mark\n\n${ps}`,
+  };
+}
