@@ -4,6 +4,19 @@ import { buildPricerPdf } from "@/lib/pricerPdf";
 import { estimateRate, creditValueToFico, LOAN_TYPES } from "@/lib/rateEstimator";
 import { loadRateModel } from "@/lib/rateModelServer";
 import { resolveLocation } from "@/lib/propertyData";
+import { estimateClosingCosts, type LoanType } from "@/lib/closingCosts";
+import { cfg } from "@/lib/settings";
+
+// Pricer loan-type ids ("conv30", "fha30", "dscr30"…) → closing-cost engine types.
+function ccLoanType(t: string): LoanType {
+  if (t.startsWith("fha")) return "fha";
+  if (t.startsWith("va")) return "va";
+  if (t.startsWith("usda")) return "usda";
+  if (t.startsWith("dscr")) return "dscr";
+  if (t.startsWith("bank")) return "bank_statement";
+  if (t.startsWith("bridge") || t.startsWith("hard")) return "bridge";
+  return "conventional";
+}
 
 // Borrower-facing payment estimate PDF from a Quick Pricer scenario.
 // Auth-gated via the /api/pricer matcher (the LO generates it, then shares it).
@@ -59,7 +72,28 @@ export async function POST(req: NextRequest) {
     const r = estimatePITIA({ ...baseInput, ratePct });
     const loanTypeLabel = LOAN_TYPES.find((t) => t.value === loanType)?.label;
 
+    // Page 2: closing-cost estimate (same engine as the screen — recomputed
+    // server-side so the PDF is authoritative). Skipped if it can't resolve.
+    let closing: any = undefined;
+    if (b.includeClosing !== false && r.loan > 0 && (stateIn || loc.state)) {
+      try {
+        let ccModel: any = {}; try { ccModel = JSON.parse((await cfg("CLOSING_COST_MODEL")) || "{}"); } catch { /* */ }
+        const cc = estimateClosingCosts({
+          zip: String(b.zip || ""), state: String(stateIn || loc.state),
+          countyFips: loc.countyFips, countyName: loc.countyName,
+          price, loanAmount: r.loan,
+          loanType: ccLoanType(loanType), purpose: (["purchase", "refi", "cashout"].includes(b.purpose) ? b.purpose : "purchase"),
+          ratePct, taxRatePct: r.taxRate, insAnnual: r.insMonthly * 12,
+          pointsPct: Number(b.pointsPct) || 0, sellerCredit: Number(b.sellerCredit) || 0, lenderCredit: Number(b.lenderCredit) || 0,
+          escrowWaived: b.escrowWaived === true, ownersTitle: b.ownersTitle === true,
+          vaExempt: b.vaExempt === true, model: ccModel,
+        });
+        closing = { sections: cc.sections, totalClosingCosts: cc.totalClosingCosts, downPayment: cc.downPayment, credits: cc.credits, cashToClose: cc.cashToClose, financedFees: cc.financedFees, notes: cc.meta.notes, county: loc.countyName };
+      } catch (e) { console.warn("[api/pricer/pdf] closing-cost section skipped:", e); }
+    }
+
     const pdf = await buildPricerPdf({
+      closing,
       borrowerName: b.borrowerName || undefined, address: b.address || undefined, state: stateIn || undefined,
       county: taxOverAnnual > 0 ? undefined : (useLocRates ? (loc.countyName || undefined) : undefined),
       taxSource: taxOverAnnual > 0 ? undefined : (useLocRates ? loc.taxSource : undefined),

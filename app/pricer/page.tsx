@@ -118,6 +118,27 @@ export default function PricerPage() {
   const effRate = rateOverride && Number(overrideRate) ? Number(overrideRate) : est.rate;
   const r = useMemo(() => estimatePITIA({ ...base, ratePct: effRate }), [base, effRate]);
 
+  // ---- Closing costs (LE-shaped estimate; server engine uses ZIP + price) ----
+  const [sellerCredit, setSellerCredit] = useState("");
+  const [escrowWaived, setEscrowWaived] = useState(false);
+  const [ownersTitle, setOwnersTitle] = useState(false);
+  const [cc, setCc] = useState<any>(null);
+  const [ccOpen, setCcOpen] = useState(true);
+  useEffect(() => {
+    if (!num(price) || !r.loan || !state) { setCc(null); return; }
+    const t = setTimeout(() => {
+      fetch("/api/pricer/closing-costs", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          zip, state, price: num(price), loanAmount: r.loan, loanType, purpose,
+          ratePct: effRate, taxRatePct: taxRatePctEff, insAnnual: r.insMonthly * 12,
+          sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
+        }),
+      }).then((res) => (res.ok ? res.json() : null)).then((j) => setCc(j?.ok ? j : null)).catch(() => setCc(null));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [price, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle]);
+
   async function downloadPdf() {
     if (!num(price)) { alert("Enter a purchase price first."); return; }
     setPdfBusy(true);
@@ -129,6 +150,7 @@ export default function PricerPage() {
           taxAnnualOverride: num(taxOverride) || undefined, insAnnualOverride: num(insOverride) || undefined,
           loanType, creditVal, occupancy: effOccupancy, purpose,
           ratePct: effRate, rateIsOverride: rateOverride, termMonths: term, hoaMonthly: num(hoa), includePMI,
+          sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
         }),
       });
       if (res.ok) {
@@ -261,6 +283,59 @@ export default function PricerPage() {
             {r.pmiMonthly > 0 && <Row label="PMI (est.)" val={money(r.pmiMonthly)} hint={`LTV ${r.ltv.toFixed(0)}% · ${r.pmiAnnual}% / yr`} />}
             {r.hoa > 0 && <Row label="HOA dues" val={money(r.hoa)} />}
             <div className="mt-2"><Row label="Total monthly (PITIA)" val={money(r.total)} big accent /></div>
+
+            {/* Closing costs & cash to close (LE-shaped, ZIP + price driven) */}
+            {cc && (
+              <div className="mt-4 bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                <button onClick={() => setCcOpen((v) => !v)} className="w-full flex items-center justify-between">
+                  <span className="text-[10px] uppercase text-slate-500">Estimated closing costs{cc.inputs?.county ? ` · ${cc.inputs.county}` : ""}</span>
+                  <span className="text-[11px] text-emerald-400">{ccOpen ? "hide" : "show"} detail</span>
+                </button>
+                <div className="flex items-baseline justify-between mt-1">
+                  <span className="text-sm text-slate-300">Total closing costs</span>
+                  <span className="text-xl font-bold text-white">{money(cc.totalClosingCosts)}</span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm text-slate-300">+ Down payment</span>
+                  <span className="text-sm font-semibold text-slate-200">{money(cc.downPayment)}</span>
+                </div>
+                {cc.credits > 0 && (
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm text-slate-300">− Credits</span>
+                    <span className="text-sm font-semibold text-emerald-400">{money(cc.credits)}</span>
+                  </div>
+                )}
+                <div className="flex items-baseline justify-between mt-1 pt-2 border-t border-slate-800">
+                  <span className="text-sm font-semibold text-emerald-400">Estimated cash to close</span>
+                  <span className="text-2xl font-bold text-emerald-400">{money(cc.cashToClose)}</span>
+                </div>
+                {cc.financedFees > 0 && <p className="text-[11px] text-slate-500 mt-1">+ {money(cc.financedFees)} government fee financed into the loan (not cash due).</p>}
+                {ccOpen && (
+                  <div className="mt-3 space-y-2">
+                    {cc.sections.map((s: any) => s.lines.length > 0 && (
+                      <div key={s.key}>
+                        <div className="text-[10px] uppercase text-emerald-500/80 mb-0.5">{s.title}</div>
+                        {s.lines.map((l: any, i: number) => (
+                          <div key={i} className="flex justify-between text-[12px] text-slate-400">
+                            <span className="pr-2" title={l.note || ""}>{l.label}</span><span className="text-slate-300">{money(l.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+                      <div><label className={lbl}>Seller credit</label><CurrencyInput value={sellerCredit} onChange={setSellerCredit} className={inp} placeholder="$0" /></div>
+                      <div className="flex flex-col justify-end gap-1 pb-1">
+                        <label className="flex items-center gap-2 text-[12px] text-slate-300"><input type="checkbox" checked={escrowWaived} onChange={(e) => setEscrowWaived(e.target.checked)} className="accent-emerald-500" /> Waive escrows</label>
+                        <label className="flex items-center gap-2 text-[12px] text-slate-300"><input type="checkbox" checked={ownersTitle} onChange={(e) => setOwnersTitle(e.target.checked)} className="accent-emerald-500" /> Add owner&apos;s title</label>
+                      </div>
+                    </div>
+                    {(cc.meta?.notes || []).slice(0, 4).map((n: string, i: number) => (
+                      <p key={i} className="text-[10px] text-slate-600 leading-snug">• {n}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <button onClick={downloadPdf} disabled={pdfBusy || !num(price)} className="w-full mt-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2">
               {pdfBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Download borrower PDF

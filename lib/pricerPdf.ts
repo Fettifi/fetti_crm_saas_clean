@@ -16,6 +16,12 @@ export type PricerPdfData = {
   pi: number; taxMonthly: number; insMonthly: number; pmiMonthly: number; hoa: number; total: number;
   taxRate: number; insRate: number;
   officerName?: string; officerNmls?: string; date?: string;
+  // Optional page 2: LE-shaped closing-cost estimate (from lib/closingCosts).
+  closing?: {
+    sections: { key: string; title: string; lines: { label: string; amount: number; note?: string }[]; total: number }[];
+    totalClosingCosts: number; downPayment: number; credits: number; cashToClose: number;
+    financedFees: number; notes: string[]; county?: string | null;
+  };
 };
 
 export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
@@ -113,6 +119,59 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
   page.drawLine({ start: { x: M, y: H - cur }, end: { x: RIGHT, y: H - cur }, thickness: 0.5, color: rgb(0.85, 0.87, 0.9) });
   cur += 10;
   para(`Equal Housing Opportunity. ${LICENSING_NOTE}`, 7, font, GREY, CW, 1.4);
+
+  // ---------------- PAGE 2: estimated closing costs & cash to close ----------------
+  if (d.closing) {
+    const c = d.closing;
+    const p2 = doc.addPage([W, H]);
+    let y2 = M;
+    const t2 = (s: string, size: number, f = font, color = SLATE, x = M) => p2.drawText(s, { x, y: H - y2 - size, size, font: f, color });
+    const row2 = (k: string, v: string, i: number, sub?: string) => {
+      const rh = sub ? 26 : 17;
+      if (i % 2) p2.drawRectangle({ x: M, y: H - y2 - rh + 4, width: CW, height: rh, color: LIGHT });
+      p2.drawText(k, { x: M + 8, y: H - y2 - 12, size: 9.5, font, color: SLATE });
+      p2.drawText(v, { x: RIGHT - 8 - bold.widthOfTextAtSize(v, 9.5), y: H - y2 - 12, size: 9.5, font: bold, color: SLATE });
+      if (sub) p2.drawText(sub.slice(0, 118), { x: M + 8, y: H - y2 - 22, size: 7, font, color: GREY });
+      y2 += rh;
+    };
+    p2.drawText("Fetti Financial Services LLC", { x: M, y: H - M - 12, size: 12, font: bold, color: EMERALD });
+    p2.drawText("ESTIMATED CLOSING COSTS", { x: RIGHT - bold.widthOfTextAtSize("ESTIMATED CLOSING COSTS", 12), y: H - M - 12, size: 12, font: bold, color: SLATE });
+    y2 = M + 22;
+    p2.drawLine({ start: { x: M, y: H - y2 }, end: { x: RIGHT, y: H - y2 }, thickness: 2, color: EMERALD });
+    y2 += 14;
+    t2(`Estimated for this scenario${c.county ? ` · ${c.county}${d.state ? ", " + d.state : ""}` : d.state ? ` · ${d.state}` : ""} — actual fees are set by the title company, county, insurer, and final terms.`, 8.5, font, GREY);
+    y2 += 20;
+
+    for (const s of c.sections) {
+      if (!s.lines.length) continue;
+      t2(s.title.toUpperCase(), 8.5, bold, EMERALD); y2 += 13;
+      s.lines.forEach((ln, i) => row2(ln.label, money(ln.amount), i, ln.note));
+      row2(`Section ${s.key} total`, money(s.total), 1);
+      y2 += 8;
+    }
+
+    const cash: [string, string][] = [
+      ["Total estimated closing costs", money(c.totalClosingCosts)],
+      ["Down payment", money(c.downPayment)],
+      ...(c.credits > 0 ? [["Seller / lender credits", "− " + money(c.credits)]] as [string, string][] : []),
+      ...(c.financedFees > 0 ? [["Government fee financed into the loan", money(c.financedFees)]] as [string, string][] : []),
+    ];
+    t2("ESTIMATED CASH TO CLOSE", 8.5, bold, EMERALD); y2 += 13;
+    cash.forEach(([k, v], i) => row2(k, v, i));
+    const trh2 = 24;
+    p2.drawRectangle({ x: M, y: H - y2 - trh2 + 4, width: CW, height: trh2, color: EMBG });
+    p2.drawText("Estimated cash to close", { x: M + 8, y: H - y2 - 15, size: 11, font: bold, color: EMERALD });
+    p2.drawText(money(c.cashToClose), { x: RIGHT - 8 - bold.widthOfTextAtSize(money(c.cashToClose), 13), y: H - y2 - 16, size: 13, font: bold, color: EMERALD });
+    y2 += trh2 + 14;
+
+    for (const n of c.notes.slice(0, 6)) {
+      for (const ln of wrap("• " + n, font, 7.5, CW)) { p2.drawText(ln, { x: M, y: H - y2 - 7.5, size: 7.5, font, color: GREY }); y2 += 10.5; }
+    }
+    y2 += 6;
+    for (const ln of wrap("This closing-cost summary is an ESTIMATE for planning only — it is NOT a Loan Estimate under TRID, a quote, or a commitment to lend. Transfer taxes, title premiums, and who customarily pays each item vary by state, county, and negotiation. Equal Housing Opportunity.", font, 7, CW)) {
+      p2.drawText(ln, { x: M, y: H - y2 - 7, size: 7, font, color: GREY }); y2 += 9.8;
+    }
+  }
 
   return doc.save();
 }
