@@ -410,7 +410,15 @@ export default function ApplyWizard() {
 
   function answerFlow(id: string, raw: string, kind: Q["kind"]) {
     const value = kind === "number" ? raw.replace(/[^0-9.]/g, "") : raw;
-    const next = { ...answers, [id]: value };
+    // Switching GOAL mid-flow (via Back) must clear downstream answers. Each goal
+    // has a different question set, so a stale answer from the old flow — most
+    // dangerously `occupancy` — silently drives the wrong product AND the wrong
+    // licensing: effectiveOccupancy() trusts a leftover occupancy="Owner" and
+    // mislabels a DSCR investment loan as "consumer, FL/MI/CA" (owner-occupied
+    // is FL/MI/CA only; investment is all 50 states).
+    const next = (id === "goal" && answers.goal && answers.goal !== value)
+      ? ({ goal: value } as Answers)
+      : { ...answers, [id]: value };
     setAnswers(next);
     setInput("");
     track("answer", { phase: "flow", step_id: id, step_index: i, goal: next.goal, occupancy: effectiveOccupancy(next), product: next.goal ? product(next) : undefined });
