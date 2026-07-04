@@ -123,27 +123,43 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
   // ---------------- PAGE 2: estimated closing costs & cash to close ----------------
   if (d.closing) {
     const c = d.closing;
-    const p2 = doc.addPage([W, H]);
+    // WinAnsi-safe: strip/replace the Unicode the engine's notes legitimately use on
+    // screen (≈ ≤ ≥ −) — StandardFonts crash on anything outside WinAnsi.
+    const safe = (s: string) => String(s)
+      .replace(/≈/g, "~").replace(/≤/g, "<=").replace(/≥/g, ">=").replace(/−/g, "-")
+      .replace(/[^\x20-\x7E -ÿ·•—–'']/g, "");
+    let p2 = doc.addPage([W, H]);
     let y2 = M;
-    const t2 = (s: string, size: number, f = font, color = SLATE, x = M) => p2.drawText(s, { x, y: H - y2 - size, size, font: f, color });
+    const header = (cont: boolean) => {
+      p2.drawText("Fetti Financial Services LLC", { x: M, y: H - M - 12, size: 12, font: bold, color: EMERALD });
+      const hd = "ESTIMATED CLOSING COSTS" + (cont ? " (CONT.)" : "");
+      p2.drawText(hd, { x: RIGHT - bold.widthOfTextAtSize(hd, 12), y: H - M - 12, size: 12, font: bold, color: SLATE });
+      y2 = M + 22;
+      p2.drawLine({ start: { x: M, y: H - y2 }, end: { x: RIGHT, y: H - y2 }, thickness: 2, color: EMERALD });
+      y2 += 14;
+    };
+    // AUTO-PAGINATE: a fee-heavy jurisdiction (NYC, points, owner's title…) overflows
+    // one page — roll to a continuation page instead of drawing off the bottom.
+    const ensure = (space: number) => { if (y2 + space > H - 64) { p2 = doc.addPage([W, H]); header(true); } };
+    const t2 = (s: string, size: number, f = font, color = SLATE, x = M) => p2.drawText(safe(s), { x, y: H - y2 - size, size, font: f, color });
     const row2 = (k: string, v: string, i: number, sub?: string) => {
       const rh = sub ? 26 : 17;
+      ensure(rh + 4);
       if (i % 2) p2.drawRectangle({ x: M, y: H - y2 - rh + 4, width: CW, height: rh, color: LIGHT });
-      p2.drawText(k, { x: M + 8, y: H - y2 - 12, size: 9.5, font, color: SLATE });
-      p2.drawText(v, { x: RIGHT - 8 - bold.widthOfTextAtSize(v, 9.5), y: H - y2 - 12, size: 9.5, font: bold, color: SLATE });
-      if (sub) p2.drawText(sub.slice(0, 118), { x: M + 8, y: H - y2 - 22, size: 7, font, color: GREY });
+      p2.drawText(safe(k), { x: M + 8, y: H - y2 - 12, size: 9.5, font, color: SLATE });
+      p2.drawText(safe(v), { x: RIGHT - 8 - bold.widthOfTextAtSize(safe(v), 9.5), y: H - y2 - 12, size: 9.5, font: bold, color: SLATE });
+      if (sub) p2.drawText(safe(sub).slice(0, 118), { x: M + 8, y: H - y2 - 22, size: 7, font, color: GREY });
       y2 += rh;
     };
-    p2.drawText("Fetti Financial Services LLC", { x: M, y: H - M - 12, size: 12, font: bold, color: EMERALD });
-    p2.drawText("ESTIMATED CLOSING COSTS", { x: RIGHT - bold.widthOfTextAtSize("ESTIMATED CLOSING COSTS", 12), y: H - M - 12, size: 12, font: bold, color: SLATE });
-    y2 = M + 22;
-    p2.drawLine({ start: { x: M, y: H - y2 }, end: { x: RIGHT, y: H - y2 }, thickness: 2, color: EMERALD });
-    y2 += 14;
-    t2(`Estimated for this scenario${c.county ? ` · ${c.county}${d.state ? ", " + d.state : ""}` : d.state ? ` · ${d.state}` : ""} — actual fees are set by the title company, county, insurer, and final terms.`, 8.5, font, GREY);
-    y2 += 20;
+    header(false);
+    for (const ln of wrap(safe(`Estimated for this scenario${c.county ? ` · ${c.county}${d.state ? ", " + d.state : ""}` : d.state ? ` · ${d.state}` : ""} — actual fees are set by the title company, county, insurer, and final terms.`), font, 8.5, CW)) {
+      p2.drawText(ln, { x: M, y: H - y2 - 8.5, size: 8.5, font, color: GREY }); y2 += 12;
+    }
+    y2 += 8;
 
     for (const s of c.sections) {
       if (!s.lines.length) continue;
+      ensure(60); // keep a section header with at least its first rows
       t2(s.title.toUpperCase(), 8.5, bold, EMERALD); y2 += 13;
       s.lines.forEach((ln, i) => row2(ln.label, money(ln.amount), i, ln.note));
       row2(`Section ${s.key} total`, money(s.total), 1);
@@ -153,23 +169,25 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
     const cash: [string, string][] = [
       ["Total estimated closing costs", money(c.totalClosingCosts)],
       ["Down payment", money(c.downPayment)],
-      ...(c.credits > 0 ? [["Seller / lender credits", "− " + money(c.credits)]] as [string, string][] : []),
-      ...(c.financedFees > 0 ? [["Government fee financed into the loan", money(c.financedFees)]] as [string, string][] : []),
+      ...(c.credits > 0 ? [["Seller / lender credits", "- " + money(c.credits)]] as [string, string][] : []),
+      ...(c.financedFees > 0 ? [["Government fee financed into the loan (not cash due)", money(c.financedFees) + "*"]] as [string, string][] : []),
     ];
+    ensure(60 + cash.length * 17);
     t2("ESTIMATED CASH TO CLOSE", 8.5, bold, EMERALD); y2 += 13;
     cash.forEach(([k, v], i) => row2(k, v, i));
     const trh2 = 24;
+    ensure(trh2 + 8);
     p2.drawRectangle({ x: M, y: H - y2 - trh2 + 4, width: CW, height: trh2, color: EMBG });
     p2.drawText("Estimated cash to close", { x: M + 8, y: H - y2 - 15, size: 11, font: bold, color: EMERALD });
     p2.drawText(money(c.cashToClose), { x: RIGHT - 8 - bold.widthOfTextAtSize(money(c.cashToClose), 13), y: H - y2 - 16, size: 13, font: bold, color: EMERALD });
     y2 += trh2 + 14;
 
     for (const n of c.notes.slice(0, 6)) {
-      for (const ln of wrap("• " + n, font, 7.5, CW)) { p2.drawText(ln, { x: M, y: H - y2 - 7.5, size: 7.5, font, color: GREY }); y2 += 10.5; }
+      for (const ln of wrap(safe("• " + n), font, 7.5, CW)) { ensure(12); p2.drawText(ln, { x: M, y: H - y2 - 7.5, size: 7.5, font, color: GREY }); y2 += 10.5; }
     }
     y2 += 6;
     for (const ln of wrap("This closing-cost summary is an ESTIMATE for planning only — it is NOT a Loan Estimate under TRID, a quote, or a commitment to lend. Transfer taxes, title premiums, and who customarily pays each item vary by state, county, and negotiation. Equal Housing Opportunity.", font, 7, CW)) {
-      p2.drawText(ln, { x: M, y: H - y2 - 7, size: 7, font, color: GREY }); y2 += 9.8;
+      ensure(12); p2.drawText(ln, { x: M, y: H - y2 - 7, size: 7, font, color: GREY }); y2 += 9.8;
     }
   }
 

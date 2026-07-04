@@ -13,6 +13,14 @@ export const runtime = "nodejs";
 
 const LOAN_TYPES = new Set(["conventional", "fha", "va", "usda", "dscr", "bank_statement", "bridge"]);
 const PURPOSES = new Set(["purchase", "refi", "cashout"]);
+// Pricer purpose ids ("rateTerm"/"cashOut") → engine purposes.
+function mapPurpose(p: any): "purchase" | "refi" | "cashout" {
+  const v = String(p || "");
+  if (v === "cashOut" || v.toLowerCase() === "cashout") return "cashout";
+  if (v === "rateTerm" || v === "refi") return "refi";
+  return "purchase";
+}
+
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,10 +34,12 @@ export async function POST(req: NextRequest) {
     const state = String(b.state || loc?.state || zipToState(zip) || "").toUpperCase().slice(0, 2);
     if (!state) return NextResponse.json({ error: "Couldn't resolve the state — enter a valid ZIP" }, { status: 400 });
 
-    // Tax + insurance: ZIP-resolved when available, state average otherwise.
-    const taxRatePct = Number(b.taxRatePct) || loc?.taxRatePct || PROPERTY_TAX_RATE[state] || 1.1;
+    // Only trust ZIP-derived county/tax when the ZIP's state matches the chosen
+    // state (a manual state override must not import LA city taxes into a TX quote).
+    const useLoc = !!loc?.state && state === loc.state;
+    const taxRatePct = Number(b.taxRatePct) || (useLoc ? loc!.taxRatePct : 0) || PROPERTY_TAX_RATE[state] || 1.1;
     const insAnnual = Number(b.insAnnual)
-      || ((loc as any)?.insRatePct ? price * ((loc as any).insRatePct / 100) : 0)
+      || (useLoc && (loc as any)?.insRatePct ? price * ((loc as any).insRatePct / 100) : 0)
       || Math.max(900, price * ((INSURANCE_RATE[state] ?? 0.5) / 100));
 
     // Owner-editable lender-fee model (no redeploy): CLOSING_COST_MODEL app_setting.
@@ -40,15 +50,15 @@ export async function POST(req: NextRequest) {
     const rawLt = String(b.loanType || "conventional");
     const lt: LoanType = LOAN_TYPES.has(rawLt) ? (rawLt as LoanType)
       : rawLt.startsWith("fha") ? "fha" : rawLt.startsWith("va") ? "va" : rawLt.startsWith("usda") ? "usda"
-      : rawLt.startsWith("dscr") ? "dscr" : rawLt.startsWith("bank") ? "bank_statement"
+      : rawLt.startsWith("dscr") ? "dscr" : (rawLt.startsWith("bank") || rawLt.startsWith("nonqm")) ? "bank_statement"
       : (rawLt.startsWith("bridge") || rawLt.startsWith("hard")) ? "bridge" : "conventional";
     const input: ClosingCostInput = {
       zip, state,
-      countyFips: loc?.countyFips ?? null,
-      countyName: loc?.countyName ?? null,
+      countyFips: useLoc ? loc?.countyFips ?? null : null,
+      countyName: useLoc ? loc?.countyName ?? null : null,
       price, loanAmount,
       loanType: lt,
-      purpose: (PURPOSES.has(b.purpose) ? b.purpose : "purchase") as Purpose,
+      purpose: mapPurpose(b.purpose),
       ratePct: Number(b.ratePct) || 7,
       taxRatePct, insAnnual,
       pointsPct: Number(b.pointsPct) || 0,
@@ -63,7 +73,7 @@ export async function POST(req: NextRequest) {
       model,
     };
     const result = estimateClosingCosts(input);
-    return NextResponse.json({ ok: true, ...result, inputs: { state, taxRatePct, insAnnual, county: loc?.countyName ?? null } });
+    return NextResponse.json({ ok: true, ...result, inputs: { state, taxRatePct, insAnnual, county: useLoc ? loc?.countyName ?? null : null } });
   } catch (e: any) {
     console.error("[pricer/closing-costs]", e?.message || e);
     return NextResponse.json({ error: "estimate failed" }, { status: 500 });

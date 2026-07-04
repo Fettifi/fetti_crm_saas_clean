@@ -126,9 +126,10 @@ export default function PricerPage() {
   const [ccOpen, setCcOpen] = useState(true);
   useEffect(() => {
     if (!num(price) || !r.loan || !state) { setCc(null); return; }
+    const ctl = new AbortController();
     const t = setTimeout(() => {
       fetch("/api/pricer/closing-costs", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: ctl.signal,
         body: JSON.stringify({
           zip, state, price: num(price), loanAmount: r.loan, loanType, purpose,
           ratePct: effRate, taxRatePct: taxRatePctEff, insAnnual: r.insMonthly * 12,
@@ -136,7 +137,7 @@ export default function PricerPage() {
         }),
       }).then((res) => (res.ok ? res.json() : null)).then((j) => setCc(j?.ok ? j : null)).catch(() => setCc(null));
     }, 350);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); ctl.abort(); };
   }, [price, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle]);
 
   async function downloadPdf() {

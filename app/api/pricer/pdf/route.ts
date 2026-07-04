@@ -13,7 +13,7 @@ function ccLoanType(t: string): LoanType {
   if (t.startsWith("va")) return "va";
   if (t.startsWith("usda")) return "usda";
   if (t.startsWith("dscr")) return "dscr";
-  if (t.startsWith("bank")) return "bank_statement";
+  if (t.startsWith("bank") || t.startsWith("nonqm")) return "bank_statement";
   if (t.startsWith("bridge") || t.startsWith("hard")) return "bridge";
   return "conventional";
 }
@@ -27,6 +27,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const GOV = ["fha30", "va30", "usda30"];
+// Pricer purpose ids ("rateTerm"/"cashOut") → engine purposes.
+function mapPurpose(p: any): "purchase" | "refi" | "cashout" {
+  const v = String(p || "");
+  if (v === "cashOut" || v.toLowerCase() === "cashout") return "cashout";
+  if (v === "rateTerm" || v === "refi") return "refi";
+  return "purchase";
+}
+
 
 export async function POST(req: NextRequest) {
   try {
@@ -80,15 +88,15 @@ export async function POST(req: NextRequest) {
         let ccModel: any = {}; try { ccModel = JSON.parse((await cfg("CLOSING_COST_MODEL")) || "{}"); } catch { /* */ }
         const cc = estimateClosingCosts({
           zip: String(b.zip || ""), state: String(stateIn || loc.state),
-          countyFips: loc.countyFips, countyName: loc.countyName,
+          countyFips: useLocRates ? loc.countyFips : null, countyName: useLocRates ? loc.countyName : null,
           price, loanAmount: r.loan,
-          loanType: ccLoanType(loanType), purpose: (["purchase", "refi", "cashout"].includes(b.purpose) ? b.purpose : "purchase"),
+          loanType: ccLoanType(loanType), purpose: mapPurpose(b.purpose),
           ratePct, taxRatePct: r.taxRate, insAnnual: r.insMonthly * 12,
           pointsPct: Number(b.pointsPct) || 0, sellerCredit: Number(b.sellerCredit) || 0, lenderCredit: Number(b.lenderCredit) || 0,
           escrowWaived: b.escrowWaived === true, ownersTitle: b.ownersTitle === true,
           vaExempt: b.vaExempt === true, model: ccModel,
         });
-        closing = { sections: cc.sections, totalClosingCosts: cc.totalClosingCosts, downPayment: cc.downPayment, credits: cc.credits, cashToClose: cc.cashToClose, financedFees: cc.financedFees, notes: cc.meta.notes, county: loc.countyName };
+        closing = { sections: cc.sections, totalClosingCosts: cc.totalClosingCosts, downPayment: cc.downPayment, credits: cc.credits, cashToClose: cc.cashToClose, financedFees: cc.financedFees, notes: cc.meta.notes, county: useLocRates ? loc.countyName : null };
       } catch (e) { console.warn("[api/pricer/pdf] closing-cost section skipped:", e); }
     }
 

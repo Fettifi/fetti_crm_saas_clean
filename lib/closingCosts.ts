@@ -104,16 +104,16 @@ const S = (o: Partial<StateRule>): StateRule => ({
 });
 
 export const STATE_RULES: Record<string, StateRule> = {
-  AL: S({ deedTaxPer1000: 1.0, mortTaxPer1000: 1.5, recording: 175 }),
+  AL: S({ deedTaxPer1000: 1.0, deedBuyerShare: 1, mortTaxPer1000: 1.5, recording: 175, note: "AL: buyer customarily pays deed + mortgage recordation taxes" }),
   AK: S({}),
   AZ: S({ recording: 110, note: "AZ: flat $2 deed transfer fee only" }),
-  AR: S({ deedTaxPer1000: 3.3, deedBuyerShare: 0.5 }),
+  AR: S({ deedTaxPer1000: 3.3 }),
   CA: S({ deedTaxPer1000: 1.1, deedBuyerShare: 0, titlePer1000: 2.2, titleMin: 650, recording: 250,
           note: "CA: county $1.10/$1,000 customarily paid by the SELLER in SoCal; city transfer taxes are additional (see county/city rules)" }),
   CO: S({ deedTaxPer1000: 0.1, recording: 125 }),
-  CT: S({ deedTaxPer1000: 12.5, attorney: true, note: "CT: 0.75% up to $800k, 1.25% above (blended est.) — seller pays" }),
-  DC: S({ deedTaxPer1000: 14.5, deedBuyerShare: 0.5, mortTaxPer1000: 14.5, recording: 250,
-          note: "DC: 1.45% deed (split by custom) + 1.45% recordation on the mortgage ≥$400k; 1.1% under" }),
+  CT: S({ deedTaxPer1000: 10, attorney: true, note: "CT: marginal 0.75%/1.25%/2.25% + 0.25% municipal — seller pays" }),
+  DC: S({ deedTaxPer1000: 14.5, deedBuyerShare: 1, recording: 250,
+          note: "DC: buyer pays 1.45% deed recordation (1.1% under $400k); the SELLER pays a matching 1.45% transfer tax" }),
   DE: S({ deedTaxPer1000: 40, deedBuyerShare: 0.5, attorney: true, note: "DE: 4% total transfer, customarily split 50/50" }),
   FL: S({ deedTaxPer1000: 7.0, deedBuyerShare: 0, mortTaxPer1000: 5.5, titlePer1000: 5.5, titleMin: 575, recording: 190, survey: true,
           note: "FL: deed doc stamps $0.70/$100 (seller custom; Miami-Dade differs) + BUYER pays note doc stamps $0.35/$100 of loan and 0.2% intangible tax on the mortgage" }),
@@ -122,14 +122,14 @@ export const STATE_RULES: Record<string, StateRule> = {
   HI: S({ deedTaxPer1000: 1.5, note: "HI conveyance tiers rise with price; est. entry tier" }),
   IA: S({ deedTaxPer1000: 1.6 }),
   ID: S({}),
-  IL: S({ deedTaxPer1000: 1.0, deedBuyerShare: 0, recording: 210, note: "IL: state+county $1/$1,000 (seller); Chicago adds $7.50/$1,000 BUYER-side CTA tax" }),
+  IL: S({ deedTaxPer1000: 1.5, deedBuyerShare: 0, recording: 210, note: "IL: state $1 + county $0.50 per $1,000 (seller); Chicago adds $7.50/$1,000 buyer-side city transfer tax" }),
   IN: S({ recording: 150 }),
   KS: S({ mortTaxPer1000: 0, recording: 175, note: "KS mortgage registration tax repealed 2019" }),
   KY: S({ deedTaxPer1000: 1.0 }),
   LA: S({ attorney: true, recording: 325 }),
   MA: S({ deedTaxPer1000: 4.56, attorney: true, note: "MA: $4.56/$1,000 deed excise — seller pays" }),
-  MD: S({ deedTaxPer1000: 10, deedBuyerShare: 0.5, mortTaxPer1000: 7, recording: 250, attorney: true,
-          note: "MD: state 0.5% + county transfer/recordation vary widely (est. blended); customarily split; first-time buyers exempt from state share of their half" }),
+  MD: S({ deedTaxPer1000: 18, deedBuyerShare: 0.5, recording: 250, attorney: true,
+          note: "MD: state 0.5% + county transfer + county recordation (est. blended ~1.8% of price), customarily split 50/50; purchase-money deeds of trust are recordation-EXEMPT; refis taxed on new money only; first-time buyers exempt from the state share of their half" }),
   ME: S({ deedTaxPer1000: 4.4, deedBuyerShare: 0.5 }),
   MI: S({ deedTaxPer1000: 8.6, deedBuyerShare: 0, recording: 130,
           note: "MI: state $7.50 + county $1.10 per $1,000 — customarily paid by the SELLER" }),
@@ -139,28 +139,28 @@ export const STATE_RULES: Record<string, StateRule> = {
   MT: S({}),
   NC: S({ deedTaxPer1000: 2.0, attorney: true }),
   ND: S({}),
-  NE: S({ deedTaxPer1000: 2.25 }),
+  NE: S({ deedTaxPer1000: 3.32, note: "NE doc-stamp tax $3.32/$1,000 eff. 7/18/2026 (seller)" }),
   NH: S({ deedTaxPer1000: 15, deedBuyerShare: 0.5, note: "NH: $15/$1,000 split buyer/seller" }),
   NJ: S({ deedTaxPer1000: 8.5, deedBuyerShare: 0, attorney: true, note: "NJ realty transfer fee (seller, tiered ~0.85% est.); buyer pays 1% mansion tax at/over $1M" }),
   NM: S({}),
   NV: S({ deedTaxPer1000: 5.1, deedBuyerShare: 0, note: "NV: $2.55/$500 (Clark Co.) — seller custom" }),
-  NY: S({ deedTaxPer1000: 4.0, deedBuyerShare: 0, mortTaxPer1000: 10.5, titlePer1000: 4.0, titleMin: 850, attorney: true, recording: 350,
+  NY: S({ deedTaxPer1000: 4.0, deedBuyerShare: 0, mortTaxPer1000: 8.0, titlePer1000: 4.0, titleMin: 850, attorney: true, recording: 350,
           note: "NY: 0.4% transfer (seller) + mortgage recording tax ≈1.05%+ upstate; NYC 1.8% ≤$500k / 1.925% above (buyer, net of lender's 0.25% share) + 1%+ mansion tax at/over $1M" }),
-  OH: S({ deedTaxPer1000: 2.0, recording: 180 }),
+  OH: S({ deedTaxPer1000: 4.0, recording: 180, note: "OH: $1/$1,000 state + county permissive (most metros total ~$4) — seller" }),
   OK: S({ deedTaxPer1000: 1.5, mortTaxPer1000: 1.0 }),
   OR: S({ note: "OR: no transfer tax (except Washington Co. $1/$1,000)" }),
   PA: S({ deedTaxPer1000: 20, deedBuyerShare: 0.5, attorney: false, recording: 280,
           note: "PA: 1% state + ~1% local (Philly/Pittsburgh higher), customarily split 50/50" }),
-  RI: S({ deedTaxPer1000: 4.6 }),
+  RI: S({ deedTaxPer1000: 7.5, note: "RI conveyance $3.75/$500 eff. 7/1/2026; residential value over $800k pays 1.5% on the excess (seller)" }),
   SC: S({ deedTaxPer1000: 3.7, attorney: true }),
   SD: S({ deedTaxPer1000: 1.0 }),
   TN: S({ deedTaxPer1000: 3.7, deedBuyerShare: 1, mortTaxPer1000: 1.15, note: "TN: transfer $0.37/$100 (buyer custom) + mortgage tax $0.115/$100 over $2k" }),
   TX: S({ titlePer1000: 5.5, titleMin: 650, survey: true, recording: 175, note: "TX: NO transfer tax; title rates state-promulgated" }),
   UT: S({}),
-  VA: S({ deedTaxPer1000: 3.33, deedBuyerShare: 1, mortTaxPer1000: 2.5, attorney: true,
+  VA: S({ deedTaxPer1000: 3.33, deedBuyerShare: 1, mortTaxPer1000: 3.33, attorney: true,
           note: "VA: recordation 0.25%+local thirds on deed (buyer custom) + 0.25% on the mortgage; grantor tax is the seller's" }),
-  VT: S({ deedTaxPer1000: 12.5, deedBuyerShare: 1, note: "VT: 1.25% property transfer tax, buyer pays (0.5% first $100k primary res.)" }),
-  WA: S({ deedTaxPer1000: 13, deedBuyerShare: 0, note: "WA REET graduated 1.1%–3% (seller) — est. mid-tier" }),
+  VT: S({ deedTaxPer1000: 14.7, deedBuyerShare: 1, note: "VT: buyer pays 1.47% (0.5% on first $200k of a primary residence); second homes/investment 3.62% — ask us to run that case" }),
+  WA: S({ deedTaxPer1000: 15.5, deedBuyerShare: 0, note: "WA REET graduated 1.1%–3% + 0.25–0.5% local REET (seller) — est. typical total" }),
   WI: S({ deedTaxPer1000: 3.0 }),
   WV: S({ deedTaxPer1000: 4.4, attorney: true }),
   WY: S({}),
@@ -169,7 +169,7 @@ export const STATE_RULES: Record<string, StateRule> = {
 // County/city addenda keyed by county FIPS (from resolveLocation). BUYER-side unless noted.
 const COUNTY_CITY: Record<string, { cityDeedPer1000?: number; buyerShare?: number; zipPrefixes?: string[]; label: string; note?: string }[]> = {
   // Los Angeles County: LA CITY adds $4.50/$1,000 (+ ULA 4%/5.5% over ~$5.15M/$10.3M)
-  "06037": [{ cityDeedPer1000: 4.5, buyerShare: 0.5, zipPrefixes: ["900", "901", "902", "913", "914", "915", "916"], label: "City of Los Angeles transfer tax", note: "LA city $4.50/$1,000 (often split); Measure ULA adds 4%+ over ~$5.15M (seller)" }],
+  "06037": [{ cityDeedPer1000: 4.5, buyerShare: 0, zipPrefixes: ["900", "901", "902", "913", "914", "915", "916"], label: "City of Los Angeles transfer tax", note: "LA-city properties: seller customarily pays city transfer $4.50/$1,000; Measure ULA adds 4%/5.5% over $5.4M/$10.9M (seller)" }],
   // San Francisco (city=county): tiered 0.5%–6%, seller custom — informational, seller-side
   "06075": [{ cityDeedPer1000: 6.8, buyerShare: 0, label: "SF city transfer tax", note: "SF tiered (0.5%–6%, higher over $1M) — customarily SELLER-paid" }],
   // Cook County / Chicago: CTA $7.50/$1,000 buyer-side within Chicago
@@ -184,7 +184,15 @@ const NYC_FIPS = new Set(["36061", "36047", "36081", "36005", "36085"]);
 const r0 = (n: number) => Math.round(n);
 
 export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
-  const m: FeeModel = { ...DEFAULT_MODEL, ...(i.model || {}), appraisal: { ...DEFAULT_MODEL.appraisal, ...((i.model as any)?.appraisal || {}) } };
+  // COERCE the owner-edited model: a hand-typed "850" (string) must never string-
+  // concat into a $1.5B section total. Non-finite/negative values fall to defaults.
+  const numOr = (v: any, d: number) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : d; };
+  const mo: any = i.model || {};
+  const m: FeeModel = { ...DEFAULT_MODEL, appraisal: { ...DEFAULT_MODEL.appraisal } };
+  for (const k of Object.keys(DEFAULT_MODEL) as (keyof FeeModel)[]) {
+    if (k === "appraisal") { for (const a of Object.keys(mo.appraisal || {})) m.appraisal[a] = numOr(mo.appraisal[a], DEFAULT_MODEL.appraisal[a] ?? 700); }
+    else if (mo[k] != null) (m as any)[k] = numOr(mo[k], DEFAULT_MODEL[k] as number);
+  }
   const st = STATE_RULES[i.state] || S({});
   const notes: string[] = [];
   if (st.note) notes.push(st.note);
@@ -217,8 +225,12 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
     else B.push({ label: "FHA up-front MIP (1.75%)", amount: ufmip });
   }
   if (i.loanType === "va" && !i.vaExempt) {
-    const downPct = price > 0 ? Math.max(0, (price - loan) / price) * 100 : 0;
-    const ff = (i.vaFirstUse !== false)
+    const downPct = purchase && price > 0 ? Math.max(0, (price - loan) / price) * 100 : 0;
+    // Down-payment tiers apply to PURCHASE only; VA cash-out is flat 2.15%/3.3%
+    // (a rate-term VA refi is usually an IRRRL at 0.5% — quoted separately).
+    const ff = !purchase
+      ? (i.vaFirstUse !== false ? 2.15 : 3.3)
+      : (i.vaFirstUse !== false)
       ? (downPct >= 10 ? 1.25 : downPct >= 5 ? 1.5 : 2.15)
       : (downPct >= 10 ? 1.25 : downPct >= 5 ? 1.5 : 3.3);
     const fee = r0(loan * ff / 100);
@@ -257,12 +269,20 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
     E.push({ label, amount: r0(mt) });
   }
   if (i.state === "NY" && purchase && price >= 1000000) {
-    const pct = price >= 2000000 ? 1.25 : 1.0; // rises further at higher tiers
-    E.push({ label: `Mansion tax (${pct}%)`, amount: r0(price * pct / 100), note: "NY mansion tax — buyer; tiers rise above $2M" });
+    const nyc = !!(i.countyFips && NYC_FIPS.has(i.countyFips));
+    // Statewide 1%; NYC's graduated tiers stack above it (2019 mansion-tax tiers).
+    const pct = !nyc ? 1.0
+      : price >= 25000000 ? 3.9 : price >= 20000000 ? 3.75 : price >= 15000000 ? 3.5
+      : price >= 10000000 ? 3.25 : price >= 5000000 ? 2.25 : price >= 3000000 ? 1.5
+      : price >= 2000000 ? 1.25 : 1.0;
+    E.push({ label: `Mansion tax (${pct}%)`, amount: r0(price * pct / 100), note: nyc ? "NYC graduated mansion tax — buyer" : "NY mansion tax (1% at/over $1M) — buyer" });
   }
   if (i.state === "NJ" && purchase && price >= 1000000) {
-    E.push({ label: "NJ mansion tax (1%)", amount: r0(price * 0.01) });
+    // 2025 NJ law (S4666): mansion tax is now the SELLER's, graduated 1%–3.5%.
+    notes.push("NJ mansion tax (graduated 1%–3.5% at/over $1M) is paid by the SELLER under the 2025 law change");
   }
+  if (i.state === "DC" && !purchase) notes.push("DC refinance: recordation tax (1.1%/1.45%) applies to NEW money above the refinanced balance — not modeled here");
+  if (i.state === "MD" && !purchase) notes.push("MD refinance: recordation tax applies to new money above the old balance (principal residence) — not modeled here");
   // County/city addenda
   for (const cc of (i.countyFips && COUNTY_CITY[i.countyFips]) || []) {
     const zipOk = !cc.zipPrefixes || (i.zip && cc.zipPrefixes.some((p) => i.zip!.startsWith(p)));
@@ -313,7 +333,11 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   const otherCosts = tot(["E", "F", "G", "H"]);
   const totalClosingCosts = loanCosts + otherCosts;
   const downPayment = purchase ? Math.max(0, price - loan) : 0;
-  const credits = Math.max(0, i.sellerCredit || 0) + Math.max(0, i.lenderCredit || 0);
+  // Credits can't exceed the costs they offset (program IPC limits also apply —
+  // conv 3–9% by LTV/occupancy, FHA 6%, VA 4%); clamp so CTC never goes negative-fake.
+  const rawCredits = Math.max(0, i.sellerCredit || 0) + Math.max(0, i.lenderCredit || 0);
+  const credits = Math.min(rawCredits, totalClosingCosts);
+  if (rawCredits > credits) notes.push(`Credits capped at total closing costs ($${credits.toLocaleString()}) — excess can't reduce the down payment; program interested-party limits also apply`);
   const cashToClose = r0(downPayment + totalClosingCosts - credits);
 
   notes.push("Estimates for planning only — not a Loan Estimate or a commitment to lend; actual fees come from the title company, county, and final loan terms.");
