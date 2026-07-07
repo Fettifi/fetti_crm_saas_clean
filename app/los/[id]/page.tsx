@@ -63,6 +63,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [other, setOther] = useState({ name: "", email: "", phone: "" });
   const [reqNote, setReqNote] = useState("");
   const sendDocRef = useRef<HTMLInputElement>(null);
+  const [titleCo, setTitleCo] = useState({ company: "", contact: "", email: "", closing: "" });
   const [sendingReq, setSendingReq] = useState(false);
   const [reqMsg, setReqMsg] = useState<{ ok?: boolean; text: string } | null>(null);
   const [mismo, setMismo] = useState<{ completeness: { missing: string[]; present: string[]; pct: number }; metrics: any; urla: any } | null>(null);
@@ -501,6 +502,34 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                   className="text-sm font-semibold bg-violet-600 hover:bg-violet-500 disabled:opacity-50 px-3 py-2 rounded-lg flex items-center gap-1.5">
                   {sendingReq ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>📎</span>} Attach &amp; email a form to complete
                 </button>
+
+                {/* Title / escrow order-opening sheet — prefilled from THIS file. */}
+                <div className="mt-3 pt-3 border-t border-slate-800">
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mb-1.5">Title / escrow order</div>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <input value={titleCo.company} onChange={(e) => setTitleCo({ ...titleCo, company: e.target.value })} placeholder="Title/escrow company" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
+                    <input value={titleCo.contact} onChange={(e) => setTitleCo({ ...titleCo, contact: e.target.value })} placeholder="Contact name" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
+                    <input type="email" value={titleCo.email} onChange={(e) => setTitleCo({ ...titleCo, email: e.target.value })} placeholder="Their email" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
+                    <input value={titleCo.closing} onChange={(e) => setTitleCo({ ...titleCo, closing: e.target.value })} placeholder="Est. closing (e.g. Aug 15)" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
+                  </div>
+                  <div className="flex items-center flex-wrap gap-2">
+                    <a href={`/api/los/files/${id}/title-order?company=${encodeURIComponent(titleCo.company)}&contact=${encodeURIComponent(titleCo.contact)}&email=${encodeURIComponent(titleCo.email)}&closing=${encodeURIComponent(titleCo.closing)}`}
+                      className="text-sm font-semibold bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg flex items-center gap-1.5">📄 Download sheet</a>
+                    <button disabled={sendingReq || !titleCo.email.trim()} onClick={async () => {
+                      setSendingReq(true); setReqMsg(null);
+                      try {
+                        const r = await fetch(`/api/los/files/${id}/title-order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toCompany: titleCo.company, toContact: titleCo.contact, toEmail: titleCo.email, estClosing: titleCo.closing }) });
+                        const j = await r.json();
+                        setReqMsg(r.ok ? { ok: true, text: `✓ Order-opening sheet emailed to ${titleCo.email} — replies go to ramon@fettifi.com` } : { text: "⚠️ " + (j.error || "Send failed") });
+                        if (r.ok) await load();
+                      } catch { setReqMsg({ text: "⚠️ Connection error" }); }
+                      setSendingReq(false);
+                    }} className="text-sm font-semibold bg-amber-600 hover:bg-amber-500 disabled:opacity-40 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                      {sendingReq ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>🏛️</span>} Email order to title
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-1">Prefilled from this file (borrower, property, price, loan amount) — Fetti-branded PDF with the full open-order checklist; replies route to ramon@fettifi.com.</p>
+                </div>
               </div>
             </div>
           </div>
