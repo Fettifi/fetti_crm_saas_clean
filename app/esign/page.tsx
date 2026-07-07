@@ -84,7 +84,7 @@ export default function EsignPage() {
     if (!pdf) return;
     setSending(true); setMsg(null);
     try {
-      if (pdf.size > 15 * 1024 * 1024) { setMsg({ text: "That PDF is over 15 MB — compress it (or split it) and try again." }); setSending(false); return; }
+      if (pdf.size > 40 * 1024 * 1024) { setMsg({ text: "That PDF is over 40 MB — split it and send in parts." }); setSending(false); return; }
       const clean = recipients.filter((r) => r.name.trim());
 
       // 1) Upload the PDF STRAIGHT to storage (signed URL) — posting it through the

@@ -52,6 +52,11 @@ const outlookCsp = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // The e-sign PDF compressor loads pdfium.wasm from node_modules at runtime —
+  // force-include it in the serverless bundle so file tracing can never miss it.
+  outputFileTracingIncludes: {
+    "/api/esign/requests": ["./node_modules/@hyzyla/pdfium/dist/pdfium.wasm"],
+  },
   reactStrictMode: true,
   images: {
     remotePatterns: [

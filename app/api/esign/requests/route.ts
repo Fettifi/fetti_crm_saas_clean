@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { compressPdfIfNeeded } from "@/lib/pdfCompress";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { sendSignRequest } from "@/lib/notify/docRequest";
@@ -12,7 +13,8 @@ import { EsignField, EsignRequest, Recipient, ESIGN_BUCKET, newToken, saveReques
 //   Back-compat: signer_name/email/phone build a single recipient if no recipients[].
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const MAX_BYTES = 15 * 1024 * 1024;
+const MAX_BYTES = 40 * 1024 * 1024;  // pre-compression intake ceiling
+export const maxDuration = 120;      // big-PDF compression needs headroom
 
 export async function GET(req: NextRequest) {
   const file = req.nextUrl.searchParams.get("file");
@@ -57,8 +59,19 @@ export async function POST(req: NextRequest) {
       buf = Buffer.from(await pdf.arrayBuffer());
       pdfName = pdf.name || pdfName;
     }
-    if (buf.length > MAX_BYTES) return NextResponse.json({ error: "PDF too large (max 15 MB)." }, { status: 413 });
+    if (buf.length > MAX_BYTES) return NextResponse.json({ error: "PDF too large (max 40 MB) — split it and send in parts." }, { status: 413 });
     if (buf.subarray(0, 5).toString("latin1").indexOf("%PDF") !== 0) return NextResponse.json({ error: "That file isn't a PDF." }, { status: 422 });
+    // AUTO-COMPRESS oversized PDFs (page-faithful 180/150-DPI re-render; smaller
+    // files pass through untouched) so a heavy scan never fails on size again.
+    let compressNote: string | null = null;
+    if (buf.length > 8 * 1024 * 1024) {
+      try {
+        const c = await compressPdfIfNeeded(buf, { targetBytes: 8 * 1024 * 1024, hardMaxBytes: 15 * 1024 * 1024 });
+        if (c.compressed) { buf = c.buf; compressNote = c.note || null; }
+      } catch (e: any) {
+        return NextResponse.json({ error: e?.message || "Couldn't compress that PDF — try splitting it." }, { status: 422 });
+      }
+    }
 
     const gv = (k: string) => (jsonBody ? jsonBody[k] : form?.get(k));
     const title = String(gv("title") || pdfName || "Document for signature").slice(0, 160);
@@ -82,13 +95,14 @@ export async function POST(req: NextRequest) {
 
     const envToken = newToken();
     const source_path = `esign/${envToken}/source.pdf`;
-    if (uploadedPath) {
-      // Already in the bucket — move it into the envelope's canonical location.
+    if (uploadedPath && !compressNote) {
+      // Already in the bucket, unchanged — move it into the envelope's canonical location.
       const { error: mvErr } = await supabaseAdmin.storage.from(ESIGN_BUCKET).move(uploadedPath, source_path);
       if (mvErr) throw new Error("Upload move failed: " + mvErr.message);
     } else {
       const { error: upErr } = await supabaseAdmin.storage.from(ESIGN_BUCKET).upload(source_path, buf, { contentType: "application/pdf", upsert: false });
       if (upErr) throw new Error("Upload failed: " + upErr.message);
+      if (uploadedPath) { try { await supabaseAdmin.storage.from(ESIGN_BUCKET).remove([uploadedPath]); } catch { /* orphan cleanup is best-effort */ } }
     }
 
     let lead_id: string | null = null;
@@ -148,7 +162,7 @@ export async function POST(req: NextRequest) {
       ok: true, token: envToken,
       links: recipients.map((r) => ({ name: r.name, order: r.order, link: `${origin}/sign/${r.token}` })),
       sent,
-      message: sent.length ? `Sent to ${first.name} via ${sent.join(" + ")}.` : "Created — copy the first signer's link to send manually.",
+      message: (sent.length ? `Sent to ${first.name} via ${sent.join(" + ")}.` : "Created — copy the first signer's link to send manually.") + (compressNote ? ` (${compressNote})` : ""),
     });
   } catch (e: any) {
     console.error("[esign/requests] error:", e);
