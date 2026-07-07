@@ -69,7 +69,12 @@ function EditorField({
         {f.hint && <span className="text-[10px] text-slate-600">· {f.hint}</span>}
       </label>
       {f.key === "property_address" ? (
-        <AddressInput value={v} onChange={(val) => onChange(f.key, val)} placeholder={f.label} />
+        <AddressInput value={v} onChange={(val) => onChange(f.key, val)} placeholder={f.label}
+          onResolved={(r) => {
+            // Verified address → auto-populate the full formatted address + state.
+            if (r.formatted) onChange("property_address" as any, r.formatted);
+            if (r.state) onChange("state" as any, r.state);
+          }} />
       ) : f.type === "money" ? (
         <CurrencyInput value={v} onChange={(clean) => onChange(f.key, clean)} className={field} />
       ) : f.type === "select" ? (
@@ -407,19 +412,21 @@ function ScenarioDesk() {
   // --- shopping --------------------------------------------------------------
   const selectedIds = useMemo(() => Object.keys(checked).filter((k) => checked[k]), [checked]);
 
+  const [directEmail, setDirectEmail] = useState("");
   const sendToWholesalers = useCallback(async () => {
-    if (!selected || !selectedIds.length) return;
+    const extra = directEmail.trim();
+    if (!selected || (!selectedIds.length && !extra)) return;
     setBusyAction("send");
     try {
       const r = await fetch(`/api/scenarios/${selected.id}/send`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wholesaler_ids: selectedIds }),
+        body: JSON.stringify({ wholesaler_ids: selectedIds, extra_emails: extra ? [extra] : [] }),
       });
       const j = await r.json();
-      if (r.ok) { await loadScenarios(); setChecked({}); setFlash(`Sent to ${(j.sent || []).length} wholesaler(s).`); setTimeout(() => setFlash(null), 2500); }
+      if (r.ok) { await loadScenarios(); setChecked({}); setDirectEmail(""); setFlash(`Sent to ${(j.sent || []).length} wholesaler(s) — replies go to ramon@fettifi.com.`); setTimeout(() => setFlash(null), 3500); }
       else setErr(j.error || "Send failed.");
     } finally { setBusyAction(null); }
-  }, [selected, selectedIds, loadScenarios]);
+  }, [selected, selectedIds, directEmail, loadScenarios]);
 
   // --- quotes ----------------------------------------------------------------
   const saveQuote = useCallback(async (wholesaler_id: string, patch: Partial<Quote>) => {
@@ -629,12 +636,17 @@ function ScenarioDesk() {
                   <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                     <div className="text-sm font-semibold flex items-center gap-2"><Building2 className="w-4 h-4 text-emerald-400" /> Shop to wholesalers</div>
                     <button
-                      type="button" onClick={sendToWholesalers} disabled={!selectedIds.length || busyAction === "send"}
+                      type="button" onClick={sendToWholesalers} disabled={(!selectedIds.length && !directEmail.trim()) || busyAction === "send"}
                       className="text-sm bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                     >
-                      {busyAction === "send" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send to {selectedIds.length} wholesaler{selectedIds.length === 1 ? "" : "s"}
+                      {busyAction === "send" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send{selectedIds.length ? ` to ${selectedIds.length} wholesaler${selectedIds.length === 1 ? "" : "s"}` : directEmail.trim() ? " to 1 email" : ""}
                     </button>
                   </div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <input type="email" value={directEmail} onChange={(e) => setDirectEmail(e.target.value)} placeholder="Or email a wholesaler directly — name@lender.com"
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
+                  </div>
+                  <p className="text-[11px] text-slate-500 -mt-1 mb-2">Every email carries the scenario PDF and replies go to <b className="text-slate-400">ramon@fettifi.com</b>.</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {wholesalers.map((w) => (
                       <WholesalerRow key={w.id} w={w} checked={!!checked[w.id]} onToggle={toggle} onDelete={deleteWholesaler} />

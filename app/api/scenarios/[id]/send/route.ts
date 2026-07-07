@@ -21,11 +21,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const ids: string[] = Array.isArray(body?.wholesaler_ids)
       ? body.wholesaler_ids.map((x: any) => String(x)).filter(Boolean)
       : [];
-    if (!ids.length) return NextResponse.json({ error: "wholesaler_ids is required" }, { status: 400 });
+    // Ad-hoc recipients typed directly into the desk (no saved wholesaler needed).
+    const extras: string[] = (Array.isArray(body?.extra_emails) ? body.extra_emails : [])
+      .map((e: any) => String(e).trim().toLowerCase())
+      .filter((e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+    if (!ids.length && !extras.length) return NextResponse.json({ error: "Pick a wholesaler or enter an email" }, { status: 400 });
 
     const all = await listWholesalers();
     const idSet = new Set(ids);
     const selected = all.filter((w) => idSet.has(w.id));
+    for (const e of extras) if (!selected.some((w) => (w.email || "").toLowerCase() === e)) {
+      selected.push({ id: "adhoc-" + e, company: e, contact_name: null, email: e } as any);
+    }
     if (!selected.length) return NextResponse.json({ error: "No matching wholesalers" }, { status: 400 });
 
     // Build the PDF once and email all recipients in a single pass.

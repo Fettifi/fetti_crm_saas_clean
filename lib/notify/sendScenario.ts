@@ -14,6 +14,7 @@ async function sendOne(to: string, subject: string, html: string, pdfB64: string
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         from, to: [to], subject,
+        reply_to: ["ramon@fettifi.com"],
         html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;color:#0f172a">${html}</div>`,
         attachments: [{ filename, content: pdfB64 }],
       }),
