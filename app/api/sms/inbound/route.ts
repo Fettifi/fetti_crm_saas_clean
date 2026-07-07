@@ -39,6 +39,23 @@ export async function POST(req: NextRequest) {
     const digits = from.replace(/\D/g, "").slice(-10);
     const msgSid = String(params["MessageSid"] || ""); // Twilio's unique id for THIS inbound — used for retry idempotency
 
+    // OWNER TASK-BY-TEXT: Ramon dictates tasks from his phone ("task call the CPA",
+    // "daily review new leads"). Only honored from the owner's own cell (OWNER_CELL
+    // setting; default his alert number), so no lead can inject tasks. "daily …" /
+    // "weekly …" / "monthly …" set the cadence; "task …"/"todo …"/"quest …" = one-time.
+    const ownerCell = ((await cfg("OWNER_CELL")) || "3236203534").replace(/\D/g, "").slice(-10);
+    const taskCmd = body.match(/^(task|todo|quest|daily|weekly|monthly)[:,\s]+([\s\S]{2,200})/i);
+    if (digits && digits === ownerCell && taskCmd) {
+      const kind = taskCmd[1].toLowerCase();
+      const cadence = ["daily", "weekly", "monthly"].includes(kind) ? kind : "once";
+      const title = taskCmd[2].trim().replace(/\s+/g, " ");
+      await supabaseAdmin.from("org_tasks").insert([{ title: title.slice(0, 200), source: "sms", status: "open", priority: 5, cadence }]);
+      const label = cadence === "once" ? "Quest" : cadence[0].toUpperCase() + cadence.slice(1) + " goal";
+      const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const xml = `<Response><Message>✅ ${label} added: "${esc(title.slice(0, 80))}"</Message></Response>`;
+      return new NextResponse(xml, { status: 200, headers: { "Content-Type": "text/xml" } });
+    }
+
     // Keyword opt-in (e.g. "Text DEAL to ..." from The Lot). Because the viewer
     // texts US first, this is express written consent (TCPA-compliant). We log
     // the consented lead and reply with the capture link; the hourly self-heal

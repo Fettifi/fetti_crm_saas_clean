@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Flame, Trophy, Swords, Plus, Volume2, VolumeX, Check, Sparkles, Star, Zap,
-  Brain, Loader2, Target, Skull, Crown, ChevronDown, UserPlus, Calendar, CalendarPlus, Link2,
+  Brain, Loader2, Target, Skull, Crown, ChevronDown, UserPlus, Calendar, CalendarPlus, Link2, Mic,
 } from "lucide-react";
 
 type Task = { id: string; title: string; source: string; due_at?: string | null; cadence?: string; done_this_period?: boolean };
@@ -43,6 +43,10 @@ export default function QuestBoard() {
   const [copiedCal, setCopiedCal] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // Voice dictation (Web Speech API — supported in the Chrome-based desktop app).
+  // Saying "next" / "new task" splits the dictation into separate tasks.
+  const [dictating, setDictating] = useState(false);
+  const recRef = useRef<any>(null);
   const [levelUp, setLevelUp] = useState<{ level: number; rank: string } | null>(null);
   const [bossWin, setBossWin] = useState<{ title: string; xp: number } | null>(null);
   const [combo, setCombo] = useState<{ label: string; xp: number } | null>(null);
@@ -123,6 +127,44 @@ export default function QuestBoard() {
     const title = newQuest.trim(); const due = dueInput; const cad = cadence; setNewQuest(""); setDueInput("");
     await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, cadence: cad, due_at: due || undefined }) });
     loadTasks(currentId);
+  }
+
+  async function addTitle(title: string) {
+    const t = title.trim(); if (!t) return;
+    await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: t, cadence, due_at: dueInput || undefined }) });
+    loadTasks(currentId);
+  }
+
+  // Dictate tasks: tap the mic, speak, tap again to stop. Saying "next", "new task",
+  // or "add task" between items files each one separately (with the selected cadence).
+  function toggleDictation() {
+    if (dictating) { try { recRef.current?.stop(); } catch { /* */ } setDictating(false); return; }
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { setToast("Dictation isn't supported in this browser — use the desktop app (Chrome)."); setTimeout(() => setToast(null), 3500); return; }
+    const rec = new SR();
+    rec.lang = "en-US"; rec.continuous = true; rec.interimResults = true;
+    let finals = "";
+    rec.onresult = (e: any) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finals += r[0].transcript + " ";
+        else interim += r[0].transcript;
+      }
+      // Split on spoken separators — every completed chunk becomes its own task.
+      const parts = finals.split(/\b(?:next task|new task|add task|next)\b/i);
+      while (parts.length > 1) {
+        const doneChunk = parts.shift()!;
+        addTitle(doneChunk);
+        finals = parts.join(" ");
+      }
+      setNewQuest((finals + interim).trim());
+    };
+    rec.onerror = () => setDictating(false);
+    rec.onend = () => setDictating(false);
+    recRef.current = rec;
+    rec.start();
+    setDictating(true);
   }
 
   async function setDue(id: string, due: string) {
@@ -362,7 +404,10 @@ export default function QuestBoard() {
         )}
 
         <form onSubmit={addQuest} className="flex flex-wrap gap-2 mt-3">
-          <input value={newQuest} onChange={(e) => setNewQuest(e.target.value)} placeholder="Add your own goal…" className="flex-1 min-w-[180px] bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500 focus:outline-none" />
+          <input value={newQuest} onChange={(e) => setNewQuest(e.target.value)} placeholder={dictating ? "Listening… say \"next\" between tasks" : "Add your own goal… (or tap the mic)"} className={`flex-1 min-w-[180px] bg-slate-900 border rounded-xl px-4 py-2.5 text-sm focus:outline-none ${dictating ? "border-red-500/70 focus:border-red-400" : "border-slate-700 focus:border-emerald-500"}`} />
+          <button type="button" onClick={toggleDictation} title={dictating ? "Stop dictating" : "Dictate tasks"} className={`px-3 rounded-xl border flex items-center ${dictating ? "bg-red-500/20 border-red-500/60 text-red-300 animate-pulse" : "bg-slate-900 border-slate-700 text-slate-300 hover:border-emerald-500"}`}>
+            <Mic className="w-4 h-4" />
+          </button>
           <select value={cadence} onChange={(e) => setCadence(e.target.value)} title="Goal type" className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-300 focus:border-emerald-500 focus:outline-none">
             <option value="once">🎯 One-time</option>
             <option value="daily">🌅 Daily</option>
