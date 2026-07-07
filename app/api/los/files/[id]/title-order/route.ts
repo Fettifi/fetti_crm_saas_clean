@@ -36,6 +36,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     toCompany: q.get("company") || undefined, toContact: q.get("contact") || undefined,
     toEmail: q.get("email") || undefined, toPhone: q.get("phone") || undefined,
     estClosing: q.get("closing") || undefined, notes: q.get("notes") || undefined,
+    lenderLoanNumber: q.get("lenderLoan") || undefined, mortgageeClause: q.get("clause") || undefined,
   });
   if (!r) return NextResponse.json({ error: "Loan file not found" }, { status: 404 });
   const pdf = await buildTitleOrderPdf(r.d);

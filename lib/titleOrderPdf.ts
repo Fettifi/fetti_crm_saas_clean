@@ -16,7 +16,7 @@ export type TitleOrderData = {
   borrowers?: string; borrowerPhone?: string | null; borrowerEmail?: string | null;
   seller?: string;
   purchasePrice?: number | null; loanAmount?: number | null;
-  estClosing?: string; fileNumber?: string;
+  estClosing?: string; fileNumber?: string; lenderLoanNumber?: string; mortgageeClause?: string;
   notes?: string;
 };
 
@@ -57,7 +57,7 @@ export async function buildTitleOrderPdf(d: TitleOrderData): Promise<Uint8Array>
   head("TRANSACTION");
   [["Type", d.transaction || "Purchase"], ["Property address", d.propertyAddress || "____________________"], ["County", d.county || "—"],
    ["Purchase price", money(d.purchasePrice)], ["Loan amount", money(d.loanAmount)], ["Estimated closing", d.estClosing || "TBD"],
-   ["Lender file #", d.fileNumber || "—"]].forEach(([k, v], i) => row(k, v as string, i));
+   ["Fetti file #", d.fileNumber || "—"], ["Lender loan #", d.lenderLoanNumber || "TBD — to follow"]].forEach(([k, v], i) => row(k, v as string, i));
   y += 8;
   head("PARTIES");
   [["Borrower(s)", d.borrowers || "____________________"], ["Borrower contact", [d.borrowerPhone, d.borrowerEmail].filter(Boolean).join(" · ") || "—"],
@@ -72,6 +72,9 @@ export async function buildTitleOrderPdf(d: TitleOrderData): Promise<Uint8Array>
     "Closing Protection Letter (CPL) and E&O/licensing evidence for the lender",
     "Property tax figures and any HOA / solar / bond items of record",
   ]) { page.drawText("•  " + item, { x: M + 6, y: H - y - 10, size: 9.5, font, color: SLATE }); y += 15; }
+  y += 4; head("MORTGAGEE CLAUSE");
+  const clause = d.mortgageeClause || "Fetti Financial Services LLC, ISAOA/ATIMA, 5777 W Century Blvd Ste 1435, Los Angeles, CA 90045";
+  for (const ln of safe(clause).slice(0, 300).match(/.{1,90}(\s|$)/g) || []) { page.drawText(ln.trim(), { x: M + 6, y: H - y - 10, size: 9.5, font: bold, color: SLATE }); y += 14; }
   if (d.notes) { y += 4; head("NOTES"); for (const ln of safe(d.notes).slice(0, 500).match(/.{1,90}(\s|$)/g) || []) { page.drawText(ln.trim(), { x: M + 6, y: H - y - 10, size: 9.5, font, color: SLATE }); y += 14; } }
 
   y += 14;

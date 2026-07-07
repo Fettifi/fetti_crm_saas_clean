@@ -63,7 +63,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [other, setOther] = useState({ name: "", email: "", phone: "" });
   const [reqNote, setReqNote] = useState("");
   const sendDocRef = useRef<HTMLInputElement>(null);
-  const [titleCo, setTitleCo] = useState({ company: "", contact: "", email: "", closing: "" });
+  const [titleCo, setTitleCo] = useState({ company: "", contact: "", email: "", closing: "", lenderLoan: "", clause: "Fetti Financial Services LLC, ISAOA/ATIMA, 5777 W Century Blvd Ste 1435, Los Angeles, CA 90045" });
   const [sendingReq, setSendingReq] = useState(false);
   const [reqMsg, setReqMsg] = useState<{ ok?: boolean; text: string } | null>(null);
   const [mismo, setMismo] = useState<{ completeness: { missing: string[]; present: string[]; pct: number }; metrics: any; urla: any } | null>(null);
@@ -511,14 +511,16 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                     <input value={titleCo.contact} onChange={(e) => setTitleCo({ ...titleCo, contact: e.target.value })} placeholder="Contact name" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
                     <input type="email" value={titleCo.email} onChange={(e) => setTitleCo({ ...titleCo, email: e.target.value })} placeholder="Their email" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
                     <input value={titleCo.closing} onChange={(e) => setTitleCo({ ...titleCo, closing: e.target.value })} placeholder="Est. closing (e.g. Aug 15)" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
+                    <input value={titleCo.lenderLoan} onChange={(e) => setTitleCo({ ...titleCo, lenderLoan: e.target.value })} placeholder="Lender loan # (if not our file #)" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
+                    <input value={titleCo.clause} onChange={(e) => setTitleCo({ ...titleCo, clause: e.target.value })} placeholder="Mortgagee clause (lender, ISAOA/ATIMA, address)" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none col-span-2" />
                   </div>
                   <div className="flex items-center flex-wrap gap-2">
-                    <a href={`/api/los/files/${id}/title-order?company=${encodeURIComponent(titleCo.company)}&contact=${encodeURIComponent(titleCo.contact)}&email=${encodeURIComponent(titleCo.email)}&closing=${encodeURIComponent(titleCo.closing)}`}
+                    <a href={`/api/los/files/${id}/title-order?company=${encodeURIComponent(titleCo.company)}&contact=${encodeURIComponent(titleCo.contact)}&email=${encodeURIComponent(titleCo.email)}&closing=${encodeURIComponent(titleCo.closing)}&lenderLoan=${encodeURIComponent(titleCo.lenderLoan)}&clause=${encodeURIComponent(titleCo.clause)}`}
                       className="text-sm font-semibold bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg flex items-center gap-1.5">📄 Download sheet</a>
                     <button disabled={sendingReq || !titleCo.email.trim()} onClick={async () => {
                       setSendingReq(true); setReqMsg(null);
                       try {
-                        const r = await fetch(`/api/los/files/${id}/title-order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toCompany: titleCo.company, toContact: titleCo.contact, toEmail: titleCo.email, estClosing: titleCo.closing }) });
+                        const r = await fetch(`/api/los/files/${id}/title-order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toCompany: titleCo.company, toContact: titleCo.contact, toEmail: titleCo.email, estClosing: titleCo.closing, lenderLoanNumber: titleCo.lenderLoan, mortgageeClause: titleCo.clause }) });
                         const j = await r.json();
                         setReqMsg(r.ok ? { ok: true, text: `✓ Order-opening sheet emailed to ${titleCo.email} — replies go to ramon@fettifi.com` } : { text: "⚠️ " + (j.error || "Send failed") });
                         if (r.ok) await load();
