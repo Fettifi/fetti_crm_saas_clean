@@ -6,10 +6,10 @@
 // consent + intent + a stamped Certificate of Completion (audit trail).
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 
-export type EsignFieldType = "signature" | "initials" | "date" | "name";
+export type EsignFieldType = "signature" | "initials" | "date" | "name" | "text";
 // Page-relative fractions, top-left origin (matches the pdf.js placement UI).
 // recipientId ties a field to a specific signer.
-export type EsignField = { id?: string; type: EsignFieldType; page: number; xPct: number; yPct: number; wPct: number; hPct: number; recipientId?: string };
+export type EsignField = { id?: string; type: EsignFieldType; page: number; xPct: number; yPct: number; wPct: number; hPct: number; recipientId?: string; value?: string };
 
 export type Recipient = {
   id: string;                 // stable id (also used by fields.recipientId)

@@ -8,16 +8,17 @@
 //    initials / date / name.
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type EsignFieldType = "signature" | "initials" | "date" | "name";
-export type EsignField = { id: string; type: EsignFieldType; page: number; xPct: number; yPct: number; wPct: number; hPct: number; recipientId?: string; mine?: boolean };
+export type EsignFieldType = "signature" | "initials" | "date" | "name" | "text";
+export type EsignField = { id: string; type: EsignFieldType; page: number; xPct: number; yPct: number; wPct: number; hPct: number; recipientId?: string; mine?: boolean; value?: string };
 
 export const FIELD_SIZE: Record<EsignFieldType, { w: number; h: number }> = {
   signature: { w: 0.24, h: 0.06 },
   initials: { w: 0.11, h: 0.05 },
   date: { w: 0.16, h: 0.032 },
   name: { w: 0.24, h: 0.032 },
+  text: { w: 0.3, h: 0.035 },
 };
-const LABEL: Record<EsignFieldType, string> = { signature: "Signature", initials: "Initials", date: "Date", name: "Name" };
+const LABEL: Record<EsignFieldType, string> = { signature: "Signature", initials: "Initials", date: "Date", name: "Name", text: "Text" };
 
 type PageInfo = { num: number; w: number; h: number };
 
@@ -125,6 +126,25 @@ export default function PdfDoc({
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
 
+  // Drag the corner grip to RESIZE a placed field (min sizes keep it usable; the
+  // stored fractions map 1:1 onto the server-side pdf-lib stamp, so what you see
+  // is exactly what prints).
+  function startResize(field: EsignField, e: React.PointerEvent) {
+    if (mode !== "place" || !onChange) return;
+    e.stopPropagation(); e.preventDefault();
+    const overlay = (e.currentTarget as HTMLElement).closest("[data-overlay]") as HTMLElement;
+    const rect = overlay.getBoundingClientRect();
+    const move = (ev: PointerEvent) => {
+      let wPct = (ev.clientX - rect.left) / rect.width - field.xPct;
+      let hPct = (ev.clientY - rect.top) / rect.height - field.yPct;
+      wPct = Math.max(0.04, Math.min(1 - field.xPct, wPct));
+      hPct = Math.max(0.015, Math.min(1 - field.yPct, hPct));
+      onChange(fields.map((x) => x.id === field.id ? { ...x, wPct, hPct } : x));
+    };
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  }
+
   if (err) return <div className="text-sm text-red-500 p-4">⚠️ {err}</div>;
 
   return (
@@ -134,6 +154,7 @@ export default function PdfDoc({
         <div key={p.num} className="relative mx-auto shadow-lg" style={{ width: p.w, height: p.h }}>
           <canvas ref={(el) => { canvasRefs.current[p.num] = el; }} className="block" style={{ width: p.w, height: p.h }} />
           <div
+            data-overlay
             className={`absolute inset-0 ${mode === "place" && tool ? "cursor-crosshair" : ""}`}
             onClick={(e) => placeAt(p.num, e)}
           >
@@ -156,6 +177,10 @@ export default function PdfDoc({
                         <button onClick={(e) => { e.stopPropagation(); onChange(fields.filter((x) => x.id !== f.id)); }}
                           className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 leading-none text-[10px]">×</button>
                       )}
+                      {onChange && (
+                        <span onPointerDown={(e) => startResize(f, e)} title="Drag to resize"
+                          className="absolute -bottom-1.5 -right-1.5 w-3.5 h-3.5 bg-sky-500 border border-white rounded-sm cursor-nwse-resize" />
+                      )}
                     </>
                   ) : notMine ? (
                     <span className="text-[9px]">{recipientLabels?.[f.recipientId || ""] || "Other signer"}</span>
@@ -163,6 +188,14 @@ export default function PdfDoc({
                     signatureImg
                       ? <img src={signatureImg} alt="" className="max-w-full max-h-full object-contain" />
                       : <span className="text-emerald-600 font-semibold">{LABEL[f.type]}</span>
+                  ) : f.type === "text" ? (
+                    onChange ? (
+                      <input value={f.value || ""} placeholder="Type here…"
+                        onChange={(e) => onChange(fields.map((x) => x.id === f.id ? { ...x, value: e.target.value } : x))}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="w-full h-full bg-amber-50/90 border border-amber-400 rounded px-1 text-slate-900 focus:outline-none focus:border-emerald-500"
+                        style={{ fontSize: "clamp(8px,1.4vw,13px)" }} />
+                    ) : <span className="text-slate-900 truncate px-1" style={{ fontSize: "clamp(8px,1.4vw,13px)" }}>{f.value || ""}</span>
                   ) : (
                     <span className="text-slate-900 truncate px-1" style={{ fontSize: "clamp(8px,1.4vw,13px)" }}>
                       {f.type === "date" ? today : (signerName || "Name")}

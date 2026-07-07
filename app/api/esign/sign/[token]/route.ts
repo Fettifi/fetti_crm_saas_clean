@@ -58,6 +58,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     const body = await req.json().catch(() => ({}));
     const consent = body?.consent === true;
     const typedName = String(body?.typedName || recipient.name || "").trim();
+    // Signer-typed text-box values, keyed by field id (only this signer's fields are stamped).
+    const fieldValues: Record<string, string> = (body?.fieldValues && typeof body.fieldValues === "object") ? body.fieldValues : {};
     const sigData = String(body?.signatureDataUrl || "");
     if (!consent) return NextResponse.json({ error: "You must agree to sign electronically." }, { status: 400 });
     if (!/^data:image\/png;base64,/.test(sigData)) return NextResponse.json({ error: "A signature is required." }, { status: 400 });
@@ -82,7 +84,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       const bw = (f.wPct || 0.2) * pw, bh = (f.hPct || 0.04) * ph;
       const x = (f.xPct || 0) * pw;
       const yBottom = ph - (f.yPct || 0) * ph - bh;
-      if (f.type === "signature" || f.type === "initials") {
+      if (f.type === "text") {
+        const v = String(fieldValues?.[String(f.id)] || "").slice(0, 300);
+        if (v) {
+          const size = Math.max(7, Math.min(13, bh * 0.6));
+          pg.drawText(v, { x: x + 2, y: yBottom + (bh - size) / 2, size, font: helv, color: rgb(0.05, 0.05, 0.1), maxWidth: bw - 4, lineHeight: size * 1.15 });
+        }
+      } else if (f.type === "signature" || f.type === "initials") {
         const d = sigImg.scaleToFit(bw, bh);
         pg.drawImage(sigImg, { x: x + (bw - d.width) / 2, y: yBottom + (bh - d.height) / 2, width: d.width, height: d.height });
       } else {

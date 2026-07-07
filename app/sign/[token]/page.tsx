@@ -38,6 +38,7 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
   const [adopted, setAdopted] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [fields, setFields] = useState<(EsignField & { mine?: boolean })[]>([]);
   const [done, setDone] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [declined, setDeclined] = useState(false);
@@ -50,7 +51,7 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
       const r = await fetch(`/api/esign/sign/${token}`);
       if (!r.ok) { setNotFound(true); setLoading(false); return; }
       const j: Meta = await r.json();
-      setMeta(j); setTyped(j.signer_name || ""); setDone(!!j.signed); setCompleted(j.envelopeStatus === "completed"); setDeclined(!!j.declined); setLoading(false);
+      setMeta(j); setFields(j.fields || []); setTyped(j.signer_name || ""); setDone(!!j.signed); setCompleted(j.envelopeStatus === "completed"); setDeclined(!!j.declined); setLoading(false);
     })();
   }, [token]);
 
@@ -83,7 +84,9 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
     if (!consent) { setErr("Please check the consent box."); return; }
     setSubmitting(true);
     try {
-      const r = await fetch(`/api/esign/sign/${token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ signatureDataUrl: adopted, typedName: typed.trim(), consent: true }) });
+      const fieldValues: Record<string, string> = {};
+      for (const f of fields) if (f.type === "text" && f.mine !== false && (f.value || "").trim()) fieldValues[f.id] = String(f.value).trim().slice(0, 300);
+      const r = await fetch(`/api/esign/sign/${token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ signatureDataUrl: adopted, typedName: typed.trim(), consent: true, fieldValues }) });
       const j = await r.json();
       if (r.ok) { setDone(true); setCompleted(!!j.completed); } else setErr(j.error || "Signing failed.");
     } catch { setErr("Connection error."); }
@@ -123,7 +126,7 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
         <a href={`/api/esign/sign/${token}/pdf`} target="_blank" rel="noreferrer" className="text-sm font-semibold text-emerald-700 underline whitespace-nowrap">Open / enlarge as PDF ↗</a>
       </div>
       <div className="mt-2 rounded-xl overflow-hidden bg-slate-200 p-3 max-h-[65vh] overflow-y-auto">
-        <PdfDoc src={`/api/esign/sign/${token}/pdf`} mode="sign" fields={meta.fields || []} signatureImg={adopted} signerName={meta.signer_name} recipientLabels={{}} />
+        <PdfDoc src={`/api/esign/sign/${token}/pdf`} mode="sign" fields={fields} onChange={(f) => setFields(f as any)} signatureImg={adopted} signerName={meta.signer_name} recipientLabels={{}} />
       </div>
       <div className="mt-5 bg-white border border-slate-300 rounded-2xl p-5">
         <div className="flex items-center gap-2 text-sm font-semibold"><PenLine className="w-4 h-4 text-emerald-600" /> Adopt your signature</div>
