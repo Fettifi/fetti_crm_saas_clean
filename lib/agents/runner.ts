@@ -1,7 +1,11 @@
 import { AgentDef } from "@/lib/agents/agents";
 import { BRAND_BRIEF } from "@/lib/brand";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
+// HARD FLOOR (owner rule): borrower-facing copy never runs on a mini/nano model —
+// the mini ignores the capture prompt's banned-phrase + app-link rules ("thanks for
+// reaching out…" regression, verified live 2026-07-07). Env can upgrade, never downgrade.
+const envModel = process.env.OPENAI_MODEL || "";
+const OPENAI_MODEL = envModel && !/mini|nano/i.test(envModel) ? envModel : "gpt-4o";
 
 // Compact a lead record into the fields the agents care about.
 function leadContext(lead: Record<string, any>): string {
