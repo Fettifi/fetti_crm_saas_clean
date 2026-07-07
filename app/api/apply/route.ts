@@ -15,7 +15,7 @@ import { ensureLoanFileForLead, ensureLeadUploadToken } from "@/lib/los";
 import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
-import { renderTouch, renderFirstTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
+import { renderTouch, renderFirstTouch, EMAIL_TOUCHES, prettyPurpose } from "@/lib/notify/emailCopy";
 import { magicApplyLink } from "@/lib/magicLink";
 import { cfg } from "@/lib/settings";
 import { markReplyViolates } from "@/lib/markCompliance";
@@ -414,8 +414,8 @@ export async function POST(req: NextRequest) {
         }
       });
     } else {
-      // A KNOWN lead came back — strong intent. Alert the team so it gets worked
-      // (we intentionally do NOT auto-text again, to avoid duplicate messages).
+      // A KNOWN lead came back — strong signal. Alert the team AND text/email them a
+      // warm check-in (throttled 1/24h — never a duplicate barrage).
       // A different NAME on the same contact details gets flagged as a likely
       // duplicate/junk form fill so Ramon can spot fake leads (and dispute ad charges).
       // THROTTLED to one alert per lead per 24h: webhook redeliveries / double-submits
@@ -425,7 +425,7 @@ export async function POST(req: NextRequest) {
         try {
           const lastAlert = (data?.raw as any)?.returning_alert_at;
           if (lastAlert && Date.now() - new Date(lastAlert).getTime() < 24 * 3600000) {
-            console.log("[/api/apply] returning-lead alert throttled for", data.id, "(last:", lastAlert + ")");
+            console.log("[/api/apply] returning-lead touch throttled for", data.id, "(last:", lastAlert + ")");
             return;
           }
           await notifyNewLead({
@@ -434,7 +434,26 @@ export async function POST(req: NextRequest) {
             source: (row.source as string) + (nameMismatch ? ` ⚠️ SAME phone/email, DIFFERENT name (was "${existingName}") — possible duplicate/fake submission` : ""),
             returning: true, auto_sent: [],
           });
+          // STAY ENGAGED (owner rule 2026-07-07): a returning lead gets a warm, helpful
+          // follow-up — not just an owner alert. Consent-gated SMS + email, throttled to
+          // one per 24h by the same stamp, never for paused/opted-out/fake-name rows.
           const raw2 = data?.raw && typeof data.raw === "object" ? data.raw : {};
+          if (!nameMismatch && !(data as any).nurture_paused) {
+            try {
+              const smsOk = (raw2 as any).sms_consent === true || (raw2 as any).consent?.sms_optin === true;
+              const first = String(full_name || (data as any).full_name || "").trim().split(/\s+/)[0] || "there";
+              const purpose = prettyPurpose(body.loan_purpose || (data as any).loan_purpose);
+              const backLink = magicApplyLink(data);
+              const res = await respondToLead({
+                id: data.id, kind: "returning", name: full_name, email,
+                phone: smsOk ? phone : null, loan_purpose: body.loan_purpose,
+                message: `Hey ${first}, it's Mark at Fetti — saw you stopped by again about the ${purpose}. Anything I can help with? No rush; your saved application is here whenever you want it: ${backLink}`,
+                emailSubject: "saw you came back",
+                emailBody: `Hey ${first} — noticed you stopped by again about the ${purpose}. Happy to answer whatever's on your mind — just reply here.\n\nAnd whenever you're ready, your application is still saved (about 3 minutes to finish, nothing re-types):\n${backLink}\n\n— Mark`,
+              });
+              if (res.sent.length) console.log("[/api/apply] returning-lead touch sent via", res.sent.join("+"), "for", data.id);
+            } catch (e) { console.warn("[/api/apply] returning-lead touch failed:", e); }
+          }
           (raw2 as any).returning_alert_at = new Date().toISOString();
           await supabaseAdmin.from("leads").update({ raw: raw2 }).eq("id", data.id);
         } catch (e) { console.warn("[/api/apply] returning-lead alert failed:", e); }
