@@ -84,21 +84,35 @@ export default function EsignPage() {
     if (!pdf) return;
     setSending(true); setMsg(null);
     try {
+      if (pdf.size > 15 * 1024 * 1024) { setMsg({ text: "That PDF is over 15 MB — compress it (or split it) and try again." }); setSending(false); return; }
       const clean = recipients.filter((r) => r.name.trim());
-      const fd = new FormData();
-      fd.append("pdf", pdf);
-      fd.append("title", title.trim() || pdf.name.replace(/\.pdf$/i, ""));
-      if (fileId.trim()) fd.append("loan_file_id", fileId.trim());
-      fd.append("recipients", JSON.stringify(clean.map((r) => ({ id: r.id, name: r.name.trim(), email: r.email.trim() || null, phone: r.phone.trim() || null, order: r.order }))));
-      fd.append("fields", JSON.stringify(fields));
-      const r = await fetch("/api/esign/requests", { method: "POST", body: fd });
-      const j = await r.json();
-      if (r.ok) {
+
+      // 1) Upload the PDF STRAIGHT to storage (signed URL) — posting it through the
+      //    API died at ~4.5MB (platform body cap) and surfaced as "Connection error".
+      const uRes = await fetch("/api/esign/requests/upload-url", { method: "POST" });
+      const u = await uRes.json().catch(() => null);
+      if (!uRes.ok || !u?.url) { setMsg({ text: (u && u.error) || `Couldn't start the upload (HTTP ${uRes.status}).` }); setSending(false); return; }
+      const put = await fetch(u.url, { method: "PUT", headers: { "Content-Type": "application/pdf" }, body: pdf });
+      if (!put.ok) { setMsg({ text: `The PDF upload failed (HTTP ${put.status}) — check your connection and try again.` }); setSending(false); return; }
+
+      // 2) Create the envelope from metadata only (tiny request — no size cliff).
+      const r = await fetch("/api/esign/requests", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_path: u.path, pdf_name: pdf.name,
+          title: title.trim() || pdf.name.replace(/\.pdf$/i, ""),
+          loan_file_id: fileId.trim() || undefined,
+          recipients: clean.map((rc) => ({ id: rc.id, name: rc.name.trim(), email: rc.email.trim() || null, phone: rc.phone.trim() || null, order: rc.order })),
+          fields,
+        }),
+      });
+      const j = await r.json().catch(() => null);
+      if (r.ok && j) {
         setMsg({ ok: true, text: j.message || "Sent." });
         setPdf(null); setPdfData(null); setFields([]); setTitle(""); setRecipients([{ id: "r1", name: "", email: "", phone: "", order: 1 }]); setActiveRid("r1"); setConfirming(false);
         await load();
-      } else setMsg({ text: j.error || "Failed." });
-    } catch { setMsg({ text: "Connection error." }); }
+      } else setMsg({ text: (j && j.error) || `Send failed (HTTP ${r.status}). If this keeps happening, log out and back in.` });
+    } catch { setMsg({ text: "Network error — check your connection and try again." }); }
     setSending(false);
   }
 

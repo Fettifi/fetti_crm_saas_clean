@@ -30,22 +30,46 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const form = await req.formData().catch(() => null);
-    const pdf = form?.get("pdf") as File | null;
-    if (!pdf || typeof pdf === "string") return NextResponse.json({ error: "Attach a PDF as field 'pdf'." }, { status: 400 });
-    if (pdf.size > MAX_BYTES) return NextResponse.json({ error: "PDF too large (max 15 MB)." }, { status: 413 });
-    const head = new Uint8Array(await pdf.slice(0, 5).arrayBuffer());
-    if (String.fromCharCode(...head).indexOf("%PDF") !== 0) return NextResponse.json({ error: "That file isn't a PDF." }, { status: 422 });
+    // TWO intake modes:
+    //  A) JSON { source_path } — the PDF was already PUT straight to storage via
+    //     /api/esign/requests/upload-url. Vercel rejects request bodies over ~4.5MB
+    //     BEFORE this function runs, so inlining a normal scanned PDF died with a raw
+    //     platform error ("Connection error." in the UI). Direct-to-storage has no cap.
+    //  B) legacy multipart with the PDF inline (small files / API callers).
+    const ctype = req.headers.get("content-type") || "";
+    const jsonBody: any = ctype.includes("application/json") ? await req.json().catch(() => null) : null;
+    const form = jsonBody ? null : await req.formData().catch(() => null);
 
-    const title = String(form?.get("title") || pdf.name || "Document for signature").slice(0, 160);
-    const loan_file_id = (String(form?.get("loan_file_id") || "").trim() || null);
+    let buf: Buffer;
+    let uploadedPath: string | null = null;
+    let pdfName = "document.pdf";
+    if (jsonBody?.source_path) {
+      const sp = String(jsonBody.source_path);
+      if (!/^esign\/uploads\/[A-Za-z0-9_-]+\.pdf$/.test(sp)) return NextResponse.json({ error: "Bad upload path." }, { status: 400 });
+      const { data: blob, error: dlErr } = await supabaseAdmin.storage.from(ESIGN_BUCKET).download(sp);
+      if (dlErr || !blob) return NextResponse.json({ error: "Uploaded PDF not found — please try again." }, { status: 404 });
+      buf = Buffer.from(await blob.arrayBuffer());
+      uploadedPath = sp;
+      pdfName = String(jsonBody.pdf_name || pdfName);
+    } else {
+      const pdf = form?.get("pdf") as File | null;
+      if (!pdf || typeof pdf === "string") return NextResponse.json({ error: "Attach a PDF as field 'pdf'." }, { status: 400 });
+      buf = Buffer.from(await pdf.arrayBuffer());
+      pdfName = pdf.name || pdfName;
+    }
+    if (buf.length > MAX_BYTES) return NextResponse.json({ error: "PDF too large (max 15 MB)." }, { status: 413 });
+    if (buf.subarray(0, 5).toString("latin1").indexOf("%PDF") !== 0) return NextResponse.json({ error: "That file isn't a PDF." }, { status: 422 });
+
+    const gv = (k: string) => (jsonBody ? jsonBody[k] : form?.get(k));
+    const title = String(gv("title") || pdfName || "Document for signature").slice(0, 160);
+    const loan_file_id = (String(gv("loan_file_id") || "").trim() || null);
 
     // Recipients (multi-signer with order) — or one from the legacy fields.
     let raw: any[] = [];
-    try { const r = JSON.parse(String(form?.get("recipients") || "[]")); if (Array.isArray(r)) raw = r; } catch { /* */ }
+    try { const rv = gv("recipients"); const r = typeof rv === "object" && rv ? rv : JSON.parse(String(rv || "[]")); if (Array.isArray(r)) raw = r; } catch { /* */ }
     if (!raw.length) {
-      const n = String(form?.get("signer_name") || "").trim();
-      if (n) raw = [{ id: "r1", name: n, email: String(form?.get("signer_email") || "").trim() || null, phone: String(form?.get("signer_phone") || "").trim() || null, order: 1 }];
+      const n = String(gv("signer_name") || "").trim();
+      if (n) raw = [{ id: "r1", name: n, email: String(gv("signer_email") || "").trim() || null, phone: String(gv("signer_phone") || "").trim() || null, order: 1 }];
     }
     raw = raw.filter((r) => r && String(r.name || "").trim());
     if (!raw.length) return NextResponse.json({ error: "Add at least one signer (name + email or phone)." }, { status: 400 });
@@ -58,9 +82,14 @@ export async function POST(req: NextRequest) {
 
     const envToken = newToken();
     const source_path = `esign/${envToken}/source.pdf`;
-    const buf = Buffer.from(await pdf.arrayBuffer());
-    const { error: upErr } = await supabaseAdmin.storage.from(ESIGN_BUCKET).upload(source_path, buf, { contentType: "application/pdf", upsert: false });
-    if (upErr) throw new Error("Upload failed: " + upErr.message);
+    if (uploadedPath) {
+      // Already in the bucket — move it into the envelope's canonical location.
+      const { error: mvErr } = await supabaseAdmin.storage.from(ESIGN_BUCKET).move(uploadedPath, source_path);
+      if (mvErr) throw new Error("Upload move failed: " + mvErr.message);
+    } else {
+      const { error: upErr } = await supabaseAdmin.storage.from(ESIGN_BUCKET).upload(source_path, buf, { contentType: "application/pdf", upsert: false });
+      if (upErr) throw new Error("Upload failed: " + upErr.message);
+    }
 
     let lead_id: string | null = null;
     if (loan_file_id) {
@@ -81,7 +110,7 @@ export async function POST(req: NextRequest) {
       .sort((a, b) => a.order - b.order);
 
     let fields: EsignField[] = [];
-    try { const f = JSON.parse(String(form?.get("fields") || "[]")); if (Array.isArray(f)) fields = f; } catch { /* */ }
+    try { const fv = gv("fields"); const f = typeof fv === "object" && fv ? fv : JSON.parse(String(fv || "[]")); if (Array.isArray(f)) fields = f; } catch { /* */ }
     // default field if none placed → assign to first recipient
     if (!fields.length) fields = [
       { type: "signature", page: 1, xPct: 0.58, yPct: 0.85, wPct: 0.24, hPct: 0.06, recipientId: recipients[0].id },
