@@ -19,8 +19,25 @@ function tokenOk(provided: string, expected: string): boolean {
 async function alertTeam(summary: string) {
   const hook = process.env.LEAD_NOTIFY_WEBHOOK;
   if (hook) { try { await fetch(hook, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: `📞 New phone message (Penny, live)\n${summary}`, text: `📞 New phone message\n${summary}` }) }); } catch { /* */ } }
+  // EMAIL — and LOG failures loudly: this leg failed silently once ("not receiving
+  // Penny's emails anymore") and the catch ate the evidence.
   const key = process.env.RESEND_API_KEY, to = process.env.LEAD_NOTIFY_EMAIL_TO, from = process.env.LEAD_NOTIFY_EMAIL_FROM;
-  if (key && to && from) { try { await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ from, to: to.split(",").map((s) => s.trim()), subject: "📞 New phone message — Fetti", html: `<pre style="font:14px ui-monospace,monospace">${summary.replace(/</g, "&lt;")}</pre>` }) }); } catch { /* */ } }
+  if (key && to && from) {
+    try {
+      const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ from, to: to.split(",").map((s) => s.trim()), subject: "📞 New phone message — Fetti", html: `<pre style="font:14px ui-monospace,monospace">${summary.replace(/</g, "&lt;")}</pre>` }) });
+      if (!r.ok) console.error("[voice/ingest] alert email REJECTED:", r.status, (await r.text()).slice(0, 300));
+    } catch (e: any) { console.error("[voice/ingest] alert email failed:", e?.message); }
+  } else console.error("[voice/ingest] alert email SKIPPED — missing", { key: !!key, to: !!to, from: !!from });
+  // SMS — the reliable channel (lead alerts already reach the owner's cell this way).
+  // A phone message is time-sensitive; never depend on email alone.
+  const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN, smsFrom = process.env.TWILIO_FROM, smsTo = process.env.LEAD_NOTIFY_SMS_TO;
+  if (sid && tok && smsFrom && smsTo) {
+    try {
+      const body = new URLSearchParams({ To: smsTo, From: smsFrom, Body: `📞 New phone message\n${summary}`.slice(0, 1500) });
+      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() });
+      if (!r.ok) console.error("[voice/ingest] alert SMS rejected:", r.status);
+    } catch (e: any) { console.error("[voice/ingest] alert SMS failed:", e?.message); }
+  }
 }
 
 export async function POST(req: NextRequest) {
