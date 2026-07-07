@@ -62,6 +62,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [docFilter, setDocFilter] = useState<string>("all"); // doc list filter: "all" or a borrower name
   const [other, setOther] = useState({ name: "", email: "", phone: "" });
   const [reqNote, setReqNote] = useState("");
+  const sendDocRef = useRef<HTMLInputElement>(null);
   const [sendingReq, setSendingReq] = useState(false);
   const [reqMsg, setReqMsg] = useState<{ ok?: boolean; text: string } | null>(null);
   const [mismo, setMismo] = useState<{ completeness: { missing: string[]; present: string[]; pct: number }; metrics: any; urla: any } | null>(null);
@@ -473,6 +474,34 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                 {reqMsg && <span className={`text-xs ${reqMsg.ok ? "text-emerald-400" : "text-amber-300"}`}>{reqMsg.text}</span>}
               </div>
               <p className="text-[11px] text-slate-600 mt-1">Always sends this file&apos;s secure link (<span className="font-mono">/file/{file.share_token.slice(0, 6)}…</span>) so every upload lands in this file.</p>
+
+              {/* Send a blank form/template for the borrower to COMPLETE (e.g. Excel PFS). */}
+              <div className="mt-3 pt-3 border-t border-slate-800">
+                <div className="text-xs uppercase tracking-wide text-slate-500 mb-1.5">Send a form to complete</div>
+                <p className="text-[11px] text-slate-500 mb-2">Attach a blank document (Excel, PDF, Word…) — it&apos;s emailed to the recipient above with instructions, and &quot;Completed: …&quot; is tracked on the checklist until they return it through their link.</p>
+                <input ref={sendDocRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0]; if (!f) return;
+                    e.target.value = "";
+                    const c = recipientContact();
+                    if (!c.to_email) { setReqMsg({ text: "No email on file for this recipient — add it on the 1003, or use “Someone else”." }); return; }
+                    setSendingReq(true); setReqMsg(null);
+                    try {
+                      const fd = new FormData();
+                      fd.append("file", f); fd.append("to_email", c.to_email); fd.append("to_name", c.to_name || "");
+                      if (reqNote.trim()) fd.append("note", reqNote.trim());
+                      const r = await fetch(`/api/los/files/${id}/send-doc`, { method: "POST", body: fd });
+                      const j = await r.json();
+                      if (r.ok) { setReqMsg({ ok: true, text: `✓ "${f.name}" emailed to ${c.to_email} — tracking "${j.doc}" on the checklist` }); setReqNote(""); await load(); }
+                      else setReqMsg({ text: "⚠️ " + (j.error || "Send failed") });
+                    } catch { setReqMsg({ text: "⚠️ Connection error" }); }
+                    setSendingReq(false);
+                  }} />
+                <button onClick={() => sendDocRef.current?.click()} disabled={sendingReq}
+                  className="text-sm font-semibold bg-violet-600 hover:bg-violet-500 disabled:opacity-50 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                  {sendingReq ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>📎</span>} Attach &amp; email a form to complete
+                </button>
+              </div>
             </div>
           </div>
 
