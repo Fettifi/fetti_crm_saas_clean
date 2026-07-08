@@ -328,7 +328,7 @@ export async function importHistoricalLeads(): Promise<any> {
     return {
       full_name: getExact("full_name", "name") || [first, last].filter(Boolean).join(" ") || null,
       email: (get("email") || null) as string | null,
-      phone: digits.length >= 7 ? digits : null,
+      phone: digits.length >= 7 ? (canonicalPhone(digits) || digits) : null,
       state: get("state") || null,
       loan_purpose: get("loan_purpose", "purpose", "loan_type", "what_type") || null,
       // Scoring inputs (were dropped before, so every historical lead scored 0/Tier 3).
@@ -451,6 +451,18 @@ export async function importHistoricalLeads(): Promise<any> {
           }
 
           const { data: ins, error } = await supabaseAdmin.from("leads").insert([row]).select("id").single();
+          // RACE GUARD: the realtime webhook can process the same leadgen event in the
+          // same second (Dawn Marie dup, 2026-07-06). Keep the OLDEST row; neutralize ours.
+          if (!error && ins) {
+            try {
+              const { data: dupes } = await supabaseAdmin.from("leads").select("id, created_at")
+                .filter("raw->meta->>leadgen_id", "eq", lgid).order("created_at", { ascending: true }).limit(2);
+              if ((dupes || []).length > 1 && (dupes as any)[0].id !== (ins as any).id) {
+                await supabaseAdmin.from("leads").update({ nurture_paused: true, stage: "Dead", raw: { ...row.raw, duplicate_of: (dupes as any)[0].id, duplicate_key: "leadgen-race" } }).eq("id", (ins as any).id);
+                seen.add(lgid); skipped++; pr.skipped++; continue;
+              }
+            } catch { /* best-effort */ }
+          }
           if (error) { skipped++; pr.skipped++; } else {
             seen.add(lgid); imported++; pr.imported++;
             // Alert immediately — a lead the webhook missed still gets worked fast.
