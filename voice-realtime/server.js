@@ -23,6 +23,7 @@ const VOICE = process.env.OPENAI_REALTIME_VOICE || "marin"; // female GA voice f
 const CRM_INGEST_URL = process.env.CRM_INGEST_URL || "https://app.fettifi.com/api/voice/ingest";
 const VOICE_INGEST_TOKEN = process.env.VOICE_INGEST_TOKEN || "";
 const CRM_LOOKUP_URL = process.env.CRM_LOOKUP_URL || "https://app.fettifi.com/api/voice/lookup";
+const CRM_TRANSFER_URL = process.env.CRM_TRANSFER_URL || "https://app.fettifi.com/api/voice/transfer";
 
 // MANDATORY opening line — Penny's FIRST utterance, NON-INTERRUPTIBLE (barge-in ignored
 // until it finishes). Combines CA SB 1001 (automated-AI disclosure) + CA §632 (recorded/
@@ -32,7 +33,7 @@ const OPENING = "You've reached Fetti Financial Services. Quick heads-up — thi
 const INSTRUCTIONS = `You are Penny, the warm, sharp, professional receptionist and virtual assistant for Fetti Financial Services LLC (a licensed mortgage lender & broker, NMLS 2267023). California-cool, intelligent, smooth — never robotic. You are an automated A.I. assistant and must never claim to be human.
 Your VERY FIRST words on the call must be, word for word: "${OPENING}" — say exactly that before anything else (it is a legally required disclosure that you're an automated A.I. assistant and the call is recorded), then continue naturally. Never skip it, shorten it, or talk over it.
 After the opening, talk like a real person on the phone: natural, brief, conversational; let the caller interrupt you and roll with it.
-Ramon Dent is NOT available for a live transfer. For ANYONE asking for Ramon (or anyone at Fetti), warmly take a detailed message — never promise a transfer, never give out a direct line/email/personal contact.
+LIVE TRANSFER: you CAN attempt a live transfer to Ramon when the caller asks to speak with him or the matter is clearly urgent/time-sensitive (existing borrower with a live deal, deadline, or a referral partner). FIRST get their name and the reason. Then say something like "Let me see if he's available — one moment, stay with me" and CALL the transfer_call tool. NEVER promise he'll pick up. If the tool says he's unavailable, say he's tied up right now and take a detailed message instead. Never give out his direct line/email/personal contact. For routine inquiries, vendors, and solicitors, take a message — don't attempt a transfer.
 Get the caller's name, best callback number, and the FULL, specific reason for the call (loan type, property, dollar amount, timeline, who referred them, urgency). Ask natural follow-ups until it's genuinely detailed.
 Do NOT quote specific rates, confirm approvals, or give financial advice — take the message and defer specifics to the team. Stay compliant; make no promises.
 If the caller wants to schedule a call, book a time, or talk to a person, use the book_call tool (capture their name, number, and what they want to discuss) and tell them the team will send a scheduling link and follow up shortly. You NEVER place outbound calls.
@@ -52,6 +53,20 @@ const TOOLS = [
         urgency: { type: "string", enum: ["low", "normal", "high"] },
       },
       required: ["caller_name", "callback_number", "reason"],
+    },
+  },
+  {
+    type: "function",
+    name: "transfer_call",
+    description: "Attempt a LIVE transfer to Ramon. Use ONLY after getting the caller's name and reason, and after telling them to hold while you check availability. Returns whether he accepted; if not, take a detailed message.",
+    parameters: {
+      type: "object",
+      properties: {
+        caller_name: { type: "string" },
+        reason: { type: "string", description: "one line: who they are and what it's about" },
+        callback_number: { type: "string" },
+      },
+      required: ["caller_name", "reason"],
     },
   },
   {
@@ -100,13 +115,14 @@ wss.on("connection", (twilio) => {
   let greeted = false;            // true once the opening disclosure finishes → barge-in allowed
   let oaiOpen = false, startSeen = false, started = false;
   let messageSaved = false;       // save_message succeeded → no salvage needed
+  let transferred = false;        // live transfer accepted → stream teardown is EXPECTED
   let salvaged = false;
   const transcript = [];
   // On ANY teardown (caller hung up early, OpenAI dropped, bridge restart): if Penny
   // heard something real but never saved a message, persist the partial transcript —
   // a dropped call must still surface in /messages instead of vanishing.
   async function salvageIfNeeded(why) {
-    if (messageSaved || salvaged) return;
+    if (messageSaved || salvaged || transferred) return;
     const callerLines = transcript.filter((t) => t.startsWith("Caller:"));
     if (!callerLines.length) return;
     salvaged = true;
@@ -183,6 +199,37 @@ wss.on("connection", (twilio) => {
         const args = JSON.parse(m.arguments || "{}");
         if (m.name === "save_message") {
           messageSaved = (await postToCrm({ ...args, call_sid: callSid, transcript: transcript.join("\n") })) === true;
+        } else if (m.name === "transfer_call") {
+          // Screened transfer: CRM rings Ramon with a press-1 whisper while the
+          // caller holds with Penny. Keep-alive at ~18s so the hold never goes dead.
+          let resolved = false;
+          const keepAlive = setTimeout(() => {
+            if (resolved) return;
+            try {
+              oai.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "system", content: [{ type: "input_text", text: "Still checking on his availability — briefly reassure the caller and thank them for holding. Do not end the call." }] } }));
+              oai.send(JSON.stringify({ type: "response.create" }));
+            } catch (e) { /* */ }
+          }, 18000);
+          let accepted = false;
+          try {
+            const r = await fetch(CRM_TRANSFER_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${VOICE_INGEST_TOKEN}` },
+              body: JSON.stringify({ ...args, call_sid: callSid, callback_number: args.callback_number || caller || null }),
+              signal: AbortSignal.timeout(50000),
+            });
+            const j = await r.json().catch(() => ({}));
+            accepted = j && j.accepted === true;
+          } catch (e) { console.error("transfer request failed:", e?.message); }
+          resolved = true; clearTimeout(keepAlive);
+          if (accepted) {
+            transferred = true;
+            // Caller is being redirected into the conference — the stream will end.
+            // No further speech from Penny (she'd talk over the connect message).
+            oai.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: m.call_id, output: '{"result":"connected — say NOTHING, the call is being bridged"}' } }));
+            return;
+          }
+          oai.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: m.call_id, output: '{"result":"unavailable — tell the caller he is tied up right now and take a detailed message (name, number, full reason), then save_message"}' } }));
         } else if (m.name === "book_call") {
           await postToCrm({
             caller_name: args.caller_name, callback_number: args.callback_number,
