@@ -130,8 +130,13 @@ wss.on("connection", (twilio) => {
     salvaged = true;
     try {
       await postToCrm({
-        caller_name: null, callback_number: caller || null,
-        reason: `⚠️ CALL ENDED EARLY (${why}) — partial transcript below; call back`, urgency: "high",
+        caller_name: obFirst || null, callback_number: caller || null,
+        // An OUTBOUND call ending without a saved outcome is normal wrap-up, not an
+        // emergency — label it as a summary instead of a callback alarm.
+        reason: obMode
+          ? `📞 Outbound ${obMode} call ended — transcript below`
+          : `⚠️ CALL ENDED EARLY (${why}) — partial transcript below; call back`,
+        urgency: obMode ? "normal" : "high",
         call_sid: callSid, transcript: transcript.join("\n"),
       });
     } catch { /* postToCrm already retries + logs */ }
