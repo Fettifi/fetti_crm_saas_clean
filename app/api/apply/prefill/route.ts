@@ -4,7 +4,7 @@
 // signed token is the auth, the same trust model as /file/<share_token> and the
 // unsubscribe link. Returns ONLY what the contact step needs — never notes, SSN,
 // financials, or scores.
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { appLinkToken, goalFor } from "@/lib/magicLink";
 import { autoPromoteIfQuarantined } from "@/lib/leadShield";
@@ -29,7 +29,9 @@ export async function GET(req: NextRequest) {
   }
   // Opening one's own magic link runs JS the email-scanner prefetchers don't —
   // real-human evidence. A quarantined lead is released by it (no-op otherwise).
-  autoPromoteIfQuarantined(lead, "link_click").catch(() => {});
+  // after(): the promote (which may replay the full pipeline) must survive past
+  // this response — a bare floating promise gets frozen with the lambda.
+  after(async () => { try { await autoPromoteIfQuarantined(lead, "link_click"); } catch { /* */ } });
   const { data: l } = await supabaseAdmin
     .from("leads")
     .select("id, full_name, first_name, email, phone, state, loan_purpose, stage")

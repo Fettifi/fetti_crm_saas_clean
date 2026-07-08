@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { surfaceGate } from "@/lib/leadShield";
+import { claudeChat } from "@/lib/aiFallback";
 import { MARK_PERSONA, MARK_CONVERSATION } from "@/lib/markPersona";
 import { markReplyViolates, markSafeDeferral } from "@/lib/markCompliance";
 import { cfg } from "@/lib/settings";
@@ -165,7 +166,21 @@ export async function POST(req: NextRequest) {
     if (markReplyViolates(reply)) reply = markSafeDeferral({ applyUrl: `${APP_URL}/apply`, calendlyUrl });
     return NextResponse.json({ reply, captured });
   } catch (e: any) {
-    console.error("[mark] chat error:", e?.message);
+    console.error("[mark] chat error:", e?.message, "— trying Claude fallback");
+    // FALLBACK (2026-07-08 quota incident): keep the conversation alive on Claude.
+    // No function-calling in fallback — Mark converses and hands off to the wizard;
+    // the deterministic compliance net still guards the reply.
+    try {
+      const fb = await claudeChat({
+        system: sysContent + "\n\n(NOTE: the start_application function is unavailable right now — when they're ready to move forward, warmly direct them to tap “Start my application” or go to " + APP_URL + "/apply.)",
+        messages: history.map((m: any) => ({ role: m.role, content: m.content })),
+        maxTokens: 450, temperature: 0.6,
+      });
+      if (fb) {
+        const reply = markReplyViolates(fb) ? markSafeDeferral({ applyUrl: `${APP_URL}/apply`, calendlyUrl }) : fb;
+        return NextResponse.json({ reply, captured: false });
+      }
+    } catch { /* fall through to the canned line */ }
     return NextResponse.json({ reply: "I hit a snag on my end — but I don't want to lose you. Tap “Start my application” and a Fetti specialist will pick it right up." }, { status: 200 });
   }
 }

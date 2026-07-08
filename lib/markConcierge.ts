@@ -5,6 +5,7 @@
 // rules as the website chat (/api/mark), tuned for SMS. Best-effort: never throws,
 // returns ok:false (caller falls back to a human task) if anything goes wrong.
 import { MARK_PERSONA, MARK_CONVERSATION } from "@/lib/markPersona";
+import { claudeChat } from "@/lib/aiFallback";
 
 const MODEL = process.env.OPENAI_CHAT_MODEL || process.env.OPENAI_MODEL || "gpt-4o";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
@@ -153,11 +154,18 @@ export async function markConciergeReply(opts: {
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model: MODEL, temperature: 0.6, max_tokens: 320, messages }),
       signal: AbortSignal.timeout(12000),
-    });
-    const j = await res.json();
-    if (!res.ok) return { ok: false, detail: j?.error?.message || `OpenAI ${res.status}` };
-    let reply = String(j.choices?.[0]?.message?.content || "").trim();
-    if (!reply) return { ok: false, detail: "empty reply" };
+    }).catch(() => null);
+    const j = res ? await res.json().catch(() => null) : null;
+    let reply = res?.ok ? String(j?.choices?.[0]?.message?.content || "").trim() : "";
+    if (!reply) {
+      // FALLBACK (2026-07-08 quota incident): a lead texting in must ALWAYS get a
+      // real answer — Claude Opus takes over when OpenAI is down/out of credit.
+      // The deterministic compliance gate below applies to BOTH providers' output.
+      const sys = messages.find((m: any) => m.role === "system")?.content || "";
+      const rest = messages.filter((m: any) => m.role !== "system").map((m: any) => ({ role: m.role as "user" | "assistant", content: String(m.content) }));
+      reply = (await claudeChat({ system: String(sys), messages: rest, maxTokens: 320, temperature: 0.6 })) || "";
+      if (!reply) return { ok: false, detail: j?.error?.message || "all AI providers failed" };
+    }
     // Deterministic compliance gate (never trust a temp>0 model with rate/approval/
     // licensing rules): swap in a safe deferral if needed + force first-reply disclosure.
     const gate = complianceGate(reply, { firstAiReply: !!opts.firstAiReply, state: opts.lead?.state, fileLink: opts.fileLink, appLink: opts.appLink, calendlyUrl: opts.calendlyUrl });
