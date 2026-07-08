@@ -9,6 +9,7 @@ import { logActivity } from "@/lib/activity";
 // verify the signature; otherwise we accept and log (set the key to harden).
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 function verify(sigHeader: string | null, raw: string, key: string): boolean {
   if (!sigHeader) return false;

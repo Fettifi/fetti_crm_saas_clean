@@ -12,6 +12,8 @@ import { phoneMatchForms } from "@/lib/phone";
 import { magicApplyLink } from "@/lib/magicLink";
 
 export const dynamic = "force-dynamic";
+// inbound-reply auto-promote may replay the full pipeline (after Twilio ACK)
+export const maxDuration = 120;
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 

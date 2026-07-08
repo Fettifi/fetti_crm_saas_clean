@@ -12,6 +12,8 @@ import { rateLimit, clientIp } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// promote replays the full agent pipeline synchronously — needs headroom
+export const maxDuration = 120;
 
 const esc = (v: string) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 

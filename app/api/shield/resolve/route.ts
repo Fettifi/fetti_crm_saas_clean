@@ -6,6 +6,7 @@ import { promoteQuarantined, dismissQuarantined } from "@/lib/leadShield";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({} as any));

@@ -12,6 +12,8 @@ import { rateLimit, clientIp } from "@/lib/rateLimit";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
+// after(): the link-click auto-promote may replay the full pipeline
+export const maxDuration = 120;
 
 // Constant-time token compare — a timing oracle must not help brute-forcing.
 function tokenMatches(a: string, b: string): boolean {
