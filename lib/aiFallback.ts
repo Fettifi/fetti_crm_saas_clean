@@ -47,10 +47,10 @@ async function claudeOnly(opts: ChatOpts): Promise<string | null> {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+      // NB: no `temperature` — deprecated on claude-opus-4-8, the API 400s on it.
       body: JSON.stringify({
         model: CLAUDE_MODEL,
         max_tokens: opts.maxTokens ?? 900,
-        temperature: opts.temperature ?? 0.6,
         system,
         messages: opts.messages.length ? opts.messages : [{ role: "user", content: "(begin)" }],
       }),
