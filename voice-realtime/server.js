@@ -230,6 +230,10 @@ wss.on("connection", (twilio) => {
             return;
           }
           oai.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: m.call_id, output: '{"result":"unavailable — tell the caller he is tied up right now and take a detailed message (name, number, full reason), then save_message"}' } }));
+          oai.send(JSON.stringify({ type: "response.create" }));
+          return; // CRITICAL: never fall through to the shared {"ok":true} output below —
+                  // a duplicate SUCCESS result for the same call_id made Penny announce
+                  // a transfer that had just been DECLINED (live-test bug 2026-07-08).
         } else if (m.name === "book_call") {
           await postToCrm({
             caller_name: args.caller_name, callback_number: args.callback_number,
