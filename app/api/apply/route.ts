@@ -8,21 +8,17 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
 import { encryptField } from "@/lib/crypto";
 import { respondToLead } from "@/lib/notify/leadResponder";
-import { getAgent } from "@/lib/agents/agents";
-import { runAgent } from "@/lib/agents/runner";
 import { logActivity } from "@/lib/activity";
 import { ensureLoanFileForLead, ensureLeadUploadToken } from "@/lib/los";
-import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
-import { renderTouch, renderFirstTouch, EMAIL_TOUCHES, prettyPurpose } from "@/lib/notify/emailCopy";
+import { prettyPurpose } from "@/lib/notify/emailCopy";
 import { magicApplyLink } from "@/lib/magicLink";
 import { cfg } from "@/lib/settings";
-import { markReplyViolates } from "@/lib/markCompliance";
-import { sendMetaLeadEvent } from "@/lib/metaCapi";
 import { advanceLeadStage } from "@/lib/leadStage";
 import { scoreLead } from "@/lib/leadScore";
-import { applyQualification } from "@/lib/qualify";
+import { assessLead, applyShieldToRow, promoteQuarantined, sendVerificationEmail, notifyQuarantine, type ShieldChannel } from "@/lib/leadShield";
+import { runNewLeadPipeline } from "@/lib/leadPipeline";
 
 export const dynamic = "force-dynamic";
 // The full 5-agent pipeline runs post-response via after(); give the function
@@ -76,10 +72,10 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as Body;
 
     // Anti-spam honeypot: real users never see/fill this hidden field. Bots do.
-    // Return a fake success so bots don't learn they were blocked.
-    if (body.hp && String(body.hp).trim()) {
-      return NextResponse.json({ success: true, lead_id: null }, { status: 200 });
-    }
+    // The row is still created — hard-quarantined by the shield below (evidence
+    // trail, reversible) — and the response stays a fake success so bots learn
+    // nothing. `tracking:false` keeps the client pixel from firing a Lead event.
+    const honeypotFilled = !!(body.hp && String(body.hp).trim());
 
     // Normalize + validate contact info. Phone is CANONICALIZED (bare 10 digits, no
     // leading country code) — mixed "1XXXXXXXXXX"/"XXXXXXXXXX" storage across ingest
@@ -97,6 +93,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Please provide a valid email address." }, { status: 400 });
     }
 
+    // Privacy signal captured at intake and PERSISTED — a deferred (quarantine →
+    // promote) Meta CAPI send must honor the GPC/consent choice from the original
+    // visit, which is unavailable at promote time.
+    const trackingOptedOut = req.headers.get("sec-gpc") === "1" || req.cookies.get("fetti_consent")?.value === "essential";
+
     const full_name =
       body.full_name ||
       [body.first_name, body.last_name].filter(Boolean).join(" ") ||
@@ -112,6 +113,7 @@ export async function POST(req: NextRequest) {
     // it for the LO. Strip formatting so it stores as 9 digits, encrypted.
     const rawBody: Record<string, unknown> = { ...(body as Record<string, unknown>) };
     if (rawBody.ssn) rawBody.ssn = encryptField(String(rawBody.ssn).replace(/[^0-9]/g, "")) ?? null;
+    if (trackingOptedOut) rawBody.tracking_opt_out = true;
 
     const row: Record<string, unknown> = {
       full_name,
@@ -151,24 +153,63 @@ export async function POST(req: NextRequest) {
     let existingRaw: Record<string, unknown> | null = null;
     let existingName: string | null = null;
     let existingScore: number | null = null;
+    let existingStage: string | null = null;
     if (orParts.length) {
       const { data: matches } = await supabaseAdmin
         .from("leads").select("id, raw, full_name, stage, score")
         .or(orParts.join(",")).order("created_at", { ascending: false }).limit(5);
       // Prefer a LIVE row; a returning borrower must never merge into a Dead/junk row.
       const existing = (matches || []).find((m: any) => !/dead|lost/i.test(m.stage || "")) || (matches || [])[0];
-      if (existing) { existingId = existing.id as string; existingRaw = (existing as any).raw ?? null; existingName = (existing as any).full_name ?? null; existingScore = (existing as any).score ?? null; }
+      if (existing) { existingId = existing.id as string; existingRaw = (existing as any).raw ?? null; existingName = (existing as any).full_name ?? null; existingScore = (existing as any).score ?? null; existingStage = (existing as any).stage ?? null; }
     }
     // Same contact details under a DIFFERENT name (e.g. "Karamel Midy" then "Marie Midy",
     // one minute apart) is the signature of junk/fraud form fills — surface it on the alert.
     const nameMismatch = !!(existingId && full_name && existingName &&
       full_name.trim().toLowerCase() !== existingName.trim().toLowerCase());
 
+    // ---- LEAD SHIELD: bot/fake/junk assessment (fail-open, quarantine-not-drop) ----
+    const srcLow = String(row.source || "").toLowerCase();
+    const channel: ShieldChannel =
+      /facebook|instagram|meta_lead_ad/.test(srcLow) ? "meta"
+      : srcLow === "mark-chat" ? "mark"
+      : /^paid_lp_/.test(srcLow) ? "lp"
+      : /quote/.test(srcLow) ? "quote"
+      : (body as any).fst || /website_apply|referral|wizard|^paid_/.test(srcLow) ? "wizard"
+      : "api";
+    let shield = null as Awaited<ReturnType<typeof assessLead>> | null;
+    try {
+      shield = await assessLead({
+        body: body as Record<string, any>, channel,
+        ip: internal ? null : clientIp(req),
+        uaPresent: !!req.headers.get("user-agent"),
+        honeypotFilled, internal,
+        transcriptText: (body as any).mark_transcript ? String((body as any).mark_transcript) : undefined,
+        existing: existingId ? { id: existingId, full_name: existingName, raw: existingRaw } : null,
+        nameMismatch,
+        smsConsent: (body as any).sms_consent === true,
+      });
+    } catch (e) { console.warn("[/api/apply] shield failed open:", e); }
+    const hardEvidence = (shield?.signals || []).some((x) => x.ev === "hard");
+    // MERGE-PATH DOWNGRADE: a resubmission onto an EXISTING lead can only be
+    // quarantined on HARD evidence (honeypot / 3+ names / surge). A merely-gray
+    // score must not suppress a real borrower's app_completed processing or
+    // returning touch — it downgrades to recorded evidence + normal flow.
+    const quarantined = shield?.verdict === "quarantine" && (!existingId || hardEvidence);
+    if (quarantined) {
+      applyShieldToRow(row, shield!, { channel, ip: internal ? null : clientIp(req), preStage: existingStage });
+    } else if (shield && shield.band !== "clean") {
+      // watch band / shadow would-quarantine / merge downgrade: evidence only.
+      applyShieldToRow(row, { ...shield, verdict: "pass" }, { channel, ip: internal ? null : clientIp(req) });
+    }
+
     let data: any;
     let error: any;
     if (existingId) {
       const updateRow = Object.fromEntries(
-        Object.entries(row).filter(([k, v]) => v !== null && k !== "stage" && k !== "raw")
+        // stage/raw are merged explicitly below; nurture_paused must never leak from
+        // applyShieldToRow onto an existing lead (silent, invisible drip-kill) —
+        // only the guarded hard-evidence flip below writes it.
+        Object.entries(row).filter(([k, v]) => v !== null && k !== "stage" && k !== "raw" && k !== "nurture_paused")
       );
       // A later, sparser submission must never DEMOTE the lead: keep the higher
       // score/tier, and keep first-touch attribution (source/lead_source) intact.
@@ -196,6 +237,18 @@ export async function POST(req: NextRequest) {
       }
       // Preserve the alert throttle + other system markers a fresh submission body lacks.
       if (priorRaw.returning_alert_at && !mergedRaw.returning_alert_at) mergedRaw.returning_alert_at = priorRaw.returning_alert_at;
+      // SHIELD on merges: never lose prior shield evidence; a quarantine verdict on a
+      // resubmission flips an EARLY-STAGE lead (New Lead/Contacted only — never an
+      // engaged/working borrower) into the Review lane with the fresh evidence.
+      if (priorRaw.shield && !mergedRaw.shield) mergedRaw.shield = priorRaw.shield;
+      // Flip requires HARD evidence (honeypot / 3+ names / surge) — a merely-gray
+      // resubmission must never knock a possibly-real early lead out of the funnel.
+      if (quarantined && hardEvidence && /^(new lead|contacted|new)$/i.test(String(existingStage || ""))) {
+        mergedRaw.shield = (row.raw as any)?.shield || mergedRaw.shield;
+        if (mergedRaw.shield) mergedRaw.shield.pre_quarantine_stage = existingStage || "New Lead";
+        (updateRow as any).stage = "Review";
+        (updateRow as any).nurture_paused = true;
+      }
       updateRow.raw = mergedRaw;
       ({ data, error } = await supabaseAdmin
         .from("leads").update(updateRow).eq("id", existingId).select().single());
@@ -224,10 +277,20 @@ export async function POST(req: NextRequest) {
     }
     const deduped = !!existingId; // (also true when the race guard re-pointed us at an older row)
 
+    // A CLEAN resubmission from a lead sitting in Review is human evidence —
+    // release it. The promote replays the full pipeline (alert + first touch), so
+    // the returning-lead block below is SKIPPED for this request: running both
+    // would double-page the owner and clobber the promote's raw writes.
+    const promoteScheduled = !quarantined && !!existingId && String(existingStage || "").toLowerCase() === "review";
+    if (promoteScheduled) {
+      const freeId = existingId!;
+      after(async () => { try { await promoteQuarantined(freeId, "shield", "auto:resubmit_clean"); } catch { /* */ } });
+    }
+
     // A completed full 1003 advances the lead to "Application" (new OR returning lead).
     // This is the signal the pipeline was previously discarding — leads sat at "New Lead"
     // even after finishing the application.
-    if ((body as any).app_completed && data?.id) {
+    if ((body as any).app_completed && data?.id && !quarantined) {
       after(async () => { try { await advanceLeadStage(data.id, "Application", { actor: "borrower", reason: "completed application" }); } catch { /* */ } });
     }
 
@@ -272,7 +335,7 @@ export async function POST(req: NextRequest) {
     // (import-mismo). A plain inquiry/quote no longer creates an LOS file. When a file
     // IS opened we return its secure upload link for the confirmation screen + email.
     // (ensureLoanFileForLead is idempotent + best-effort.)
-    if ((body as any).app_completed === true) {
+    if ((body as any).app_completed === true && !quarantined) {
       try {
         loanFile = await ensureLoanFileForLead(data);
         if (loanFile?.share_token) {
@@ -297,123 +360,26 @@ export async function POST(req: NextRequest) {
 
     if (!deduped) {
       const newLead = data;
-      after(async () => {
-        // Auto-screen investor deals — triaged + lender-matched before the LO
-        // even opens the file (cached on the lead for instant display).
-        if (loanFile && isInvestorDeal(newLead)) {
+      if (quarantined) {
+        // QUARANTINE LANE: no auto-SMS, no OpenAI agents, no owner ping, no Meta
+        // event — all deferred to promotion. Gray band gets a template verification
+        // email (the self-promote path); Tier-1 gray pings the owner immediately.
+        after(async () => {
           try {
-            const screen = await runDealScreen(loanFile, newLead);
-            const raw = newLead.raw && typeof newLead.raw === "object" ? newLead.raw : {};
-            raw.deal_screen = screen;
-            await supabaseAdmin.from("leads").update({ raw }).eq("id", newLead.id);
-            await logActivity({ entity_type: "lead", entity_id: newLead.id, lead_id: newLead.id, actor: "agent:dealscreen", action: "deal.screened", detail: { verdict: screen.verdict, score: screen.dealScore } });
-          } catch (e) { console.warn("[/api/apply] deal screen failed:", e); }
-        }
-
-        let draftReply = "";
-        try {
-          const cap = getAgent("capture");
-          if (cap) {
-            const r = await runAgent(cap, newLead);
-            draftReply = (r.output?.first_touch_message as string) || "";
-            await supabaseAdmin.from("lead_agents").insert([
-              { lead_id: newLead.id, stage: "capture", summary: r.summary, output_json: r.output },
-            ]);
-            await logActivity({ entity_type: "agent", entity_id: newLead.id, lead_id: newLead.id, actor: "agent:capture", action: "agent.ran", detail: { stage: "capture", summary: r.summary } });
-          }
-        } catch (e) { console.warn("[/api/apply] capture agent failed:", e); }
-
-        // First touch reads like a real person opening a conversation — NO document
-        // checklist dump and no "please upload" demands. Mark surfaces the secure link
-        // and asks for docs naturally once the lead engages (SMS/website concierge),
-        // so the opener stays human and starts a real back-and-forth.
-        // COMPLIANCE GATE: the AI-drafted first touch must never quote a rate/payment
-        // or promise approval (licensed lender). A violating draft falls back to the
-        // safe template in respondToLead.
-        if (draftReply && markReplyViolates(draftReply)) {
-          console.warn("[/api/apply] capture draft failed compliance gate — using template");
-          draftReply = "";
-        }
-        // TEXT the first touch ONLY if the lead opted into SMS (checked the optional
-        // box). Otherwise pass phone:null so it's email-only — same gating pattern
-        // nurture uses. Consent-not-given ≠ no follow-up; they still get the email.
-        let autoSent: string[] = [];
-        try {
-          // CONVERSION FIRST TOUCH: acknowledge the exact deal they described, give one
-          // purpose-specific mechanic free, and hand them their PRE-FILLED application
-          // (magic link — ~3 min, nothing re-typed). Email + SMS both carry the link;
-          // the capture agent's conversational draft stays the SMS opener above it.
-          // EXCEPTION: a wizard lead who already COMPLETED the 1003 doesn't need the
-          // "finish your application" push — they keep the doc-upload link instead.
-          const appDone = (body as any).app_completed === true;
-          const appLink = appDone ? null : magicApplyLink(newLead);
-          const calendly = ((await cfg("CALENDLY_URL")) || "").trim() || null;
-          const emailT = appDone
-            ? renderTouch(EMAIL_TOUCHES.first_touch, newLead)
-            : renderFirstTouch(newLead, { appLink, calendly });
-          // The capture agent writes {app_link} where the pre-filled application link
-          // belongs; substitute it (or strip the sentence if there's no link to give).
-          const smsDraft = appLink
-            ? draftReply.replace(/\{app_link\}/g, appLink)
-            : draftReply.replace(/[^.!?\n]*\{app_link\}[^.!?\n]*[.!?]?/g, "").trim();
-          const res = await respondToLead({
-            id: newLead.id, kind: "first_touch",
-            name: full_name, email, phone: smsConsent ? phone : null, loan_purpose: body.loan_purpose, message: smsDraft, link: fileLink, appLink,
-            emailSubject: emailT.subject, emailBody: emailT.body,
+            if (shield!.band === "gray") await sendVerificationEmail(newLead);
+            await notifyQuarantine(newLead, shield!);
+          } catch (e) { console.warn("[/api/apply] quarantine handling failed:", e); }
+        });
+      } else {
+        const appCompleted = (body as any).app_completed === true;
+        after(async () => {
+          await runNewLeadPipeline(newLead, {
+            smsCapable: shield?.smsCapable !== false,
+            optedOut: trackingOptedOut, loanFile, fileLink, appCompleted,
           });
-          autoSent = res.sent;
-        } catch (e) { console.warn("[/api/apply] auto-response failed:", e); }
-
-        try {
-          await notifyNewLead({
-            lead_id: newLead.id, full_name, email, phone,
-            state: body.state, loan_purpose: body.loan_purpose, score, tier,
-            source: row.source as string, draft_reply: draftReply, auto_sent: autoSent,
-          });
-        } catch (e) { console.warn("[/api/apply] alert failed:", e); }
-
-        // First-touch physically sent → the lead is Contacted. Advance forward-only.
-        if (autoSent.length) { try { await advanceLeadStage(newLead.id, "Contacted", { actor: "system", reason: "first-touch " + autoSent.join("+") }); } catch { /* */ } }
-
-        // Report the lead to Meta (Conversions API) so the pixel can OPTIMIZE toward
-        // real leads and they show in ad reporting. Skip FB/IG-sourced leads — Meta
-        // already counts those from the instant form (avoids double-counting).
-        try {
-          // Honor the visitor's privacy opt-out for SERVER-SIDE measurement too: the GPC
-          // browser signal (Sec-GPC header) or an "essential only" cookie choice suppress
-          // the Meta share — keeping the CAPI consistent with the cookie banner, the GPC
-          // promise, and the privacy policy. (Accepted / never-opted-out visitors still report.)
-          const gpc = req.headers.get("sec-gpc") === "1";
-          const trackingOptedOut = gpc || req.cookies.get("fetti_consent")?.value === "essential";
-          const src = String(row.source || "").toLowerCase();
-          if (!trackingOptedOut && !/facebook|instagram|meta_lead_ad/.test(src)) {
-            const res = await sendMetaLeadEvent(newLead, { sourceUrl: body.referrer || undefined });
-            if (!res.ok) console.warn("[/api/apply] meta CAPI lead:", res.detail);
-          }
-        } catch (e) { console.warn("[/api/apply] meta CAPI error:", e); }
-
-        // Run the rest of the 5-agent pipeline automatically on every new lead:
-        // Qualify -> Structure -> Process -> Close. Each advises (humans decide),
-        // records its output, and logs activity for the enterprise brain.
-        for (const stage of ["qualify", "structure", "process", "close"] as const) {
-          try {
-            const agent = getAgent(stage);
-            if (!agent) continue;
-            const r = await runAgent(agent, newLead);
-            await supabaseAdmin.from("lead_agents").insert([
-              { lead_id: newLead.id, stage, summary: r.summary, output_json: r.output },
-            ]);
-            await logActivity({ entity_type: "agent", entity_id: newLead.id, lead_id: newLead.id, actor: `agent:${stage}`, action: "agent.ran", detail: { stage, summary: r.summary } });
-            // Make the Qualify verdict MATTER: write it onto the lead, raise a
-            // priority task for qualified/Tier-1 leads, and feed Meta the signal.
-            if (stage === "qualify") {
-              const optedOut = req.headers.get("sec-gpc") === "1" || req.cookies.get("fetti_consent")?.value === "essential";
-              await applyQualification(newLead, r, { fullName: full_name, phone, ruleTier: tier, loanPurpose: body.loan_purpose, optedOut });
-            }
-          } catch (e) { console.warn(`[/api/apply] ${stage} agent failed:`, e); }
-        }
-      });
-    } else {
+        });
+      }
+    } else if (!quarantined && !promoteScheduled) {
       // A KNOWN lead came back — strong signal. Alert the team AND text/email them a
       // warm check-in (throttled 1/24h — never a duplicate barrage).
       // A different NAME on the same contact details gets flagged as a likely
@@ -461,7 +427,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { success: true, lead_id: data.id, score, tier, deduped, file_link: fileLink },
+      { success: true, lead_id: honeypotFilled ? null : data.id, score, tier, deduped, file_link: fileLink, tracking: !quarantined },
       { status: deduped ? 200 : 201 }
     );
   } catch (err: unknown) {

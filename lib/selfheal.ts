@@ -52,6 +52,9 @@ export async function reconcile(): Promise<HealAction[]> {
     let ran = 0;
     for (const l of leads) {
       if (have.has(l.id)) continue;
+      // Shield quarantine: agents are DEFERRED for Review leads (promotion replays
+      // them) — the healer must not run them through the back door.
+      if (String(l.stage || "").toLowerCase() === "review") continue;
       for (const stage of STAGES) {
         try {
           const agent = getAgent(stage); if (!agent) continue;
@@ -83,6 +86,41 @@ export async function reconcile(): Promise<HealAction[]> {
       await supabaseAdmin.from("players").update({ cal_token: t }).eq("id", owner.id); repairs.push({ name: "cal_token", detail: "Regenerated calendar token." });
     }
   } catch { /* */ }
+
+  // 5b) Shield recheck: gray-band Review leads >24h old whose phone never got a
+  //     Lookup (budget/timeout at intake) get one now — a clean mobile line drops
+  //     the risk below threshold and auto-releases them. Bounded + best-effort.
+  try {
+    const { lookupPhone, promoteQuarantined } = await import("@/lib/leadShield");
+    const dayAgo = new Date(Date.now() - 24 * 3600000).toISOString();
+    const reviewLeads = (leadsRaw || []).filter((l: any) =>
+      String(l.stage || "").toLowerCase() === "review" &&
+      l.created_at < dayAgo && l.phone &&
+      l.raw?.shield?.band === "gray" && !l.raw?.shield?.lookup &&
+      !l.raw?.shield?.resolved_at && l.raw?.shield?.recheck_at == null);
+    let rechecked = 0, released = 0;
+    for (const l of reviewLeads.slice(0, 10)) {
+      const raw = l.raw && typeof l.raw === "object" ? l.raw : {};
+      raw.shield = { ...(raw.shield || {}), recheck_at: new Date().toISOString() };
+      const lu = await lookupPhone(String(l.phone).replace(/\D/g, "").slice(-10));
+      if (lu) raw.shield.lookup = lu;
+      await supabaseAdmin.from("leads").update({ raw }).eq("id", l.id);
+      rechecked++;
+      const risk = Number(raw.shield.risk || 0);
+      if (lu && lu.valid && lu.lineType === "mobile" && risk - 15 < 60) {
+        if (await promoteQuarantined(l.id, "shield", "auto:recheck_mobile")) released++;
+      }
+    }
+    if (rechecked) repairs.push({ name: "shield_recheck", detail: `Re-checked ${rechecked} quarantined lead(s) via phone lookup; auto-released ${released}.` });
+  } catch { /* best-effort */ }
+
+  // 5c) Shield lookup-cache hygiene: app_settings rows older than 90 days are
+  //     dead weight (the read path re-fetches past TTL anyway). Best-effort.
+  try {
+    await supabaseAdmin.from("app_settings").delete()
+      .like("key", "shield:lookup:%")
+      .lt("updated_at", new Date(Date.now() - 90 * 86400000).toISOString());
+  } catch { /* fail open */ }
 
   // 5) Meta token self-heal.
   try {

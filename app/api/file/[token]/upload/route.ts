@@ -110,6 +110,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     // Only promotes upward — never downgrades an Engaged/Application lead.
     if (file.lead_id) {
       try {
+        const { autoPromoteIfQuarantined } = await import("@/lib/leadShield");
+        await autoPromoteIfQuarantined(file.lead_id, "doc_upload");
+      } catch { /* best-effort */ }
+      try {
         const { data: lead } = await supabaseAdmin.from("leads").select("stage").eq("id", file.lead_id).maybeSingle();
         const stage = (lead?.stage || "").toLowerCase();
         const isFresh = !stage || stage === "new lead" || stage === "new" || stage === "contacted";

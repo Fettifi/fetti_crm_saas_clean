@@ -20,6 +20,7 @@ type Lead = {
   tier: string | null;
   score: number | null;
   portal_viewed_at: string | null; // borrower opened their upload link (leading "about to engage" signal)
+  shield: { band?: string; risk?: number; signals?: Array<{ key: string; pts: number; note?: string }>; verify_email_sent_at?: string | null } | null;
 };
 
 // Lead QUALITY badge (how fundable) — distinct from the Stage badge (how far along).
@@ -61,7 +62,8 @@ export default function LeadTable() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<"leads" | "applications" | "all">("leads");
+  const [view, setView] = useState<"leads" | "applications" | "all" | "review">("leads");
+  const [shieldBusy, setShieldBusy] = useState<string | null>(null);
   // LOS: create-or-fetch a loan file (+ borrower link) per lead, on demand.
   const [losBusy, setLosBusy] = useState<string | null>(null);
   const [losFile, setLosFile] = useState<Record<string, { id: string; token: string }>>({});
@@ -98,6 +100,13 @@ export default function LeadTable() {
       }
     } finally { setLosBusy(null); }
   }
+  async function resolveShield(leadId: string, action: "promote" | "dismiss") {
+    setShieldBusy(leadId);
+    try {
+      const r = await fetch("/api/shield/resolve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadId, action }) });
+      if (r.ok) setLeads((ls) => ls.map((x) => x.id === leadId ? { ...x, stage: action === "promote" ? "New Lead" : "Dead", shield: null } : x));
+    } finally { setShieldBusy(null); }
+  }
   function copyLink(leadId: string) {
     const f = losFile[leadId]; if (!f) return;
     navigator.clipboard?.writeText(`${window.location.origin}/file/${f.token}`);
@@ -117,7 +126,7 @@ export default function LeadTable() {
         // exist, which made the whole query fail (PGRST200) and the leads page show
         // nothing. Select only real columns on the leads table.
         .select(
-          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, lead_source, tier, score, portal_viewed_at:raw->>portal_viewed_at"
+          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, lead_source, tier, score, portal_viewed_at:raw->>portal_viewed_at, shield:raw->shield"
         )
         .order("created_at", { ascending: false })
         .limit(200);
@@ -173,13 +182,18 @@ export default function LeadTable() {
     );
   }
 
+  const inReview = (l: Lead) => String(l.stage || "").toLowerCase() === "review";
   const counts = {
-    leads: leads.filter((l) => lifecycle(l.stage) !== "application").length,
+    leads: leads.filter((l) => lifecycle(l.stage) !== "application" && !inReview(l)).length,
     applications: leads.filter((l) => lifecycle(l.stage) === "application").length,
+    review: leads.filter(inReview).length,
     all: leads.length,
   };
   const shown = leads.filter((l) =>
-    view === "all" ? true : view === "applications" ? lifecycle(l.stage) === "application" : lifecycle(l.stage) !== "application"
+    view === "all" ? true
+    : view === "review" ? inReview(l)
+    : view === "applications" ? lifecycle(l.stage) === "application"
+    : lifecycle(l.stage) !== "application" && !inReview(l)
   );
   // Surface the most fundable leads first (quality rank), then newest — so your
   // 1–2 qualified leads sit at the top instead of being buried by Tier-3 traffic.
@@ -202,6 +216,12 @@ export default function LeadTable() {
     <div className="flex items-center gap-2 mb-3">
       <Tab id="leads" label="Leads" />
       <Tab id="applications" label="Applications" />
+      {counts.review > 0 && (
+        <button onClick={() => setView("review")}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-lg ${view === "review" ? "bg-amber-500 text-slate-950" : "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25"}`}>
+          🛡️ Review <span className="opacity-70">({counts.review})</span>
+        </button>
+      )}
       <Tab id="all" label="All" />
       <span className="text-[11px] text-slate-500 ml-1">Raw leads stay separate from complete applications.</span>
     </div>
@@ -242,7 +262,25 @@ export default function LeadTable() {
               <td className="px-3 py-2">{lead.loan_purpose ?? "—"}</td>
               <td className="px-3 py-2">{lead.credit_band ?? "—"}</td>
               <td className="px-3 py-2">
+                {inReview(lead) ? (
+                  <div className="min-w-[190px]">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300"
+                      title={(lead.shield?.signals || []).map((x) => x.key + " +" + x.pts + (x.note ? " (" + x.note + ")" : "")).join(String.fromCharCode(10)) || "shield quarantine"}>
+                      🛡️ Held — {((lead.shield?.signals || []).filter((x) => x.pts > 0).sort((a, b) => b.pts - a.pts)[0]?.key || "review").replace(/[._]/g, " ")}
+                    </span>
+                    <div className="flex gap-1 mt-1">
+                      <button disabled={shieldBusy === lead.id} onClick={() => resolveShield(lead.id, "promote")}
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-600 text-slate-950 hover:bg-emerald-500 disabled:opacity-40"
+                        title="Real person — release into the pipeline (first touch + agents run now)">✓ Real</button>
+                      <button disabled={shieldBusy === lead.id} onClick={() => resolveShield(lead.id, "dismiss")}
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded bg-red-900/70 text-red-200 hover:bg-red-900 disabled:opacity-40"
+                        title="Junk/bot — mark Dead (nothing was ever sent to them)">✕ Junk</button>
+                    </div>
+                    {lead.shield?.verify_email_sent_at && <span className="block mt-0.5 text-[9px] text-slate-500">verify email sent — no click yet</span>}
+                  </div>
+                ) : (
                 <StageBadge stage={lead.stage} />
+                )}
                 {lead.portal_viewed_at && lifecycle(lead.stage) === "lead" && (
                   <span className="block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 w-fit"
                     title={`Borrower opened their secure upload link — about to send documents (${new Date(lead.portal_viewed_at).toLocaleString()})`}>👀 Opened upload link</span>

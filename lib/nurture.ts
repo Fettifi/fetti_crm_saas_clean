@@ -113,13 +113,17 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   for (const l of (leads || []) as Lead[]) {
     considered++;
     if (l.nurture_paused) continue;
+    // Shield quarantine: Review leads never enter nurture (belt-and-suspenders —
+    // they're also nurture_paused; promotion clears both).
+    if (String(l.stage || "").toLowerCase() === "review") continue;
     if (!l.phone && !l.email) continue;
     // TCPA: automated texts require EXPLICIT consent — the optional SMS checkbox
     // (raw.sms_consent === true) or a texted-in keyword opt-in (raw.consent.sms_optin).
     // UNDEFINED consent (Meta instant forms, legacy rows) = email-only. Never text
     // historical imports. This gate flipped from "not declined" to "expressly opted in"
     // 2026-07-02 so the day A2P approves, no unconsented lead gets a drip text.
-    const smsOk = !l.raw?.historical_import && (l.raw?.sms_consent === true || l.raw?.consent?.sms_optin === true);
+    const smsOk = !l.raw?.historical_import && l.raw?.sms_consent !== false && !l.raw?.sms_optout_at &&
+      (l.raw?.sms_consent === true || l.raw?.consent?.sms_optin === true);
     const sendPhone = smsOk ? l.phone : null;
     const stage = (l.stage || "").toLowerCase();
 

@@ -51,7 +51,7 @@ export async function ensurePixel(): Promise<{ id: string | null; detail: string
 }
 
 // Fire a server-side "Lead" conversion event for a CRM lead.
-export async function sendMetaLeadEvent(lead: any, opts?: { sourceUrl?: string }): Promise<{ ok: boolean; detail: string }> {
+export async function sendMetaLeadEvent(lead: any, opts?: { sourceUrl?: string; eventTime?: number }): Promise<{ ok: boolean; detail: string }> {
   try {
     const pixel = await cfg("META_PIXEL_ID");
     const token = (await cfg("META_CAPI_TOKEN")) || (await cfg("META_USER_TOKEN")) || (await cfg("META_ACCESS_TOKEN"));
@@ -73,9 +73,14 @@ export async function sendMetaLeadEvent(lead: any, opts?: { sourceUrl?: string }
     const fbclid = raw.fbclid || raw.fbc;
     if (fbclid) user_data.fbc = String(fbclid).startsWith("fb.") ? String(fbclid) : `fb.1.${Math.floor(Date.now() / 1000)}.${fbclid}`;
 
+    // Deferred sends (shield promotions) pass the ORIGINAL intake time so ad
+    // attribution survives quarantine — Meta accepts event_time up to 7 days back.
+    const eventTime = opts?.eventTime && isFinite(opts.eventTime)
+      ? Math.max(Math.floor(Date.now() / 1000) - 6 * 86400, Math.floor(opts.eventTime))
+      : Math.floor(Date.now() / 1000);
     const event = {
       event_name: "Lead",
-      event_time: Math.floor(Date.now() / 1000),
+      event_time: eventTime,
       action_source: "website",
       event_id: String(lead?.id || ""),   // dedup key (Meta de-dups against any pixel event with the same id)
       event_source_url: opts?.sourceUrl || raw.referrer || (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com"),

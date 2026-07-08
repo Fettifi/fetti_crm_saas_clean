@@ -43,8 +43,14 @@ export async function POST(req: NextRequest) {
     if (!lead) return NextResponse.json({ ok: true, note: "no matching lead" });
 
     if (event === "invitee.created") {
+      // SHIELD: booking a real call is human evidence — release a quarantined
+      // lead (no-op unless stage is Review) before the stage bump below.
+      try {
+        const { autoPromoteIfQuarantined } = await import("@/lib/leadShield");
+        await autoPromoteIfQuarantined(lead.id, "calendly_booked");
+      } catch { /* best-effort */ }
       const stage = (lead.stage || "").toLowerCase();
-      const fresh = !stage || stage === "new lead" || stage === "new" || stage === "contacted";
+      const fresh = !stage || stage === "new lead" || stage === "new" || stage === "contacted" || stage === "review";
       if (fresh) {
         await supabaseAdmin.from("leads").update({ stage: "Engaged", last_nurture_at: new Date().toISOString() }).eq("id", lead.id);
       }

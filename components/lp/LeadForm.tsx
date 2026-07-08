@@ -3,9 +3,10 @@
 // Inline lead-capture form for paid landing pages. Client-only (form interactivity),
 // but the surrounding pitch is server-rendered for instant paint. Reads UTMs at
 // submit time. Honeypot + consent + conversion pixel.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { trackLead } from "@/lib/track";
+import { armFormShield, shieldFields, shouldTrack } from "@/lib/formShield";
 import { getAttribution } from "@/lib/attribution";
 import { referralCode } from "@/lib/referral";
 import ReferShare from "@/components/ReferShare";
@@ -24,6 +25,7 @@ export default function LeadForm({ config }: { config: LpConfig }) {
   const [err, setErr] = useState<string | null>(null);
   const [propVal, setPropVal] = useState(""); // clean numeric string from CurrencyInput
   const field = "w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none";
+  useEffect(() => { armFormShield(); }, []); // server-signed fill-time token (anti-bot)
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -50,11 +52,12 @@ export default function LeadForm({ config }: { config: LpConfig }) {
           consent: true, consent_at: new Date().toISOString(), consent_text: CONSENT,
           sms_consent: smsOptin, sms_consent_at: smsOptin ? new Date().toISOString() : null, sms_consent_text: smsOptin ? SMS_CONSENT : null,
           hp: String(fd.get("company") || ""),
+          ...shieldFields(),
         }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Something went wrong.");
-      trackLead(value);
+      if (shouldTrack(j)) trackLead(value); // never fire the pixel for shield-flagged/bot rows
       setLeadId(j.lead_id || "");
       setDone(true);
     } catch (e) { setErr(e instanceof Error ? e.message : "Error"); } finally { setSubmitting(false); }

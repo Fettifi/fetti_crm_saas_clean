@@ -7,15 +7,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { appLinkToken, goalFor } from "@/lib/magicLink";
+import { autoPromoteIfQuarantined } from "@/lib/leadShield";
+import { rateLimit, clientIp } from "@/lib/rateLimit";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
 
+// Constant-time token compare — a timing oracle must not help brute-forcing.
+function tokenMatches(a: string, b: string): boolean {
+  try { return a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b)); } catch { return false; }
+}
+
 export async function GET(req: NextRequest) {
+  if (!(await rateLimit(`prefill:${clientIp(req)}`, 30, 600))) {
+    return NextResponse.json({ error: "slow down" }, { status: 429 });
+  }
   const lead = req.nextUrl.searchParams.get("lead") || "";
   const t = req.nextUrl.searchParams.get("t") || "";
-  if (!lead || !t || t !== appLinkToken(lead)) {
+  if (!lead || !t || !tokenMatches(t, appLinkToken(lead))) {
     return NextResponse.json({ error: "invalid link" }, { status: 401 });
   }
+  // Opening one's own magic link runs JS the email-scanner prefetchers don't —
+  // real-human evidence. A quarantined lead is released by it (no-op otherwise).
+  autoPromoteIfQuarantined(lead, "link_click").catch(() => {});
   const { data: l } = await supabaseAdmin
     .from("leads")
     .select("id, full_name, first_name, email, phone, state, loan_purpose, stage")

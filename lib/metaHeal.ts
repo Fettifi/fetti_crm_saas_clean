@@ -455,6 +455,15 @@ export async function importHistoricalLeads(): Promise<any> {
             } catch { /* fall through to the direct-insert safety net */ }
           }
 
+          // SHIELD: content-signal assessment on the historical direct insert —
+          // fake names / burner emails / garbage phones land in the Review lane
+          // with evidence instead of sitting untiered in the pipeline. Meta leads
+          // are already paid for; quarantine-only, never dropped.
+          try {
+            const { assessLead, applyShieldToRow } = await import("@/lib/leadShield");
+            const sv = await assessLead({ body: { ...m }, channel: "meta_import", ip: null, internal: true });
+            if (sv.verdict === "quarantine" || sv.band !== "clean") applyShieldToRow(row as any, sv, { channel: "meta_import", ip: null });
+          } catch { /* fail open */ }
           const { data: ins, error } = await supabaseAdmin.from("leads").insert([row]).select("id").single();
           // RACE GUARD: the realtime webhook can process the same leadgen event in the
           // same second (Dawn Marie dup, 2026-07-06). Keep the OLDEST row; neutralize ours.

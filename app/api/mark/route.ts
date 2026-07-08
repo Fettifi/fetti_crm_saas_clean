@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { surfaceGate } from "@/lib/leadShield";
 import { MARK_PERSONA, MARK_CONVERSATION } from "@/lib/markPersona";
 import { markReplyViolates, markSafeDeferral } from "@/lib/markCompliance";
 import { cfg } from "@/lib/settings";
@@ -80,7 +81,7 @@ async function openaiChat(messages: any[], key: string) {
   return j.choices?.[0]?.message || {};
 }
 
-async function createLead(a: any): Promise<boolean> {
+async function createLead(a: any, transcriptText?: string): Promise<boolean> {
   try {
     const num = (v: any) => { const n = Number(String(v ?? "").replace(/[^0-9.]/g, "")); return isFinite(n) && n > 0 ? Math.round(n) : undefined; };
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -88,6 +89,7 @@ async function createLead(a: any): Promise<boolean> {
     const r = await fetch(`${APP_URL}/api/apply`, {
       method: "POST", headers,
       body: JSON.stringify({
+        mark_transcript: String(transcriptText || "").slice(0, 4000),
         full_name: String(a.name || "").slice(0, 120),
         email: a.email || undefined,
         phone: a.phone || undefined,
@@ -111,6 +113,12 @@ async function createLead(a: any): Promise<boolean> {
 export async function POST(req: NextRequest) {
   if (!(await rateLimit(`mark:${clientIp(req)}`, 30, 600))) {
     return NextResponse.json({ reply: "I'm getting a lot of questions right now — give me a moment and try again." }, { status: 429 });
+  }
+  // Daily abuse caps (per-IP + global): past them, Mark degrades to a canned
+  // pointer instead of burning OpenAI tokens on a scraper.
+  const gate = await surfaceGate(clientIp(req), "mark");
+  if (gate.degraded) {
+    return NextResponse.json({ reply: `Fastest path: the 3-minute application at ${APP_URL}/apply — a Fetti specialist picks it right up.` }, { status: 200 });
   }
   const key = process.env.OPENAI_API_KEY;
   if (!key) return NextResponse.json({ reply: "I'm offline for a moment — tap “Start my application” and a Fetti specialist will pick it right up." }, { status: 200 });
@@ -141,7 +149,8 @@ export async function POST(req: NextRequest) {
         let args: any = {};
         try { args = JSON.parse(tc.function?.arguments || "{}"); } catch { /* */ }
         if (tc.function?.name === "start_application" && args?.name && (args.email || args.phone) && args.consent === true) {
-          captured = (await createLead(args)) || captured;
+          const transcript = history.filter((m: any) => m.role === "user").map((m: any) => m.content).join("\n");
+          captured = (await createLead(args, transcript)) || captured;
         }
         toolMsgs.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify({ started: captured, applyUrl: `${APP_URL}/apply` }) });
       }

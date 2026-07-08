@@ -3,6 +3,9 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
 import { logHotLeadReply } from "@/lib/notify/hotLeadReply";
 import { logComms, sendSms, getLeadMessagesForAI, countRecentOutbound } from "@/lib/comms";
+import { autoPromoteIfQuarantined, checkPhonePattern } from "@/lib/leadShield";
+import { rateLimit } from "@/lib/rateLimit";
+import { logActivity } from "@/lib/activity";
 import { markConciergeReply, extractConversationFacts, handoffSignal, expertiseFor } from "@/lib/markConcierge";
 import { cfg } from "@/lib/settings";
 import { phoneMatchForms } from "@/lib/phone";
@@ -63,6 +66,17 @@ export async function POST(req: NextRequest) {
     const OPTIN_KEYWORDS = (process.env.SMS_OPTIN_KEYWORDS || "DEAL,FETTI,MONEY,QUALIFY,HOME,LOT").split(",").map((k) => k.trim().toUpperCase());
     const word = body.toUpperCase().replace(/[^A-Z]/g, "");
     if (digits && OPTIN_KEYWORDS.includes(word)) {
+      // SHIELD: opt-in flood guard — the 1st–3rd keyword text a day already created/
+      // refreshed the lead; a 4th+ adds nothing (bot loops). Still ACK 200 (carrier
+      // hygiene), still reply, just skip the DB write. Obvious garbage sender
+      // numbers (NANP-invalid) are skipped the same way.
+      const floodOk = await rateLimit(`shield:smsoptin:${digits}`, 3, 86400);
+      const badPhone = checkPhonePattern(digits);
+      if (!floodOk || badPhone) {
+        try { await logActivity({ entity_type: "shield", entity_id: digits.slice(-4), actor: "shield", action: "shield.optin_flood", detail: { reason: !floodOk ? "4th+ opt-in today" : "invalid NANP pattern" } }); } catch { /* */ }
+        const reply = "It's Fetti 🦉 You're already on the list — see what you qualify for: https://fettifi.com/tv (Reply STOP to opt out.)";
+        return new NextResponse(`<Response><Message>${reply.replace(/&/g, "&amp;")}</Message></Response>`, { status: 200, headers: { "Content-Type": "text/xml" } });
+      }
       const consent = { sms_optin: true, keyword: word, campaign: "youtube_thelot", at: new Date().toISOString(), text: body.slice(0, 200) };
       try {
         const { data: existing } = await supabaseAdmin.from("leads").select("id, raw").in("phone", phoneMatchForms(digits)).order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -70,7 +84,11 @@ export async function POST(req: NextRequest) {
           const raw = (existing as any).raw && typeof (existing as any).raw === "object" ? (existing as any).raw : {};
           raw.consent = consent;
           raw.sms_consent = true; // texting us first = express written consent (TCPA)
+          delete raw.sms_optout_at; // fresh keyword text supersedes an old STOP
           await supabaseAdmin.from("leads").update({ raw, nurture_paused: false }).eq("id", (existing as any).id);
+          // Texting a keyword is human evidence — release a quarantined lead fully
+          // (the consent update above unpaused it but left stage "Review" otherwise).
+          try { await autoPromoteIfQuarantined((existing as any).id, "sms_optin"); } catch { /* */ }
         } else {
           await supabaseAdmin.from("leads").insert([{ phone: digits, source: "youtube_thelot", lead_source: "sms_optin", stage: "New Lead", raw: { consent, sms_consent: true } }]);
         }
@@ -118,9 +136,17 @@ export async function POST(req: NextRequest) {
           const raw = (r as any).raw && typeof (r as any).raw === "object" ? (r as any).raw : {};
           raw.sms_consent = false;
           raw.sms_optout_at = new Date().toISOString();
+          // Revoke EVERY consent form, including the texted-keyword grant — the SMS
+          // gates OR them together, so leaving consent.sms_optin=true would keep
+          // texting an opted-out number (TCPA violation).
+          if (raw.consent && typeof raw.consent === "object") raw.consent = { ...raw.consent, sms_optin: false, revoked_at: raw.sms_optout_at };
           await supabaseAdmin.from("leads").update({ nurture_paused: true, raw }).eq("id", (r as any).id);
         }
       } else if (lead) {
+        // SHIELD: a real inbound text is human evidence — release a quarantined lead
+        // (no-op unless stage is Review). Runs before the hot-reply task/concierge so
+        // the full pipeline (deferred first touch etc.) fires exactly once.
+        try { await autoPromoteIfQuarantined((lead as any).id, "sms_inbound"); } catch { /* */ }
         // Non-STOP reply from a known lead = hottest signal in the funnel.
         // Persist it as a top-priority CRM task so the conversion moment lands
         // in the task list, not just an ephemeral Discord ping.
@@ -148,6 +174,9 @@ export async function POST(req: NextRequest) {
             if ((await cfg("AI_SMS_CONCIERGE")) === "off") return;
             const aiToday = await countRecentOutbound(leadId, "ai_reply", 24 * 3600000);
             if (aiToday >= 8) return;
+            // SHIELD: global daily concierge cap — one runaway bot conversation can't
+            // burn the whole OpenAI budget (per-lead 8/day stays the primary gate).
+            if (!(await rateLimit("shield:concierge:global", 300, 86400))) return;
             const history = await getLeadMessagesForAI(leadId);
             const firstAi = (await countRecentOutbound(leadId, "ai_reply", 365 * 86400000)) === 0;
             const { data: lf } = await supabaseAdmin.from("loan_files").select("id, share_token").eq("lead_id", leadId).limit(1).maybeSingle();

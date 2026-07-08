@@ -25,6 +25,10 @@ export async function advanceLeadStage(
   try {
     const { data: lead } = await supabaseAdmin.from("leads").select("stage").eq("id", leadId).maybeSingle();
     const cur = String((lead as any)?.stage || "New Lead");
+    // "Review" is the shield's quarantine hold — the ONLY exit is an explicit
+    // promote/dismiss (lib/leadShield), never an automatic stage advance. Booked
+    // calls / uploads on a quarantined lead auto-promote first, then advance.
+    if (cur.toLowerCase() === "review") return { ok: true, from: cur, to: cur, skipped: true };
     const curRank = RANK[cur.toLowerCase()] ?? 0;
     const toRank = RANK[toStage.toLowerCase()] ?? 0;
     // Never move backward (a re-submit must not knock an Engaged lead back to Contacted),

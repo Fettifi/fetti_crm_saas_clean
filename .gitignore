@@ -9,3 +9,4 @@ fetti_last_errors.json
 public/*.pdf
 .claude/settings.local.json
 scratchpad/
+tsconfig.tsbuildinfo

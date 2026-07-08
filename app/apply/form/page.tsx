@@ -16,6 +16,7 @@ import Link from "next/link";
 import { CheckCircle2, ArrowLeft, ShieldCheck, Lightbulb } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
 import { trackLead, trackApplication } from "@/lib/track";
+import { armFormShield, shieldFields, shouldTrack } from "@/lib/formShield";
 import { getAttribution } from "@/lib/attribution";
 import AddressInput from "@/components/AddressInput";
 import { CediBubble } from "@/components/CediBubble";
@@ -367,6 +368,7 @@ export default function ApplyWizard() {
         ? crypto.randomUUID()
         : `s_${Math.random().toString(36).slice(2)}${Date.now()}`;
     track("start", { phase: "flow" });
+    armFormShield(); // server-signed fill-time token (anti-bot)
     // Deep links (/links bio page, ads) pass ?goal= — honor it so an investor CTA
     // actually lands on the investor flow, not the generic first question.
     try {
@@ -537,6 +539,7 @@ export default function ApplyWizard() {
     const av = (k: string) => (attr as Record<string, string>)[k] || qs.get(k) || undefined;
     return {
       ...extra,
+      ...shieldFields(),
       loan_purpose: p,
       occupancy: occ || undefined,
       property_type: propType,
@@ -618,7 +621,7 @@ export default function ApplyWizard() {
       setLeadId(j.lead_id);
       if (j.file_link) setFileLink(j.file_link); // borrower's secure upload link
 
-      trackLead(answers.loan_amount_requested ? Number(answers.loan_amount_requested) : undefined); // ad conversion
+      if (shouldTrack(j)) trackLead(answers.loan_amount_requested ? Number(answers.loan_amount_requested) : undefined); // pixel only for shield-passed leads
       track("contact", { phase: "contact", goal: answers.goal, occupancy: effectiveOccupancy(answers), product: p });
       setPhase("app"); setAi(0);
     } catch (err) { setError(err instanceof Error ? err.message : "Error"); } finally { setSubmitting(false); }
@@ -628,7 +631,9 @@ export default function ApplyWizard() {
   async function submitApplication(finalAnswers: Answers) {
     setSubmitting(true); setError(null);
     try {
-      const j = await post({ ...buildPayload(finalAnswers, contact), app_completed: true });
+      // hp (honeypot) was already judged on POST #1 — re-sending a stale autofill
+      // value here could quarantine the COMPLETED 1003. Send it once, never again.
+      const j = await post({ ...buildPayload(finalAnswers, contact), hp: undefined, app_completed: true });
       if (j.file_link) setFileLink(j.file_link); // returning borrowers get the upload CTA too
       trackApplication(finalAnswers.loan_amount_requested ? Number(finalAnswers.loan_amount_requested) : undefined); // completed-1003 conversion
       track("complete", { phase: "app", goal: finalAnswers.goal, occupancy: effectiveOccupancy(finalAnswers), product: product(finalAnswers) });

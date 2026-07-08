@@ -3,9 +3,10 @@
 // Instant-quote lead magnet. Visitor gets a real-time estimate, then enters
 // contact info to "unlock full results". Which captures them as a scored lead
 // in the CRM (source: instant_quote), carrying any ?ref referral code.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { trackLead } from "@/lib/track";
+import { armFormShield, shieldFields, shouldTrack } from "@/lib/formShield";
 import AddressInput from "@/components/AddressInput";
 import { CediBubble } from "@/components/CediBubble";
 import CurrencyInput from "@/components/ui/CurrencyInput";
@@ -29,6 +30,7 @@ export default function QuotePage() {
   const [estimate, setEstimate] = useState<{ amount: number; down: number; ltv: number } | null>(null);
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  useEffect(() => { armFormShield(); }, []); // server-signed fill-time token (anti-bot)
   const [err, setErr] = useState<string | null>(null);
   const [addr, setAddr] = useState("");
 
@@ -58,6 +60,7 @@ export default function QuotePage() {
           referrer: q.get("ref") || undefined,
           notes: `Instant-quote: est. ${fmt(estimate!.amount)} @ ${(estimate!.ltv * 100).toFixed(0)}% LTV`,
           hp: String(fd.get("company") || ""),
+          ...shieldFields(),
           consent: true,
           consent_at: new Date().toISOString(),
           consent_text: "By submitting, borrower agreed Fetti Financial Services may contact them by phone & email about their inquiry. Consent not required to buy.",
@@ -68,7 +71,7 @@ export default function QuotePage() {
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Something went wrong.");
-      trackLead(estimate?.amount); // ad conversion event
+      if (shouldTrack(j)) trackLead(estimate?.amount); // pixel only for shield-passed leads
       setDone(true);
     } catch (e) { setErr(e instanceof Error ? e.message : "Error"); } finally { setSubmitting(false); }
   }

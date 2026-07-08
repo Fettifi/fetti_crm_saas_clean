@@ -125,6 +125,10 @@ async function saveFallbackLead(v: any, partial: Record<string, any>, reason: st
       }
     }
 
+    // Contactless shells (no email AND no phone) can't be worked — put them in
+    // the shield's Review lane with evidence instead of "New Lead" limbo. Shells
+    // WITH contact info stay New Lead (a real borrower behind a Graph hiccup).
+    const contactless = !emailNorm && !phone;
     const row = {
       full_name: partial.full_name ?? null,
       email: emailNorm,
@@ -132,13 +136,15 @@ async function saveFallbackLead(v: any, partial: Record<string, any>, reason: st
       state: partial.state ?? null,
       loan_purpose: partial.loan_purpose ?? null,
       notes: `⚠️ Facebook Lead Ad received but ${reason}. ${partial.notes || ""}`.trim(),
-      stage: "New Lead",
+      stage: contactless ? "Review" : "New Lead",
+      nurture_paused: contactless ? true : undefined,
       source: src,
       lead_source: src,
       raw: {
         meta: { leadgen_id: v?.leadgen_id, form_id: v?.form_id, page_id: v?.page_id, ad_id: v?.ad_id, created_time: v?.created_time },
         fallback_reason: reason,
         ...partial,
+        ...(contactless ? { shield: { version: 1, verdict: "quarantine", band: "junk", risk: 60, signals: [{ key: "meta_shell", pts: 60, ev: "hard", note: reason }], channel: "meta", quarantined_at: new Date().toISOString(), pre_quarantine_stage: "New Lead" } } : {}),
       },
     };
     const { data } = await supabaseAdmin.from("leads").insert([row]).select("id").single();
