@@ -8,7 +8,7 @@
 // can't respond, so a failure is never quiet. Idempotent: answered = skipped.
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { markConciergeReply } from "@/lib/markConcierge";
+import { markConciergeReply, expertiseFor } from "@/lib/markConcierge";
 import { getLeadMessagesForAI, countRecentOutbound, sendSms, logComms } from "@/lib/comms";
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { renderFirstTouch } from "@/lib/notify/emailCopy";
@@ -66,12 +66,18 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
         if ((await countRecentOutbound(leadId, "ai_reply", 24 * 3600000)) >= 8) throw new Error("daily AI cap reached");
         const history = await getLeadMessagesForAI(leadId);
         const firstAi = (await countRecentOutbound(leadId, "ai_reply", 365 * 86400000)) === 0;
-        const { data: lf } = await supabaseAdmin.from("loan_files").select("share_token").eq("lead_id", leadId).limit(1).maybeSingle();
+        const { data: lf } = await supabaseAdmin.from("loan_files").select("id, share_token").eq("lead_id", leadId).limit(1).maybeSingle();
         const fileLink = (lf as any)?.share_token ? `${APP_URL}/file/${(lf as any).share_token}` : null;
+        let missingDocs: string[] = [];
+        if ((lf as any)?.id) {
+          const { data: docs } = await supabaseAdmin.from("loan_documents").select("name, status, required").eq("loan_file_id", (lf as any).id);
+          missingDocs = (docs || []).filter((d: any) => d.required && d.status !== "received" && d.status !== "accepted").map((d: any) => String(d.name));
+        }
+        const knownFacts: string[] = Array.isArray((lead as any)?.raw?.concierge_facts) ? (lead as any).raw.concierge_facts : [];
         const stage = String((lead as any).stage || "").toLowerCase();
         const appLink = /application|processing|underwriting|approved|clear|closed|won|funded|dead|lost/.test(stage) ? null : magicApplyLink(lead as any);
         const calendlyUrl = (await cfg("CALENDLY_URL")) || null;
-        const r = await markConciergeReply({ lead, history, fileLink, appLink, firstAiReply: firstAi, calendlyUrl });
+        const r = await markConciergeReply({ lead, history, fileLink, appLink, firstAiReply: firstAi, calendlyUrl, missingDocs, knownFacts, expertise: expertiseFor(lead, history[history.length - 1]?.content || "") });
         if (!r.ok || !r.reply) throw new Error(r.detail || "no reply generated");
         const s = await sendSms((lead as any).phone, r.reply);
         if (!s.ok) throw new Error("send failed: " + s.detail);

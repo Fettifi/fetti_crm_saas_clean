@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
 import { logHotLeadReply } from "@/lib/notify/hotLeadReply";
 import { logComms, sendSms, getLeadMessagesForAI, countRecentOutbound } from "@/lib/comms";
-import { markConciergeReply } from "@/lib/markConcierge";
+import { markConciergeReply, extractConversationFacts, handoffSignal, expertiseFor } from "@/lib/markConcierge";
 import { cfg } from "@/lib/settings";
 import { phoneMatchForms } from "@/lib/phone";
 import { magicApplyLink } from "@/lib/magicLink";
@@ -150,18 +150,46 @@ export async function POST(req: NextRequest) {
             if (aiToday >= 8) return;
             const history = await getLeadMessagesForAI(leadId);
             const firstAi = (await countRecentOutbound(leadId, "ai_reply", 365 * 86400000)) === 0;
-            const { data: lf } = await supabaseAdmin.from("loan_files").select("share_token").eq("lead_id", leadId).limit(1).maybeSingle();
+            const { data: lf } = await supabaseAdmin.from("loan_files").select("id, share_token").eq("lead_id", leadId).limit(1).maybeSingle();
             const fileLink = (lf as any)?.share_token ? `${APP_URL}/file/${(lf as any).share_token}` : null;
             const calendlyUrl = (await cfg("CALENDLY_URL")) || null;
+            // File context: the ACTUAL open document list, so "what's left?" gets a
+            // precise answer instead of filler.
+            let missingDocs: string[] = [];
+            if ((lf as any)?.id) {
+              const { data: docs } = await supabaseAdmin.from("loan_documents").select("name, status, required").eq("loan_file_id", (lf as any).id);
+              missingDocs = (docs || []).filter((d: any) => d.required && d.status !== "received" && d.status !== "accepted").map((d: any) => String(d.name));
+            }
+            // Conversation memory from prior days.
+            const { data: leadRow } = await supabaseAdmin.from("leads").select("raw, nurture_paused").eq("id", leadId).maybeSingle();
+            const knownFacts: string[] = Array.isArray((leadRow as any)?.raw?.concierge_facts) ? (leadRow as any).raw.concierge_facts : [];
+            // Handoff: certain signals page the owner in parallel (AI still replies).
+            const signal = handoffSignal(body);
+            if (signal) {
+              const sid2 = process.env.TWILIO_ACCOUNT_SID, tok2 = process.env.TWILIO_AUTH_TOKEN, sf2 = process.env.TWILIO_FROM, st2 = process.env.LEAD_NOTIFY_SMS_TO;
+              if (sid2 && tok2 && sf2 && st2) {
+                const pb = new URLSearchParams({ To: st2, From: sf2, Body: `🔴 HANDOFF (${signal}) — ${(lead as any).full_name || from}: "${body.slice(0, 140)}" → ${APP_URL}/conversations` });
+                fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid2}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${sid2}:${tok2}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: pb.toString() }).catch(() => {});
+              }
+            }
             // Pre-filled application link = the conversion CTA — but only while they're
             // still pre-application; past that the doc-upload link is the next step.
             const stageNow = String((lead as any).stage || "").toLowerCase();
             const appLink = /application|processing|underwriting|approved|clear|closed|won|funded|dead|lost/.test(stageNow) ? null : magicApplyLink(lead as any);
-            const r = await markConciergeReply({ lead, history, fileLink, appLink, firstAiReply: firstAi, calendlyUrl });
+            const r = await markConciergeReply({ lead, history, fileLink, appLink, firstAiReply: firstAi, calendlyUrl, missingDocs, knownFacts, expertise: expertiseFor(lead, body) });
             if (r.ok && r.reply) {
               const s = await sendSms(leadPhone, r.reply);
               if (s.ok) await logComms({ leadId, channel: "sms", direction: "outbound", type: "ai_reply", body: r.reply, to: leadPhone, providerId: s.sid, actor: "agent:mark" });
               else console.warn("[sms/inbound] AI reply send failed:", s.detail);
+              // Persist conversation memory (best-effort) so tomorrow's Mark remembers today.
+              try {
+                const facts = await extractConversationFacts([...history, { role: "assistant", content: r.reply }], knownFacts);
+                if (facts.length) {
+                  const raw2 = ((leadRow as any)?.raw && typeof (leadRow as any).raw === "object") ? (leadRow as any).raw : {};
+                  raw2.concierge_facts = facts;
+                  await supabaseAdmin.from("leads").update({ raw: raw2 }).eq("id", leadId);
+                }
+              } catch { /* memory is best-effort */ }
             } else { console.warn("[sms/inbound] AI concierge skipped:", r.detail); }
           } catch (e) { console.warn("[sms/inbound] AI concierge error", e); }
         });
