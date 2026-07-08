@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   const t = decisionToken(sid, expected);
   const action = `${APP_URL}/api/voice/transfer/decision?sid=${sid}&amp;t=${t}`;
   const announce = `<Response><Gather numDigits="1" timeout="18" action="${action}" method="POST"><Say voice="Polly.Joanna">Penny here from Fetti. ${esc(callerName)} is holding — about: ${esc(reason)}. Press 1 to take the call. Press 2 or hang up and I'll take a message.</Say></Gather><Say voice="Polly.Joanna">No problem — I'll take a message.</Say></Response>`;
-  const params = new URLSearchParams({ To: owner.startsWith("+") ? owner : `+1${owner.replace(/\D/g, "").slice(-10)}`, From: from, Twiml: announce, Timeout: "18" });
+  const params = new URLSearchParams({ To: owner.startsWith("+") ? owner : `+1${owner.replace(/\D/g, "").slice(-10)}`, From: from, Twiml: announce, Timeout: "18", StatusCallback: `${APP_URL}/api/voice/transfer/status?sid=${sid}&t=${t}`, StatusCallbackMethod: "POST" });
   const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${tsid}/Calls.json`, {
     method: "POST",
     headers: { Authorization: "Basic " + Buffer.from(`${tsid}:${ttok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" },

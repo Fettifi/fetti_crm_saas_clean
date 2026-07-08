@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
   const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${tsid}/Calls.json`, {
     method: "POST",
     headers: { Authorization: "Basic " + Buffer.from(`${tsid}:${ttok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ To: owner.startsWith("+") ? owner : `+1${owner.replace(/\D/g, "").slice(-10)}`, From: from, Twiml: announce, Timeout: "18" }).toString(),
+    body: new URLSearchParams({ To: owner.startsWith("+") ? owner : `+1${owner.replace(/\D/g, "").slice(-10)}`, From: from, Twiml: announce, Timeout: "18", StatusCallback: `${APP_URL}/api/voice/transfer/status?sid=${nonce}&t=${t}`, StatusCallbackMethod: "POST" }).toString(),
   });
   if (!r.ok) { await setSetting(key, ""); console.error("[voice/bridge] whisper failed:", r.status); }
 
