@@ -226,6 +226,19 @@ export async function getLeadTimeline(leadId: string): Promise<ConversationMessa
     for (const m of msgs) if (m.providerId && latest[m.providerId]) m.status = latest[m.providerId];
   }
 
+  // EMAIL delivery receipts (Resend webhook stamps detail.delivery on the comms row):
+  // re-read the raw rows once and surface "✓ delivered" / "⚠️ bounced" per message.
+  try {
+    const { data: raws } = await supabaseAdmin
+      .from("activity_log").select("detail").eq("lead_id", leadId).eq("action", "comms.message")
+      .not("detail->>delivery", "is", null).limit(300);
+    const dmap: Record<string, string> = {};
+    for (const r of raws || []) { const d: any = (r as any).detail; if (d?.providerId && d?.delivery) dmap[String(d.providerId)] = String(d.delivery); }
+    for (const m of msgs) if (m.direction === "outbound" && m.providerId && dmap[m.providerId]) {
+      m.status = dmap[m.providerId] === "delivered" ? "✓ delivered" : "⚠️ " + dmap[m.providerId];
+    }
+  } catch { /* receipts are best-effort */ }
+
   // Fold in historical inbound SMS replies that were only stored as org_tasks
   // (before inbound logging existed), deduped against comms.message inbound rows.
   const { data: replies } = await supabaseAdmin

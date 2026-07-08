@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { listRequests, saveRequest } from "@/lib/esign";
 import { logActivity } from "@/lib/activity";
+import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,6 +63,35 @@ export async function POST(req: NextRequest) {
   const rawTo = evt?.data?.to;
   const emails = (Array.isArray(rawTo) ? rawTo : rawTo ? [rawTo] : []).map((e: any) => String(e).toLowerCase().trim()).filter(Boolean);
   if (!delivery || !emails.length) return NextResponse.json({ ok: true });
+
+  // DELIVERY RECEIPTS for EVERY CRM email: stamp the matching Conversations row
+  // (matched by Resend email id logged as providerId) with delivered/bounced —
+  // and PAGE the owner on any bounce/complaint anywhere in the system.
+  const emailId = String(evt?.data?.email_id || "");
+  if (emailId) {
+    try {
+      const { data: rows } = await supabaseAdmin
+        .from("activity_log").select("id, lead_id, detail").eq("action", "comms.message")
+        .filter("detail->>providerId", "eq", emailId).limit(1);
+      const rowMatch = (rows || [])[0];
+      if (rowMatch) {
+        const det: any = rowMatch.detail || {};
+        if (!(det.delivery === "bounced" && delivery === "delivered")) {
+          det.delivery = delivery; det.delivery_at = new Date().toISOString();
+          await supabaseAdmin.from("activity_log").update({ detail: det }).eq("id", rowMatch.id);
+        }
+        if (delivery === "bounced" || delivery === "complained") {
+          const subj = String(evt?.data?.subject || "").slice(0, 80);
+          const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN, sfrom = process.env.TWILIO_FROM, sto = process.env.LEAD_NOTIFY_SMS_TO;
+          if (sid && tok && sfrom && sto) {
+            const b = new URLSearchParams({ To: sto, From: sfrom, Body: `⚠️ Email ${delivery}: "${subj}" to ${emails[0]} — resend or call them.` });
+            await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: b.toString() }).catch(() => {});
+          }
+        }
+      }
+    } catch (e) { console.error("[resend webhook] receipt stamp failed:", e); }
+  }
+
   // Only e-sign emails (subject "Please sign: …") matter for envelope delivery tracking;
   // skip the envelope scan for nurture/lead/preapproval emails.
   if (!/^Please sign:/i.test(String(evt?.data?.subject || ""))) return NextResponse.json({ ok: true });
