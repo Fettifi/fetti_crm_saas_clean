@@ -8,6 +8,7 @@ import { Loader2, MessageSquare, Mail, Send, RefreshCw, Inbox } from "lucide-rea
 
 type Summary = {
   leadId: string; name: string; email: string | null; phone: string | null; stage: string | null;
+  tier?: string | null; purpose?: string | null;
   lastChannel: "sms" | "email" | null; lastDirection: "outbound" | "inbound" | null;
   lastBody: string; lastAt: string; needsReply: boolean;
 };
@@ -15,7 +16,12 @@ type Message = {
   id: string; direction: "outbound" | "inbound"; channel: "sms" | "email"; type: string;
   body: string; subject?: string | null; status?: string | null; at: string;
 };
-type LeadInfo = { id: string; name: string; email: string | null; phone: string | null; stage: string | null };
+type LeadInfo = {
+  id: string; name: string; email: string | null; phone: string | null; stage: string | null;
+  tier?: string | null; score?: number | null; purpose?: string | null; state?: string | null;
+  facts?: string[]; smsConsent?: boolean; aiCallConsent?: boolean; paused?: boolean;
+  appLink?: string | null; fileLink?: string | null; missingDocs?: string[];
+};
 
 const fmtTime = (iso: string) => {
   const d = new Date(iso);
@@ -37,6 +43,9 @@ export default function ConversationsPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [acting, setActing] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const [showFacts, setShowFacts] = useState(false);
   const threadEnd = useRef<HTMLDivElement>(null);
 
   const loadList = useCallback(async () => {
@@ -69,7 +78,7 @@ export default function ConversationsPage() {
     if (lead.phone) setChannel("sms"); else if (lead.email) setChannel("email");
   }, [lead]);
 
-  function openLead(id: string) { setActiveId(id); setErr(null); setDraft(""); setSubject(""); }
+  function openLead(id: string) { setActiveId(id); setErr(null); setDraft(""); setSubject(""); setShowFacts(false); setFlash(null); }
 
   async function send() {
     if (!activeId || !draft.trim() || sending) return;
@@ -88,7 +97,25 @@ export default function ConversationsPage() {
     finally { setSending(false); }
   }
 
-  const shown = list.filter((c) => (filter === "needs" ? c.needsReply : true));
+  async function quickAction(action: "draft" | "send_app_link" | "send_calendar" | "bridge") {
+    if (!activeId || acting) return;
+    setActing(action); setErr(null); setFlash(null);
+    try {
+      const r = await fetch("/api/conversations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadId: activeId, action }) });
+      const j = await r.json();
+      if (!r.ok) { setErr(j.error || "Action failed"); return; }
+      if (action === "draft") { setDraft(j.draft || ""); setFlash("Mark drafted a reply — edit and send."); }
+      else if (action === "bridge") setFlash(j.bridged ? "📞 Connected — you accepted the call." : "📞 Whisper sent to your cell — press 1 to call them together.");
+      else { setFlash(`Sent via ${j.via}.`); await loadThread(activeId, true); loadList(); }
+      setTimeout(() => setFlash(null), 5000);
+    } catch { setErr("Action failed"); }
+    finally { setActing(null); }
+  }
+
+  // Priority queue: needs-reply first, then Tier 1s, then recency.
+  const shown = list
+    .filter((c) => (filter === "needs" ? c.needsReply : true))
+    .sort((a, b) => (Number(b.needsReply) - Number(a.needsReply)) || (Number(a.tier === "Tier 1" ? 0 : 1) - Number(b.tier === "Tier 1" ? 0 : 1)) || (new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()));
   const needsCount = list.filter((c) => c.needsReply).length;
   const canSms = !!lead?.phone, canEmail = !!lead?.email;
 
@@ -119,8 +146,10 @@ export default function ConversationsPage() {
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-sm truncate">{c.name}</span>
                 {c.needsReply && <span className="text-[9px] font-bold uppercase tracking-wide text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded-full shrink-0">Reply</span>}
+                {c.tier === "Tier 1" && <span className="text-[9px] font-bold text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded-full shrink-0">T1</span>}
                 <span className="ml-auto text-[10px] text-slate-500 shrink-0">{fmtTime(c.lastAt)}</span>
               </div>
+              {c.purpose && <div className="text-[10px] text-slate-600 truncate mt-0.5">{c.purpose}{c.stage ? ` · ${c.stage}` : ""}</div>}
               <div className="flex items-center gap-1.5 mt-1 text-slate-400">
                 {c.lastChannel === "email" ? <Mail className="w-3 h-3 shrink-0" /> : <MessageSquare className="w-3 h-3 shrink-0" />}
                 <span className="text-[12px] truncate">{c.lastDirection === "inbound" ? "" : "You: "}{c.lastBody}</span>
@@ -138,13 +167,29 @@ export default function ConversationsPage() {
           <>
             <div className="px-5 py-3 border-b border-slate-900/80 flex items-center gap-3">
               <button onClick={() => setActiveId(null)} className="md:hidden text-slate-400 hover:text-white text-lg leading-none" aria-label="Back to list">←</button>
-              <div className="min-w-0">
-                <div className="font-semibold truncate">{lead?.name || "…"}</div>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold truncate flex items-center gap-2">
+                  {lead?.name || "…"}
+                  {lead?.tier && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${lead.tier === "Tier 1" ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>{lead.tier}</span>}
+                  {lead?.paused && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-300">OPTED OUT</span>}
+                </div>
                 <div className="text-[11px] text-slate-500 truncate">
-                  {lead?.phone || "no phone"} · {lead?.email || "no email"}{lead?.stage ? ` · ${lead.stage}` : ""}
+                  {[lead?.purpose, lead?.state, lead?.stage].filter(Boolean).join(" · ") || "—"}
+                  {lead?.smsConsent === false && lead?.phone ? " · ⚠️ no SMS consent" : ""}
                 </div>
               </div>
+              {(lead?.facts?.length || lead?.missingDocs?.length) ? (
+                <button onClick={() => setShowFacts((v) => !v)} className={`text-[11px] px-2 py-1 rounded-lg shrink-0 ${showFacts ? "bg-emerald-600 text-slate-950 font-semibold" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>
+                  🧠 {lead?.facts?.length || 0} facts{lead?.missingDocs?.length ? ` · ${lead.missingDocs.length} docs open` : ""}
+                </button>
+              ) : null}
             </div>
+            {showFacts && (
+              <div className="px-5 py-2.5 border-b border-slate-900/80 bg-slate-900/40 text-[12px] space-y-1 max-h-40 overflow-y-auto">
+                {(lead?.facts || []).map((f, i) => <div key={i} className="text-slate-300">• {f}</div>)}
+                {(lead?.missingDocs || []).length > 0 && <div className="text-amber-300/90 pt-1">📄 Still missing: {(lead?.missingDocs || []).join("; ")}</div>}
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
               {loadingThread ? (
@@ -172,6 +217,34 @@ export default function ConversationsPage() {
 
             {/* Composer */}
             <div className="border-t border-slate-900/80 px-5 py-3">
+              {/* Quick actions — the conversion toolkit */}
+              <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                <button onClick={() => quickAction("draft")} disabled={!!acting}
+                  className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-violet-600/20 text-violet-300 hover:bg-violet-600/30 disabled:opacity-40 flex items-center gap-1">
+                  {acting === "draft" ? <Loader2 className="w-3 h-3 animate-spin" /> : "✨"} Draft with Mark
+                </button>
+                <button onClick={() => quickAction("send_app_link")} disabled={!!acting || lead?.paused}
+                  className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 flex items-center gap-1">
+                  {acting === "send_app_link" ? <Loader2 className="w-3 h-3 animate-spin" /> : "📎"} Send app link
+                </button>
+                <button onClick={() => quickAction("send_calendar")} disabled={!!acting || lead?.paused}
+                  className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 flex items-center gap-1">
+                  {acting === "send_calendar" ? <Loader2 className="w-3 h-3 animate-spin" /> : "📅"} Send calendar
+                </button>
+                {lead?.phone && (
+                  <button onClick={() => quickAction("bridge")} disabled={!!acting}
+                    className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 disabled:opacity-40 flex items-center gap-1">
+                    {acting === "bridge" ? <Loader2 className="w-3 h-3 animate-spin" /> : "📞"} Call them now
+                  </button>
+                )}
+                {lead?.fileLink && (
+                  <a href={lead.fileLink} target="_blank" rel="noreferrer"
+                    className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700">
+                    📂 Their file
+                  </a>
+                )}
+              </div>
+              {flash && <div className="text-emerald-300 text-[11px] mb-2 bg-emerald-500/10 rounded-lg px-2.5 py-1.5">{flash}</div>}
               <div className="flex items-center gap-2 mb-2">
                 <button onClick={() => canSms && setChannel("sms")} disabled={!canSms}
                   className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1 ${channel === "sms" ? "bg-emerald-600 text-slate-950" : "bg-slate-800 text-slate-300"} ${!canSms ? "opacity-40 cursor-not-allowed" : "hover:bg-slate-700"}`}>
