@@ -3,7 +3,9 @@
 // fully reversible (promote restores pre_quarantine_stage + replays the pipeline).
 //   GET  ?dry_run=1 (default) → the would-quarantine list with scores
 //   GET  ?apply=1             → executes (stage → Review, paused, raw.shield.retro)
-// Auth: CRON_SECRET bearer/header (also proxy-gated under /api/admin for sessions).
+// Auth: CRON_SECRET bearer/header (lives under /api/cron — self-authenticating
+// like heal/lead-digest; /api/admin is session-gated by the proxy, which would
+// block headless bearer calls).
 // Scope guard: New Lead / Contacted only, AND zero human-engagement evidence
 // (no inbound message, no doc upload, no booked call) — an engaged borrower can
 // never be swept no matter what their name looks like.
