@@ -41,6 +41,8 @@ export default function LeadForm({ config }: { config: LpConfig }) {
         body: JSON.stringify({
           full_name: fd.get("full_name"), email: fd.get("email"), phone: fd.get("phone"), state: fd.get("state"),
           property_value: value, loan_purpose: purpose.loanPurpose, occupancy: config.occupancy, property_type: config.productType,
+          credit_band: (fd.get("credit_band") as string) || undefined,
+          liquid_assets: fd.get("liquid_assets") ? Number(fd.get("liquid_assets")) : undefined,
           source: `paid_lp_${config.slug}`,
           utm_source: a("utm_source") || "paid", utm_medium: a("utm_medium") || "cpc", utm_campaign: a("utm_campaign") || config.slug,
           utm_term: a("utm_term"), utm_content: a("utm_content"), gclid: a("gclid"), fbclid: a("fbclid"),
@@ -87,6 +89,24 @@ export default function LeadForm({ config }: { config: LpConfig }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <input name="state" placeholder="Property state (optional)" className={field} />
           <CurrencyInput value={propVal} onChange={setPropVal} placeholder="Est. value (optional)" className={field} />
+        </div>
+        {/* Credit + assets — the two inputs that let a strong borrower actually reach Tier 1.
+            Optional so conversion holds; high-intent search traffic answers them. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <select name="credit_band" defaultValue="" className={field} aria-label="Estimated credit score">
+            <option value="">Estimated credit (optional)</option>
+            <option value="720+">720+</option>
+            <option value="700-719">700-719</option>
+            <option value="680-699">680-699</option>
+            <option value="650-679">650-679</option>
+            <option value="Below 650">Below 650</option>
+          </select>
+          <select name="liquid_assets" defaultValue="" className={field} aria-label="Cash or savings available">
+            <option value="">Cash / savings (optional)</option>
+            <option value="100000">$100,000+</option>
+            <option value="50000">$50,000-$99,999</option>
+            <option value="0">Under $50,000</option>
+          </select>
         </div>
         {config.purposes.length > 1 && (
           <select name="purpose" defaultValue={config.purposes[0].value} className={field}>

@@ -155,6 +155,9 @@ const DEFAULT_REBUTTALS: Record<string, string> = {
   self_employed: "Self-employed? We have bank-statement and P&L programs. No tax returns required. You're in great company here.",
   past_bk_fc: "A past bankruptcy or foreclosure doesn't disqualify you. There are seasoning windows and non-QM paths. Let's map your timeline together.",
   first_flip: "First project? We fund first-time investors with the right deal and a solid plan. Let's structure it together. 🚀",
+  // Investor/DSCR path (Fetti's biggest paid segment) had no coaching, so first-time
+  // investors stalled here — the #1 reason the wizard's investor goal under-converts.
+  dscr_not_rented: "Not rented yet? That's completely fine. DSCR loans qualify on the property's market rent — an appraiser's rent estimate does the job, so you don't need a signed lease or a tenant in place to get started. Let's keep going. 🏠",
   not_62: "Not 62 yet? A HELOC or cash-out refinance can unlock your equity now. Let's look at those instead.",
   high_balance: "Owe a lot relative to the value? There are still options. And improving your equity is a strategy we can plan toward. Let's keep going.",
 };
@@ -180,6 +183,9 @@ function detectObstacle(id: string, value: string, a: Answers): string | null {
   if (id === "employment_status" && value === "Self-Employed") return "self_employed";
   if (id === "bk_fc" && value === "yes") return "past_bk_fc";
   if (id === "experience" && value === "0") return "first_flip";
+  // DSCR investor picking "Not rented yet" is the biggest first-DSCR stall — reassure
+  // that market rent (not a signed lease) qualifies the loan, and keep them moving.
+  if (id === "rental_type" && value === "none") return "dscr_not_rented";
   if (id === "age62" && value === "no") return "not_62";
   // Low-equity refinance/equity: owe >= 85% of value.
   if (id === "loan_amount_requested" && a.property_value && Number(value) >= 0.85 * Number(a.property_value)) return "high_balance";
@@ -461,8 +467,12 @@ export default function ApplyWizard() {
 
   function answerFlow(id: string, raw: string, kind: Q["kind"]) {
     const value = kind === "number" ? raw.replace(/[^0-9.]/g, "") : raw;
-    // Switching GOAL mid-flow must clear downstream answers — a stale occupancy from
-    // the old flow silently drives the wrong product + wrong licensing (audit P1).
+    // Switching GOAL mid-flow (via Back) must clear downstream answers. Each goal
+    // has a different question set, so a stale answer from the old flow — most
+    // dangerously `occupancy` — silently drives the wrong product AND the wrong
+    // licensing: effectiveOccupancy() trusts a leftover occupancy="Owner" and
+    // mislabels a DSCR investment loan as "consumer, FL/MI/CA" (owner-occupied
+    // is FL/MI/CA only; investment is all 50 states).
     const next = (id === "goal" && answers.goal && answers.goal !== value)
       ? ({ goal: value } as Answers)
       : { ...answers, [id]: value };

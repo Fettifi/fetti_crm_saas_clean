@@ -395,6 +395,7 @@ export async function importHistoricalLeads(): Promise<any> {
               if (dup) { seen.add(lgid); skipped++; pr.skipped++; continue; }
             }
           }
+
           // Score/tier through the SAME logic as /api/apply so imported paid leads
           // are prioritized for follow-up instead of sitting in the pipeline untiered.
           const { score, tier } = scoreLead({
@@ -442,7 +443,11 @@ export async function importHistoricalLeads(): Promise<any> {
                   full_name: row.full_name, email: row.email, phone: row.phone, state: row.state,
                   loan_purpose: row.loan_purpose, credit_band: row.credit_band, credit_score: row.credit_score,
                   liquid_assets: row.liquid_assets, property_value: row.property_value, income: row.income,
-                  source: "facebook", notes: `Recovered by the 15-min importer (webhook missed it) — page "${page.name}", form "${form.name}".`,
+                  source: "facebook", utm_source: "facebook", utm_medium: "paid_social",
+                  consent: true, consent_at: new Date().toISOString(),
+                  consent_text: "Submitted a Meta Lead Ad instant form requesting contact from Fetti Financial Services.",
+                  meta: { leadgen_id: lgid, form_id: form.id, page_id: page.id, created_time: lead.created_time },
+                  notes: `Recovered by the 15-min importer (webhook missed it) — page "${page.name}", form "${form.name}".`,
                 }),
                 signal: AbortSignal.timeout(30000),
               });

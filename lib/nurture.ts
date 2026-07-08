@@ -28,7 +28,7 @@ type Lead = {
   id: string; full_name: string | null; first_name: string | null;
   email: string | null; phone: string | null; loan_purpose: string | null;
   state: string | null; property_value: number | null;
-  stage: string | null; status: string | null; created_at: string;
+  stage: string | null; status: string | null; created_at: string; tier: string | null;
   nurture_step: number | null; nurture_paused: boolean | null; last_nurture_at: string | null;
   raw: any;
 };
@@ -47,6 +47,20 @@ const STEPS: { step: number; afterDays: number; msg: (name: string, purpose: str
   { step: 5, afterDays: 30, msg: (n, p) => `Hi ${n}, Mark here — still have your ${p} saved. If plans changed, tell me and I'll close it out; if not, you're minutes from done.` },
   { step: 6, afterDays: 60, msg: (n, p) => `${n} — two months since you asked about the ${p}. Rents and values drift; deals that didn't pencil then sometimes do now.` },
   { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, last nudge from Mark on the ${p} — your file stays open, nothing expires. Pick it up any time.` },
+];
+
+// TIER-1 FAST LANE. A qualified lead is hot — don't drip them on the slow 1/3/7/14/30
+// cadence. Tighter touches, all pushing to FINISH THE APPLICATION (the conversion that
+// matters), because qualified leads go cold fast. Same step counter as STEPS; chosen by
+// tier below. STOP opt-out on every message (TCPA/CAN-SPAM).
+const HOT_STEPS: { step: number; afterDays: number; msg: (name: string, purpose: string) => string }[] = [
+  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's Mark with Fetti — good news on ${p}: from what you shared, you look pre-qualified. Let's lock it in — finish your application (2 min) and I'll get you real numbers + a pre-approval. (Reply STOP to opt out.)` },
+  { step: 2, afterDays: 2, msg: (n, p) => `Hi ${n}, Mark again — you're pre-qualified for ${p}. The sooner we finish the application, the sooner you close. Pick up here, or grab a quick call with me. (Reply STOP to opt out.)` },
+  { step: 3, afterDays: 4, msg: (n, p) => `Hi ${n}, Mark with Fetti — your ${p} is ready to move. 5 minutes to finish the application and I'll have your options + pre-approval same day. (Reply STOP to opt out.)` },
+  { step: 4, afterDays: 7, msg: (n, p) => `Hi ${n}, Mark — rates move daily, don't leave money on ${p}. Let's finish your application and lock your options now. (Reply STOP to opt out.)` },
+  { step: 5, afterDays: 12, msg: (n, p) => `Hi ${n}, Mark checking in — you pre-qualified for ${p} and I'd hate for it to stall. Two minutes to finish, or book a call and I'll do it with you. (Reply STOP to opt out.)` },
+  { step: 6, afterDays: 21, msg: (n, p) => `Hi ${n}, Mark at Fetti — still want to move on ${p}? You're pre-qualified; let's get the application done and get you funded. (Reply STOP to opt out.)` },
+  { step: 7, afterDays: 35, msg: (n, p) => `Hi ${n}, Mark — last nudge on ${p}. You qualified once; whenever you're ready, finish the application and we move fast. (Reply STOP to opt out.)` },
 ];
 
 // After the 90-day drip, keep mining the lead forever: a value re-touch every
@@ -83,7 +97,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   const cutoff = new Date(Date.now() - 365 * 86400000).toISOString();
   const { data: leads } = await supabaseAdmin
     .from("leads")
-    .select("id, full_name, first_name, email, phone, loan_purpose, state, property_value, stage, created_at, nurture_step, nurture_paused, last_nurture_at, raw")
+    .select("id, full_name, first_name, email, phone, loan_purpose, state, property_value, stage, created_at, tier, nurture_step, nurture_paused, last_nurture_at, raw")
     .gte("created_at", cutoff)
     .order("created_at", { ascending: true })
     .limit(2000);
@@ -175,9 +189,13 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       }
     }
 
-    // --- Lane 1: Cold lead → 90-day drip, then long-term reactivation ---
+    // --- Lane 1: Cold/qualified lead → drip, then long-term reactivation ---
+    // Qualified leads (Tier 1, or agent-qualified) ride the tighter HOT_STEPS cadence
+    // that pushes to finish the application; everyone else gets the standard drip.
+    const isHot = String(l.tier || "").toLowerCase() === "tier 1" || l.raw?.qualification?.decision === "qualified";
+    const lane = isHot ? HOT_STEPS : STEPS;
     const ageDays = (Date.now() - new Date(l.created_at).getTime()) / 86400000;
-    const lastStep = STEPS[STEPS.length - 1].step;
+    const lastStep = lane[lane.length - 1].step;
     const curStep = l.nurture_step || 0;
 
     if (curStep < lastStep) {
@@ -185,7 +203,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       // walk the cadence in order. (Previously overwrote `due` on every match, so it
       // jumped to the LATEST eligible step and skipped a cold lead's early touches.)
       let due: typeof STEPS[number] | null = null;
-      for (const s of STEPS) if (s.step > curStep && ageDays >= s.afterDays) { due = s; break; }
+      for (const s of lane) if (s.step > curStep && ageDays >= s.afterDays) { due = s; break; }
       if (!due) continue;
       // Throttle: a lead whose backlog makes multiple steps "due" (old import, re-opt-in)
       // still gets at most one touch every 2 days — never seven emails in seven days.
@@ -205,7 +223,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         if ((res?.sent || []).length) {
           await supabaseAdmin.from("leads").update({ nurture_step: due.step, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
           sent++;
-          await logSent(l.id, "drip", due.step, res.sent);
+          await logSent(l.id, isHot ? "hot_drip" : "drip", due.step, res.sent);
         } else console.warn("[nurture] drip step", due.step, "delivered on no channel for", l.id, "— not advancing");
       } catch (e) { console.warn("[nurture] drip failed for", l.id, e); }
       continue;
