@@ -111,7 +111,9 @@ const wss = new WebSocketServer({ server, path: "/media" });
 wss.on("connection", (twilio) => {
   let streamSid = null;
   let callSid = null;
-  let caller = null;              // caller's phone number (from Twilio start customParameters)
+  let caller = null;
+  let obMode = null, obFirst = "", obContext = ""; // outbound call mode (confirm|callback)
+  let dynamicOpening = null;      // outbound calls swap the mandatory opening line              // caller's phone number (from Twilio start customParameters)
   let greeted = false;            // true once the opening disclosure finishes → barge-in allowed
   let oaiOpen = false, startSeen = false, started = false;
   let messageSaved = false;       // save_message succeeded → no salvage needed
@@ -146,7 +148,19 @@ wss.on("connection", (twilio) => {
     if (started || !oaiOpen || !startSeen) return;
     started = true;
     let ctx = "";
-    if (caller) {
+    if (obMode === "confirm" || obMode === "callback") {
+      // OUTBOUND CALL (we dialed them): different opening + tight scope. Consent and
+      // no-cold-call gates were enforced server-side before this call was placed.
+      const who = obFirst ? ` Am I speaking with ${obFirst}?` : " Who am I speaking with?";
+      const obOpening = obMode === "confirm"
+        ? `Hi! This is Penny, the automated A.I. assistant for Fetti Financial Services — quick heads-up, this call is recorded and transcribed.${who}`
+        : `Hi! This is Penny, the automated A.I. assistant for Fetti Financial Services, returning your call — and a quick heads-up, this call is recorded and transcribed.${who}`;
+      ctx = `\n\nOUTBOUND MODE (${obMode}): WE called THEM — ${obContext}\n` + (obMode === "confirm"
+        ? `Your ONLY job: warmly confirm they can still make the appointment. If yes: great, tell them Ramon is looking forward to it, ask if there's anything they'd like him to prepare, then wrap up and CALL save_message with the outcome (reason starting "APPT CONFIRMED — "). If they need to reschedule: no problem — tell them a fresh scheduling link is coming by text/email, use book_call, and save_message (reason starting "WANTS RESCHEDULE — "). Keep the whole call under two minutes; do NOT sell, do NOT collect documents, do NOT quote numbers. If they ask to speak to Ramon now, you may use transfer_call as usual. If they say stop calling / not interested: apologize once, confirm no more calls, save_message (reason starting "CALL OPT-OUT — "), and end warmly.`
+        : `You're RETURNING their call — they reached out to us first. Ask how you can help, handle it exactly like an inbound call (messages, booking, transfer_call if they want Ramon — whisper rules apply). If they don't remember calling or want no calls: apologize once, confirm no more calls, save_message (reason starting "CALL OPT-OUT — "), and end warmly.`);
+      // Outbound opening replaces the inbound one for this session.
+      dynamicOpening = obOpening;
+    } else if (caller) {
       try {
         const r = await fetch(CRM_LOOKUP_URL, {
           method: "POST",
@@ -167,7 +181,7 @@ wss.on("connection", (twilio) => {
     // objects (audio/pcmu = g711 u-law), modalities -> output_modalities.
     oai.send(JSON.stringify({ type: "session.update", session: {
       type: "realtime",
-      instructions: INSTRUCTIONS + ctx,
+      instructions: (dynamicOpening ? INSTRUCTIONS.split(OPENING).join(dynamicOpening) : INSTRUCTIONS) + ctx,
       output_modalities: ["audio"],
       audio: {
         input: { format: { type: "audio/pcmu" }, turn_detection: { type: "server_vad" }, transcription: { model: "whisper-1" } },
@@ -256,6 +270,9 @@ wss.on("connection", (twilio) => {
     if (m.event === "start") {
       streamSid = m.start.streamSid; callSid = m.start.callSid;
       caller = (m.start.customParameters && m.start.customParameters.caller) || null;
+      obMode = (m.start.customParameters && m.start.customParameters.mode) || null;
+      obFirst = (m.start.customParameters && m.start.customParameters.first) || "";
+      obContext = (m.start.customParameters && m.start.customParameters.context) || "";
       startSeen = true; beginSession();
     }
     else if (m.event === "media" && oai.readyState === WebSocket.OPEN) {

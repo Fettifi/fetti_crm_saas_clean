@@ -13,8 +13,9 @@ import { getLeadMessagesForAI, countRecentOutbound, sendSms, logComms } from "@/
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { renderFirstTouch } from "@/lib/notify/emailCopy";
 import { magicApplyLink } from "@/lib/magicLink";
-import { cfg } from "@/lib/settings";
+import { cfg, getSetting, setSetting } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
+import { getMessages } from "@/lib/phoneMessages";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 const GRACE_MS = 10 * 60000;        // give the real-time path 10 minutes before stepping in
@@ -131,5 +132,55 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
     }
   } catch (e) { console.error("[watchdog] first-touch sweep failed:", e); }
 
-  return { answered, firstTouched, paged };
+  // ---------- 3) Return calls: Penny calls back message-leavers ----------
+  // They called us and left a callback number = an express request. Only messages
+  // from the last 4h (never resurrect old ones), still status "new" after 15 min
+  // (the owner had first shot), one attempt ever per message.
+  let calledBack = 0, confirmCalls = 0;
+  try {
+    if (process.env.CRON_SECRET) {
+      const msgs = await getMessages();
+      for (const m of (msgs || []).slice(0, 30)) {
+        if (m.status !== "new" || !m.callback_number) continue;
+        const age = Date.now() - new Date(m.created_at).getTime();
+        if (age < 15 * 60000 || age > 4 * 3600000) continue;
+        if (/CALL ENDED EARLY|Testing|test/i.test(String(m.reason || "") + String(m.caller_name || ""))) continue;
+        const doneKey = `cbdone_${m.id}`;
+        if (await getSetting(doneKey)) continue;
+        await setSetting(doneKey, new Date().toISOString());
+        const r = await fetch(`${APP_URL}/api/voice/outbound`, {
+          method: "POST", headers: { "Content-Type": "application/json", "x-fetti-internal": process.env.CRON_SECRET },
+          body: JSON.stringify({ mode: "callback", message_id: m.id }),
+        }).then((x) => x.json()).catch(() => null);
+        if (r?.called) calledBack++;
+      }
+    }
+  } catch (e) { console.error("[watchdog] callback sweep failed:", e); }
+
+  // ---------- 4) Appointment-show calls (booked + AI-call consent only) ----------
+  // Bookings land as calendly.booked activity with start_time; call once, in the
+  // window 2–5 hours before the meeting, only with raw.ai_call_consent === true.
+  try {
+    if (process.env.CRON_SECRET) {
+      const { data: booked } = await supabaseAdmin
+        .from("activity_log").select("lead_id, detail").eq("action", "calendly.booked")
+        .gte("created_at", new Date(Date.now() - 14 * 86400000).toISOString()).limit(200);
+      for (const bk of booked || []) {
+        const st = (bk as any).detail?.start_time ? new Date((bk as any).detail.start_time).getTime() : 0;
+        const untilMs = st - Date.now();
+        if (!st || untilMs < 2 * 3600000 || untilMs > 5 * 3600000) continue;
+        const doneKey = `cfdone_${(bk as any).lead_id}_${st}`;
+        if (await getSetting(doneKey)) continue;
+        await setSetting(doneKey, new Date().toISOString());
+        const whenText = `${(bk as any).detail?.event || "your call"} with Ramon at ${new Date(st).toLocaleString("en-US", { timeZone: "America/Los_Angeles", weekday: "long", hour: "numeric", minute: "2-digit" })} Pacific`;
+        const r = await fetch(`${APP_URL}/api/voice/outbound`, {
+          method: "POST", headers: { "Content-Type": "application/json", "x-fetti-internal": process.env.CRON_SECRET },
+          body: JSON.stringify({ mode: "confirm", lead_id: (bk as any).lead_id, when_text: whenText }),
+        }).then((x) => x.json()).catch(() => null);
+        if (r?.called) confirmCalls++;
+      }
+    }
+  } catch (e) { console.error("[watchdog] confirm sweep failed:", e); }
+
+  return { answered, firstTouched, paged, calledBack, confirmCalls } as any;
 }

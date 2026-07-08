@@ -329,7 +329,7 @@ const field = "w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 t
 // OPTIONAL SMS consent (TCPA + carrier A2P/toll-free rule: agreeing to texts must NOT
 // be a condition of service). Collected via a separate, unchecked checkbox — never
 // bundled into form submission. When unchecked, we do not text the lead.
-const SMS_CONSENT = "Text me too — I agree to receive account, application, and appointment text messages (SMS) from Fetti Financial Services LLC (NMLS #2267023) at the number provided, including automated messages. Consent is not a condition of any service. Message frequency varies; Msg & data rates may apply. Reply STOP to opt out, HELP for help.";
+const SMS_CONSENT = "Text or call me too — I agree that Fetti Financial Services LLC (NMLS #2267023) may send me account, application, and appointment text messages (SMS) AND may call me at the number provided, including automated calls made with an AI voice assistant (for example, appointment reminders and returning my calls). Consent is not a condition of any service. Message frequency varies; Msg & data rates may apply. Reply STOP to opt out of texts, HELP for help; say or press opt-out during any call to stop calls.";
 
 export default function ApplyWizard() {
   const [answers, setAnswers] = useState<Answers>({});
@@ -597,6 +597,9 @@ export default function ApplyWizard() {
         sms_consent: true,
         sms_consent_at: new Date().toISOString(),
         sms_consent_text: SMS_CONSENT,
+        // Same checkbox covers AI-assistant CALLS (appointment reminders, call returns)
+        // — required by the FCC's artificial-voice rules before Penny may dial out.
+        ai_call_consent: true,
       } : {}),
     };
     setContact(c);
