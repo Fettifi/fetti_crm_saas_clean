@@ -165,6 +165,23 @@ export async function POST(req: NextRequest) {
             const knownFacts: string[] = Array.isArray((leadRow as any)?.raw?.concierge_facts) ? (leadRow as any).raw.concierge_facts : [];
             // Handoff: certain signals page the owner in parallel (AI still replies).
             const signal = handoffSignal(body);
+            // LIVE BRIDGE (owner rule 2026-07-08): a warm lead explicitly asking for a
+            // human gets a real shot at a live call — Mark says he's checking, the owner
+            // gets the press-1 whisper, and accept = the system dials the lead and
+            // connects them. Decline/timeout = calendar text. The press-1 screen (plus
+            // the 2h throttle inside /api/voice/bridge) is the no-bots/no-waste gate.
+            if (signal === "asked for a human" && (lead as any).phone && process.env.CRON_SECRET) {
+              const holdMsg = `You got it — let me see if Ramon can jump on a quick call with you right now. Give me a minute. (Reply STOP to opt out.)`;
+              const hs = await sendSms(leadPhone, holdMsg);
+              if (hs.ok) await logComms({ leadId, channel: "sms", direction: "outbound", type: "ai_reply", body: holdMsg, to: leadPhone, providerId: hs.sid, actor: "agent:mark" }).catch(() => {});
+              // Fire-and-forget: the bridge endpoint handles the whisper, the connect,
+              // and the fallback text — this webhook must return fast.
+              fetch(`${APP_URL}/api/voice/bridge`, {
+                method: "POST", headers: { "Content-Type": "application/json", "x-fetti-internal": process.env.CRON_SECRET },
+                body: JSON.stringify({ lead_id: leadId, reason: body.slice(0, 140) }),
+              }).catch((e) => console.error("[sms/inbound] bridge fire failed:", e?.message));
+              return; // Mark's hold text + the bridge outcome cover this turn — no AI double-reply
+            }
             if (signal) {
               const sid2 = process.env.TWILIO_ACCOUNT_SID, tok2 = process.env.TWILIO_AUTH_TOKEN, sf2 = process.env.TWILIO_FROM, st2 = process.env.LEAD_NOTIFY_SMS_TO;
               if (sid2 && tok2 && sf2 && st2) {
