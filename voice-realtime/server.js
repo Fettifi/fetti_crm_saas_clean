@@ -105,7 +105,7 @@ async function postToCrm(payload) {
   return false;
 }
 
-const server = http.createServer((_req, res) => { res.writeHead(200); res.end("Fetti realtime voice bridge — OK"); });
+const server = http.createServer((_req, res) => { res.writeHead(200); res.end("Fetti realtime voice bridge — OK rev=" + (process.env.BRIDGE_REV || "unknown")); });
 const wss = new WebSocketServer({ server, path: "/media" });
 
 wss.on("connection", (twilio) => {
