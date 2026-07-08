@@ -82,7 +82,10 @@ async function geminiOnly(opts: ChatOpts): Promise<string | null> {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: opts.system + (opts.json ? "\n\nRespond with ONLY a valid JSON object — no prose, no markdown fences." : "") }] },
         contents,
-        generationConfig: { maxOutputTokens: opts.maxTokens ?? 900, temperature: opts.temperature ?? 0.6, ...(opts.json ? { responseMimeType: "application/json" } : {}) },
+        // Gemini 2.5 Pro ALWAYS thinks (min budget 128) and thinking tokens count
+        // against maxOutputTokens — cap the thinking small and give the answer
+        // explicit headroom, or short replies come back EMPTY (finish MAX_TOKENS).
+        generationConfig: { maxOutputTokens: (opts.maxTokens ?? 900) + 512, temperature: opts.temperature ?? 0.6, thinkingConfig: { thinkingBudget: 128 }, ...(opts.json ? { responseMimeType: "application/json" } : {}) },
       }),
       signal: AbortSignal.timeout(opts.timeoutMs ?? 30000),
     });
