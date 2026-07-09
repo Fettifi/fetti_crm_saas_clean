@@ -11,6 +11,7 @@ type Episode = {
   id: string; number: number; title: string; logline: string; borrower: string;
   lessonTag: string; signatureMove: string; ledgerCallback: string; newLedgerEntry: string;
   beats: { beat: string; summary: string }[]; lines: Line[]; cta: string; flagship?: boolean; created_at: string;
+  video?: string; video_at?: string;
 };
 type Concept = { name: string; premise: string };
 
@@ -26,6 +27,7 @@ export default function ShowPage() {
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const load = useCallback(async () => {
@@ -207,6 +209,32 @@ export default function ShowPage() {
                 <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
                   <div className="text-[11px] uppercase tracking-wide text-emerald-500/80 mb-1">Caption / CTA</div>
                   <p className="text-sm text-slate-200">{sel.cta}</p>
+                </div>
+
+                {/* CARTOON — plays the produced MP4 if published, else the local produce recipe */}
+                <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                  <div className="flex items-center gap-2 mb-2 font-semibold text-sm">🎬 Cartoon
+                    {sel.video && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">produced</span>}
+                  </div>
+                  {sel.video ? (
+                    <div>
+                      <video src={sel.video} controls playsInline className="w-full max-w-[300px] rounded-lg border border-slate-800 bg-black mx-auto" style={{ aspectRatio: "9/16" }} />
+                      <div className="mt-2 flex items-center gap-2">
+                        <a href={sel.video} download className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700">Download MP4</a>
+                        <span className="text-[10px] text-slate-600">Re-produce anytime to refresh.</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-[12px] text-slate-400 mb-2">Render this episode into a finished 9:16 cartoon (real voices + lip-sync) from the Studio on your Mac, then publish it here:</p>
+                      <div className="rounded-lg bg-black/60 border border-slate-800 p-2.5 font-mono text-[11px] text-emerald-300 flex items-center justify-between gap-2">
+                        <code className="truncate">cd ~/Desktop/RayMarkStudio &amp;&amp; node scripts/produce.mjs {sel.number} &amp;&amp; node scripts/publish.mjs {sel.number}</code>
+                        <button onClick={() => { navigator.clipboard?.writeText(`cd ~/Desktop/RayMarkStudio && node scripts/produce.mjs ${sel.number} && node scripts/publish.mjs ${sel.number}`); setCopiedCmd(true); setTimeout(() => setCopiedCmd(false), 1500); }}
+                          className="shrink-0 text-slate-400 hover:text-white">{copiedCmd ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}</button>
+                      </div>
+                      <p className="text-[10px] text-slate-600 mt-1.5">Produces the MP4 locally in Toon Boom Harmony&apos;s pipeline, then uploads it — the player appears here when it&apos;s done.</p>
+                    </div>
+                  )}
                 </div>
 
                 {sel.newLedgerEntry && (
