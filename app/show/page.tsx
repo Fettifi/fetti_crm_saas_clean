@@ -228,8 +228,8 @@ export default function ShowPage() {
                     <div>
                       <p className="text-[12px] text-slate-400 mb-2">Render this episode into a finished 9:16 cartoon (real voices + lip-sync) from the Studio on your Mac, then publish it here:</p>
                       <div className="rounded-lg bg-black/60 border border-slate-800 p-2.5 font-mono text-[11px] text-emerald-300 flex items-center justify-between gap-2">
-                        <code className="truncate">cd ~/Desktop/RayMarkStudio &amp;&amp; node scripts/produce.mjs {sel.number} &amp;&amp; node scripts/publish.mjs {sel.number}</code>
-                        <button onClick={() => { navigator.clipboard?.writeText(`cd ~/Desktop/RayMarkStudio && node scripts/produce.mjs ${sel.number} && node scripts/publish.mjs ${sel.number}`); setCopiedCmd(true); setTimeout(() => setCopiedCmd(false), 1500); }}
+                        <code className="truncate">cd ~/Desktop/RayMarkStudio &amp;&amp; node scripts/produce-ai.mjs {sel.number} &amp;&amp; node scripts/publish.mjs {sel.number}</code>
+                        <button onClick={() => { navigator.clipboard?.writeText(`cd ~/Desktop/RayMarkStudio && node scripts/produce-ai.mjs ${sel.number} && node scripts/publish.mjs ${sel.number}`); setCopiedCmd(true); setTimeout(() => setCopiedCmd(false), 1500); }}
                           className="shrink-0 text-slate-400 hover:text-white">{copiedCmd ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}</button>
                       </div>
                       <p className="text-[10px] text-slate-600 mt-1.5">Produces the MP4 locally in Toon Boom Harmony&apos;s pipeline, then uploads it — the player appears here when it&apos;s done.</p>
