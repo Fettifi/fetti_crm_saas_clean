@@ -16,6 +16,11 @@ export type ScorableLead = {
   liquid_assets?: number | null;
   property_value?: number | null;
   loan_purpose?: string | null;
+  loan_amount_requested?: number | null;
+  income?: number | null; // monthly income in dollars
+  occupancy?: string | null;
+  property_type?: string | null;
+  own_other_property?: string | boolean | null; // wizard portfolio flag (raw)
 };
 
 // Meta (Facebook/Instagram) Lead Ad instant forms send multiple-choice answers as
@@ -45,6 +50,13 @@ function dollarsFromCoded(v?: number | null): number | null {
   return v < 5000 ? v * 1000 : v;
 }
 
+// Investor / business-purpose signal — same regex as lib/dealScreen.ts isInvestorDeal,
+// inlined here so the scorer stays dependency-free (dealScreen pulls in the AI client).
+function isInvestorish(b: ScorableLead): boolean {
+  const p = `${b.loan_purpose || ""} ${b.occupancy || ""} ${b.property_type || ""}`.toLowerCase();
+  return /dscr|invest|rental|bridge|flip|hard money|commercial|business|non-?qm/.test(p);
+}
+
 export function scoreLead(b: ScorableLead): { score: number; tier: LeadTier } {
   let score = 0;
   const cs = b.credit_score || creditFromBand(b.credit_band);
@@ -60,7 +72,28 @@ export function scoreLead(b: ScorableLead): { score: number; tier: LeadTier } {
   if (propValue && propValue >= 750000) score += 20;
   else if (propValue && propValue >= 350000) score += 10;
 
-  if (typeof b.loan_purpose === "string" && b.loan_purpose.toLowerCase().includes("dscr")) score += 10;
+  // LOAN SIZE — the strongest tier-1 (revenue) signal, previously ignored entirely.
+  // loan_amount_requested is filled on ~1/25 real leads while property_value hits
+  // ~12/25, so estimate 80% LTV of property value when the amount is missing —
+  // without the fallback, jumbo detection almost never fires on live traffic.
+  const loanAmt = dollarsFromCoded(b.loan_amount_requested) ?? (propValue ? propValue * 0.8 : null);
+  if (loanAmt && loanAmt >= 1000000) score += 30;
+  else if (loanAmt && loanAmt >= 600000) score += 20;
+  else if (loanAmt && loanAmt >= 300000) score += 10;
+
+  // INVESTOR — investor/DSCR borrowers are repeat, portfolio-building clients.
+  // (Subsumes the old `loan_purpose includes "dscr"` +10 — the regex covers dscr.)
+  if (isInvestorish(b)) score += 10;
+  // Portfolio flag from the wizard ("Owns other RE") — a multi-deal client signal.
+  const oop = typeof b.own_other_property === "string" ? /^(y|true|1)/i.test(b.own_other_property) : b.own_other_property === true;
+  if (oop) score += 10;
+
+  // INCOME — high earners qualify bigger consumer loans ($15k/mo ≈ jumbo capacity).
+  // The wizard stores MONTHLY income but Meta forms may answer ANNUAL ("annual_income"
+  // is a mapLead alias); no real monthly income exceeds $40k on this book, so treat
+  // larger figures as annual and normalize to monthly before the threshold.
+  const monthlyIncome = b.income && b.income > 40000 ? b.income / 12 : b.income;
+  if (monthlyIncome && monthlyIncome >= 15000) score += 10;
 
   score = Math.min(score, 100);
   const tier: LeadTier = score >= 70 ? "Tier 1" : score >= 40 ? "Tier 2" : "Tier 3";

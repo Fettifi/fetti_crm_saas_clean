@@ -338,6 +338,9 @@ export async function importHistoricalLeads(): Promise<any> {
       liquid_assets: parseMoney(get("liquid_assets", "liquid_reserves", "reserves", "cash", "savings", "available_funds")) ?? null,
       property_value: parseMoney(get("property_value", "home_value", "purchase_price")) ?? null,
       income: parseMoney(get("annual_income", "monthly_income", "gross_income", "income")) ?? null,
+      // Tier-1 value signals (scoreLead uses these; harmless null when the form lacks them)
+      loan_amount_requested: parseMoney(get("loan_amount", "loan_amount_requested", "how_much", "amount_needed")) ?? null,
+      occupancy: (get("occupancy", "property_use", "occupancy_type") || null) as string | null,
     };
   };
 
@@ -401,11 +404,13 @@ export async function importHistoricalLeads(): Promise<any> {
           const { score, tier } = scoreLead({
             loan_purpose: m.loan_purpose, credit_band: m.credit_band, credit_score: m.credit_score,
             liquid_assets: m.liquid_assets, property_value: m.property_value,
+            loan_amount_requested: m.loan_amount_requested, income: m.income, occupancy: m.occupancy,
           });
           const row = {
             full_name: m.full_name, email: m.email, phone: m.phone, state: m.state, loan_purpose: m.loan_purpose,
             credit_band: m.credit_band, credit_score: m.credit_score, liquid_assets: m.liquid_assets,
             property_value: m.property_value, income: m.income,
+            loan_amount_requested: m.loan_amount_requested, occupancy: m.occupancy,
             score, tier,
             notes: `Imported from Meta Lead Center (historical) — page "${page.name}", form "${form.name}". Review before contacting.`,
             stage: "New Lead", source: "facebook", lead_source: "facebook",

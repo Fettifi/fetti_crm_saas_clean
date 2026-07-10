@@ -25,6 +25,7 @@ export type LeadAlert = {
 
 function summarize(l: LeadAlert): string {
   const parts = [
+    l.tier === "Tier 1" && `💎 TIER 1 CLIENT — work this one first`,
     l.returning
       ? `🔁 Returning lead re-engaged (${l.tier || "?"}, score ${l.score ?? "?"})`
       : `🟢 New Fetti lead (${l.tier || "?"}, score ${l.score ?? "?"})`,
@@ -67,7 +68,7 @@ async function viaResend(l: LeadAlert) {
     body: JSON.stringify({
       from,
       to: to.split(",").map((s) => s.trim()),
-      subject: `New lead: ${l.full_name || l.email || l.phone} (${l.tier || "?"})`,
+      subject: `${l.tier === "Tier 1" ? "💎 TIER 1 — " : ""}New lead: ${l.full_name || l.email || l.phone} (${l.tier || "?"})`,
       html: `<pre style="font:14px ui-monospace,monospace">${summarize(l)}</pre>`,
     }),
   });
