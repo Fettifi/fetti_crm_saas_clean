@@ -122,6 +122,7 @@ export default function PricerPage() {
   const [sellerCredit, setSellerCredit] = useState("");
   const [escrowWaived, setEscrowWaived] = useState(false);
   const [ownersTitle, setOwnersTitle] = useState(false);
+  const [origPct, setOrigPct] = useState("1"); // Fetti's origination fee (% of loan) — adjustable per deal
   const [cc, setCc] = useState<any>(null);
   const [ccOpen, setCcOpen] = useState(true);
   useEffect(() => {
@@ -134,11 +135,12 @@ export default function PricerPage() {
           zip, state, price: num(price), loanAmount: r.loan, loanType, purpose,
           ratePct: effRate, taxRatePct: taxRatePctEff, insAnnual: r.insMonthly * 12,
           sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
+          originationPct: origPct === "" ? undefined : num(origPct),
         }),
       }).then((res) => (res.ok ? res.json() : null)).then((j) => setCc(j?.ok ? j : null)).catch(() => setCc(null));
     }, 350);
     return () => { clearTimeout(t); ctl.abort(); };
-  }, [price, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle]);
+  }, [price, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct]);
 
   async function downloadPdf() {
     if (!num(price)) { alert("Enter a purchase price first."); return; }
@@ -152,6 +154,7 @@ export default function PricerPage() {
           loanType, creditVal, occupancy: effOccupancy, purpose,
           ratePct: effRate, rateIsOverride: rateOverride, termMonths: term, hoaMonthly: num(hoa), includePMI,
           sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
+          originationPct: origPct === "" ? undefined : num(origPct),
         }),
       });
       if (res.ok) {
@@ -324,7 +327,16 @@ export default function PricerPage() {
                       </div>
                     ))}
                     <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+                      <div>
+                        <label className={lbl}>Origination fee</label>
+                        <div className="relative">
+                          <input type="number" step="0.125" min="0" max="5" value={origPct} onChange={(e) => setOrigPct(e.target.value)} className={inp} placeholder="1.0" inputMode="decimal" />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm pointer-events-none">% of loan</span>
+                        </div>
+                      </div>
                       <div><label className={lbl}>Seller credit</label><CurrencyInput value={sellerCredit} onChange={setSellerCredit} className={inp} placeholder="$0" /></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
                       <div className="flex flex-col justify-end gap-1 pb-1">
                         <label className="flex items-center gap-2 text-[12px] text-slate-300"><input type="checkbox" checked={escrowWaived} onChange={(e) => setEscrowWaived(e.target.checked)} className="accent-emerald-500" /> Waive escrows</label>
                         <label className="flex items-center gap-2 text-[12px] text-slate-300"><input type="checkbox" checked={ownersTitle} onChange={(e) => setOwnersTitle(e.target.checked)} className="accent-emerald-500" /> Add owner&apos;s title</label>

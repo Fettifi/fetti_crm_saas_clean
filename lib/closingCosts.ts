@@ -26,6 +26,7 @@ export type ClosingCostInput = {
   taxRatePct: number;            // effective property-tax %/yr (ZIP-resolved upstream)
   insAnnual: number;             // homeowner's insurance $/yr (ZIP/state-resolved upstream)
   pointsPct?: number;            // discount points (% of loan)
+  originationPct?: number;       // per-scenario override of Fetti's origination % (else the model default)
   sellerCredit?: number;
   lenderCredit?: number;
   escrowWaived?: boolean;        // conv/DSCR only; FHA/VA/USDA always escrow
@@ -55,7 +56,8 @@ export type ClosingCostResult = {
 // Lender fee model (Fetti's own fees) — editable via CLOSING_COST_MODEL setting.
 // ---------------------------------------------------------------------------
 export type FeeModel = {
-  originationFlat: number;       // admin/origination
+  originationPct: number;        // Fetti's origination fee as % of loan (broker comp) — the default; adjustable per-scenario
+  originationFlat: number;       // flat lender admin fee (separate from the % origination)
   underwriting: number;
   processing: number;
   creditReport: number;          // per file (borrower + co-borrower soft/hard merge)
@@ -69,6 +71,7 @@ export type FeeModel = {
 };
 
 export const DEFAULT_MODEL: FeeModel = {
+  originationPct: 1.0,           // 1% of loan — Fetti's standard origination; set your house rate via CLOSING_COST_MODEL, adjust per-deal in the pricer
   originationFlat: 1595,
   underwriting: 995,
   processing: 595,
@@ -205,9 +208,13 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
 
   // ---- A. Origination ----
   const A: CostLine[] = [];
+  // Fetti's origination fee (broker compensation) = % of loan. Per-scenario override
+  // (the pricer's adjustable field) wins; else the house default from the fee model.
+  const origPct = Math.max(0, i.originationPct != null ? i.originationPct : m.originationPct);
+  if (origPct > 0) A.push({ label: `Origination fee (${origPct}% of loan amount)`, amount: r0(loan * origPct / 100) });
   const pointsPct = Math.max(0, i.pointsPct || 0);
   if (pointsPct) A.push({ label: `${pointsPct}% of loan amount (discount points)`, amount: r0(loan * pointsPct / 100) });
-  A.push({ label: "Origination / admin fee", amount: m.originationFlat });
+  if (m.originationFlat > 0) A.push({ label: "Lender admin fee", amount: m.originationFlat });
   A.push({ label: "Underwriting fee", amount: m.underwriting });
   A.push({ label: "Processing fee", amount: m.processing });
 

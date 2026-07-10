@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
       ratePct: Number(b.ratePct) || 7,
       taxRatePct, insAnnual,
       pointsPct: Number(b.pointsPct) || 0,
+      originationPct: b.originationPct != null && b.originationPct !== "" ? Number(b.originationPct) : undefined,
       sellerCredit: Number(b.sellerCredit) || 0,
       lenderCredit: Number(b.lenderCredit) || 0,
       escrowWaived: b.escrowWaived === true,
