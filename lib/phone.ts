@@ -37,3 +37,23 @@ export function classifyPhone(raw?: string | null): { canonical: string | null; 
   const digits = String(raw || "").replace(/\D/g, "");
   return { canonical: canonicalPhone(raw), validNanp: isValidNanp(raw), hasDigits: digits.length >= 7 };
 }
+
+// Always-on intake label — the single source of truth for raw.phone_status:
+//   "us"      valid, callable/textable NANP number
+//   "non_us"  10+ digits, not a valid US number, not an obvious fake → plausibly a
+//             real overseas number (foreign investor — Fetti can't text it though)
+//   "invalid" a deliberate/garbage fake (repeated, sequential) or too few digits
+//   "none"    no number given
+// Distinguishing "invalid" from "non_us" matters: a junk fill like "9999999999" is
+// NOT a foreign investor. isValidNanp already rejects fakes, so we re-test the fake
+// patterns here to route them to "invalid" instead of the "non_us" catch-all.
+export function phoneStatus(raw?: string | null): "us" | "non_us" | "invalid" | "none" {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (digits.length < 7) return "none";
+  if (isValidNanp(raw)) return "us";
+  const ten = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (/^(\d)\1+$/.test(ten)) return "invalid";                                   // 9999999999
+  if (["1234567890", "0123456789", "9876543210"].includes(ten)) return "invalid"; // sequential
+  if (digits.length < 10) return "invalid";                                       // too short for any real number
+  return "non_us";                                                                // 10+ digits, plausibly foreign
+}

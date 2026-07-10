@@ -11,7 +11,7 @@ import { respondToLead } from "@/lib/notify/leadResponder";
 import { logActivity } from "@/lib/activity";
 import { ensureLeadUploadToken } from "@/lib/los";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
-import { canonicalPhone, phoneMatchForms, classifyPhone } from "@/lib/phone";
+import { canonicalPhone, phoneMatchForms, phoneStatus } from "@/lib/phone";
 import { prettyPurpose } from "@/lib/notify/emailCopy";
 import { magicApplyLink } from "@/lib/magicLink";
 import { cfg } from "@/lib/settings";
@@ -117,12 +117,10 @@ export async function POST(req: NextRequest) {
     const rawBody: Record<string, unknown> = { ...(body as Record<string, unknown>) };
     if (rawBody.ssn) rawBody.ssn = encryptField(String(rawBody.ssn).replace(/[^0-9]/g, "")) ?? null;
     if (trackingOptedOut) rawBody.tracking_opt_out = true;
-    // ALWAYS-ON phone quality stamp (independent of Lead Shield's mode): "us" = a
-    // callable/textable US line, "non_us" = valid digits but not NANP (foreign
-    // investor — real, but our Twilio line can't reach it), "invalid" = junk/fake,
-    // "none" = no number given. Surfaces bad numbers even when Shield is in shadow.
-    const ph = classifyPhone(body.phone);
-    rawBody.phone_status = !ph.hasDigits ? "none" : ph.validNanp ? "us" : (String(body.phone || "").replace(/\D/g, "").length >= 10 ? "non_us" : "invalid");
+    // ALWAYS-ON phone quality stamp (independent of Lead Shield's mode) — surfaces
+    // bad numbers even when Shield is in shadow. See phoneStatus for the label rules
+    // ("invalid" junk is separated from "non_us" foreign, not lumped together).
+    rawBody.phone_status = phoneStatus(body.phone);
 
     const row: Record<string, unknown> = {
       full_name,

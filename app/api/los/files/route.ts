@@ -37,6 +37,12 @@ export async function POST(req: NextRequest) {
     if (!lead) return NextResponse.json({ error: "lead not found" }, { status: 404 });
     const file = await ensureLoanFileForLead(lead) || (await createLoanFileFromLead(lead));
     if (!file) return NextResponse.json({ error: "could not create loan file" }, { status: 500 });
+    // Keep file ⇔ Application consistent: a teammate opening a real LOS file moves the
+    // lead into Application too, so the Leads pipeline and the Applications area agree.
+    try {
+      const { advanceLeadStage } = await import("@/lib/leadStage");
+      await advanceLeadStage(lead.id, "Application", { actor: "teammate", reason: "converted to loan file" });
+    } catch { /* forward-only; best-effort */ }
     return NextResponse.json({ file }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });

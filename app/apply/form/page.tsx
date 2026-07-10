@@ -719,9 +719,13 @@ export default function ApplyWizard() {
                   if (us.length === 10 && /^[2-9]/.test(us)) {
                     el.value = `(${us.slice(0, 3)}) ${us.slice(3, 6)}-${us.slice(6)}`;
                     setPhoneHint(null);
+                  } else if (d.length === 10 && d.startsWith("1")) {
+                    // mid-entry of a US number WITH country code ("1" + 9 so far) — not
+                    // foreign, they're just still typing. No warning.
+                    setPhoneHint(null);
                   } else if (d.length >= 10 && !/^[2-9]/.test(us.slice(0, 1))) {
                     setPhoneHint("That doesn't look like a U.S. number — if you're overseas, include your country code so we can reach you.");
-                  } else if (d.length > 0 && d.length < 10) {
+                  } else if (d.length < 10) {
                     setPhoneHint(null);
                   }
                 }} />

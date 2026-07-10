@@ -274,6 +274,13 @@ export async function promoteLeadToLoanFile(lead: any): Promise<LoanFile | null>
     const { error } = await supabaseAdmin.from("loan_files").update({ share_token: leadToken }).eq("id", file.id);
     if (!error) file.share_token = leadToken;
   }
+  // Real re-open (borrower actually uploaded a doc) → clear the deletion guard so the
+  // lead reflects reality: the file is live again, not "deleted".
+  if (lead.raw && typeof lead.raw === "object" && lead.raw.los_deleted_at) {
+    const raw = { ...lead.raw }; delete raw.los_deleted_at;
+    const { error } = await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
+    if (!error) lead.raw = raw;
+  }
   await logActivity({
     entity_type: "loan_file", entity_id: file.id, loan_file_id: file.id, lead_id: lead.id,
     actor: "borrower", action: "lead.promoted", detail: { reason: "first document upload", file_number: file.file_number },
