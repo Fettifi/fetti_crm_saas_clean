@@ -88,6 +88,9 @@ function mapFields(fieldData: any[]): Record<string, any> {
     credit_score: Number(String(getExact("credit_score") || "").replace(/[^0-9.]/g, "")) || undefined,
     income: parseMoney(get("annual_income", "monthly_income", "gross_income", "income")),
     loan_amount_requested: parseMoney(get("loan_amount_requested", "loan_amount", "amount_needed")),
+    // Parity with lib/metaHeal.ts mapLead — investor occupancy answers score +10,
+    // and without this the same form answer tiered differently by ingestion path.
+    occupancy: get("occupancy", "property_use", "occupancy_type"),
   };
   // keep everything for the record
   body.notes = "Meta Lead Ad: " + fieldData.map((f) => `${f.name}=${Array.isArray(f.values) ? f.values.join("/") : f.values}`).join("; ");

@@ -6,6 +6,7 @@
 // Needs CALENDLY_PAT (personal access token) in app_settings or env — created at
 // calendly.com → Integrations → API & Webhooks → Personal Access Tokens.
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { cfg, setSetting } from "@/lib/settings";
 
 export const runtime = "nodejs";
@@ -55,7 +56,11 @@ export async function GET() {
       signingKeyStored: !!(await cfg("CALENDLY_WEBHOOK_SIGNING_KEY")),
     });
   } catch (e: any) {
-    return NextResponse.json({ configured: true, error: e?.message || "lookup failed", hint: "PAT rejected or expired — mint a fresh Personal Access Token in Calendly." }, { status: 502 });
+    const msg = e?.message || "lookup failed";
+    const hint = /permission|denied|403/i.test(msg)
+      ? "The PAT works but its user isn't a Calendly org admin/owner — organization webhooks need an admin's token."
+      : "PAT rejected or expired — mint a fresh Personal Access Token in Calendly.";
+    return NextResponse.json({ configured: true, error: msg, hint }, { status: 502 });
   }
 }
 
@@ -65,22 +70,39 @@ export async function POST() {
   try {
     const { org, ours } = await context(pat);
     const active = ours.find((s: any) => s?.state === "active");
-    if (active) {
-      return NextResponse.json({ ok: true, alreadyRegistered: true, uri: active.uri, events: active.events, note: "Subscription already active — nothing to do." });
+    const haveKey = !!(await cfg("CALENDLY_WEBHOOK_SIGNING_KEY"));
+    if (active && haveKey) {
+      return NextResponse.json({ ok: true, alreadyRegistered: true, uri: active.uri, events: active.events, note: "Subscription active + signing key stored — nothing to do." });
     }
+    // A subscription without our stored signing key can't be verified — Calendly
+    // does NOT return keys after creation (the caller PROVIDES one at create time),
+    // so the only remedy is delete + recreate with a key we generate.
+    if (active && !haveKey) {
+      const uuid = String(active.uri || "").split("/").pop();
+      if (uuid) await cal(pat, `/webhook_subscriptions/${uuid}`, { method: "DELETE" }).catch(() => {});
+    }
+    // WE generate the signing key and hand it to Calendly at creation (their API
+    // takes signing_key as a caller-provided parameter — it never generates one).
+    const signingKey = crypto.randomBytes(32).toString("hex");
     const created = await cal(pat, "/webhook_subscriptions", {
       method: "POST",
-      body: JSON.stringify({ url: WEBHOOK, events: EVENTS, organization: org, scope: "organization" }),
+      body: JSON.stringify({ url: WEBHOOK, events: EVENTS, organization: org, scope: "organization", signing_key: signingKey }),
     });
     const res = created?.resource || {};
-    // Calendly returns the signing key ONLY at creation — persist it immediately so
-    // the receiver can verify signatures (it reads env OR app_settings).
-    if (res?.signing_key) await setSetting("CALENDLY_WEBHOOK_SIGNING_KEY", String(res.signing_key));
+    // Persist only after Calendly accepted the subscription — the receiver reads
+    // env OR app_settings and starts verifying (and creating unmatched leads) from
+    // the moment this lands.
+    await setSetting("CALENDLY_WEBHOOK_SIGNING_KEY", signingKey);
     return NextResponse.json({
       ok: true, registered: true, uri: res?.uri || null, events: res?.events || EVENTS,
-      callbackUrl: res?.callback_url || WEBHOOK, signingKeyStored: !!res?.signing_key,
+      callbackUrl: res?.callback_url || WEBHOOK, signingKeyStored: true,
+      recreated: !!active,
     });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "registration failed" }, { status: 502 });
+    const msg = e?.message || "registration failed";
+    const hint = /permission|denied|403/i.test(msg)
+      ? "PAT user must be a Calendly org admin/owner to create organization webhooks."
+      : undefined;
+    return NextResponse.json({ ok: false, error: msg, ...(hint ? { hint } : {}) }, { status: 502 });
   }
 }

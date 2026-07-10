@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
@@ -28,9 +29,10 @@ export async function POST(req: NextRequest) {
   try {
     const raw = await req.text();
     // Signing key comes from env OR app_settings — the admin registration endpoint
-    // (/api/admin/calendly-webhook) stores it in app_settings at subscription time.
+    // (/api/admin/calendly-webhook) generates + stores it at subscription time.
     const key = await cfg("CALENDLY_WEBHOOK_SIGNING_KEY");
-    if (key && !verify(req.headers.get("calendly-webhook-signature"), raw, key)) {
+    const signed = !!key && verify(req.headers.get("calendly-webhook-signature"), raw, key);
+    if (key && !signed) {
       return NextResponse.json({ error: "bad signature" }, { status: 401 });
     }
     const body = JSON.parse(raw || "{}");
@@ -49,13 +51,19 @@ export async function POST(req: NextRequest) {
     // UNMATCHED invitee — someone booked a call from an email we don't know.
     // That's a high-intent LEAD, not a drop (this used to vanish silently with no
     // log). Create it as Engaged/calendly so the funnel + alerts pick it up.
-    if (!lead && event === "invitee.created") {
-      const inviteeName: string | null = p?.name || p?.invitee?.name || null;
-      const phone: string | null =
-        p?.text_reminder_number || p?.invitee?.text_reminder_number ||
-        (Array.isArray(p?.questions_and_answers)
-          ? p.questions_and_answers.find((q: any) => /phone|number/i.test(q?.question || ""))?.answer || null
-          : null);
+    // SECURITY: creation requires a SIGNED request — this is a public endpoint, and
+    // without the signature gate anyone could POST fake bookings to spam leads +
+    // page the owner. Unsigned (key not yet configured) requests stay match-only.
+    if (!lead && event === "invitee.created" && signed) {
+      const inviteeName: string | null =
+        (p?.name || p?.invitee?.name || null) && String(p?.name || p?.invitee?.name).replace(/[\r\n]+/g, " ").slice(0, 80);
+      // Phone: dedicated fields first; else a Q&A answer whose QUESTION names a
+      // phone and whose ANSWER actually contains a real number of digits.
+      const qaPhone = Array.isArray(p?.questions_and_answers)
+        ? p.questions_and_answers.find((q: any) => /(phone|mobile|cell)/i.test(q?.question || "") && String(q?.answer || "").replace(/\D/g, "").length >= 10)?.answer || null
+        : null;
+      const phoneRaw: string | null = p?.text_reminder_number || p?.invitee?.text_reminder_number || qaPhone;
+      const phone = phoneRaw ? String(phoneRaw).replace(/[^\d+]/g, "").slice(0, 16) || null : null;
       const { score, tier } = scoreLead({});
       const { data: created, error } = await supabaseAdmin.from("leads").insert({
         full_name: inviteeName, email, phone,
@@ -74,12 +82,26 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, note: "unmatched invitee (logged)" });
       }
       lead = created;
-      try {
-        const { notifyNewLead } = await import("@/lib/notify/leadAlert");
-        await notifyNewLead({ full_name: inviteeName, email, phone, tier, score, source: "calendly", loan_purpose: eventName || null } as any);
-      } catch { /* best-effort */ }
+      // Alert AFTER the ACK — Calendly needs a fast 2xx, and the notify channels
+      // (webhook/email/SMS fetches) have no timeouts of their own.
+      const createdId = created.id;
+      after(async () => {
+        try {
+          const { notifyNewLead } = await import("@/lib/notify/leadAlert");
+          await notifyNewLead({ lead_id: createdId, full_name: inviteeName, email, phone, tier, score, source: "calendly", loan_purpose: eventName || null } as any);
+        } catch { /* best-effort */ }
+      });
     }
-    if (!lead) return NextResponse.json({ ok: true, note: "no matching lead" });
+    if (!lead) {
+      // Unsigned unmatched bookings still leave a trail (no rows created).
+      if (event === "invitee.created" && !signed) {
+        await logActivity({
+          entity_type: "org", entity_id: "calendly", actor: "system",
+          action: "calendly.unmatched_unsigned", detail: { email, event: eventName || null, start_time: startTime || null },
+        }).catch(() => {});
+      }
+      return NextResponse.json({ ok: true, note: "no matching lead" });
+    }
 
     if (event === "invitee.created") {
       // SHIELD: booking a real call is human evidence — release a quarantined

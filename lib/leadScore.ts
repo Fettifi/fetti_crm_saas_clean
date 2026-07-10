@@ -17,7 +17,8 @@ export type ScorableLead = {
   property_value?: number | null;
   loan_purpose?: string | null;
   loan_amount_requested?: number | null;
-  income?: number | null; // monthly income in dollars
+  income?: number | null; // dollars — monthly from the wizard, possibly ANNUAL from Meta forms
+  income_is_monthly?: boolean; // set by callers that KNOW the period (the wizard) — see income scoring
   occupancy?: string | null;
   property_type?: string | null;
   own_other_property?: string | boolean | null; // wizard portfolio flag (raw)
@@ -50,11 +51,13 @@ function dollarsFromCoded(v?: number | null): number | null {
   return v < 5000 ? v * 1000 : v;
 }
 
-// Investor / business-purpose signal — same regex as lib/dealScreen.ts isInvestorDeal,
+// Investor / business-purpose signal — superset of lib/dealScreen.ts isInvestorDeal,
 // inlined here so the scorer stays dependency-free (dealScreen pulls in the AI client).
+// Adds rehab/construction: the wizard's flip products are literally "Rehab" and
+// "Construction" (app/apply/form/page.tsx) and the base regex missed both.
 function isInvestorish(b: ScorableLead): boolean {
   const p = `${b.loan_purpose || ""} ${b.occupancy || ""} ${b.property_type || ""}`.toLowerCase();
-  return /dscr|invest|rental|bridge|flip|hard money|commercial|business|non-?qm/.test(p);
+  return /dscr|invest|rental|bridge|flip|rehab|construction|ground.?up|hard money|commercial|business|non-?qm/.test(p);
 }
 
 export function scoreLead(b: ScorableLead): { score: number; tier: LeadTier } {
@@ -73,11 +76,19 @@ export function scoreLead(b: ScorableLead): { score: number; tier: LeadTier } {
   else if (propValue && propValue >= 350000) score += 10;
 
   // LOAN SIZE — the strongest tier-1 (revenue) signal, previously ignored entirely.
-  // loan_amount_requested is filled on ~1/25 real leads while property_value hits
-  // ~12/25, so estimate 80% LTV of property value when the amount is missing —
-  // without the fallback, jumbo detection almost never fires on live traffic.
-  const loanAmt = dollarsFromCoded(b.loan_amount_requested) ?? (propValue ? propValue * 0.8 : null);
-  if (loanAmt && loanAmt >= 1000000) score += 30;
+  // CAUTION on semantics: the wizard reuses loan_amount_requested for the equity
+  // flow's PAYOFF BALANCE and the flip flow's REHAB BUDGET, so (a) never apply the
+  // coded-thousands ×1000 scaling here (a $4,500 rehab budget is NOT $4.5M), (b)
+  // ignore sub-$10k noise, and (c) take MAX with the 80%-of-property fallback so a
+  // small rehab budget can't suppress the real deal size. Fallback-derived points
+  // cap at +20 — the full +30 is reserved for an EXPLICIT $1M+ request (property
+  // value already earns its own bucket above; don't double-count it to the max).
+  const loanReal = typeof b.loan_amount_requested === "number" && isFinite(b.loan_amount_requested) && b.loan_amount_requested >= 10000
+    ? b.loan_amount_requested : null;
+  const fallback = propValue ? propValue * 0.8 : null;
+  const loanAmt = Math.max(loanReal ?? 0, fallback ?? 0) || null;
+  const fromFallback = loanAmt != null && loanAmt !== loanReal;
+  if (loanAmt && loanAmt >= 1000000) score += fromFallback ? 20 : 30;
   else if (loanAmt && loanAmt >= 600000) score += 20;
   else if (loanAmt && loanAmt >= 300000) score += 10;
 
@@ -89,10 +100,12 @@ export function scoreLead(b: ScorableLead): { score: number; tier: LeadTier } {
   if (oop) score += 10;
 
   // INCOME — high earners qualify bigger consumer loans ($15k/mo ≈ jumbo capacity).
-  // The wizard stores MONTHLY income but Meta forms may answer ANNUAL ("annual_income"
-  // is a mapLead alias); no real monthly income exceeds $40k on this book, so treat
-  // larger figures as annual and normalize to monthly before the threshold.
-  const monthlyIncome = b.income && b.income > 40000 ? b.income / 12 : b.income;
+  // The wizard KNOWS its figure is monthly and says so (income_is_monthly). Meta
+  // forms are ambiguous ("annual_income" is a mapLead alias): a bare 36000 could be
+  // $36k/yr (low) or $36k/mo (jumbo) — so without the hint, only unambiguous values
+  // count: >= $180k must be annual (no real monthly is that high) → normalize /12.
+  // The ambiguous $15k–$180k unhinted band earns nothing rather than misfiring.
+  const monthlyIncome = b.income_is_monthly ? b.income : (b.income && b.income >= 180000 ? b.income / 12 : null);
   if (monthlyIncome && monthlyIncome >= 15000) score += 10;
 
   score = Math.min(score, 100);

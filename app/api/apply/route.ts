@@ -106,6 +106,9 @@ export async function POST(req: NextRequest) {
     const last_name =
       body.last_name || (full_name ? full_name.split(" ").slice(1).join(" ") || null : null);
 
+    // NOTE: income_is_monthly rides in on the body — the WIZARD sets it (its income
+    // is genuinely monthly). Meta-webhook forwards come through here too with
+    // possibly-ANNUAL income, so /api/apply must NOT blanket-assert the hint.
     const { score, tier } = scoreLead(body);
 
     // Never persist SSN in plaintext — encrypt at rest (app-layer AES-256-GCM via

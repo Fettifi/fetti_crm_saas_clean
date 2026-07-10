@@ -549,6 +549,7 @@ export default function ApplyWizard() {
       credit_score: a.credit && a.credit !== "0" ? Number(a.credit) : undefined,
       liquid_assets: a.liquid_assets ? Number(a.liquid_assets) : undefined,
       income: monthly,
+      income_is_monthly: true, // scorer hint: wizard income is genuinely monthly (Meta forms may be annual)
       // Discrete identity / URLA fields so the 1003 captures them structurally
       // (not just in the notes summary). SSN is encrypted server-side; never in notes.
       dob: a.dob || undefined,
@@ -561,6 +562,9 @@ export default function ApplyWizard() {
       job_title: a.job_title || undefined,
       years_employed: a.years_employed || undefined,
       own_or_rent: a.own_or_rent || undefined,
+      // Portfolio flag — structural, not just a notes string: scoreLead awards
+      // tier points for it and it lands in raw for downstream agents.
+      own_other_property: a.own_other_property || undefined,
       bk_fc: a.bk_fc || undefined,
       notes: lines.join(" · "),
       referrer: av("ref"),

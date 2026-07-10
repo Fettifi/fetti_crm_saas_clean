@@ -175,5 +175,6 @@ export const config = {
         '/api/show/:path*',
         '/api/admin/:path*',
         '/api/shield/resolve/:path*',
+        '/api/competitors/:path*',
     ],
 }
