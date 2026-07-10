@@ -15,6 +15,8 @@
 // POST { competitors: [{name, ig, fbAdLibraryQuery}] } → update tracked list
 import { NextRequest, NextResponse } from "next/server";
 import { getSetting, setSetting, cfg } from "@/lib/settings";
+import { claudeChat } from "@/lib/aiFallback";
+import { markReplyViolates } from "@/lib/markCompliance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -108,9 +110,37 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ...payload, competitors, cached: false });
 }
 
+// AUDIENCE CAPTURE, the legal way: draft a genuinely useful Fetti comment for a
+// competitor's high-engagement post. Their audience sees Fetti being helpful (not
+// pitching) → we earn our way into their feed + algorithm. Compliance-gated: a
+// licensed lender's public comment must NEVER quote a rate/payment or promise
+// approval. Ramon posts it himself (one click) — auto-posting at scale gets an
+// account flagged as spam, which we deliberately avoid.
+async function draftEngagement(competitor: string, caption: string): Promise<string | null> {
+  const system = `You write short, warm, genuinely-helpful Instagram/Facebook comments AS Fetti (a licensed mortgage broker, NMLS #2267023). Goal: add real value to a home-buying/real-estate post so the audience notices Fetti as the helpful expert — NEVER a sales pitch, never spammy, never "DM us". Teach one useful thing in 1-2 sentences, friendly and human. HARD RULES: never state or imply a specific interest rate, monthly payment, or APR; never promise approval or "you'll qualify"; no guarantees. No hashtags. Sound like a sharp, generous human, not a brand bot.`;
+  const user = `The post (by ${competitor}) says: "${(caption || "").slice(0, 400)}"\n\nWrite ONE comment (max ~200 characters) that teaches something useful and makes Fetti look like the expert worth following. Just the comment text.`;
+  const raw = await claudeChat({ system, messages: [{ role: "user", content: user }], maxTokens: 160, timeoutMs: 20000 });
+  if (!raw) return null;
+  const text = raw.trim().replace(/^["']|["']$/g, "").slice(0, 280);
+  if (markReplyViolates(text)) return null; // rate/approval slipped in → drop it
+  return text;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
+    // Engagement action: draft compliant comments for the current hit-list posts.
+    if (body?.action === "draft_engagement") {
+      const posts = Array.isArray(body.posts) ? body.posts.slice(0, 8) : [];
+      const drafts = [];
+      for (const p of posts) {
+        const comment = await draftEngagement(p.who || "a lender", p.caption || "");
+        drafts.push({ who: p.who, url: p.url, caption: (p.caption || "").slice(0, 120), comment: comment || "(couldn't draft a compliant comment — write your own)", ok: !!comment });
+      }
+      return NextResponse.json({ drafts });
+    }
+
     const list = Array.isArray(body?.competitors) ? body.competitors : null;
     if (!list || list.some((c: any) => !c?.name || !c?.ig)) {
       return NextResponse.json({ error: "competitors must be [{name, ig, fbAdLibraryQuery}]" }, { status: 400 });

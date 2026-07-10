@@ -9,7 +9,7 @@
 // violations and this page exists so we win the same audience the legal way.
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, RefreshCw, Eye, ExternalLink, TrendingUp, Megaphone } from "lucide-react";
+import { Loader2, RefreshCw, Eye, ExternalLink, TrendingUp, Megaphone, MessageSquarePlus, Copy, Check } from "lucide-react";
 
 type TopPost = { caption: string; likes: number; comments: number; engagement: number; at: string | null; url: string | null };
 type Row = {
@@ -24,6 +24,9 @@ export default function CompetitorsPage() {
   const [igBlocked, setIgBlocked] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [drafts, setDrafts] = useState<{ who: string; url: string | null; caption: string; comment: string; ok: boolean }[]>([]);
+  const [copied, setCopied] = useState<number | null>(null);
 
   const load = useCallback(async (refresh = false) => {
     refresh ? setRefreshing(true) : setLoading(true);
@@ -43,6 +46,13 @@ export default function CompetitorsPage() {
     .flatMap((r) => (r.ig_metrics?.topPosts || []).map((p) => ({ ...p, who: r.name, ig: r.ig })))
     .sort((a, b) => b.engagement - a.engagement)
     .slice(0, 10);
+
+  const draftComments = useCallback(async () => {
+    setDrafting(true); setDrafts([]);
+    const r = await fetch("/api/competitors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "draft_engagement", posts: hitList.map((p) => ({ who: p.who, caption: p.caption, url: p.url })) }) });
+    if (r.ok) setDrafts((await r.json()).drafts || []);
+    setDrafting(false);
+  }, [hitList]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
@@ -74,7 +84,13 @@ export default function CompetitorsPage() {
             {hitList.length > 0 && (
               <div className="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
                 <div className="font-semibold text-sm flex items-center gap-2 mb-2"><TrendingUp size={15} className="text-emerald-400" /> Engagement hit-list — their hottest posts right now</div>
-                <p className="text-[11px] text-slate-500 mb-2">Open each post and leave a genuinely useful comment as Fetti (teach, don&apos;t pitch). Their audience sees it; the algorithm learns Fetti belongs in that feed.</p>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="text-[11px] text-slate-500">Their audience is already on these posts. Leave a genuinely useful comment as Fetti → the algorithm learns Fetti belongs in that feed.</p>
+                  <button onClick={draftComments} disabled={drafting || !hitList.length}
+                    className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 shrink-0">
+                    {drafting ? <Loader2 size={12} className="animate-spin" /> : <MessageSquarePlus size={12} />} Draft Fetti comments
+                  </button>
+                </div>
                 <ul className="space-y-1.5">
                   {hitList.map((p, i) => (
                     <li key={i} className="text-xs text-slate-300 flex items-center gap-2">
@@ -86,6 +102,27 @@ export default function CompetitorsPage() {
                     </li>
                   ))}
                 </ul>
+
+                {drafts.length > 0 && (
+                  <div className="mt-3 border-t border-slate-800 pt-3">
+                    <div className="text-[11px] text-slate-400 mb-2">✍️ Ready-to-post comments (compliance-checked — no rates, no approval claims). Copy, open the post, paste:</div>
+                    <div className="space-y-2">
+                      {drafts.map((d, i) => (
+                        <div key={i} className="rounded-lg bg-slate-950/70 border border-slate-800 p-2.5">
+                          <div className="text-[10px] text-slate-600 mb-1">[{d.who}] {d.caption}…</div>
+                          <div className="flex items-start gap-2">
+                            <p className="text-[13px] text-slate-100 flex-1 leading-snug">{d.comment}</p>
+                            <div className="flex flex-col gap-1 shrink-0">
+                              <button onClick={() => { navigator.clipboard?.writeText(d.comment); setCopied(i); setTimeout(() => setCopied(null), 1500); }}
+                                className="text-slate-400 hover:text-white p-1" title="Copy comment">{copied === i ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}</button>
+                              {d.url && <a href={d.url} target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 p-1" title="Open post"><ExternalLink size={13} /></a>}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
