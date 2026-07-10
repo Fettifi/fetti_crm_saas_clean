@@ -352,7 +352,10 @@ export async function lookupPhone(phone10: string): Promise<{ lineType: string; 
 
 function lookupSignal(lu: { lineType: string; valid: boolean } | null): ShieldSignal | null {
   if (!lu) return null;
-  if (!lu.valid || lu.lineType === "invalid") return S("phone.lookup_invalid", 50, "strong");
+  // Carrier says the number doesn't exist → decisive on its own (>= Q). Lands in the
+  // GRAY band (not hard), so a rare Twilio false-invalid still gets the verification
+  // email escape hatch — a real person clicks it and is released; a bot never does.
+  if (!lu.valid || lu.lineType === "invalid") return S("phone.lookup_invalid", 60, "strong");
   switch (lu.lineType) {
     case "tollFree": case "premium": case "pager": case "voicemail": case "sharedCost":
       return S("phone.lookup_junk", 35, "strong", lu.lineType);
@@ -427,11 +430,14 @@ export async function assessLead(ctx: ShieldContext): Promise<ShieldVerdict> {
     let smsCapable = true;
     let lookup: ShieldVerdict["lookup"] = null;
 
-    // Twilio Lookup: only when it changes a decision — gray-zone risk, or we're
-    // about to auto-SMS this number (validation cheaper than a bad send + TCPA).
+    // Twilio Lookup on EVERY phone lead (cache 90d + daily cap keep it ~free): a
+    // valid-NANP-format number can still be an unassigned/invalid line or a VOIP
+    // burner that only the carrier check catches — and a confirmed mobile EARNS a
+    // -15 trust credit. Data quality is the whole game (fake phone = fake lead), so
+    // we no longer gate the check behind pre-existing risk. Skip only self-verifying
+    // sms_optin and leads already hard-flagged (decision already made) or past Q.
     const hard = signals.some((s) => s.ev === "hard");
-    const wantLookup = !!phone10 && ctx.channel !== "sms_optin" && !hard &&
-      ((risk >= 15 && risk < Q) || (ctx.smsConsent === true && risk < Q));
+    const wantLookup = !!phone10 && ctx.channel !== "sms_optin" && !hard && risk < Q;
     if (wantLookup) {
       lookup = await lookupPhone(phone10!);
       const ls = lookupSignal(lookup);
