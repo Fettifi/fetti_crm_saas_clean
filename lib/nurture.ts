@@ -117,6 +117,8 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     // they're also nurture_paused; promotion clears both).
     if (String(l.stage || "").toLowerCase() === "review") continue;
     if (!l.phone && !l.email) continue;
+    // Internal test leads (shield e2e bots etc.) must never receive live sends.
+    if (/@fetti-internal\.test$/i.test(l.email || "")) continue;
     // TCPA: automated texts require EXPLICIT consent — the optional SMS checkbox
     // (raw.sms_consent === true) or a texted-in keyword opt-in (raw.consent.sms_optin).
     // UNDEFINED consent (Meta instant forms, legacy rows) = email-only. Never text

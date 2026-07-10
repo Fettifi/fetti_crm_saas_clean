@@ -126,7 +126,7 @@ export default function LeadTable() {
         // exist, which made the whole query fail (PGRST200) and the leads page show
         // nothing. Select only real columns on the leads table.
         .select(
-          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, lead_source, tier, score, portal_viewed_at:raw->>portal_viewed_at, shield:raw->shield"
+          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, lead_source, tier, score, portal_viewed_at:raw->>portal_viewed_at, shield:raw->shield, deal_screen:raw->deal_screen"
         )
         .order("created_at", { ascending: false })
         .limit(200);
@@ -293,21 +293,15 @@ export default function LeadTable() {
               </td>
               <td className="px-3 py-2">
                 {(() => {
+                  // Deal screen lives in raw.deal_screen (written by lib/leadPipeline.ts) —
+                  // the old code read a never-fetched applications relation, so this column
+                  // rendered "—" forever.
                   // @ts-ignore
-                  const app = lead.applications?.[0];
-                  if (!app?.notes) return <span className="text-slate-600">—</span>;
-                  try {
-                    const notes = JSON.parse(app.notes);
-                    const score = notes.dealScore?.score || notes.dealScore?.probability;
-                    if (!score) return <span className="text-slate-600">—</span>;
-
-                    const color = score === 'High' || score > 80 ? 'text-emerald-400' :
-                      score === 'Medium' || score > 50 ? 'text-yellow-400' : 'text-red-400';
-
-                    return <span className={`font-mono font-bold ${color}`}>{score}</span>;
-                  } catch (e) {
-                    return <span className="text-slate-600">Error</span>;
-                  }
+                  const ds = lead.deal_screen;
+                  const score = ds?.dealScore;
+                  if (score == null || score === 0) return <span className="text-slate-600">—</span>;
+                  const color = score > 80 ? 'text-emerald-400' : score > 50 ? 'text-yellow-400' : 'text-red-400';
+                  return <span className={`font-mono font-bold ${color}`} title={ds?.verdict || ""}>{score}</span>;
                 })()}
               </td>
               <td className="px-3 py-2 whitespace-nowrap">
