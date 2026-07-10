@@ -86,6 +86,10 @@ async function smsLead(l: LeadContact, body: string) {
   if (!sid || !token || !from || !l.phone) return { ok: false as boolean, id: undefined as string | undefined };
   const to = l.phone.startsWith("+") ? l.phone : `+1${l.phone.replace(/\D/g, "")}`;
   const params = new URLSearchParams({ To: to, From: from, Body: body });
+  // Delivery telemetry: without this, nurture/first-touch texts logged delivery=None
+  // (blind to whether they even landed). Twilio POSTs status → /api/sms/status.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+  params.set("StatusCallback", `${appUrl}/api/sms/status`);
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
     method: "POST",
     headers: {

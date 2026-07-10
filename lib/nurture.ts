@@ -40,13 +40,17 @@ type Lead = {
 // interested, never "reply YES" hoops. Each text acknowledges THEIR deal and the saved
 // application; the magic-link finish line + "(Reply STOP…)" are appended downstream.
 const STEPS: { step: number; afterDays: number; msg: (name: string, purpose: string) => string }[] = [
-  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's Mark at Fetti — I'm holding your ${p} file open, ready when you are.` },
-  { step: 2, afterDays: 3, msg: (n, p) => `${n}, Mark again — about 3 minutes left on your ${p} application, then I can pull real options. No credit pull.` },
-  { step: 3, afterDays: 7, msg: (n, p) => `Hi ${n} — even if you're early on the ${p}, finishing now means your numbers are ready the day you are.` },
-  { step: 4, afterDays: 14, msg: (n, p) => `${n}, it's Mark — markets move, your saved ${p} application doesn't. Whenever you finish, we work with that day's numbers.` },
-  { step: 5, afterDays: 30, msg: (n, p) => `Hi ${n}, Mark here — still have your ${p} saved. If plans changed, tell me and I'll close it out; if not, you're minutes from done.` },
-  { step: 6, afterDays: 60, msg: (n, p) => `${n} — two months since you asked about the ${p}. Rents and values drift; deals that didn't pencil then sometimes do now.` },
-  { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, last nudge from Mark on the ${p} — your file stays open, nothing expires. Pick it up any time.` },
+  // NOTE: `p` already includes its article ("your DSCR loan" / "your financing") —
+  // see purpose at the send site. Do NOT add another "your"/"the" before ${p} (that
+  // shipped the live "your your DSCR loan" automation tell). HOT_STEPS below follow
+  // the same rule.
+  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's Mark at Fetti — I'm holding ${p} file open, ready when you are.` },
+  { step: 2, afterDays: 3, msg: (n, p) => `${n}, Mark again — about 3 minutes left on ${p} application, then I can pull real options. No credit pull.` },
+  { step: 3, afterDays: 7, msg: (n, p) => `Hi ${n} — even if you're early on ${p}, finishing now means your numbers are ready the day you are.` },
+  { step: 4, afterDays: 14, msg: (n, p) => `${n}, it's Mark — markets move, ${p} application doesn't. Whenever you finish, we work with that day's numbers.` },
+  { step: 5, afterDays: 30, msg: (n, p) => `Hi ${n}, Mark here — still have ${p} saved. If plans changed, tell me and I'll close it out; if not, you're minutes from done.` },
+  { step: 6, afterDays: 60, msg: (n, p) => `${n} — two months since you asked about ${p}. Rents and values drift; deals that didn't pencil then sometimes do now.` },
+  { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, last nudge from Mark on ${p} — your file stays open, nothing expires. Pick it up any time.` },
 ];
 
 // TIER-1 FAST LANE. A qualified lead is hot — don't drip them on the slow 1/3/7/14/30
@@ -69,7 +73,7 @@ const HOT_STEPS: { step: number; afterDays: number; msg: (name: string, purpose:
 const REACTIVATION: ((name: string, purpose: string) => string)[] = [
   (n, p) => `Hi ${n}, Mark at Fetti — lending guidelines have moved since you asked about ${p}. Programs that didn't fit then sometimes fit now.`,
   (n, p) => `${n}, Mark here — that ${p}: dead, delayed, or handled elsewhere? Any of those is a fine answer. If delayed, you're minutes from done.`,
-  (n, p) => `Hi ${n} — genuinely the last one from me on the ${p}. Your info stays saved; finish or reply any time and you start warm, not cold.`,
+  (n, p) => `Hi ${n} — genuinely the last one from me on ${p}. Your info stays saved; finish or reply any time and you start warm, not cold.`,
 ];
 const REACTIVATE_THROTTLE_DAYS = 45;
 

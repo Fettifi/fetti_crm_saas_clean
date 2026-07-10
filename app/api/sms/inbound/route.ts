@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (digits) {
-      const { data: lead } = await supabaseAdmin
+      let { data: lead } = await supabaseAdmin
         .from("leads")
         .select("id, full_name, first_name, phone, loan_purpose, state, stage")
         .in("phone", phoneMatchForms(digits))
@@ -144,15 +144,30 @@ export async function POST(req: NextRequest) {
           if (raw.consent && typeof raw.consent === "object") raw.consent = { ...raw.consent, sms_optin: false, revoked_at: raw.sms_optout_at };
           await supabaseAdmin.from("leads").update({ nurture_paused: true, raw }).eq("id", (r as any).id);
         }
-      } else if (lead) {
-        // SHIELD: a real inbound text is human evidence — release a quarantined lead
-        // (no-op unless stage is Review). Runs before the hot-reply task/concierge so
-        // the full pipeline (deferred first touch etc.) fires exactly once.
-        try { await autoPromoteIfQuarantined((lead as any).id, "sms_inbound"); } catch { /* */ }
-        // Non-STOP reply from a known lead = hottest signal in the funnel.
-        // Persist it as a top-priority CRM task so the conversion moment lands
-        // in the task list, not just an ephemeral Discord ping.
-        await logHotLeadReply({ leadId: (lead as any).id, name: (lead as any).full_name, phone: from, body });
+      } else {
+        // UNMATCHED inbound from a real human — CAPTURE, never drop (previously the
+        // if(lead) gate below silently lost these). Someone texting a mortgage line is
+        // high intent; create a minimal lead so it enters the funnel + gets worked. A
+        // texting phone is self-verifying — they initiated, so SMS consent is theirs.
+        if (!lead && digits) {
+          try {
+            const { data: created } = await supabaseAdmin.from("leads").insert({
+              phone: digits, source: "sms_inbound", lead_source: "sms_inbound",
+              stage: "New Lead", score: 0, tier: "Tier 3",
+              notes: `Inbound text (no prior lead matched): "${body.slice(0, 200)}"`,
+              raw: { sms_inbound_origin: true, phone_status: "us", consent: { sms_optin: true, sms_optin_at: new Date().toISOString(), source: "texted_in" } },
+            }).select("id, full_name, first_name, phone, loan_purpose, state, stage").single();
+            lead = created || null;
+          } catch (e) { console.warn("[sms/inbound] unmatched-sender lead create failed", e); }
+        }
+        if (lead) {
+          // SHIELD: a real inbound text is human evidence — release a quarantined lead
+          // (no-op unless stage is Review). Runs before the hot-reply task/concierge so
+          // the full pipeline fires exactly once.
+          try { await autoPromoteIfQuarantined((lead as any).id, "sms_inbound"); } catch { /* */ }
+          // Non-STOP reply = hottest signal in the funnel → top-priority CRM task + alert.
+          await logHotLeadReply({ leadId: (lead as any).id, name: (lead as any).full_name, phone: from, body });
+        }
       }
 
       // Record the inbound text on the conversation timeline (Conversations inbox),
