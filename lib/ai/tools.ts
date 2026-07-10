@@ -7,6 +7,10 @@ import {
     deploySystem, checkSystemHealth, startAutopilot, seeProjectStructure,
     sendMessage, runTerminal, manageArtifacts
 } from '@/lib/integrations/god-mode';
+import {
+    findContact, assistantSendEmail, assistantSendText,
+    assistantCreateTask, assistantListTasks, assistantCompleteTask
+} from '@/lib/ai/assistantTools';
 
 export const toolDefinitions = [
     {
@@ -252,6 +256,67 @@ export const toolDefinitions = [
         }
     },
     {
+        name: "findContact",
+        description: "Look up a lead/contact by name, email, or phone. Returns their info AND whether they've consented to texts. Use this BEFORE emailing or texting someone so you have the right address/number and know if SMS is allowed.",
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: { query: { type: SchemaType.STRING, description: "A name, email address, or phone number" } },
+            required: ["query"],
+        },
+    },
+    {
+        name: "sendEmail",
+        description: "Send a REAL email from Fetti to a contact. `to` can be a person's name (looked up in the CRM) or a raw email address. Logs to their conversation thread. Confirm the recipient and gist with Ramon in your reply after sending.",
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                to: { type: SchemaType.STRING, description: "Recipient name or email address" },
+                subject: { type: SchemaType.STRING },
+                body: { type: SchemaType.STRING, description: "Plain-text email body; line breaks preserved" },
+            },
+            required: ["to", "subject", "body"],
+        },
+    },
+    {
+        name: "sendText",
+        description: "Send a REAL SMS to a contact via the Fetti number. `to` = a name (looked up) or a phone number. For a known lead WITHOUT SMS consent, it still sends (you are directing a 1:1 message) but returns a compliance note — never send promotional/marketing texts to non-consented numbers.",
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                to: { type: SchemaType.STRING, description: "Recipient name or phone number" },
+                message: { type: SchemaType.STRING, description: "The text body (keep it short)" },
+            },
+            required: ["to", "message"],
+        },
+    },
+    {
+        name: "createTask",
+        description: "Create a follow-up / to-do for Ramon (appears in the CRM task list). Use for 'remind me to…', 'follow up with…', 'don't forget…'.",
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                title: { type: SchemaType.STRING },
+                detail: { type: SchemaType.STRING },
+                dueInHours: { type: SchemaType.NUMBER, description: "Optional: hours from now the task is due" },
+            },
+            required: ["title"],
+        },
+    },
+    {
+        name: "listTasks",
+        description: "List Ramon's open tasks / follow-ups.",
+        parameters: { type: SchemaType.OBJECT, properties: {} },
+    },
+    {
+        name: "completeTask",
+        description: "Mark a task done, by its id or a fuzzy title match.",
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: { idOrTitle: { type: SchemaType.STRING } },
+            required: ["idOrTitle"],
+        },
+    },
+    {
         name: "runTerminal",
         description: "Executes a terminal command.",
         parameters: {
@@ -304,6 +369,13 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         if (name === "startAutopilot") return await startAutopilot(args.goal);
         if (name === "seeProjectStructure") return await seeProjectStructure(args.depth);
         if (name === "sendMessage") return await sendMessage(args.platform, args.recipient, args.content);
+        // Executive-assistant actions (real: Resend + Twilio + org_tasks)
+        if (name === "findContact") return await findContact(args.query);
+        if (name === "sendEmail") return await assistantSendEmail(args.to, args.subject, args.body);
+        if (name === "sendText") return await assistantSendText(args.to, args.message);
+        if (name === "createTask") return await assistantCreateTask(args.title, args.detail, args.dueInHours);
+        if (name === "listTasks") return await assistantListTasks();
+        if (name === "completeTask") return await assistantCompleteTask(args.idOrTitle);
         if (name === "runTerminal") return await runTerminal(args.command);
         if (name === "editFile") return await manageArtifacts('write', args.filePath, args.content);
 
