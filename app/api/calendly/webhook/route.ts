@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
+import { cfg } from "@/lib/settings";
+import { scoreLead } from "@/lib/leadScore";
 
 // Calendly webhook receiver — when a borrower books (or cancels) a call, record
 // it on the matching lead and mark them Engaged so the funnel keeps working them.
@@ -25,7 +27,9 @@ function verify(sigHeader: string | null, raw: string, key: string): boolean {
 export async function POST(req: NextRequest) {
   try {
     const raw = await req.text();
-    const key = process.env.CALENDLY_WEBHOOK_SIGNING_KEY;
+    // Signing key comes from env OR app_settings — the admin registration endpoint
+    // (/api/admin/calendly-webhook) stores it in app_settings at subscription time.
+    const key = await cfg("CALENDLY_WEBHOOK_SIGNING_KEY");
     if (key && !verify(req.headers.get("calendly-webhook-signature"), raw, key)) {
       return NextResponse.json({ error: "bad signature" }, { status: 401 });
     }
@@ -38,9 +42,43 @@ export async function POST(req: NextRequest) {
     if (!email) return NextResponse.json({ ok: true, note: "no invitee email" });
 
     // Match to a lead by email (most recent).
-    const { data: lead } = await supabaseAdmin
+    let { data: lead } = await supabaseAdmin
       .from("leads").select("id, stage").ilike("email", email)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+    // UNMATCHED invitee — someone booked a call from an email we don't know.
+    // That's a high-intent LEAD, not a drop (this used to vanish silently with no
+    // log). Create it as Engaged/calendly so the funnel + alerts pick it up.
+    if (!lead && event === "invitee.created") {
+      const inviteeName: string | null = p?.name || p?.invitee?.name || null;
+      const phone: string | null =
+        p?.text_reminder_number || p?.invitee?.text_reminder_number ||
+        (Array.isArray(p?.questions_and_answers)
+          ? p.questions_and_answers.find((q: any) => /phone|number/i.test(q?.question || ""))?.answer || null
+          : null);
+      const { score, tier } = scoreLead({});
+      const { data: created, error } = await supabaseAdmin.from("leads").insert({
+        full_name: inviteeName, email, phone,
+        stage: "Engaged", source: "calendly", lead_source: "calendly",
+        score, tier,
+        notes: `Booked "${eventName || "a call"}" via Calendly${startTime ? ` for ${startTime}` : ""} — created from the booking (no prior lead matched this email).`,
+        raw: { calendly: { event: eventName || null, start_time: startTime || null, created_from: "webhook_unmatched_invitee" } },
+      }).select("id, stage").single();
+      if (error || !created) {
+        // Never lose the booking silently — leave a trail even when insert fails.
+        console.error("[calendly/webhook] unmatched-invitee insert failed", error);
+        await logActivity({
+          entity_type: "org", entity_id: "calendly", actor: "system",
+          action: "calendly.unmatched", detail: { email, event: eventName || null, start_time: startTime || null, error: error?.message || null },
+        }).catch(() => {});
+        return NextResponse.json({ ok: true, note: "unmatched invitee (logged)" });
+      }
+      lead = created;
+      try {
+        const { notifyNewLead } = await import("@/lib/notify/leadAlert");
+        await notifyNewLead({ full_name: inviteeName, email, phone, tier, score, source: "calendly", loan_purpose: eventName || null } as any);
+      } catch { /* best-effort */ }
+    }
     if (!lead) return NextResponse.json({ ok: true, note: "no matching lead" });
 
     if (event === "invitee.created") {

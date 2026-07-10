@@ -1,0 +1,86 @@
+// Admin: verify + auto-wire the Calendly webhook subscription so bookings reach
+// the CRM (/api/calendly/webhook). Without this, every booking silently bypasses
+// the funnel — no Engaged bump, no shield release, no meeting record (this was
+// live-blind from launch until 2026-07-10). GET = status; POST = register.
+// Auth-gated via the /api/admin matcher in proxy.ts.
+// Needs CALENDLY_PAT (personal access token) in app_settings or env — created at
+// calendly.com → Integrations → API & Webhooks → Personal Access Tokens.
+import { NextResponse } from "next/server";
+import { cfg, setSetting } from "@/lib/settings";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const WEBHOOK = (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com") + "/api/calendly/webhook";
+const EVENTS = ["invitee.created", "invitee.canceled"];
+
+async function cal(pat: string, path: string, init?: RequestInit) {
+  const r = await fetch(`https://api.calendly.com${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${pat}`, "Content-Type": "application/json", ...(init?.headers || {}) },
+  });
+  const j = await r.json().catch(() => ({} as any));
+  if (!r.ok) throw new Error(j?.message || j?.title || `Calendly ${r.status}`);
+  return j;
+}
+
+async function context(pat: string) {
+  const me = await cal(pat, "/users/me");
+  const user: string = me?.resource?.uri;
+  const org: string = me?.resource?.current_organization;
+  if (!user || !org) throw new Error("Calendly /users/me returned no user/organization uri");
+  const subs = await cal(pat, `/webhook_subscriptions?organization=${encodeURIComponent(org)}&scope=organization&count=100`);
+  const ours = (subs?.collection || []).filter((s: any) => s?.callback_url === WEBHOOK);
+  return { user, org, ours, all: subs?.collection || [] };
+}
+
+export async function GET() {
+  const pat = await cfg("CALENDLY_PAT");
+  if (!pat) {
+    return NextResponse.json({
+      configured: false,
+      missing: "CALENDLY_PAT",
+      hint: "Create a Personal Access Token at calendly.com → Integrations → API & Webhooks, store it as app_settings key CALENDLY_PAT, then POST here to register the webhook.",
+      expected: WEBHOOK,
+    });
+  }
+  try {
+    const { org, ours, all } = await context(pat);
+    const active = ours.find((s: any) => s?.state === "active");
+    return NextResponse.json({
+      configured: true, organization: org, expected: WEBHOOK,
+      registered: !!active, state: active?.state || null,
+      events: active?.events || null, createdAt: active?.created_at || null,
+      otherSubscriptions: all.length - ours.length,
+      signingKeyStored: !!(await cfg("CALENDLY_WEBHOOK_SIGNING_KEY")),
+    });
+  } catch (e: any) {
+    return NextResponse.json({ configured: true, error: e?.message || "lookup failed", hint: "PAT rejected or expired — mint a fresh Personal Access Token in Calendly." }, { status: 502 });
+  }
+}
+
+export async function POST() {
+  const pat = await cfg("CALENDLY_PAT");
+  if (!pat) return NextResponse.json({ ok: false, error: "CALENDLY_PAT not set (app_settings or env)" }, { status: 503 });
+  try {
+    const { org, ours } = await context(pat);
+    const active = ours.find((s: any) => s?.state === "active");
+    if (active) {
+      return NextResponse.json({ ok: true, alreadyRegistered: true, uri: active.uri, events: active.events, note: "Subscription already active — nothing to do." });
+    }
+    const created = await cal(pat, "/webhook_subscriptions", {
+      method: "POST",
+      body: JSON.stringify({ url: WEBHOOK, events: EVENTS, organization: org, scope: "organization" }),
+    });
+    const res = created?.resource || {};
+    // Calendly returns the signing key ONLY at creation — persist it immediately so
+    // the receiver can verify signatures (it reads env OR app_settings).
+    if (res?.signing_key) await setSetting("CALENDLY_WEBHOOK_SIGNING_KEY", String(res.signing_key));
+    return NextResponse.json({
+      ok: true, registered: true, uri: res?.uri || null, events: res?.events || EVENTS,
+      callbackUrl: res?.callback_url || WEBHOOK, signingKeyStored: !!res?.signing_key,
+    });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "registration failed" }, { status: 502 });
+  }
+}
