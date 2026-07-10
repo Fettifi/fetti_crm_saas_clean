@@ -132,6 +132,13 @@ export async function POST(req: NextRequest) {
 
     // Engagement action: draft compliant comments for the current hit-list posts.
     if (body?.action === "draft_engagement") {
+      // Throttle: each draft run is up to 8 AI calls. One run per 30s ceilings the
+      // token spend even if a session loops the button.
+      const last = await getSetting("COMPETITOR_DRAFT_LAST");
+      if (last && Date.now() - new Date(last).getTime() < 30_000) {
+        return NextResponse.json({ error: "Give it a few seconds between draft runs." }, { status: 429 });
+      }
+      await setSetting("COMPETITOR_DRAFT_LAST", new Date().toISOString());
       const posts = Array.isArray(body.posts) ? body.posts.slice(0, 8) : [];
       const drafts = [];
       for (const p of posts) {

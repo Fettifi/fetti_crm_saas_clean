@@ -226,22 +226,9 @@ ${knowledgeString}
                         // Execute Tool
                         functionResult = await executeTool(name, args);
                         console.log(`[Rupee] Tool ${name} success. Result:`, JSON.stringify(functionResult).substring(0, 100) + "...");
-
-                        toolResponses.push({
-                            functionResponse: {
-                                name: name,
-                                response: { result: functionResult }
-                            }
-                        });
-
                     } catch (e: any) {
                         console.error(`[Tool Error] Execution failed for ${name}:`, e);
-                        toolResponses.push({
-                            functionResponse: {
-                                name: name,
-                                response: { result: { error: `Tool execution failed: ${e.message}` } }
-                            }
-                        });
+                        functionResult = { error: `Tool execution failed: ${e.message}` };
                     }
 
                     // Safety fallback
@@ -249,6 +236,8 @@ ${knowledgeString}
                         functionResult = { error: "Tool returned undefined result." };
                     }
 
+                    // Push the tool result EXACTLY ONCE (a prior double-push fed every
+                    // result — incl. any injected lead data — to the model twice).
                     toolResponses.push({
                         functionResponse: {
                             name: name,

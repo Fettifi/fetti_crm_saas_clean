@@ -95,10 +95,16 @@ export async function POST(req: NextRequest) {
     const a = agents.find((x) => x.id === body.id);
     if (!a) return NextResponse.json({ error: "not found" }, { status: 404 });
     if (!a.code) {
-      let code = codeFor(a.name);
-      for (let i = 0; i < 5; i++) { const { data } = await supabaseAdmin.from("referral_partners").select("id").eq("code", code).maybeSingle(); if (!data) break; code = codeFor(a.name); }
-      await supabaseAdmin.from("referral_partners").insert({ code, name: a.name, company: a.company || null });
-      a.code = code;
+      // Idempotent: reuse an existing partner row for this agent (double-click / two
+      // tabs) instead of minting a second code + an orphan referral_partners row.
+      const { data: existing } = await supabaseAdmin.from("referral_partners").select("code").eq("name", a.name).order("created_at", { ascending: true }).limit(1).maybeSingle();
+      if (existing?.code) { a.code = existing.code; }
+      else {
+        let code = codeFor(a.name);
+        for (let i = 0; i < 5; i++) { const { data } = await supabaseAdmin.from("referral_partners").select("id").eq("code", code).maybeSingle(); if (!data) break; code = codeFor(a.name); }
+        await supabaseAdmin.from("referral_partners").insert({ code, name: a.name, company: a.company || null });
+        a.code = code;
+      }
     }
     a.status = "active"; await save(agents);
     return NextResponse.json({ ok: true, agent: a, link: `https://fettifi.com/r/${a.code}` });
@@ -109,6 +115,11 @@ export async function POST(req: NextRequest) {
     const a = agents.find((x) => x.id === body.id);
     if (!a) return NextResponse.json({ error: "not found" }, { status: 404 });
     if (!a.email) return NextResponse.json({ error: "agent has no email" }, { status: 400 });
+    // Send-once guard: never re-blast the same intro. Block a repeat within 72h
+    // (protects the agent's inbox + Fetti's domain reputation from double-clicks/loops).
+    if (a.last_contact_at && Date.now() - new Date(a.last_contact_at).getTime() < 72 * 3600_000) {
+      return NextResponse.json({ error: `Already reached out to ${a.name} on ${new Date(a.last_contact_at).toLocaleDateString()} — give it a few days before following up again.` }, { status: 429 });
+    }
     const { subject, body: text } = introEmail(a);
     const html = `<div style="font:15px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#0f172a">${text.replace(/\n/g, "<br>")}</div>`;
     const r = await sendEmail(a.email, subject, { html, text });
