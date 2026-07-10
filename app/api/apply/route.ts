@@ -9,9 +9,9 @@ import { notifyNewLead } from "@/lib/notify/leadAlert";
 import { encryptField } from "@/lib/crypto";
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { logActivity } from "@/lib/activity";
-import { ensureLoanFileForLead, ensureLeadUploadToken } from "@/lib/los";
+import { ensureLeadUploadToken } from "@/lib/los";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
-import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
+import { canonicalPhone, phoneMatchForms, classifyPhone } from "@/lib/phone";
 import { prettyPurpose } from "@/lib/notify/emailCopy";
 import { magicApplyLink } from "@/lib/magicLink";
 import { cfg } from "@/lib/settings";
@@ -117,6 +117,12 @@ export async function POST(req: NextRequest) {
     const rawBody: Record<string, unknown> = { ...(body as Record<string, unknown>) };
     if (rawBody.ssn) rawBody.ssn = encryptField(String(rawBody.ssn).replace(/[^0-9]/g, "")) ?? null;
     if (trackingOptedOut) rawBody.tracking_opt_out = true;
+    // ALWAYS-ON phone quality stamp (independent of Lead Shield's mode): "us" = a
+    // callable/textable US line, "non_us" = valid digits but not NANP (foreign
+    // investor — real, but our Twilio line can't reach it), "invalid" = junk/fake,
+    // "none" = no number given. Surfaces bad numbers even when Shield is in shadow.
+    const ph = classifyPhone(body.phone);
+    rawBody.phone_status = !ph.hasDigits ? "none" : ph.validNanp ? "us" : (String(body.phone || "").replace(/\D/g, "").length >= 10 ? "non_us" : "invalid");
 
     const row: Record<string, unknown> = {
       full_name,
@@ -290,11 +296,13 @@ export async function POST(req: NextRequest) {
       after(async () => { try { await promoteQuarantined(freeId, "shield", "auto:resubmit_clean"); } catch { /* */ } });
     }
 
-    // A completed full 1003 advances the lead to "Application" (new OR returning lead).
-    // This is the signal the pipeline was previously discarding — leads sat at "New Lead"
-    // even after finishing the application.
+    // A completed 1003 form is STRONG intent → "Engaged" — but NOT yet a real
+    // "Application". The Application stage + LOS loan file are gated on an actual
+    // DOCUMENT UPLOAD (the upload route promotes both). Filling the form without
+    // sending a single doc is exactly the phantom-application case Ramon flagged:
+    // "nobody should be in the applications area unless they've uploaded a document."
     if ((body as any).app_completed && data?.id && !quarantined) {
-      after(async () => { try { await advanceLeadStage(data.id, "Application", { actor: "borrower", reason: "completed application" }); } catch { /* */ } });
+      after(async () => { try { await advanceLeadStage(data.id, "Engaged", { actor: "borrower", reason: "completed application form (awaiting documents)" }); } catch { /* */ } });
     }
 
     // For genuinely NEW leads, all post-response (after()) so the applicant's
@@ -331,27 +339,14 @@ export async function POST(req: NextRequest) {
 
     let fileLink: string | undefined;
     let loanFile: any = null;
-    // LOS GATE: a lead STAYS in the leads pipeline and never auto-opens a loan file.
-    // The LOS is reserved for real loans — a file opens ONLY when the borrower
-    // COMPLETED the full application (app_completed), a teammate converts the lead
-    // manually (POST /api/los/files from the Leads table), or a 1003 is imported
-    // (import-mismo). A plain inquiry/quote no longer creates an LOS file. When a file
-    // IS opened we return its secure upload link for the confirmation screen + email.
-    // (ensureLoanFileForLead is idempotent + best-effort.)
-    if ((body as any).app_completed === true && !quarantined) {
-      try {
-        loanFile = await ensureLoanFileForLead(data);
-        if (loanFile?.share_token) {
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
-          fileLink = `${appUrl}/file/${loanFile.share_token}`;
-        }
-      } catch (e) { console.warn("[/api/apply] loan file create failed:", e); }
-    }
-
-    // A plain lead (no file opened) STILL gets a working, lead-scoped upload link so
-    // they're never hindered from sending documents — but their LOS file opens LAZILY
-    // on the first upload (real intent), so leads who never engage don't clutter the LOS.
-    if (!loanFile && !deduped && data?.id) {
+    // LOS GATE (single rule): a loan file opens ONLY on a real DOCUMENT UPLOAD.
+    // Completing the wizard — even the full 1003 — no longer opens a file; that was
+    // the phantom-application bug. A file is created LAZILY by the upload route
+    // (promoteLeadToLoanFile) on the borrower's first doc, or explicitly by a
+    // teammate (POST /api/los/files) or a MISMO import. Every lead still gets a
+    // working, lead-scoped upload link so they can send documents the moment they're
+    // ready — the file just doesn't exist until they do. (idempotent + best-effort.)
+    if (data?.id) {
       try {
         const upTok = await ensureLeadUploadToken(data);
         if (upTok) {

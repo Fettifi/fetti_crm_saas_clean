@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { maybeAdvanceStage, resolvePortalToken, promoteLeadToLoanFile } from "@/lib/los";
+import { advanceLeadStage } from "@/lib/leadStage";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -104,25 +105,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       actor: "borrower", action: "doc.uploaded", detail: { name: doc?.name || safeName, size: upload.size },
     });
 
-    // Engagement: the moment a borrower uploads even one document, promote the
-    // lead out of the cold "New Lead" state into "Engaged" so the funnel keeps
-    // working them (doc-chaser cadence) instead of running the give-up drip.
-    // Only promotes upward — never downgrades an Engaged/Application lead.
+    // THE LOS GATE: a real document upload is what makes this a real application.
+    // The loan file was just opened (promoteLeadToLoanFile above) and the lead now
+    // enters the "Application" stage — the ONLY path into the LOS/applications area.
+    // Completing the wizard form alone never gets here. Forward-only, so an already
+    // Submitted/Funded loan is never knocked backward.
     if (file.lead_id) {
       try {
         const { autoPromoteIfQuarantined } = await import("@/lib/leadShield");
         await autoPromoteIfQuarantined(file.lead_id, "doc_upload");
       } catch { /* best-effort */ }
       try {
-        const { data: lead } = await supabaseAdmin.from("leads").select("stage").eq("id", file.lead_id).maybeSingle();
-        const stage = (lead?.stage || "").toLowerCase();
-        const isFresh = !stage || stage === "new lead" || stage === "new" || stage === "contacted";
-        if (isFresh) {
-          await supabaseAdmin.from("leads").update({
-            stage: "Engaged", last_nurture_at: new Date().toISOString(),
-          }).eq("id", file.lead_id);
-        }
-      } catch (e) { console.warn("[upload] engage promote failed", e); }
+        await advanceLeadStage(file.lead_id, "Application", { actor: "borrower", reason: "uploaded a document" });
+        await supabaseAdmin.from("leads").update({ last_nurture_at: new Date().toISOString() }).eq("id", file.lead_id);
+      } catch (e) { console.warn("[upload] application promote failed", e); }
     }
 
     await maybeAdvanceStage(file.id);

@@ -18,7 +18,6 @@ import { markReplyViolates } from "@/lib/markCompliance";
 import { sendMetaLeadEvent } from "@/lib/metaCapi";
 import { advanceLeadStage } from "@/lib/leadStage";
 import { applyQualification } from "@/lib/qualify";
-import { ensureLoanFileForLead } from "@/lib/los";
 
 export type PipelineOpts = {
   smsCapable?: boolean;      // shield line-type gate — false suppresses ALL auto-SMS
@@ -52,21 +51,21 @@ export async function runNewLeadPipeline(newLead: any, opts: PipelineOpts = {}):
   } catch { /* best-effort */ }
 
   // DEFERRAL PARITY (quarantine → promote must equal a clean intake): a completed
-  // application opens its LOS file + upload link + "Application" stage HERE when
-  // the inline route didn't already do it (opts.loanFile empty on replays).
+  // form is STRONG intent → "Engaged", but NOT an "Application" and it opens NO LOS
+  // file. The Application stage + loan file are gated on a real DOCUMENT UPLOAD (the
+  // upload route). opts.loanFile is only set when an EXPLICIT file was opened upstream
+  // (teammate convert / MISMO) — app-complete no longer passes one.
   let loanFile = opts.loanFile || null;
   let fileLink = opts.fileLink || null;
-  if (appCompleted && !loanFile) {
-    try {
-      loanFile = await ensureLoanFileForLead(newLead);
-      if (loanFile?.share_token) fileLink = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com"}/file/${loanFile.share_token}`;
-    } catch (e) { console.warn("[leadPipeline] loan file create failed:", e); }
-    try { await advanceLeadStage(newLead.id, "Application", { actor: "borrower", reason: "completed application (deferred)" }); } catch { /* */ }
+  if (appCompleted) {
+    try { await advanceLeadStage(newLead.id, "Engaged", { actor: "borrower", reason: "completed application form (awaiting documents)" }); } catch { /* */ }
   }
 
-  // Auto-screen investor deals — triaged + lender-matched before the LO
-  // even opens the file (cached on the lead for instant display).
-  if (loanFile && isInvestorDeal(newLead)) {
+  // Auto-screen investor deals — triaged + lender-matched at intake so the LO sees a
+  // verdict instantly. Reads the lead's own data (assembleUrla takes the file as
+  // optional), so it runs WITHOUT opening a phantom file. Same trigger population as
+  // before (completed investor deals) to hold AI spend flat.
+  if (isInvestorDeal(newLead) && (appCompleted || loanFile)) {
     try {
       const screen = await runDealScreen(loanFile, newLead);
       raw.deal_screen = screen;

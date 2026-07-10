@@ -349,6 +349,7 @@ export default function ApplyWizard() {
   const [leadId, setLeadId] = useState<string | null>(null);
   const [fileLink, setFileLink] = useState<string | null>(null); // secure document-upload link
   const [prod, setProd] = useState<string>("");
+  const [phoneHint, setPhoneHint] = useState<string | null>(null);
   const [contact, setContact] = useState<Record<string, unknown>>({});
   // Magic-link prefill (?lead=&t=): the lead's known contact info, so a nurtured
   // borrower lands with everything already typed — one confirm click, zero friction.
@@ -706,7 +707,26 @@ export default function ApplyWizard() {
           <input name="full_name" required placeholder="Full name" defaultValue={prefill?.full_name || ""} className={field} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input name="email" type="email" required placeholder="Email" defaultValue={prefill?.email || ""} className={field} />
-            <input name="phone" required placeholder="Phone" defaultValue={prefill?.phone || ""} className={field} />
+            <div>
+              <input name="phone" type="tel" inputMode="tel" autoComplete="tel" required placeholder="Phone" defaultValue={prefill?.phone || ""} className={field}
+                onInput={(e) => {
+                  const el = e.currentTarget;
+                  const d = el.value.replace(/\D/g, "");
+                  // Auto-format a US 10-digit number as (xxx) xxx-xxxx for clean data;
+                  // leave anything else as typed so overseas investors can enter a
+                  // country code. Soft hint only — never blocks submission.
+                  const us = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+                  if (us.length === 10 && /^[2-9]/.test(us)) {
+                    el.value = `(${us.slice(0, 3)}) ${us.slice(3, 6)}-${us.slice(6)}`;
+                    setPhoneHint(null);
+                  } else if (d.length >= 10 && !/^[2-9]/.test(us.slice(0, 1))) {
+                    setPhoneHint("That doesn't look like a U.S. number — if you're overseas, include your country code so we can reach you.");
+                  } else if (d.length > 0 && d.length < 10) {
+                    setPhoneHint(null);
+                  }
+                }} />
+              {phoneHint && <p className="text-[11px] text-amber-600 mt-1">{phoneHint}</p>}
+            </div>
           </div>
           <select name="state" required defaultValue={prefill?.state && STATES.includes(prefill.state) ? prefill.state : ""} className={field}>
             <option value="" disabled>Property state</option>
