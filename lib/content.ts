@@ -55,7 +55,17 @@ OUTPUT FORMAT — return ONLY JSON: { "posts": [ { "hook", "script", "caption", 
 - script: a tight shot-by-shot / talking-points script for a 20–60s Reel (CNBC-meets-TikTok pacing)
 - caption: a polished caption following HOOK → VALUE → CTA (2–5 short lines). Include the rotating CTA. NO disclosure text.
 - hashtags: 5–8 high-intent hashtags (mix niche + broad)
-Across the ${n} posts: hit DIFFERENT content pillars and ROTATE the CTA — no repeated CTA, no two posts that feel alike.`;
+Across the ${n} posts: hit DIFFERENT content pillars and ROTATE the CTA — no repeated CTA, no two posts that feel alike.
+
+PLATFORM-SAFETY RULES (2026-07-12 — the Fetti IG was restricted under Meta's fraud/scam
+classifier; these are HARD rules so brand content never pattern-matches money-scam accounts):
+- NEVER use "DM me <keyword>" / "Comment <keyword>" bait CTAs — that's the signature move of
+  money-flipping scam accounts. CTAs are plain and verifiable: "book a call", "start your
+  application on our site", "talk to a licensed broker".
+- NEVER use hype-money vocabulary: "secret", "hidden money", "unlock wealth", "hack",
+  "guaranteed", "fast cash", "get rich", "double your". Teach like a fiduciary, not a hustler.
+- No urgency-pressure framing ("act now before it's gone").
+- Frame Fetti as what it is: a LICENSED mortgage brokerage (never imply investment advice).`;
   const user = topic
     ? `Create ${n} posts on this theme: ${topic}. Each distinct, each passing the Fetti Content Test (≥4 of 5).`
     : `Create ${n} posts, EDUCATION-FIRST. Each OPENS with a real, useful finance/mortgage fact or insight — rotate the teaching pillar: home-buying know-how, DSCR & investment-loan basics, credit & how you qualify, building equity & wealth, rent-vs-buy math, market intel, core money principles. Deliver genuine value, THEN blend in Fetti / why Ramon Dent built it / the mission as the bridge to a rotated CTA. Distinct hooks, all TRUE, accurate, and compliant — never invent stats, rates, awards, or testimonials. Each passes the Fetti Content Test.`;
