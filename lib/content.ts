@@ -62,8 +62,8 @@ evergreen — NEVER invent statistics, rates, awards, or testimonials.
 OUTPUT FORMAT — return ONLY JSON: { "posts": [ { "hook", "script", "caption", "hashtags" } ] } with exactly ${n} posts.
 - hook: the on-screen / first-line hook (<= 12 words) — the scroll-stopper
 - script: a tight shot-by-shot / talking-points script for a 20–60s Reel (CNBC-meets-TikTok pacing)
-- caption: a polished caption following HOOK → VALUE → CTA (2–5 short lines). Include the rotating CTA. NO disclosure text.
-- hashtags: 5–8 high-intent hashtags (mix niche + broad)
+- caption: THE CAPTION IS HALF THE POST — treat it as seriously as the video. Structure: (1) a HOOK line that reframes something the reader assumed ("Most people think X — here's why that costs them"); (2) 1–2 lines of REAL, specific value/insight (a number, a mechanic, a name for the trap); (3) a genuine THOUGHT-PROVOKING QUESTION that invites a real answer in the comments (drives the algorithm) — never a yes/no, never rhetorical; (4) a natural CTA. 3–6 short lines, line breaks between ideas. Descriptive and specific, never vague platitudes. Refer to the brand in full as "Fetti Financial Services" (never just "Fetti Financial"). NO disclosure text (appended at publish).
+- hashtags: 6–9 high-intent hashtags (mix niche + broad); ALWAYS include #fettifinancialservices and #wedomoney for brand uniformity
 Across the ${n} posts: hit DIFFERENT content pillars and ROTATE the CTA — no repeated CTA, no two posts that feel alike.
 
 PLATFORM-SAFETY RULES (2026-07-12 — the Fetti IG was restricted under Meta's fraud/scam
@@ -157,8 +157,8 @@ export async function generateBatch(topic = ""): Promise<Record<string, unknown>
         platform: "all", type: "reel_video",
         hook: `EP${ep.number}: ${ep.title}`,
         script: "",
-        caption: `Ray & Mark break down "${ep.title}" — a real deal, the real mechanics, in about a minute. 🦉\n\nEducational, not a sales pitch. Watch to the end for the move most people miss.`,
-        hashtags: "#mortgage #realestate #homebuying #investing #fettifinancial #raymark",
+        caption: `${ep.logline ? ep.logline.trim() + "\n\n" : ""}Ray & Mark break down "${ep.title}" — a real scenario, real numbers, in about a minute. 🦉 Educational, never a sales pitch. Stay to the end for the part almost everyone misses.\n\nHere's the question worth sitting with: what would YOU have done? Tell us below 👇`,
+        hashtags: "#mortgage #realestate #homebuying #firsttimehomebuyer #investing #raymark #fettifinancialservices #wedomoney",
         image_url: ep.video, status: "queued", scheduled_for: today, source: src,
       });
       break; // one episode per day max

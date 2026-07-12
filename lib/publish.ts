@@ -16,7 +16,24 @@ export type PublishResult = { connected: boolean; channels: { platform: string; 
 
 // Every caption carries the required mortgage-advertising disclosure (NMLS, EHO,
 // not-a-commitment) — appended here so no post can go out without it.
-const fullCaption = (p: Post) => [p.caption, p.hashtags, SOCIAL_DISCLOSURE].filter(Boolean).join("\n\n");
+//
+// PLATFORM-AWARE LINK POLICY (2026-07-12, Ramon "put the website link in the
+// description — unless it violates something"):
+//   • Facebook — links are clickable → include the tracked website link.
+//   • Instagram — caption links aren't clickable AND the account just came off a
+//     link-sharing restriction; a raw URL risks re-tripping the fraud classifier
+//     → "link in bio", NEVER a raw URL, until trust rebuilds.
+//   • TikTok — caption links aren't clickable (bio is the click path) but a text
+//     domain is fine and aids recall → plain "fettifi.com".
+const BRAND_LINK = "https://fettifi.com/go/social"; // tracked → link.click funnel
+function linkLineFor(platform: string): string {
+  if (platform === "facebook") return `Start here → ${BRAND_LINK}`;
+  if (platform === "instagram") return `Ready to move? Everything's in our bio 🔗`;
+  if (platform === "tiktok") return `More at fettifi.com — follow @fettifi`;
+  return "";
+}
+const captionFor = (platform: string, p: Post) =>
+  [p.caption, p.hashtags, linkLineFor(platform), SOCIAL_DISCLOSURE].filter(Boolean).join("\n\n");
 
 async function igPublish(igUserId: string, token: string, imageUrl: string, caption: string) {
   // 1) create media container
@@ -116,7 +133,10 @@ export async function publishPost(post: Post): Promise<PublishResult> {
     } catch { /* keep stored */ }
   }
   const channels: PublishResult["channels"] = [];
-  const caption = fullCaption(post);
+  // Platform-aware captions: IG gets "link in bio" (restriction-safe), FB gets the
+  // clickable tracked link — same body copy + disclosure, different link line.
+  const igCaption = captionFor("instagram", post);
+  const fbCaption = captionFor("facebook", post);
 
   if (!token || (!igUser && !pageId)) {
     return { connected: false, channels: [{ platform: "meta", ok: false, detail: "Connect Meta to auto-publish (set META_ACCESS_TOKEN + IDs)." }] };
@@ -125,10 +145,10 @@ export async function publishPost(post: Post): Promise<PublishResult> {
   // Instagram — real video Reels (Ray & Mark episodes) or brand-art image posts.
   const isVideo = post.type === "reel_video" && !!post.image_url;
   if (igUser && isVideo) {
-    try { const id = await igReel(igUser, token, post.image_url!, caption); channels.push({ platform: "instagram", ok: true, detail: `Posted (${id}).` }); }
+    try { const id = await igReel(igUser, token, post.image_url!, igCaption); channels.push({ platform: "instagram", ok: true, detail: `Posted (${id}).` }); }
     catch (e) { channels.push({ platform: "instagram", ok: false, detail: e instanceof Error ? e.message : "error" }); }
   } else if (igUser && post.image_url) {
-    try { const id = await igPublish(igUser, token, post.image_url, caption); channels.push({ platform: "instagram", ok: true, detail: `Posted (${id}).` }); }
+    try { const id = await igPublish(igUser, token, post.image_url, igCaption); channels.push({ platform: "instagram", ok: true, detail: `Posted (${id}).` }); }
     catch (e) { channels.push({ platform: "instagram", ok: false, detail: e instanceof Error ? e.message : "error" }); }
   } else if (igUser) {
     channels.push({ platform: "instagram", ok: false, detail: "Reel script has no media — post manually or wait for the produced video." });
@@ -137,9 +157,9 @@ export async function publishPost(post: Post): Promise<PublishResult> {
   // Facebook Page — video for episodes, photo for image posts, else text.
   if (pageId) {
     try {
-      const id = isVideo ? await fbVideo(pageId, token, post.image_url!, caption)
-        : post.image_url ? await fbPhoto(pageId, token, post.image_url, caption)
-        : await fbText(pageId, token, caption);
+      const id = isVideo ? await fbVideo(pageId, token, post.image_url!, fbCaption)
+        : post.image_url ? await fbPhoto(pageId, token, post.image_url, fbCaption)
+        : await fbText(pageId, token, fbCaption);
       channels.push({ platform: "facebook", ok: true, detail: `Posted (${id}).` });
     } catch (e) { channels.push({ platform: "facebook", ok: false, detail: e instanceof Error ? e.message : "error" }); }
   }
