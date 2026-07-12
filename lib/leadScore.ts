@@ -66,6 +66,10 @@ export function scoreLead(b: ScorableLead): { score: number; tier: LeadTier } {
   if (cs && cs >= 700) score += 40;
   else if (cs && cs >= 680) score += 30;
   else if (cs && cs >= 650) score += 20;
+  // FHA lends down to 580 — 600-649 credit is a VIABLE consumer borrower (FHA/DPA
+  // territory), not a zero. Below the old cutoff the scorer silently declared
+  // Fetti's whole FHA demographic worthless, which starved them of follow-up.
+  else if (cs && cs >= 600) score += 10;
 
   const liquid = dollarsFromCoded(b.liquid_assets);
   if (liquid && liquid >= 100000) score += 30;
@@ -95,6 +99,13 @@ export function scoreLead(b: ScorableLead): { score: number; tier: LeadTier } {
   // INVESTOR — investor/DSCR borrowers are repeat, portfolio-building clients.
   // (Subsumes the old `loan_purpose includes "dscr"` +10 — the regex covers dscr.)
   if (isInvestorish(b)) score += 10;
+  // CONSUMER-READY — the symmetric signal (Fetti is full-spectrum, not an investor
+  // shop): a purchase-purpose consumer with FHA-viable credit (620+) and real income
+  // evidence is a fundable borrower TODAY. Low savings is NOT held against them —
+  // that's exactly what FHA 3.5% + down-payment-assistance programs are for.
+  const consumerPurchase = !isInvestorish(b) && /purchase|buy|fha|first.?time|homebuyer|\bva\b|usda|convention/i.test(String(b.loan_purpose || ""));
+  const incomeEvidence = (b.income_is_monthly && b.income && b.income >= 4000) || (!b.income_is_monthly && b.income && b.income >= 48000);
+  if (consumerPurchase && cs && cs >= 620 && incomeEvidence) score += 10;
   // Portfolio flag from the wizard ("Owns other RE") — a multi-deal client signal.
   const oop = typeof b.own_other_property === "string" ? /^(y|true|1)/i.test(b.own_other_property) : b.own_other_property === true;
   if (oop) score += 10;

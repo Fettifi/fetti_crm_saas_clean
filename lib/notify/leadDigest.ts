@@ -70,6 +70,30 @@ export async function buildAndSendLeadDigest(): Promise<{ sent: string[]; counts
       if (resolved >= 5 && promotedOwner / resolved > 0.3) parts.push(`⚠️ You released ${promotedOwner}/${resolved} quarantines — the shield may be too tight. Say the word and I'll raise the threshold.`);
       shieldBlock = parts.join("\n\n");
     }
+    // CHANNEL QUALITY (the fake-lead SPEND lever): junk concentrates by channel —
+    // this maps quarantines/bad phones to the source paying for them, so ad money
+    // gets cut from bad placements instead of quietly buying bots. Last 7 days.
+    const d7 = new Date(Date.now() - 7 * 86400000).toISOString();
+    const { data: week } = await supabaseAdmin
+      .from("leads").select("source, lead_source, stage, raw").gte("created_at", d7).limit(1000);
+    const chan: Record<string, { total: number; bad: number }> = {};
+    for (const l of week || []) {
+      const raw = (l as any).raw && typeof (l as any).raw === "object" ? (l as any).raw : {};
+      const key = String((l as any).lead_source || (l as any).source || "unknown").slice(0, 40);
+      chan[key] = chan[key] || { total: 0, bad: 0 };
+      chan[key].total++;
+      const isBad = String((l as any).stage || "").toLowerCase() === "review" ||
+        ["invalid", "non_us"].includes(raw.phone_status) || (raw.shield?.band && raw.shield.band !== "gray");
+      if (isBad) chan[key].bad++;
+    }
+    const flagged = Object.entries(chan)
+      .filter(([, v]) => v.total >= 3 && v.bad / v.total >= 0.25)
+      .sort((a, b) => b[1].bad / b[1].total - a[1].bad / a[1].total);
+    if (flagged.length) {
+      shieldBlock += (shieldBlock ? "\n\n" : "") +
+        `💸 CHANNEL QUALITY (7d) — these sources are ≥25% junk; if they're paid, cut or fix the placement:\n` +
+        flagged.map(([k, v]) => `• ${k}: ${v.bad}/${v.total} junk (${Math.round((v.bad / v.total) * 100)}%)`).join("\n");
+    }
   } catch { /* best-effort */ }
 
   const line = (l: Lead) => `• ${l.full_name || "(no name)"} — ${l.tier || "untiered"} — ${l.loan_purpose || "loan"} — ${l.source || "?"} — ${l.stage || "New Lead"}`;

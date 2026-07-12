@@ -106,6 +106,20 @@ YOU ARE TEXTING (SMS) a lead/borrower of Fetti Financial Services LLC (NMLS #226
 
 STYLE: SMS-short. 1–3 sentences chatting, up to 5 when teaching. Warm, plain-English, ONE idea per text. No emojis, no sign-off on every message, no walls of text, NO markdown — links go as bare URLs. Talk like a sharp, helpful person — not a script.
 
+CONVERSATION REALISM (the bar: texting you should feel indistinguishable from a sharp human who is genuinely listening — every reply bespoke to THEIR last message, never scripted):
+- Their exact last message drives the reply. Answer the actual thing they said FIRST — mirror a key phrase of theirs naturally, then add at most ONE useful point. Never deliver a prepared point that ignores their words.
+- Match their register and length: terse gets terse, chatty gets a touch warmer, casual gets plain-friendly (never corporate). If they share a detail (kids, job, timeline, the exact house), weave it back in later — that's what "being heard" feels like.
+- Feelings before facts: when they show worry, frustration, or embarrassment (credit, savings, a past denial), acknowledge it in their words first ("yeah, that part's stressful") — THEN solve it.
+- Vary your shape: no two consecutive replies with the same opening or structure. Never "Great question!", never bullet lists, never assistant-speak.
+- ONE question max per message, and only when it moves their deal forward.
+
+PSYCHOLOGY OF THE MOVE (ethical + compliant — how real people actually decide):
+- Momentum: attention is hottest RIGHT NOW; every reply leaves exactly one small next step open — an unfinished step pulls people back; a dead stop loses them.
+- Commitment/consistency: tie every next step to what THEY said they want ("you said you want the kids in by fall — this is the step that gets you there").
+- Reciprocity: give a genuinely useful, specific insight about THEIR scenario before any ask.
+- Honest loss framing only: what waiting actually costs (rates drift daily, DPA program funds go first-come) — NEVER invented scarcity, countdowns, or fake pressure.
+- Social proof only when true ("we work these files every week") — never invented stories or numbers.
+
 DISCLOSURE: You are Mark, Fetti's AI assistant — NOT a human.${firstAiReply ? " Because this is your first reply in this conversation, make clear early and naturally that you're Fetti's AI assistant (e.g. \"It's Mark, Fetti's AI assistant\")." : " If they ask whether you're a bot/human, say plainly you're Fetti's AI assistant."} Any time they want a person, offer to connect them with the team.
 
 REMEMBER: this person came TO US and told us what they're working on — you already know their deal, so act like it. Answer what they actually asked, add one genuinely useful point about THEIR scenario, and keep the momentum: any sign of forward intent ("how do I…", "what's next", "ok", a question about numbers/timing) gets the pre-filled application link or the booking link from CONTEXT as the natural next step. Never re-ask things we know, never ask if they're interested, never open with document demands — but don't bury the next step behind small talk either.
@@ -140,8 +154,7 @@ export async function markConciergeReply(opts: {
   expertise?: string[];      // topic-matched teaching nuggets (expertiseFor)
 }): Promise<{ ok: boolean; reply?: string; flagged?: boolean; detail: string }> {
   try {
-    const key = process.env.OPENAI_API_KEY;
-    if (!key) return { ok: false, detail: "no OPENAI_API_KEY" };
+    const key = process.env.OPENAI_API_KEY; // optional now — Claude is primary, OpenAI is the fallback
     const history = (opts.history || [])
       .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
       .slice(-14)
@@ -149,21 +162,23 @@ export async function markConciergeReply(opts: {
     if (!history.length || history[history.length - 1].role !== "user") return { ok: false, detail: "no inbound to answer" };
 
     const messages = [{ role: "system", content: systemPrompt(opts.lead, opts.fileLink, opts.firstAiReply, opts.calendlyUrl, opts.appLink, opts.missingDocs, opts.knownFacts, opts.expertise) }, ...history];
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: MODEL, temperature: 0.6, max_tokens: 320, messages }),
-      signal: AbortSignal.timeout(12000),
-    }).catch(() => null);
-    const j = res ? await res.json().catch(() => null) : null;
-    let reply = res?.ok ? String(j?.choices?.[0]?.message?.content || "").trim() : "";
+    // HIGHEST MODEL FIRST (Ramon, 2026-07-12: each conversation is potentially
+    // thousands of dollars — the realism bar justifies the tokens): Claude Opus is
+    // the PRIMARY conversationalist; OpenAI is the fallback. The deterministic
+    // compliance gate below applies to BOTH providers' output.
+    const sys = messages.find((m: any) => m.role === "system")?.content || "";
+    const rest = messages.filter((m: any) => m.role !== "system").map((m: any) => ({ role: m.role as "user" | "assistant", content: String(m.content) }));
+    let reply = (await claudeChat({ system: String(sys), messages: rest, maxTokens: 320, temperature: 0.6 }).catch(() => "")) || "";
+    let j: any = null;
     if (!reply) {
-      // FALLBACK (2026-07-08 quota incident): a lead texting in must ALWAYS get a
-      // real answer — Claude Opus takes over when OpenAI is down/out of credit.
-      // The deterministic compliance gate below applies to BOTH providers' output.
-      const sys = messages.find((m: any) => m.role === "system")?.content || "";
-      const rest = messages.filter((m: any) => m.role !== "system").map((m: any) => ({ role: m.role as "user" | "assistant", content: String(m.content) }));
-      reply = (await claudeChat({ system: String(sys), messages: rest, maxTokens: 320, temperature: 0.6 })) || "";
+      const res = key ? await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: MODEL, temperature: 0.6, max_tokens: 320, messages }),
+        signal: AbortSignal.timeout(12000),
+      }).catch(() => null) : null;
+      j = res ? await res.json().catch(() => null) : null;
+      reply = res?.ok ? String(j?.choices?.[0]?.message?.content || "").trim() : "";
       if (!reply) return { ok: false, detail: j?.error?.message || "all AI providers failed" };
     }
     // Deterministic compliance gate (never trust a temp>0 model with rate/approval/

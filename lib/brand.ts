@@ -60,8 +60,9 @@ STRUCTURE. Every post follows HOOK → VALUE → CTA:
   step, a number, a mistake to avoid. Make them smarter in 30 seconds. CNBC-meets-TikTok energy: short
   punchy sentences, no corporate jargon.
 - CTA: a natural path to a conversation. ROTATE the CTA every post. Never repeat the same one:
-  DM "HOME" · DM "INVEST" · DM "DSCR" · "Comment [KEYWORD]" · "Save this" · "Send this to a friend who…" ·
-  "Book a strategy call" · "Link in bio". Pick the CTA that fits the topic.
+  "Save this" · "Send this to a friend who…" · "Book a strategy call" · "Link in bio" ·
+  "Start your application on our site". NEVER "DM [keyword]" / "Comment [keyword]" bait — that's
+  the signature of money-scam accounts and it triggered our IG restriction. Pick the CTA that fits.
 
 FETTI CONTENT TEST. Before finalizing each post, it must pass ≥4 of 5: Would someone SAVE it? SHARE it?
 LEARN something? TRUST Fetti more? CONTACT Fetti? If not, rewrite it.
