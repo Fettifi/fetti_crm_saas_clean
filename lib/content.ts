@@ -156,15 +156,19 @@ export async function composeTikTokCard(hook: string): Promise<string | null> {
     const lines = wrapHook(hook || "We do money.");
     const fs = 68, lh = 84;
     const bandTop = 150, textStart = bandTop + 96;
+    // Generic families ("sans-serif") — fontconfig always resolves these to an
+    // existing font; a specific name like "Helvetica Neue" doesn't exist on the
+    // server and renders as tofu boxes.
+    const FONT = "sans-serif";
     const textSvg = lines.map((l, i) =>
-      `<text x="60" y="${textStart + i * lh}" font-family="Helvetica Neue, Arial" font-size="${fs}" font-weight="800" fill="#ffffff">${esc(l)}</text>`).join("");
+      `<text x="60" y="${textStart + i * lh}" font-family="${FONT}" font-size="${fs}" font-weight="bold" fill="#ffffff">${esc(l)}</text>`).join("");
     const overlay = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
       <defs><linearGradient id="top" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#05080f" stop-opacity="0.85"/><stop offset="1" stop-color="#05080f" stop-opacity="0"/>
       </linearGradient></defs>
       <rect x="0" y="0" width="${W}" height="${bandTop + lines.length * lh + 60}" fill="url(#top)"/>
       ${textSvg}
-      <text x="60" y="${H - 60}" font-family="Helvetica Neue, Arial" font-size="30" font-weight="600" fill="#ffffff" fill-opacity="0.85">fettifi.com · NMLS #2267023 · Equal Housing Opportunity</text>
+      <text x="60" y="${H - 60}" font-family="${FONT}" font-size="28" font-weight="bold" fill="#ffffff" fill-opacity="0.85">fettifi.com · NMLS #2267023 · Equal Housing Opportunity</text>
     </svg>`;
     const buf = await sharp(base).composite([{ input: Buffer.from(overlay), top: 0, left: 0 }]).jpeg({ quality: 90 }).toBuffer();
     const path = `tiktok/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
