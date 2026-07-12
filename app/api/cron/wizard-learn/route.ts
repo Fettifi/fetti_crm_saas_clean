@@ -62,10 +62,21 @@ async function learn() {
 
   const byGoal: Record<string, { sessions: number; contacts: number; completes: number }> = {};
   const lastStepDrop: Record<string, number> = {}; // where non-contacting sessions stalled
+  // A session with no goal ever recorded is a visitor who bounced on the very first
+  // screen before choosing a goal — a top-of-funnel / first-impression problem, NOT a
+  // goal we failed to "identify". Keep these OUT of by_goal (they carry no goal signal,
+  // and their guaranteed-0% conversion otherwise drags down every real segment and made
+  // the optimizer burn a recommendation every run chasing a phantom "unknown goal").
+  // Surface them instead as a separate, actionable goal-screen bounce metric.
+  let noGoalSessions = 0;
   for (const s of all) {
-    const g = s.goal || "unknown";
-    byGoal[g] = byGoal[g] || { sessions: 0, contacts: 0, completes: 0 };
-    byGoal[g].sessions++; if (s.contacted) byGoal[g].contacts++; if (s.completed) byGoal[g].completes++;
+    if (s.goal) {
+      const g = s.goal;
+      byGoal[g] = byGoal[g] || { sessions: 0, contacts: 0, completes: 0 };
+      byGoal[g].sessions++; if (s.contacted) byGoal[g].contacts++; if (s.completed) byGoal[g].completes++;
+    } else {
+      noGoalSessions++;
+    }
     if (!s.contacted && s.lastStep) lastStepDrop[s.lastStep] = (lastStepDrop[s.lastStep] || 0) + 1;
   }
 
@@ -76,6 +87,11 @@ async function learn() {
     completes,
     contact_rate: starts ? +(contacts / starts).toFixed(3) : 0,
     app_completion_rate: contacts ? +(completes / contacts).toFixed(3) : 0,
+    // First-screen bounces: visitors who left before selecting any goal. Move this by
+    // sharpening the opening question / tip (reassurance, social proof), not by trying
+    // to "identify" a goal that was never chosen.
+    goal_screen_bounces: noGoalSessions,
+    goal_selection_rate: all.length ? +((all.length - noGoalSessions) / all.length).toFixed(3) : 0,
     answers_per_step: stepReach,
     pre_contact_dropoff_by_step: lastStepDrop,
     by_goal: byGoal,

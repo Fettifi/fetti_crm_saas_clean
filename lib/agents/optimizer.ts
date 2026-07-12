@@ -56,7 +56,15 @@ HELOC/cash-out instead of reverse), compliant, and NEVER promise approval or rat
 You are given: a FUNNEL summary (where people drop off, completion rate, by goal/product, and
 OBJECTIONS — how often each obstacle was shown and whether those borrowers continued to contact),
 OUTCOMES (lead tier mix by product/goal/occupancy), and PRIOR_INSIGHTS (lessons you banked in
-earlier runs). LEARN cumulatively: keep prior insights that still hold, drop ones the new data
+earlier runs).
+
+Reading the FUNNEL: "by_goal" covers ONLY sessions where the applicant actually selected a goal —
+use it for real per-goal conversion. "goal_screen_bounces" / "goal_selection_rate" count visitors
+who left on the FIRST screen before choosing any goal. That is a first-impression problem: address
+it by sharpening the opening question and the "tip" (reassurance / social proof), NOT by trying to
+"identify" or "clarify unknown goals" — there is no goal to identify for someone who never chose
+one, so never recommend that. If goal_selection_rate is low, treat it as a top-of-funnel hook
+problem and improve the opening copy. LEARN cumulatively: keep prior insights that still hold, drop ones the new data
 contradicts, add new ones. Pay special attention to obstacles with low continue-rates — improve
 those rebuttals. Be specific and data-grounded; if the sample is tiny, say so and stay
 conservative. Never invent rates, approvals, or guarantees.
