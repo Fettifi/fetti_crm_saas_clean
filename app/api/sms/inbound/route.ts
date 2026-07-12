@@ -165,6 +165,20 @@ export async function POST(req: NextRequest) {
           // (no-op unless stage is Review). Runs before the hot-reply task/concierge so
           // the full pipeline fires exactly once.
           try { await autoPromoteIfQuarantined((lead as any).id, "sms_inbound"); } catch { /* */ }
+          // CONSENT BRIDGE: they texted US first — express written consent (TCPA), the
+          // same rationale as the keyword opt-in above. Stamp it with evidence so this
+          // lead graduates from email-only to the SMS drip. Never resurrects a STOP:
+          // an opted-out number stays out until a fresh keyword opt-in.
+          try {
+            const { data: lr } = await supabaseAdmin.from("leads").select("raw").eq("id", (lead as any).id).maybeSingle();
+            const raw = (lr as any)?.raw && typeof (lr as any).raw === "object" ? (lr as any).raw : {};
+            if (!raw.sms_optout_at && raw.sms_consent !== true) {
+              raw.sms_consent = true;
+              const prior = raw.consent && typeof raw.consent === "object" ? raw.consent : {};
+              raw.consent = { ...prior, sms_optin: true, via: "texted_in", at: new Date().toISOString(), text: body.slice(0, 200) };
+              await supabaseAdmin.from("leads").update({ raw }).eq("id", (lead as any).id);
+            }
+          } catch { /* best-effort — the reply/alert flow must not depend on the stamp */ }
           // Non-STOP reply = hottest signal in the funnel → top-priority CRM task + alert.
           await logHotLeadReply({ leadId: (lead as any).id, name: (lead as any).full_name, phone: from, body });
         }

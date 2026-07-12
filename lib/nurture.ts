@@ -109,6 +109,13 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
 
   const calendly = (await cfg("CALENDLY_URL")) || "";
   const bookLine = calendly ? ` Prefer to talk? Book a call: ${calendly}` : "";
+  // SMS-CONSENT BRIDGE: most of the database (Meta forms, imports) is legally
+  // email-only — but a consumer-INITIATED text is express written consent (TCPA).
+  // Every nurture EMAIL invites them to text Mark first; the inbound webhook stamps
+  // the consent evidence on arrival, graduating the lead into the SMS drip.
+  const twDigits = (process.env.TWILIO_FROM || "").replace(/\D/g, "");
+  const tw10 = twDigits.length === 11 && twDigits.startsWith("1") ? twDigits.slice(1) : twDigits;
+  const textMeLine = tw10.length === 10 ? `\n\nPrefer to text? Text me at (${tw10.slice(0, 3)}) ${tw10.slice(3, 6)}-${tw10.slice(6)} and we'll take it from there.` : "";
   // Google Business Profile review link — fuels the local map pack. Reviews are the
   // #1 local ranking lever; we ask every funded borrower once (no incentive — Google/FTC).
   const reviewUrl = (await cfg("GBP_REVIEW_URL")) || "";
@@ -183,7 +190,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       const link = `${baseUrl()}/file/${file.share_token}`;
       const list = missing.slice(0, 3).join(", ") + (missing.length > 3 ? `, +${missing.length - 3} more` : "");
       const message = `Hi ${name}, it's Mark — you're almost there on ${purpose}! Still need: ${list}. Upload securely here: ${link}${bookLine} (Reply STOP to opt out.)`;
-      const emailBody = `Hey ${name} — you're genuinely close on ${purpose}. Still open on my side: ${list}.\n\nUpload them here whenever suits: ${link}\n\nIf one of these is a pain to get, tell me which — there's usually a workaround.`;
+      const emailBody = `Hey ${name} — you're genuinely close on ${purpose}. Still open on my side: ${list}.\n\nUpload them here whenever suits: ${link}\n\nIf one of these is a pain to get, tell me which — there's usually a workaround.${textMeLine}`;
       try {
         const res = await respondToLead({
           id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message,
@@ -224,7 +231,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         const link = magicApplyLink(l);
         const finishLine = ` Finish your application (everything you gave us is saved): ${link}`;
         const emailT = renderTouch(EMAIL_TOUCHES[STEP_TOUCH[due.step]] || EMAIL_TOUCHES.d30, l);
-        const emailBody = emailT.body + `\n\nP.S. Your application's already started — finishing takes about 3 minutes, nothing re-types: ${link}`;
+        const emailBody = emailT.body + `\n\nP.S. Your application's already started — finishing takes about 3 minutes, nothing re-types: ${link}` + textMeLine;
         const res = await respondToLead({
           id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
           message: due.msg(name, purpose) + finishLine + bookLine,   // SMS copy
@@ -254,7 +261,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
         message: msg + finishLine + bookLine,                        // SMS copy
         emailSubject: emailT.subject,                                 // email copy
-        emailBody: emailT.body + `\n\nP.S. Your application's still saved — finishing takes about 3 minutes: ${link}`,
+        emailBody: emailT.body + `\n\nP.S. Your application's still saved — finishing takes about 3 minutes: ${link}` + textMeLine,
       });
       if ((res?.sent || []).length) {
         await supabaseAdmin.from("leads").update({ nurture_step: curStep + 1, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
