@@ -134,43 +134,18 @@ export async function composeBrandCard(): Promise<string | null> {
 // day's post: our Ray & Mark scene + the day's hook burned on, brand watermark.
 // TikTok can't be auto-posted (no API for our account), so this is the daily
 // grab-and-post asset the /tiktok-today page serves. Custom art only — never stock.
-function esc(s: string) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-function wrapHook(text: string, max = 18): string[] {
-  const words = String(text || "").trim().split(/\s+/);
-  const lines: string[] = []; let cur = "";
-  for (const w of words) {
-    if ((cur + " " + w).trim().length > max && cur) { lines.push(cur); cur = w; }
-    else cur = (cur + " " + w).trim();
-  }
-  if (cur) lines.push(cur);
-  return lines.slice(0, 4);
-}
-export async function composeTikTokCard(hook: string): Promise<string | null> {
+export async function composeTikTokCard(_hook: string): Promise<string | null> {
   try {
     const sharp = (await import("sharp")).default;
     const pick = BRAND_SCENES[new Date().getUTCDate() % BRAND_SCENES.length];
     const src = supabaseAdmin.storage.from("content").getPublicUrl(`brand-kit/${pick}`).data.publicUrl;
     const raw = Buffer.from(await (await fetch(src)).arrayBuffer());
-    const W = 1080, H = 1920;
-    const base = await sharp(raw).resize(W, H, { fit: "cover", position: "top" }).toBuffer();
-    const lines = wrapHook(hook || "We do money.");
-    const fs = 68, lh = 84;
-    const bandTop = 150, textStart = bandTop + 96;
-    // Generic families ("sans-serif") — fontconfig always resolves these to an
-    // existing font; a specific name like "Helvetica Neue" doesn't exist on the
-    // server and renders as tofu boxes.
-    const FONT = "sans-serif";
-    const textSvg = lines.map((l, i) =>
-      `<text x="60" y="${textStart + i * lh}" font-family="${FONT}" font-size="${fs}" font-weight="bold" fill="#ffffff">${esc(l)}</text>`).join("");
-    const overlay = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-      <defs><linearGradient id="top" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#05080f" stop-opacity="0.85"/><stop offset="1" stop-color="#05080f" stop-opacity="0"/>
-      </linearGradient></defs>
-      <rect x="0" y="0" width="${W}" height="${bandTop + lines.length * lh + 60}" fill="url(#top)"/>
-      ${textSvg}
-      <text x="60" y="${H - 60}" font-family="${FONT}" font-size="28" font-weight="bold" fill="#ffffff" fill-opacity="0.85">fettifi.com · NMLS #2267023 · Equal Housing Opportunity</text>
-    </svg>`;
-    const buf = await sharp(base).composite([{ input: Buffer.from(overlay), top: 0, left: 0 }]).jpeg({ quality: 90 }).toBuffer();
+    // 9:16 TikTok-native crop of OUR brand scene. NO burned-in text: Vercel's
+    // serverless runtime ships no fonts, so any SVG/Pango text renders as tofu
+    // boxes. The hook, message, and full compliance disclosure ride in the CAPTION
+    // (TikTok shows it directly under the post). The 4 scenes rotate daily so the
+    // visuals stay varied (never the same image two days running).
+    const buf = await sharp(raw).resize(1080, 1920, { fit: "cover", position: "top" }).jpeg({ quality: 90 }).toBuffer();
     const path = `tiktok/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
     const { error } = await supabaseAdmin.storage.from("content").upload(path, buf, { contentType: "image/jpeg", upsert: false });
     if (error) { console.warn("[content] tiktok card upload:", error.message); return null; }
