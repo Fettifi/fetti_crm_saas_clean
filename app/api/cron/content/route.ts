@@ -4,7 +4,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { generateBatch } from "@/lib/content";
-import { publishPost } from "@/lib/publish";
 import { logActivity } from "@/lib/activity";
 import { recordHeartbeat } from "@/lib/heartbeat";
 import { cfg } from "@/lib/settings";
@@ -19,35 +18,43 @@ async function run(topic = "") {
   if (error) throw new Error(error.message);
   await logActivity({ entity_type: "org", actor: "agent:content", action: "content.generated", detail: { count: (data || []).length } });
 
-  // FULL AUTOMATION: auto-publish ONE post/day (prefer the image post) to the
-  // connected channels — no approval needed. The rest stay queued for manual
-  // Approve & Publish. Silently skips if Meta isn't connected.
+  // AUTO-POSTING, HUMAN-CADENCE EDITION (post-restriction redesign, 2026-07-12):
+  // the old code published HERE, at the same minute every day — that machine
+  // cadence is what tripped Meta's fraud/scam classifier (30-day restriction,
+  // lifted after review). Now this cron only SCHEDULES the day's one auto post
+  // for a RANDOM minute in a wide daytime window; /api/cron/publish-due (every
+  // 15 min) actually publishes when the slot arrives. Different time every day.
   //
-  // KILL SWITCH (2026-07-12): daily same-minute API-published AI posts are the
-  // classic "inauthentic activity" signal — the Fetti IG got banned with this
-  // running. CONTENT_AUTOPUBLISH=off (app_settings) halts the AUTO path only;
-  // generation + manual Approve & Publish on /content keep working. Leave OFF
-  // until the account is restored and Ramon opts back in (and then randomize
-  // the posting time, don't re-enable same-minute dailies).
-  let published: any = null;
+  // KILL SWITCH: CONTENT_AUTOPUBLISH=off (app_settings) halts the AUTO path only;
+  // generation + manual Approve & Publish on /content keep working.
+  let scheduledFor: string | null = null;
   try {
     if ((await cfg("CONTENT_AUTOPUBLISH")) === "off") {
       await logActivity({ entity_type: "org", actor: "agent:publisher", action: "content.autopublish_skipped", detail: { reason: "CONTENT_AUTOPUBLISH=off" } }).catch(() => {});
-      return { ok: true, created: (data || []).length, auto_published: null, autopublish: "off" };
+      return { ok: true, created: (data || []).length, auto_scheduled: null, autopublish: "off" };
+    }
+    // ONE auto slot in flight, ever — a double cron fire (seen 7/4, 7/7, 7/8) or a
+    // still-pending yesterday slot must not stack a second daily post.
+    const { data: pending } = await supabaseAdmin.from("content_posts").select("id").in("status", ["scheduled", "posting"]).limit(1);
+    const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+    const { data: postedToday } = await supabaseAdmin.from("activity_log").select("id")
+      .eq("action", "content.published").gte("created_at", dayStart.toISOString()).limit(1).maybeSingle();
+    if (pending?.length || postedToday) {
+      return { ok: true, created: (data || []).length, auto_scheduled: null, note: "auto slot already scheduled/posted" };
     }
     const candidates = (data || []) as any[];
     const pick = candidates.find((r) => r.image_url) || candidates[0];
     if (pick) {
-      const res = await publishPost(pick);
-      if (res.connected && res.channels.some((c) => c.ok)) {
-        await supabaseAdmin.from("content_posts").update({ status: "posted" }).eq("id", pick.id);
-        await logActivity({ entity_type: "org", entity_id: pick.id, actor: "agent:publisher", action: "content.published", detail: { auto: true, channels: res.channels } });
-        published = res.channels.filter((c) => c.ok).map((c) => c.platform);
-      }
+      // Random slot 30–450 min out (cron fires 16:00 UTC → posts land 16:30–23:30
+      // UTC ≈ 9:30am–4:30pm PT, a different minute every day).
+      const delayMin = 30 + Math.floor(Math.random() * 420);
+      scheduledFor = new Date(Date.now() + delayMin * 60_000).toISOString();
+      await supabaseAdmin.from("content_posts").update({ status: "scheduled", scheduled_for: scheduledFor }).eq("id", pick.id);
+      await logActivity({ entity_type: "org", entity_id: pick.id, actor: "agent:publisher", action: "content.scheduled", detail: { auto: true, scheduled_for: scheduledFor } }).catch(() => {});
     }
-  } catch (e) { console.warn("[cron/content] auto-publish:", e); }
+  } catch (e) { console.warn("[cron/content] auto-schedule:", e); }
 
-  return { ok: true, created: (data || []).length, auto_published: published };
+  return { ok: true, created: (data || []).length, auto_scheduled: scheduledFor };
 }
 
 export async function GET(req: NextRequest) {

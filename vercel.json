@@ -14,6 +14,7 @@
         { "path": "/api/cron/import-leads", "schedule": "*/15 * * * *" },
         { "path": "/api/cron/ad-factory", "schedule": "0 12 * * *" },
         { "path": "/api/cron/lead-digest", "schedule": "0 15 * * *" },
-        { "path": "/api/cron/email-poll", "schedule": "*/5 * * * *" }
+        { "path": "/api/cron/email-poll", "schedule": "*/5 * * * *" },
+        { "path": "/api/cron/publish-due", "schedule": "*/15 * * * *" }
     ]
 }
