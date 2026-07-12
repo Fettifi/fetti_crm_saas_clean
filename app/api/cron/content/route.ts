@@ -7,6 +7,7 @@ import { generateBatch } from "@/lib/content";
 import { publishPost } from "@/lib/publish";
 import { logActivity } from "@/lib/activity";
 import { recordHeartbeat } from "@/lib/heartbeat";
+import { cfg } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 90;
@@ -21,8 +22,19 @@ async function run(topic = "") {
   // FULL AUTOMATION: auto-publish ONE post/day (prefer the image post) to the
   // connected channels — no approval needed. The rest stay queued for manual
   // Approve & Publish. Silently skips if Meta isn't connected.
+  //
+  // KILL SWITCH (2026-07-12): daily same-minute API-published AI posts are the
+  // classic "inauthentic activity" signal — the Fetti IG got banned with this
+  // running. CONTENT_AUTOPUBLISH=off (app_settings) halts the AUTO path only;
+  // generation + manual Approve & Publish on /content keep working. Leave OFF
+  // until the account is restored and Ramon opts back in (and then randomize
+  // the posting time, don't re-enable same-minute dailies).
   let published: any = null;
   try {
+    if ((await cfg("CONTENT_AUTOPUBLISH")) === "off") {
+      await logActivity({ entity_type: "org", actor: "agent:publisher", action: "content.autopublish_skipped", detail: { reason: "CONTENT_AUTOPUBLISH=off" } }).catch(() => {});
+      return { ok: true, created: (data || []).length, auto_published: null, autopublish: "off" };
+    }
     const candidates = (data || []) as any[];
     const pick = candidates.find((r) => r.image_url) || candidates[0];
     if (pick) {
