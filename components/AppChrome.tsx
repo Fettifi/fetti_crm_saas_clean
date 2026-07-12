@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ArrowLeft, Menu, X } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import MarkChat from "@/components/MarkChat";
+import TrackBeacon from "@/components/TrackBeacon";
 
 // Internal CRM route prefixes that get the app shell (sidebar + top bar with a
 // Back button + a mobile menu drawer). Everything else — marketing pages, the
@@ -34,8 +35,10 @@ export default function AppChrome({ children }: { children: ReactNode }) {
   // Close the mobile drawer whenever the route changes.
   useEffect(() => { setOpen(false); }, [pathname]);
 
-  // Public pages render bare — plus the floating "Chat with Mark" widget (never on the CRM).
-  if (!isCrm) return <>{children}<MarkChat /></>;
+  // Public pages render bare — plus the floating "Chat with Mark" widget and the
+  // cookieless first-party pageview beacon (never on the CRM — internal traffic
+  // would pollute the content-ROI funnel data).
+  if (!isCrm) return <>{children}<MarkChat /><TrackBeacon /></>;
 
   const goBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) router.back();
