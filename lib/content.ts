@@ -81,12 +81,21 @@ classifier; these are HARD rules so brand content never pattern-matches money-sc
     : `Create ${n} posts, EDUCATION-FIRST. Each OPENS with a real, useful finance/mortgage fact or insight — rotate the teaching pillar: home-buying know-how, DSCR & investment-loan basics, credit & how you qualify, building equity & wealth, rent-vs-buy math, market intel, core money principles. Deliver genuine value, THEN blend in Fetti / why Ramon Dent built it / the mission as the bridge to a rotated CTA. Distinct hooks, all TRUE, accurate, and compliant — never invent stats, rates, awards, or testimonials. Each passes the Fetti Content Test.`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: MODEL, temperature: 0.9, max_tokens: 1200, response_format: { type: "json_object" },
+    body: JSON.stringify({ model: MODEL, temperature: 0.9, max_tokens: 2600, response_format: { type: "json_object" },
       messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
   });
   const j = await res.json();
   if (!res.ok) throw new Error(j?.error?.message || "OpenAI error");
-  const out = JSON.parse(j.choices?.[0]?.message?.content ?? "{}");
+  // The richer caption doctrine makes responses long — if the model still truncates
+  // (invalid JSON), salvage the complete post objects rather than 500 the whole run.
+  const content = j.choices?.[0]?.message?.content ?? "{}";
+  let out: any;
+  try { out = JSON.parse(content); }
+  catch {
+    const objs = [...content.matchAll(/\{[^{}]*"hook"[\s\S]*?"hashtags"[\s\S]*?\}/g)].map((m) => { try { return JSON.parse(m[0]); } catch { return null; } }).filter(Boolean);
+    out = { posts: objs };
+    if (!objs.length) throw new Error("content JSON parse failed and no salvageable posts");
+  }
   const posts = Array.isArray(out.posts) ? out.posts.slice(0, n) : [];
   // Normalize hashtags to a clean space-separated string (models sometimes return an array).
   return posts.map((p: any) => ({
