@@ -43,6 +43,11 @@ async function run(topic = "") {
       return { ok: true, created: (data || []).length, auto_scheduled: null, note: "auto slot already scheduled/posted" };
     }
     const candidates = (data || []) as any[];
+    // Include still-queued episode reels from EARLIER batches — an episode queued
+    // on a day whose auto slot was already used must still get its shot the next day.
+    const { data: queuedReels } = await supabaseAdmin.from("content_posts")
+      .select("*").eq("type", "reel_video").eq("status", "queued").limit(3);
+    for (const r of queuedReels || []) if (!candidates.some((c) => c.id === (r as any).id)) candidates.push(r);
     // Prefer the EPISODE REEL when one is queued (the show is the viral vector),
     // then the brand-art image post, then anything.
     const pick = candidates.find((r) => r.type === "reel_video" && r.image_url)
