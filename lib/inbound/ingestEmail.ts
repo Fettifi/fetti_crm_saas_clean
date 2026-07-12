@@ -18,7 +18,7 @@ import { logActivity } from "@/lib/activity";
 import { logHotLeadReply } from "@/lib/notify/hotLeadReply";
 import { cfg } from "@/lib/settings";
 
-export type ParsedInbound = { from: string | null; subject: string; text: string };
+export type ParsedInbound = { from: string | null; subject: string; text: string; providerId?: string | null };
 
 // Strip quoted history so we act on what they actually WROTE, not the whole thread.
 export function trimQuotedHistory(raw: string): string {
@@ -38,7 +38,12 @@ export function parseInbound(b: any): ParsedInbound {
   const subject = String(b?.subject || b?.Subject || b?.headers?.subject || "").slice(0, 200);
   let text = b?.text || b?.["body-plain"] || b?.plain || b?.TextBody || b?.stripped_text || "";
   if (!text && (b?.html || b?.HtmlBody)) text = String(b.html || b.HtmlBody).replace(/<[^>]+>/g, " ");
-  return { from, subject, text: trimQuotedHistory(text) };
+  // Provider message id (Postmark MessageID / Mailgun Message-Id / raw header) —
+  // feeds the idempotency guard so a provider redelivery can't double-ingest.
+  const providerId =
+    b?.MessageID || b?.["Message-Id"] || b?.["message-id"] || b?.message_id ||
+    b?.headers?.["message-id"] || b?.headers?.["Message-Id"] || null;
+  return { from, subject, text: trimQuotedHistory(text), providerId: providerId ? String(providerId).slice(0, 300) : null };
 }
 
 export type IngestResult = { ok: true; matched: boolean; lead_id?: string; note?: string };
@@ -56,9 +61,22 @@ export async function ingestInboundEmail(input: ParsedInbound, opts: IngestOpts 
   const from = input.from ? input.from.toLowerCase() : null;
   const subject = input.subject || "";
   const text = trimQuotedHistory(input.text || "");
+  const providerId = input.providerId || null;
 
   if (!from) return { ok: true, matched: false, note: "no sender parsed" };
   if (!text) return { ok: true, matched: false, note: "empty body" };
+
+  // IDEMPOTENCY (the 2026-07-12 Dawn loop lesson): the SAME message must never be
+  // ingested twice — a re-fetch (Graph watermark overlap, provider redelivery)
+  // re-fired the hot alert + Mark auto-reply every 5 minutes overnight. Same
+  // pattern as the SMS webhook's MessageSid guard: dedupe on the provider's
+  // message id BEFORE any side effect.
+  if (providerId) {
+    const { data: seen } = await supabaseAdmin
+      .from("activity_log").select("id")
+      .filter("detail->>providerId", "eq", providerId).limit(1).maybeSingle();
+    if (seen) return { ok: true, matched: false, note: "duplicate (providerId seen)" };
+  }
 
   // Match sender → lead (most recent).
   const { data: lead } = await supabaseAdmin
@@ -77,7 +95,7 @@ export async function ingestInboundEmail(input: ParsedInbound, opts: IngestOpts 
       entity_id: "email",
       actor: "borrower",
       action: "email.inbound_unmatched",
-      detail: { from, subject, preview: text.slice(0, 200), source },
+      detail: { from, subject, preview: text.slice(0, 200), source, providerId },
     }).catch(() => {});
     if (alertUnmatched) {
       try {
@@ -91,8 +109,9 @@ export async function ingestInboundEmail(input: ParsedInbound, opts: IngestOpts 
     return { ok: true, matched: false };
   }
 
-  // Record on the conversation timeline (Conversations inbox).
-  await logComms({ leadId: lead.id, channel: "email", direction: "inbound", type: "reply", subject, body: text, from, status: "received" }).catch(() => {});
+  // Record on the conversation timeline (Conversations inbox). providerId makes the
+  // idempotency guard above catch any future re-delivery of this same message.
+  await logComms({ leadId: lead.id, channel: "email", direction: "inbound", type: "reply", subject, body: text, from, status: "received", providerId }).catch(() => {});
 
   // Release a quarantined lead (a real email reply is human evidence) + fire the
   // hot-reply task/alert so the team sees the conversion moment.

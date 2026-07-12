@@ -40,14 +40,21 @@ export async function GET(req: NextRequest) {
     let state: { lastReceived?: string; mailbox?: string } = {};
     try { state = JSON.parse((await getSetting(STATE_KEY)) || "{}"); } catch { state = {}; }
     const freshStart = !state.lastReceived || state.mailbox !== mailbox;
-    const since = freshStart
+    const watermark = freshStart
       ? new Date(Date.now() - 15 * 60_000).toISOString()
       : state.lastReceived!;
+    // OVERLAP QUERY (Dawn-loop fix): Graph RETURNS receivedDateTime truncated to
+    // seconds but FILTERS at millisecond precision, so `gt <truncated watermark>`
+    // re-matches the newest message forever (stored …57.4Z > …57.000Z). Query a
+    // 2-minute overlap behind the watermark instead and let the providerId
+    // idempotency guard in ingestInboundEmail no-op the re-fetches — never miss,
+    // never double-ingest.
+    const since = new Date(Date.parse(watermark) - 2 * 60_000).toISOString();
 
     const msgs = await listInboxSince(since, 50);
 
-    let processed = 0, matched = 0, skippedOwn = 0;
-    let maxReceived = since;
+    let processed = 0, matched = 0, skippedOwn = 0, duplicates = 0;
+    let maxReceived = watermark;
     for (const m of msgs) {
       // Monotonic watermark advance regardless of match outcome. Compare by parsed
       // time (Graph omits millis, our fresh-start ISO includes them — a raw string
@@ -58,9 +65,10 @@ export async function GET(req: NextRequest) {
       // reply loop or a bogus "reply from Fetti" could start. Borrowers are never @fettifi.
       if (m.from.endsWith("@fettifi.com")) { skippedOwn++; continue; }
       const r = await ingestInboundEmail(
-        { from: m.from, subject: m.subject, text: m.text },
+        { from: m.from, subject: m.subject, text: m.text, providerId: m.id || null },
         { alertUnmatched: false, source: "graph_poll" }
       );
+      if (r.note === "duplicate (providerId seen)") { duplicates++; continue; }
       processed++;
       if (r.matched) matched++;
     }
@@ -71,7 +79,7 @@ export async function GET(req: NextRequest) {
 
     try { const { recordHeartbeat } = await import("@/lib/heartbeat"); await recordHeartbeat("email-poll"); } catch { /* */ }
 
-    return NextResponse.json({ ok: true, mailbox, since, fetched: msgs.length, processed, matched, skippedOwn, watermark: maxReceived });
+    return NextResponse.json({ ok: true, mailbox, since, fetched: msgs.length, processed, matched, skippedOwn, duplicates, watermark: maxReceived });
   } catch (e: any) {
     console.error("[cron/email-poll]", e);
     return NextResponse.json({ ok: false, error: e?.message || "error" }, { status: 500 });
