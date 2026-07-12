@@ -1,47 +1,56 @@
-// Auto content engine: generates ready-to-post social content — Reel scripts +
-// captions + hashtags, plus an AI-generated image — for the Content Studio queue.
+// Auto content engine — THE SOCIAL DESK OF THE RAY & MARK WRITERS' ROOM.
+// (2026-07-12, Ramon: "no more stock images — everything from OUR engine and OUR
+// writers, on message, driving people to watch the videos.") Daily posts are
+// written in-canon alongside what the show is producing, visuals come ONLY from
+// our own character art (kit scenes in the content/brand-kit bucket — never a
+// generated/stock image), and published episodes auto-queue as real Reels so the
+// show itself is what spreads.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { BRAND_BRIEF, CONTENT_PERSONALITY, CEDI_PERSONA } from "@/lib/brand";
-import { CEDI_BADGE_B64 } from "@/lib/cediBadge";
-
-// Brand a generated campaign image with the Mark mascot in the bottom-right
-// corner. Best-effort: if compositing fails, returns the original bytes.
-async function brandWithCedi(jpeg: Buffer): Promise<Buffer> {
-  try {
-    const sharp = (await import("sharp")).default;
-    const meta = await sharp(jpeg).metadata();
-    const W = meta.width || 1024;
-    const H = meta.height || 1024;
-    const badgeW = Math.round(W * 0.22);
-    const margin = Math.round(W * 0.035);
-    const badge = await sharp(Buffer.from(CEDI_BADGE_B64, "base64")).resize(badgeW).png().toBuffer();
-    return await sharp(jpeg)
-      .composite([{ input: badge, left: Math.max(0, W - badgeW - margin), top: Math.max(0, H - badgeW - margin) }])
-      .jpeg({ quality: 90 })
-      .toBuffer();
-  } catch {
-    return jpeg;
-  }
-}
+import { SHOW, RAY, MARK } from "@/lib/show/showBible";
+import { getSetting } from "@/lib/settings";
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
+
+// Latest writers'-room episodes (SHOW_EPISODES app_setting) — the daily posts
+// are written ALONGSIDE what the show is producing, in the same canon.
+type ShowEp = { id?: string; number?: number; title?: string; logline?: string; video?: string; video_at?: string };
+async function latestEpisodes(n = 3): Promise<ShowEp[]> {
+  try {
+    const eps = JSON.parse((await getSetting("SHOW_EPISODES")) || "[]");
+    return (Array.isArray(eps) ? eps : []).slice(-n).reverse();
+  } catch { return []; }
+}
 
 export type Post = { hook: string; script: string; caption: string; hashtags: string };
 
 export async function generatePosts(n: number, topic = ""): Promise<Post[]> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY not configured");
+  const eps = await latestEpisodes(3);
+  const epContext = eps.length
+    ? `THE SHOW (your primary source material — you are the SOCIAL DESK of this writers' room):
+"${SHOW.title || "Ray & Mark — We Do Money"}" — Ray (${RAY.role || "Fetti's founder, the brains"}) and Mark (${MARK.role || "the owl co-host who brings the scenario"}) break down real lending deals.
+CURRENT EPISODES (tie AT LEAST HALF the posts to these themes — tease the lesson, make people want to WATCH):
+${eps.map((e) => `• EP${e.number}: "${e.title}"${e.logline ? ` — ${e.logline}` : ""}${e.video ? " (VIDEO IS LIVE — drive viewers to it)" : " (in production)"}`).join("\n")}
+The videos are the viral vector: posts exist to make people watch Ray & Mark, and watching converts them.`
+    : "";
+
   const system = `${BRAND_BRIEF}
 
 ${CONTENT_PERSONALITY}
 
 ${CEDI_PERSONA}
 
+${epContext}
+
 CRITICAL — VOICE: Write EVERY post in Mark's first-person voice — Fetti's GOLDEN OWL mascot. Mark is
 California-fresh and smooth with confident SWAGGER: intelligent, sharp, effortlessly cool, and he tells
 you what he KNOWS, not what he thinks (he's done this before). Dignified and aspirational — knighthood,
 not street/hood — never loud. Light, tasteful owl wordplay ("eyes open", "wise move", "we do money")
 used sparingly; the real teaching value must land. Stay fully compliant (no rate or approval promises).
+FRESHNESS: every post must feel CURRENT and specific — a real scenario, a real mechanic, a lesson from
+the show — never a recycled platitude. Educational, informative, entertaining: teach like the show does.
 
 CONTENT STRATEGY — EDUCATION FIRST, THEN BLEND THE STORY: Open every post by TEACHING something genuinely
 useful and TRUE — a real finance or mortgage fact/insight (how DSCR qualifies on rent, what actually moves
@@ -86,53 +95,34 @@ classifier; these are HARD rules so brand content never pattern-matches money-sc
   }));
 }
 
-const IMAGE_CONCEPTS = [
-  "Original cartoon brand mascot: Mark, a confident GOLDEN OWL with smart glasses and relaxed California swagger, bold modern vector illustration, thick clean outlines, gold with emerald and slate accents, scroll-stopping and memorable, premium ORIGINAL brand character — do NOT imitate the Simpsons, Family Guy, the GEICO gecko, or any show/brand, NO text, no words",
-  "The golden owl mascot Mark, cool and confident, giving an easy knowing nod in a clean modern flat-vector style, vibrant gold tones, original cartoon brand character, fun and premium, NO text, no words",
-  "Original cartoon scene: Mark the golden owl in a sharp blazer reviewing a glowing chart on a tablet, smooth and intelligent, modern vector illustration, gold/emerald brand palette, aspirational and fresh, NO text, no words",
-  "Editorial real-estate photograph: a stunning modern luxury home exterior at golden hour, manicured landscaping, warm glowing windows, shot on a 35mm lens, magazine quality, cinematic, NO text, no words, no letters",
-  "Candid lifestyle photo: a joyful diverse young couple laughing while holding house keys in front of their new home, natural sunlight, shallow depth of field, premium real-estate brand aesthetic, NO text, no words",
-  "Architectural photograph of a sleek contemporary multi-unit rental building, blue-hour sky, clean lines, professional commercial real-estate photography, NO text, no words",
-  "A confident, well-dressed entrepreneur reviewing plans on a tablet in a bright modern home office, warm natural light, aspirational, NO text, no words",
-  "Cinematic aerial drone shot of an upscale sunny suburban neighborhood with beautiful homes and tree-lined streets, crisp and vibrant, NO text, no words",
-  "Elegant flat-lay: brass house keys on a clean contract beside a small architectural model home and a cup of coffee, soft daylight, lifestyle brand photography, NO text, no words",
-  "Warm interior photo of a beautifully staged modern living room with large windows and natural light, inviting and aspirational, real-estate magazine quality, NO text, no words",
-  "A happy family with kids playing in the front yard of a charming home on a sunny day, candid and heartfelt, premium lifestyle photography, NO text, no words",
-  "Premium fintech aesthetic: a sleek modern workspace with a laptop showing clean financial charts, minimalist desk, soft directional light, private-equity / fintech brand feeling, sophisticated and tech-forward, NO text, no words",
-  "Luxury real-estate investment vibe: keys and a sleek black card resting on the marble countertop of a high-end modern kitchen, shallow depth of field, editorial, aspirational wealth-building aesthetic, NO text, no words",
-  "A polished young investor in smart-casual attire standing confidently on the balcony of a modern high-rise overlooking a city skyline at dusk, cinematic, ambitious and premium, NO text, no words",
-];
-
-// Generate an on-brand image (no text — caption carries the message) and store it
-// in the public `content` bucket. Returns the public URL, or null on failure.
-export async function generateImage(): Promise<string | null> {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
-  const prompt = IMAGE_CONCEPTS[Math.floor(Math.random() * IMAGE_CONCEPTS.length)];
+// CUSTOM VISUALS ONLY (no generated/stock images, ever): image posts use OUR
+// character scenes — the Ray & Mark brand art the studio uploaded to
+// content/brand-kit/. Each day rotates a scene, center-cropped to IG's 4:5 feed
+// ratio, re-encoded JPEG (IG Content Publishing rejects PNG), stored per-post.
+const BRAND_SCENES = ["bg-clean.png", "bg-ray.png", "bg-mark.png", "bg-ai.png"];
+export async function composeBrandCard(): Promise<string | null> {
   try {
-    const res = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      // JPEG so the image is Instagram-compatible (IG Content Publishing rejects PNG).
-      body: JSON.stringify({ model: "gpt-image-1", prompt, size: "1024x1024", n: 1, quality: "medium", output_format: "jpeg" }),
-    });
-    const j = await res.json();
-    if (!res.ok) { console.warn("[content] image gen:", j?.error?.message); return null; }
-    // gpt-image-1 returns base64; tolerate a url response too.
-    const d = j.data?.[0] || {};
-    const raw = d.b64_json ? Buffer.from(d.b64_json, "base64")
-      : d.url ? Buffer.from(await (await fetch(d.url)).arrayBuffer()) : null;
-    if (!raw) return null;
-    // Brand the campaign image with the Mark mascot badge (bottom-right).
-    const buf = await brandWithCedi(raw);
+    const sharp = (await import("sharp")).default;
+    const pick = BRAND_SCENES[new Date().getUTCDate() % BRAND_SCENES.length]; // daily rotation
+    const src = supabaseAdmin.storage.from("content").getPublicUrl(`brand-kit/${pick}`).data.publicUrl;
+    const raw = Buffer.from(await (await fetch(src)).arrayBuffer());
+    const meta = await sharp(raw).metadata();
+    const W = meta.width || 1080, H = meta.height || 1920;
+    // 4:5 portrait crop biased toward the characters (lower-middle of the scene).
+    const targetH = Math.min(H, Math.round(W * 1.25));
+    const top = Math.max(0, Math.min(H - targetH, Math.round(H * 0.28)));
+    const buf = await sharp(raw).extract({ left: 0, top, width: W, height: targetH })
+      .resize(1080, 1350).jpeg({ quality: 90 }).toBuffer();
     const path = `auto/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
     const { error } = await supabaseAdmin.storage.from("content").upload(path, buf, { contentType: "image/jpeg", upsert: false });
-    if (error) { console.warn("[content] upload:", error.message); return null; }
+    if (error) { console.warn("[content] card upload:", error.message); return null; }
     return supabaseAdmin.storage.from("content").getPublicUrl(path).data.publicUrl;
-  } catch (e) { console.warn("[content] image error:", e); return null; }
+  } catch (e) { console.warn("[content] brand card error:", e); return null; }
 }
 
-// Produce a day's batch: a few Reel scripts + one image post. Returns rows ready
-// to insert into content_posts (does not insert).
+// Produce a day's batch: Reel scripts + one brand-art image post + (when a new
+// episode video is live) the EPISODE ITSELF queued as a real Reel. Returns rows
+// ready to insert into content_posts (does not insert).
 export async function generateBatch(topic = ""): Promise<Record<string, unknown>[]> {
   const posts = await generatePosts(6, topic);
   const today = new Date().toISOString().slice(0, 10);
@@ -145,11 +135,34 @@ export async function generateBatch(topic = ""): Promise<Record<string, unknown>
   }));
   const imgPost = posts[3] || posts[0];
   if (imgPost) {
-    const image_url = await generateImage();
+    const image_url = await composeBrandCard();
     rows.push({
       platform: "all", type: "image", hook: imgPost.hook, script: imgPost.script || "", caption: imgPost.caption,
       hashtags: imgPost.hashtags, image_url, status: "queued", scheduled_for: today, source: "auto",
     });
   }
+
+  // EPISODE → REEL: a published show video that hasn't hit social yet queues as a
+  // real video post (type reel_video; image_url carries the MP4 URL — the table
+  // has no video column and DDL isn't reachable, so the type field disambiguates).
+  // The cron's picker prefers these: the show itself is the viral vector.
+  try {
+    const eps = await latestEpisodes(5);
+    for (const ep of eps) {
+      if (!ep.video || !ep.id) continue;
+      const src = `show-ep-${ep.id}`;
+      const { data: seen } = await supabaseAdmin.from("content_posts").select("id").eq("source", src).limit(1).maybeSingle();
+      if (seen) continue;
+      rows.push({
+        platform: "all", type: "reel_video",
+        hook: `EP${ep.number}: ${ep.title}`,
+        script: "",
+        caption: `Ray & Mark break down "${ep.title}" — a real deal, the real mechanics, in about a minute. 🦉\n\nEducational, not a sales pitch. Watch to the end for the move most people miss.`,
+        hashtags: "#mortgage #realestate #homebuying #investing #fettifinancial #raymark",
+        image_url: ep.video, status: "queued", scheduled_for: today, source: src,
+      });
+      break; // one episode per day max
+    }
+  } catch (e) { console.warn("[content] episode reel queue:", e); }
   return rows;
 }

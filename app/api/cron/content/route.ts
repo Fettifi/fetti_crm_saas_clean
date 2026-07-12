@@ -43,7 +43,10 @@ async function run(topic = "") {
       return { ok: true, created: (data || []).length, auto_scheduled: null, note: "auto slot already scheduled/posted" };
     }
     const candidates = (data || []) as any[];
-    const pick = candidates.find((r) => r.image_url) || candidates[0];
+    // Prefer the EPISODE REEL when one is queued (the show is the viral vector),
+    // then the brand-art image post, then anything.
+    const pick = candidates.find((r) => r.type === "reel_video" && r.image_url)
+      || candidates.find((r) => r.image_url) || candidates[0];
     if (pick) {
       // Random slot 30–450 min out (cron fires 16:00 UTC → posts land 16:30–23:30
       // UTC ≈ 9:30am–4:30pm PT, a different minute every day).
