@@ -9,6 +9,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { BRAND_BRIEF, CONTENT_PERSONALITY, CEDI_PERSONA } from "@/lib/brand";
 import { SHOW, RAY, MARK } from "@/lib/show/showBible";
 import { getSetting } from "@/lib/settings";
+import { SOCIAL_DISCLOSURE } from "@/lib/legal";
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
@@ -120,9 +121,53 @@ export async function composeBrandCard(): Promise<string | null> {
   } catch (e) { console.warn("[content] brand card error:", e); return null; }
 }
 
-// Produce a day's batch: Reel scripts + one brand-art image post + (when a new
-// episode video is live) the EPISODE ITSELF queued as a real Reel. Returns rows
-// ready to insert into content_posts (does not insert).
+// DAILY TIKTOK CARD — a 9:16 (1080×1920) vertical, TikTok-native version of the
+// day's post: our Ray & Mark scene + the day's hook burned on, brand watermark.
+// TikTok can't be auto-posted (no API for our account), so this is the daily
+// grab-and-post asset the /tiktok-today page serves. Custom art only — never stock.
+function esc(s: string) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function wrapHook(text: string, max = 18): string[] {
+  const words = String(text || "").trim().split(/\s+/);
+  const lines: string[] = []; let cur = "";
+  for (const w of words) {
+    if ((cur + " " + w).trim().length > max && cur) { lines.push(cur); cur = w; }
+    else cur = (cur + " " + w).trim();
+  }
+  if (cur) lines.push(cur);
+  return lines.slice(0, 4);
+}
+export async function composeTikTokCard(hook: string): Promise<string | null> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const pick = BRAND_SCENES[new Date().getUTCDate() % BRAND_SCENES.length];
+    const src = supabaseAdmin.storage.from("content").getPublicUrl(`brand-kit/${pick}`).data.publicUrl;
+    const raw = Buffer.from(await (await fetch(src)).arrayBuffer());
+    const W = 1080, H = 1920;
+    const base = await sharp(raw).resize(W, H, { fit: "cover", position: "top" }).toBuffer();
+    const lines = wrapHook(hook || "We do money.");
+    const fs = 68, lh = 84;
+    const bandTop = 150, textStart = bandTop + 96;
+    const textSvg = lines.map((l, i) =>
+      `<text x="60" y="${textStart + i * lh}" font-family="Helvetica Neue, Arial" font-size="${fs}" font-weight="800" fill="#ffffff">${esc(l)}</text>`).join("");
+    const overlay = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="top" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#05080f" stop-opacity="0.85"/><stop offset="1" stop-color="#05080f" stop-opacity="0"/>
+      </linearGradient></defs>
+      <rect x="0" y="0" width="${W}" height="${bandTop + lines.length * lh + 60}" fill="url(#top)"/>
+      ${textSvg}
+      <text x="60" y="${H - 60}" font-family="Helvetica Neue, Arial" font-size="30" font-weight="600" fill="#ffffff" fill-opacity="0.85">fettifi.com · NMLS #2267023 · Equal Housing Opportunity</text>
+    </svg>`;
+    const buf = await sharp(base).composite([{ input: Buffer.from(overlay), top: 0, left: 0 }]).jpeg({ quality: 90 }).toBuffer();
+    const path = `tiktok/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
+    const { error } = await supabaseAdmin.storage.from("content").upload(path, buf, { contentType: "image/jpeg", upsert: false });
+    if (error) { console.warn("[content] tiktok card upload:", error.message); return null; }
+    return supabaseAdmin.storage.from("content").getPublicUrl(path).data.publicUrl;
+  } catch (e) { console.warn("[content] tiktok card error:", e); return null; }
+}
+
+// Produce a day's batch: Reel scripts + one brand-art image post + a daily TikTok
+// card + (when a new episode video is live) the EPISODE ITSELF queued as a real
+// Reel. Returns rows ready to insert into content_posts (does not insert).
 export async function generateBatch(topic = ""): Promise<Record<string, unknown>[]> {
   const posts = await generatePosts(6, topic);
   const today = new Date().toISOString().slice(0, 10);
@@ -139,6 +184,23 @@ export async function generateBatch(topic = ""): Promise<Record<string, unknown>
     rows.push({
       platform: "all", type: "image", hook: imgPost.hook, script: imgPost.script || "", caption: imgPost.caption,
       hashtags: imgPost.hashtags, image_url, status: "queued", scheduled_for: today, source: "auto",
+    });
+
+    // DAILY TIKTOK ASSET (coincides with the day's IG/FB post — same hook/message,
+    // but 9:16 TikTok-native + full baked caption for manual paste). status
+    // "tiktok_only" so the IG/FB auto-publisher never touches it. Served by
+    // /tiktok-today for the daily grab-download-post-add-music ritual.
+    const ttCard = await composeTikTokCard(imgPost.hook || posts[0]?.hook || "We do money");
+    const ttCaption = [
+      imgPost.caption,
+      imgPost.hashtags,
+      "More at fettifi.com — tap @fettifi to follow along.",
+      SOCIAL_DISCLOSURE,
+    ].filter(Boolean).join("\n\n");
+    rows.push({
+      platform: "tiktok", type: "tiktok_daily", hook: imgPost.hook, script: "", caption: ttCaption,
+      hashtags: imgPost.hashtags, image_url: ttCard, status: "tiktok_only", scheduled_for: today,
+      source: "tiktok_daily_" + today,
     });
   }
 
