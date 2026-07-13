@@ -74,7 +74,12 @@ export async function POST(req: NextRequest) {
         urgency: (res.urgency as any) || "normal",
         transcript, call_sid: sid,
       });
-      await alertTeam(`From: ${res.caller_name || "Unknown"} (${res.callback_number || from})\nUrgency: ${res.urgency || "normal"}\nReason: ${res.reason_detail || "(see transcript)"}`);
+      await alertTeam(
+        `From: ${res.caller_name || "Unknown"} (${res.callback_number || from})\n` +
+        `Urgency: ${res.urgency || "normal"}\n` +
+        `Reason: ${res.reason_detail || "(see transcript)"}` +
+        (transcript ? `\n\n—— What was said ——\n${transcript}` : "")
+      );
     } catch { /* never fail the call on a save error */ }
     await clearCallState(sid);
     return twiml(`${replyVerb}<Hangup/>`);

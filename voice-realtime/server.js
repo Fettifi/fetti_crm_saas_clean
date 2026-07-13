@@ -136,7 +136,10 @@ wss.on("connection", (twilio) => {
         reason: obMode
           ? `📞 Outbound ${obMode} call ended — transcript below`
           : `⚠️ CALL ENDED EARLY (${why}) — partial transcript below; call back`,
-        urgency: obMode ? "normal" : "high",
+        // A dropped/partial call is a normal-priority callback, not an emergency.
+        // (It used to fire "high" on every early hangup — false alarms.) The full
+        // transcript rides along in the alert, so the team can judge real urgency.
+        urgency: "normal",
         call_sid: callSid, transcript: transcript.join("\n"),
       });
     } catch { /* postToCrm already retries + logs */ }
@@ -285,7 +288,13 @@ wss.on("connection", (twilio) => {
     } else if (m.event === "stop") { try { oai.close(); } catch {} }
   });
 
-  twilio.on("close", () => { salvageIfNeeded("caller disconnected"); try { oai.close(); } catch {} });
+  twilio.on("close", () => {
+    // Grace window: a fast hang-up can beat the caller's final transcription. Wait
+    // briefly so that last utterance still lands in `transcript` before we salvage —
+    // otherwise "who they are" is lost on a quick drop. oai.on("close") salvages too
+    // (idempotent via the `salvaged` flag), so nothing double-posts.
+    setTimeout(() => { salvageIfNeeded("caller disconnected"); try { oai.close(); } catch {} }, 1200);
+  });
   oai.on("close", () => { salvageIfNeeded("AI connection dropped"); try { twilio.close(); } catch {} });
   oai.on("error", (e) => { console.error("OpenAI ws error", e?.message); salvageIfNeeded("AI error"); });
 });

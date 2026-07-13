@@ -16,6 +16,25 @@ function tokenOk(provided: string, expected: string): boolean {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// Pull the caller's name out of what THEY said, when the agent didn't capture it
+// (e.g. a call that dropped before Penny ran save_message). Only reads "Caller:"
+// lines so Penny's own words can't be misread as the caller's name.
+function extractCallerName(transcript?: string): string | undefined {
+  if (!transcript) return undefined;
+  const callerText = transcript.split("\n").filter((l) => /^\s*caller:/i.test(l)).map((l) => l.replace(/^\s*caller:\s*/i, "")).join(" ");
+  if (!callerText) return undefined;
+  // Case-insensitive trigger (catches sentence-start "My name is" and mid-sentence
+  // "this is"); capture up to 3 following words. Deliberately excludes "I'm"/"I am"
+  // (→ "I'm calling about…" is not a name).
+  const m = callerText.match(/\b(?:this is|my name is|the name is|name['’]s|it['’]s)\s+([A-Za-z][A-Za-z'’.-]*(?:\s+[A-Za-z'’.-]+){0,2})/i);
+  if (!m) return undefined;
+  // Drop trailing filler the pattern may have grabbed ("Dana from…", "John and…").
+  let name = m[1].replace(/\s+(?:and|from|calling|here|with|at|the|but|so|because|about|regarding|on|for|to)\b.*$/i, "").trim();
+  // Reject non-names that can follow "it's"/"this is" ("it's about a refinance").
+  if (!name || /^(?:a|an|the|me|him|her|us|about|regarding|good|great|okay|ok|fine|urgent|important|calling|really|just|going|trying|looking)\b/i.test(name)) return undefined;
+  return name.split(/\s+/).map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ");
+}
+
 async function alertTeam(summary: string) {
   const hook = process.env.LEAD_NOTIFY_WEBHOOK;
   if (hook) { try { await fetch(hook, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: `📞 New phone message (Penny, live)\n${summary}`, text: `📞 New phone message\n${summary}` }) }); } catch { /* */ } }
@@ -56,16 +75,33 @@ export async function POST(req: NextRequest) {
       const calendly = (await cfg("CALENDLY_URL")) || "";
       reason = `${reason || "Wants to book a call"}${calendly ? `\nScheduling link to send: ${calendly}` : ""}`;
     }
+    const transcriptText = String(b.transcript || "").trim();
+    // If the agent didn't hand us a name (dropped/partial call), recover it from
+    // what the caller actually said — so a partial never shows up as just "Unknown".
+    const callerName = (b.caller_name && String(b.caller_name).trim()) || extractCallerName(transcriptText);
+    // A dropped/partial call is a normal-priority callback, never a high-urgency
+    // emergency — regardless of the tag the bridge sent. Kills the "high urgency,
+    // no body" false alarms on early hang-ups, and ships without a bridge redeploy.
+    let urgency: "low" | "normal" | "high" = ["low", "normal", "high"].includes(b.urgency) ? b.urgency : "normal";
+    if (/CALL ENDED EARLY/i.test(String(reason || ""))) urgency = "normal";
     const msg = await addMessage({
-      caller_name: b.caller_name || undefined,
+      caller_name: callerName || undefined,
       callback_number: b.callback_number || undefined,
       for_whom: b.for_whom || "Ramon",
       reason,
-      urgency: ["low", "normal", "high"].includes(b.urgency) ? b.urgency : "normal",
-      transcript: b.transcript || undefined,
+      urgency,
+      transcript: transcriptText || undefined,
       call_sid: b.call_sid || undefined,
     });
-    await alertTeam(`From: ${b.caller_name || "Unknown"} (${b.callback_number || "?"})\nUrgency: ${msg.urgency}\nReason: ${reason || "(see transcript)"}`);
+    // Put the actual conversation IN the alert. Previously the alert showed only
+    // From/Urgency/Reason — so a partial call read as "Unknown / high / no body".
+    // Now every alert carries what was said; the SMS leg truncates in alertTeam.
+    await alertTeam(
+      `From: ${callerName || "Unknown"} (${b.callback_number || "?"})\n` +
+      `Urgency: ${msg.urgency}\n` +
+      `Reason: ${reason || "(see transcript)"}` +
+      (transcriptText ? `\n\n—— What was said ——\n${transcriptText}` : "\n\n(No speech was captured on this call.)")
+    );
     return NextResponse.json({ ok: true, id: msg.id });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "ingest failed" }, { status: 500 });
