@@ -186,17 +186,29 @@ const STATES: Record<string, string> = {
   florida: "Florida", california: "California", texas: "Texas", michigan: "Michigan",
   ohio: "Ohio", arizona: "Arizona", georgia: "Georgia", nevada: "Nevada",
 };
+// Nationwide pseudo-"state" for investment & business programs, which we offer in
+// all 50 states. Gives each an accurate "…in the U.S." landing page so the lending
+// hub links nationwide products here instead of stamping a single state on them.
+const NATIONWIDE_KEY = "usa";
+const NATIONWIDE_LABEL = "the U.S.";
 const CONSUMER_STATES = ["florida", "michigan", "california"];
 
+function stateLabel(key: string): string | null {
+  if (key === NATIONWIDE_KEY) return NATIONWIDE_LABEL;
+  return STATES[key] ?? null;
+}
+
 function allowedStates(product: string): string[] {
-  return PRODUCTS[product]?.scope === "consumer" ? CONSUMER_STATES : Object.keys(STATES);
+  return PRODUCTS[product]?.scope === "consumer"
+    ? CONSUMER_STATES
+    : [NATIONWIDE_KEY, ...Object.keys(STATES)];
 }
 
 function parse(slug: string) {
   for (const p of Object.keys(PRODUCTS)) {
     if (slug.startsWith(p + "-")) {
       const st = slug.slice(p.length + 1);
-      if (STATES[st] && allowedStates(p).includes(st)) return { product: p, state: st };
+      if (stateLabel(st) && allowedStates(p).includes(st)) return { product: p, state: st };
     }
   }
   return null;
@@ -213,7 +225,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const parsed = parse(slug);
   if (!parsed) return { title: "Fetti Financial Services" };
   const prod = PRODUCTS[parsed.product].label;
-  const state = STATES[parsed.state];
+  const state = stateLabel(parsed.state)!;
   return {
     title: `${prod} in ${state} | Fetti Financial Services`,
     description: `${prod} in ${state}. ${PRODUCTS[parsed.product].blurb} Get pre-qualified in minutes with no credit impact.`,
@@ -226,7 +238,7 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
   const parsed = parse(slug);
   if (!parsed) notFound();
   const prod = PRODUCTS[parsed.product];
-  const state = STATES[parsed.state];
+  const state = stateLabel(parsed.state)!;
   const fill = (s: string) => s.replace(/\{state\}/g, state);
   const faqs = prod.faqs.map((f) => ({ q: fill(f.q), a: fill(f.a) }));
 

@@ -21,13 +21,14 @@ export const metadata = {
   alternates: { canonical: "https://fettifi.com" },
 };
 
-const FEATURED_STATE = "florida"; // licensed for every program; each page funnels to apply
-
+// Investment & business programs are nationwide → link to the "…in the U.S." page
+// (state "usa"). Home loans are FL/MI/CA-only → link to Florida.
 const CATEGORIES = [
   {
     title: "Home Loans",
     tag: "Owner-occupied · FL, MI, CA",
     blurb: "Buy or refinance the home you live in. Conventional, FHA & VA.",
+    state: "florida",
     items: [
       { icon: HomeIcon, name: "Home Purchase", desc: "Conventional, FHA & VA options for primary residences.", slug: "home-purchase-loans" },
       { icon: RefreshCw, name: "Refinance & Cash-Out", desc: "Lower your rate or tap the equity in your home.", slug: "refinance-loans" },
@@ -37,6 +38,7 @@ const CATEGORIES = [
     title: "Investment Loans",
     tag: "All 50 states",
     blurb: "Financing engineered for serious real-estate investors.",
+    state: "usa",
     items: [
       { icon: Building2, name: "DSCR Rental Loans", desc: "Qualify on the property's cash flow. No W-2 or tax returns.", slug: "dscr-loans" },
       { icon: TrendingUp, name: "Fix & Flip", desc: "Purchase + rehab capital to move fast on deals.", slug: "fix-and-flip-loans" },
@@ -47,6 +49,7 @@ const CATEGORIES = [
     title: "Business Loans",
     tag: "All 50 states",
     blurb: "Capital to start, run, and scale your business.",
+    state: "usa",
     items: [
       { icon: Briefcase, name: "Working Capital & Term Loans", desc: "Flexible funding for operations and growth.", slug: "business-loans" },
       { icon: Landmark, name: "Commercial Real Estate & SBA", desc: "Owner-user, investment CRE, and SBA programs.", slug: "commercial-real-estate-loans" },
@@ -224,7 +227,7 @@ export default async function MarketingHome() {
               <p className="text-slate-500 text-sm mb-5">{cat.blurb}</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {cat.items.map((p) => (
-                  <Link key={p.name} href={`/lending/${p.slug}-${FEATURED_STATE}`}
+                  <Link key={p.name} href={`/lending/${p.slug}-${cat.state}`}
                     className="group relative block rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-600/5 hover:-translate-y-0.5">
                     <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 ring-1 ring-emerald-100 mb-4 group-hover:bg-emerald-100 transition">
                       <p.icon className="w-5 h-5 text-emerald-600" />

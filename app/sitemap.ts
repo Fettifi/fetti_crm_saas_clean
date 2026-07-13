@@ -25,8 +25,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE}/terms`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
   ];
   const lending: MetadataRoute.Sitemap = [];
-  for (const p of ALL_PRODUCTS) for (const s of STATES) {
-    lending.push({ url: `${BASE}/lending/${p}-${s}`, lastModified: now, changeFrequency: "weekly", priority: 0.7 });
+  for (const p of ALL_PRODUCTS) {
+    // Canonical nationwide page (all 50 states) — highest priority for these programs.
+    lending.push({ url: `${BASE}/lending/${p}-usa`, lastModified: now, changeFrequency: "weekly", priority: 0.8 });
+    for (const s of STATES) {
+      lending.push({ url: `${BASE}/lending/${p}-${s}`, lastModified: now, changeFrequency: "weekly", priority: 0.7 });
+    }
   }
   for (const p of CONSUMER_PRODUCTS) for (const s of CONSUMER_STATES) {
     lending.push({ url: `${BASE}/lending/${p}-${s}`, lastModified: now, changeFrequency: "weekly", priority: 0.7 });
