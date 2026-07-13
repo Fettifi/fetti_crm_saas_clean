@@ -17,7 +17,7 @@ export const revalidate = 600;
 export const metadata = {
   title: "Fetti Financial Services LLC | Home, Investment & Business Lending",
   description:
-    "Fetti Financial Services LLC — a nonbank mortgage lender (NMLS #2267023). We fund the loans big banks won't, with our own capital. Turned down by a bank? That's exactly who we're built for. Pre-qualify in 2 minutes, no credit impact.",
+    "Fetti Financial Services LLC — a nonbank mortgage lender (NMLS #2267023). We get the loans done that big banks won't. Turned down by a bank? That's exactly who we're built for. Pre-qualify in 2 minutes, no credit impact.",
   alternates: { canonical: "https://fettifi.com" },
 };
 
@@ -55,7 +55,7 @@ const CATEGORIES = [
 ];
 
 const STATS = [
-  { value: "Direct", label: "We fund with our own capital" },
+  { value: "Direct", label: "Straight to the people who get it done" },
   { value: "All 50", label: "States. Investment & business" },
   { value: "Turned down?", label: "We figure out how to get it done" },
   { value: "2 min", label: "To pre-qualify · no credit pull" },
@@ -63,7 +63,7 @@ const STATS = [
 
 // The bank-vs-broker contrast. The core differentiator vs Chase / BofA / Wells / Rocket.
 const BANK_VS = [
-  { them: "Sells you one menu. Their own products", us: "A nonbank lender that funds your deal with our own capital" },
+  { them: "Sells you one menu. Their own products", us: "A nonbank lender built around your deal, not one menu" },
   { them: "Works for the bank's shareholders", us: "Works for you. We win when you do" },
   { them: "Branch hours, hold music, hand-offs", us: "One specialist, your phone, California-fast" },
   { them: "Turns you down if you don't fit their box", us: "Built for the deals banks won't do" },
@@ -90,7 +90,7 @@ const WHY = [
 ];
 
 const FAQ = [
-  { q: "What makes Fetti different?", a: "We're a nonbank lender (NMLS #2267023) with our own capital — so we fund the deals big banks won't, including the borrowers banks turn away: self-employed, investors, unusual income, tough scenarios. We're in your corner, working to get your loan done. All loans are subject to credit approval and program guidelines." },
+  { q: "What makes Fetti different?", a: "We're a nonbank lender (NMLS #2267023) built to get the deals done that big banks won't — including the borrowers banks turn away: self-employed, investors, unusual income, tough scenarios. We're in your corner, working to get your loan closed. All loans are subject to credit approval and program guidelines." },
   { q: "Will getting started affect my credit?", a: "No. Pre-qualifying takes about two minutes with no hard credit pull. We only move forward when you're ready." },
   { q: "How fast can I close?", a: "It depends on the loan, but we move fast. Bridge and hard-money options can close in days, and we keep you posted at every step. All loans are subject to credit approval and program guidelines." },
   { q: "What states do you cover?", a: "Investment and business-purpose loans — DSCR, fix & flip, bridge, hard money, and business loans — are available nationwide, in all 50 states. Owner-occupied home loans are available in Florida, Michigan, and California. Not sure we cover your scenario? Start in two minutes and we'll tell you exactly what we can do." },
@@ -133,7 +133,7 @@ export default async function MarketingHome() {
             <span className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent">won&apos;t do.</span>
           </h1>
           <p className="mt-6 text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            We&apos;re a <span className="font-semibold text-slate-800">nonbank lender</span> with our own capital — built for the deals big banks turn down. Self-employed, investor, tough scenario, told no somewhere else? That&apos;s exactly who we&apos;re here for. Home, investment, and business loans. Start in two minutes. No credit impact.
+            We&apos;re a <span className="font-semibold text-slate-800">nonbank lender</span> built for the deals big banks turn down. Self-employed, investor, tough scenario, told no somewhere else? That&apos;s exactly who we&apos;re here for. Home, investment, and business loans. Start in two minutes. No credit impact.
           </p>
           <div className="mt-9 flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/apply/form" className="group inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">
@@ -152,7 +152,7 @@ export default async function MarketingHome() {
             <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Equal Housing Opportunity</span>
           </div>
           <CediBubble center size={64} className="mt-10">
-            I&apos;m <span className="font-bold text-slate-900">Mark</span> with Fetti Financial Services — a nonbank lender. We&apos;ve got the money and we do the loans the banks won&apos;t. Tell me your goal below; if a bank turned you down, that&apos;s exactly who we&apos;re built for. Two minutes, no credit pull.
+            I&apos;m <span className="font-bold text-slate-900">Mark</span> with Fetti Financial Services — a nonbank lender. We get it funded, and we do the loans the banks won&apos;t. Tell me your goal below; if a bank turned you down, that&apos;s exactly who we&apos;re built for. Two minutes, no credit pull.
           </CediBubble>
           <div className="mt-4 flex justify-center"><CediVoice /></div>
         </div>
@@ -175,7 +175,7 @@ export default async function MarketingHome() {
         <div className="text-center max-w-2xl mx-auto mb-12">
           <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">The Fetti advantage</p>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">A bank tells you no. We figure out how to get it done.</h2>
-          <p className="text-slate-500 mt-3">Big banks only fund what fits a narrow box and turn the rest away. We&apos;re a nonbank lender with our own capital — built for the deals and the borrowers they won&apos;t touch.</p>
+          <p className="text-slate-500 mt-3">Big banks only fund what fits a narrow box and turn the rest away. We&apos;re a nonbank lender built for the deals and the borrowers they won&apos;t touch.</p>
         </div>
         <div className="grid md:grid-cols-2 gap-5 max-w-4xl mx-auto">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-7">

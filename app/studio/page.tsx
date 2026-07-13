@@ -35,7 +35,7 @@ const TEMPLATES = [
     prompt: "house mid-renovation with fresh exterior remodel, bright" },
   { key: "Refinance", headline: "Lower Your Payment", sub: "Cut your rate or tap your equity — we fund it directly.", cta: "See my rate",
     hooks: ["Lower your payment.", "The loan your bank won't do.", "Tap your home's equity."],
-    line: "I'm Mark, with Fetti. Looking for a lower payment, or cash from your home? We're a nonbank lender — we fund it with our own money, including the refinances banks turn down. See your numbers in two minutes. Fetti. We do money.",
+    line: "I'm Mark, with Fetti. Looking for a lower payment, or cash from your home? We're a nonbank lender — we get it funded, including the refinances banks turn down. See your numbers in two minutes. Fetti. We do money.",
     prompt: "warm inviting suburban home exterior, lush landscaping, sunny" },
   { key: "Bank-Statement", headline: "Self-Employed? No Problem.", sub: "Qualify on bank deposits, not tax returns.", cta: "Apply now",
     hooks: ["Self-employed? You still qualify.", "No tax returns. Bank statements.", "Your real income counts."],

@@ -56,7 +56,7 @@ export default function LendingIndex() {
         <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Mark presents · Programs</p>
         <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900">Loan programs for every goal</h1>
         <p className="text-slate-600 text-lg mt-4 max-w-2xl mx-auto">
-          Home, investment, and business financing. All under one roof. As a <span className="font-semibold text-slate-700">nonbank lender</span>, we fund with our own capital — and we do the loans the big banks won&apos;t. Pick a program, or get pre-qualified in minutes.
+          Home, investment, and business financing. All under one roof. As a <span className="font-semibold text-slate-700">nonbank lender</span>, we do the loans the big banks won&apos;t — and we move fast. Pick a program, or get pre-qualified in minutes.
         </p>
       </section>
 

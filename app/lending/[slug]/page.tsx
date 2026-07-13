@@ -27,7 +27,7 @@ const PRODUCTS: Record<string, Product> = {
   "home-purchase-loans": {
     label: "Home Purchase Loans",
     blurb: "Conventional, FHA, and VA financing to buy the home you'll live in.",
-    intro: "Buying a home in {state}? Fetti Financial Services is a nonbank lender — we fund conventional, FHA, and VA loans with our own capital, get you pre-approved fast, and close with a specialist who actually picks up the phone. Told no by a bank? That's exactly who we're built for.",
+    intro: "Buying a home in {state}? Fetti Financial Services is a nonbank lender — we fund conventional, FHA, and VA loans, get you pre-approved fast, and close with a specialist who actually picks up the phone. Told no by a bank? That's exactly who we're built for.",
     bullets: ["Low-down-payment options (as little as 3–3.5%)", "First-time buyer programs", "Same-day pre-approval letters", "Competitive fixed rates"],
     requirements: ["Government-issued ID", "Recent pay stubs / proof of income", "2 months of bank statements", "A property or price range in {state}"],
     faqs: [
