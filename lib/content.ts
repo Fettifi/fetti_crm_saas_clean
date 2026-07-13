@@ -147,6 +147,25 @@ async function displayFont() {
 }
 function esc(s: string) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
+// opentype.js v2's Path.toPathData() has a serializer bug that injects literal "NaN"
+// into the path string even when the underlying command coordinates are clean — one
+// NaN makes librsvg (in sharp) abandon the rest of the <path>, which is what dropped
+// "orrowing to" mid-hook and left a tofu box. The commands themselves are valid, so
+// we serialize them ourselves. This font uses only M/L/Q (TrueType quadratics); C is
+// handled too for safety.
+function pathToSVG(p: { commands: Array<Record<string, number | string>> }): string {
+  const r = (n: unknown) => Math.round((n as number) * 100) / 100;
+  let d = "";
+  for (const c of p.commands) {
+    if (c.type === "M") d += `M${r(c.x)} ${r(c.y)}`;
+    else if (c.type === "L") d += `L${r(c.x)} ${r(c.y)}`;
+    else if (c.type === "Q") d += `Q${r(c.x1)} ${r(c.y1)} ${r(c.x)} ${r(c.y)}`;
+    else if (c.type === "C") d += `C${r(c.x1)} ${r(c.y1)} ${r(c.x2)} ${r(c.y2)} ${r(c.x)} ${r(c.y)}`;
+    else if (c.type === "Z") d += "Z";
+  }
+  return d;
+}
+
 export async function composeTikTokCard(hook: string): Promise<string | null> {
   try {
     const sharp = (await import("sharp")).default;
@@ -172,7 +191,7 @@ export async function composeTikTokCard(hook: string): Promise<string | null> {
     const topBase = 260;
     const paths = shown.map((l, i) => {
       const p = font.getPath(l, marginX, topBase + i * lh, fsize);
-      return `<path d="${p.toPathData(2)}" fill="#ffffff"/>`;
+      return `<path d="${pathToSVG(p)}" fill="#ffffff"/>`;
     }).join("");
     // Watermark (also vectorized so it never tofus).
     const wm = font.getPath("fettifi.com  ·  NMLS #2267023  ·  Equal Housing Opportunity", marginX, H - 56, 26);
@@ -184,7 +203,7 @@ export async function composeTikTokCard(hook: string): Promise<string | null> {
       <rect x="0" y="0" width="${W}" height="${scrimH}" fill="url(#top)"/>
       <rect x="0" y="${H - 110}" width="${W}" height="110" fill="#05080f" fill-opacity="0.55"/>
       ${paths}
-      <path d="${wm.toPathData(2)}" fill="#ffffff" fill-opacity="0.9"/>
+      <path d="${pathToSVG(wm)}" fill="#ffffff" fill-opacity="0.9"/>
       <!--${esc("")}-->
     </svg>`;
     const buf = await sharp(base).composite([{ input: Buffer.from(overlay), top: 0, left: 0 }]).jpeg({ quality: 90 }).toBuffer();
