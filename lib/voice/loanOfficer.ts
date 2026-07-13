@@ -48,6 +48,17 @@ export type LOResult = { reply: string; book: boolean; done: boolean; topic?: st
 
 const SAFE_RATE_LINE = "That's exactly the kind of number I never want to guess at — your rate depends on your full picture and it moves daily. The honest way to get you a real one is a quick call with Ramon, who'll price your actual file. Want me to set that up?";
 
+// A DOWN-PAYMENT / LTV / EQUITY percentage ("3.5% down", "0% down", "20% equity",
+// "97% loan-to-value", "3% of the purchase price") is a compliant PROGRAM-FIT fact
+// and Penny's core job to explain — it is NOT an interest rate. The shared rate
+// firewall blocks any "\d%", so scrub these program percentages out FIRST, then run
+// the rate/payment/approval firewall on what's left. Interest-rate/APR percentages
+// (not in a down/LTV/equity context) still get caught.
+const SAFE_PCT = /\b\d{1,2}(\.\d{1,3})?\s?(%|percent)\s?(down(\s+payment)?|equity|l\.?t\.?v\.?|loan[-\s]to[-\s]value|of\s+(the\s+)?(purchase|price|value|home|property|appraised|loan))\b/gi;
+function loViolates(reply: string): boolean {
+  return markReplyViolates(reply.replace(SAFE_PCT, " ratio "));
+}
+
 export async function loanOfficerTurn(history: Turn[]): Promise<LOResult> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) return { reply: "Thanks for calling Fetti. Let me get you set up with our team who can help — one moment.", book: true, done: false };
@@ -69,7 +80,7 @@ export async function loanOfficerTurn(history: Turn[]): Promise<LOResult> {
     let book = !!c.book;
     // DETERMINISTIC FIREWALL: if the model slipped a rate/payment/term/approval,
     // swap in the safe redirect and steer to booking.
-    if (markReplyViolates(reply)) { reply = SAFE_RATE_LINE; book = true; }
+    if (loViolates(reply)) { reply = SAFE_RATE_LINE; book = true; }
     return { reply, book, done: !!c.done, topic: c.topic ?? null };
   } catch {
     return { reply: "I'm sorry — I didn't quite catch that. Could you say it once more?", book: false, done: false };
