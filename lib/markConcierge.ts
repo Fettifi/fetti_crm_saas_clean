@@ -6,6 +6,7 @@
 // returns ok:false (caller falls back to a human task) if anything goes wrong.
 import { MARK_PERSONA, MARK_CONVERSATION } from "@/lib/markPersona";
 import { claudeChat } from "@/lib/aiFallback";
+import { retrieveKB } from "@/lib/voice/mortgageKB";
 
 const MODEL = process.env.OPENAI_CHAT_MODEL || process.env.OPENAI_MODEL || "gpt-4o";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
@@ -82,7 +83,14 @@ export function expertiseFor(lead: any, lastInbound: string): string[] {
   if (/(my|for) (daughter|son|mom|mother|dad|father|wife|husband|sister|brother|friend|kid)/.test(t)) keys.add("third_party_inquiry");
   if (/self.?employ|1099|business owner|write.?off|tax return/.test(t)) keys.add("bank_statement");
   if (!keys.size) keys.add(/invest|dscr/.test(p) ? "dscr" : "fha_firsttime");
-  return [...keys].slice(0, 3).map((k) => MARK_EXPERTISE[k]).filter(Boolean);
+  const out = [...keys].slice(0, 3).map((k) => MARK_EXPERTISE[k]).filter(Boolean);
+  // Deep, verified reference from the licensed Mortgage Educators course KB — the
+  // single most relevant section to what they just asked — so Mark teaches as
+  // accurately and thoroughly as Penny (same brain). His RATE_PROMISE gate already
+  // allows teaching numbers (down/LTV/DTI), so KB facts pass cleanly.
+  const hit = retrieveKB(`${t} ${p}`, 1)[0];
+  if (hit) out.push(`${hit.title} — ${hit.content.slice(0, 460)}`);
+  return out;
 }
 
 function systemPrompt(lead: any, fileLink?: string | null, firstAiReply?: boolean, calendlyUrl?: string | null, appLink?: string | null, missingDocs?: string[], knownFacts?: string[], expertise?: string[]): string {
