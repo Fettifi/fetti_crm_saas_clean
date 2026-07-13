@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  const denied = requireAddinAuth(req);
+  const denied = await requireAddinAuth(req);
   if (denied) return denied;
 
   const key = process.env.OPENAI_API_KEY;

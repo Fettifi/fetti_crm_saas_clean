@@ -12,7 +12,7 @@ export const maxDuration = 30;
 const MODEL = process.env.OPENAI_EMAIL_MODEL || "gpt-4o";
 
 export async function POST(req: NextRequest) {
-  const denied = requireAddinAuth(req);
+  const denied = await requireAddinAuth(req);
   if (denied) return denied;
 
   const key = process.env.OPENAI_API_KEY;

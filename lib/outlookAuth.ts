@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "crypto";
+import { cfg } from "@/lib/settings";
 
 // Shared bearer-token gate for the Outlook add-in's public endpoints
 // (/api/outlook/*). These routes are intentionally NOT behind the CRM login
@@ -12,8 +13,10 @@ import { createHash, timingSafeEqual } from "crypto";
 //
 // Fail-CLOSED: if the server has no OUTLOOK_ADDIN_KEY configured, every request
 // is rejected with 503 rather than left wide open.
-export function requireAddinAuth(req: NextRequest): NextResponse | null {
-  const expected = process.env.OUTLOOK_ADDIN_KEY;
+export async function requireAddinAuth(req: NextRequest): Promise<NextResponse | null> {
+  // Key resolves from app_settings first (settable without a Vercel redeploy),
+  // then OUTLOOK_ADDIN_KEY env as fallback.
+  const expected = await cfg("OUTLOOK_ADDIN_KEY");
   if (!expected) {
     return NextResponse.json({ error: "Add-in not configured." }, { status: 503 });
   }
