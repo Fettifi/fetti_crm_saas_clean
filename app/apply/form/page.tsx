@@ -172,8 +172,8 @@ function lowDownMessage(a: Answers): string {
   if (a.military === "yes")
     return "Here's the good news: as a veteran you may qualify for a $0-down VA loan. Little to put down is exactly who this is built for. Let's confirm what you've earned. 🎖️";
   if (a.firsttime === "yes")
-    return "First-time buyers get the most help here. Conventional loans go as low as 3% down, and down payment assistance grants can cover much of the rest. Little saved is a starting line, not a wall. Let's keep going. 🙌";
-  return "Little to put down? That's one of the easiest things to solve. FHA needs just 3.5%, and down payment assistance can cover much of the rest. Let's find the program that fits you. 🙌";
+    return "First-time buyers get the most help here. Conventional loans go as low as 3% down, down payment assistance grants can cover much of the rest, and a gift from family can fund the whole thing. Little saved is a starting line, not a wall. Let's keep going. 🙌";
+  return "Little to put down? That's one of the easiest things to solve. FHA needs just 3.5%, that down payment can come entirely from a family gift, and assistance programs can cover much of the rest. Let's find the program that fits you. 🙌";
 }
 
 // Returns an obstacle key if this answer is a known friction point, else null.
