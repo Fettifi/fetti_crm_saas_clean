@@ -10,7 +10,7 @@ export const metadata = {
 
 const PRODUCTS = [
   { icon: Building2, name: "DSCR Rental Loans", desc: "Qualify on the property's cash flow, not your W-2. Build your portfolio." },
-  { icon: TrendingUp, name: "Fix & Flip", desc: "Funding for purchase + rehab so you can move on deals fast." },
+  { icon: TrendingUp, name: "Fix & Flip", desc: "Up to 100% of the deal — purchase + rehab — for the right project, so you move fast." },
   { icon: Zap, name: "Bridge / Hard Money", desc: "Close quickly when timing matters and banks are too slow." },
 ];
 

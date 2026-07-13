@@ -91,12 +91,12 @@ const PRODUCTS: Record<string, Product> = {
   },
   "fix-and-flip-loans": {
     label: "Fix & Flip Loans",
-    blurb: "Funding for purchase plus rehab so you can move fast and maximize your flip.",
-    intro: "Fix & flip loans fund both the purchase and the rehab so you can compete on speed in {state} and put less of your own cash into each deal. Interest-only payments during the project keep your carry low, and fast closings let you win competitive offers.",
-    bullets: ["Up to ~90% of purchase + 100% of rehab", "Fast closings for competitive offers", "Interest-only during the project", "First-time and experienced flippers"],
+    blurb: "Up to 100% financing of the whole deal — purchase and rehab — under the right circumstances.",
+    intro: "Fetti's fix & flip program funds both the purchase and the rehab — and under the right circumstances can finance up to 100% of the entire deal — so you compete on speed in {state} without tying up your own cash. Interest-only payments during the project keep your carry low, and fast closings let you win competitive offers.",
+    bullets: ["Up to 100% of the entire deal (purchase + rehab) for the right project", "Fast closings for competitive offers", "Interest-only during the project", "First-time and experienced flippers"],
     requirements: ["Purchase contract or target deal", "Rehab budget / scope of work", "Experience summary (helps pricing)", "Entity (LLC) for the deal in {state}"],
     faqs: [
-      { q: "How much do I need for a fix and flip in {state}?", a: "Many programs fund up to ~90% of purchase and 100% of rehab, so you bring a down payment plus closing costs and reserves. We'll size your exact deal fast." },
+      { q: "How much do I need for a fix and flip in {state}?", a: "Under the right circumstances, our program can finance up to 100% of the entire deal — both the purchase and the rehab — so little to none of your own cash goes in. The exact structure depends on the project, your experience, and the numbers (ARV and loan-to-cost); on many deals you'll bring some down payment plus closing costs and reserves. We'll size your exact deal fast." },
       { q: "Do I need flipping experience?", a: "No — there are programs for first-time flippers, though experience improves your leverage and pricing. Tell us your background and we'll match the right lender." },
       { q: "How fast can a flip loan close?", a: "Often in 1–2 weeks once your deal and docs are in. Speed is the point — we built the process to keep you competitive." },
     ],
