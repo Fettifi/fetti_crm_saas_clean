@@ -16,6 +16,7 @@
         { "path": "/api/cron/lead-digest", "schedule": "0 15 * * *" },
         { "path": "/api/cron/email-poll", "schedule": "*/5 * * * *" },
         { "path": "/api/cron/publish-due", "schedule": "*/15 * * * *" },
-        { "path": "/api/cron/social-insights", "schedule": "0 14 * * *" }
+        { "path": "/api/cron/social-insights", "schedule": "0 14 * * *" },
+        { "path": "/api/cron/tiktok-reminder", "schedule": "0 17 * * *" }
     ]
 }
