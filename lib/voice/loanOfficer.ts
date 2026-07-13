@@ -5,23 +5,21 @@
 // (Reg Z / MAP-rule firewall) and never promises approval. Turn-based (Twilio
 // speech ↔ this brain), OpenAI-powered for low latency.
 //
-// KNOWLEDGE NOTE: the domain + regulatory knowledge below is built from PUBLIC law
-// (TILA/Reg Z, RESPA/Reg X, TRID, ECOA/Reg B, HMDA, SAFE Act, FCRA, GLBA, HOEPA,
-// ATR/QM, HPA) and standard mortgage practice — not copied from any paid course.
+// KNOWLEDGE NOTE: Penny's mortgage + regulatory knowledge is grounded in Ramon's
+// LICENSED Mortgage Educators & Compliance pre-licensing course (he has express
+// permission to train Fetti's AI on it — see memory: mec-course-license), mined
+// into Fetti's own words, verified for no-verbatim + compliance. The two CORE
+// blocks live in the prompt; deeper topic detail is retrieved per-turn from
+// lib/voice/mortgageKB (kbContextFor) so the base prompt stays lean/fast.
 import "server-only";
 import { markReplyViolates } from "@/lib/markCompliance";
+import { CORE_PRODUCTS, CORE_LAW, kbContextFor } from "@/lib/voice/mortgageKB";
 
 const MODEL = process.env.OPENAI_VOICE_MODEL || process.env.OPENAI_MODEL || "gpt-4o";
 
-const KNOWLEDGE = `WHAT FETTI DOES (full-spectrum licensed mortgage brokerage & lender, NMLS #2267023): FHA (incl. down-payment-assistance), VA, USDA, Conventional (incl. 97% / HomeReady / Home Possible), Jumbo, first-time-buyer, refinance & cash-out, HELOC/second liens; investor DSCR, fix & flip, bridge, hard money, bank-statement/non-QM; and business lending. A low or zero down payment is a PROGRAM FIT (FHA 3.5%, VA/USDA 0%, DPA covers down/closing) — never a weakness.
+const KNOWLEDGE = `${CORE_PRODUCTS}
 
-LOAN-OFFICER DEPTH you can teach conversationally (accurate, plain-English):
-- Qualifying: credit bands (FHA down to 580, some to 500 w/ more down), DTI (front/back), how income is documented (W-2/paystubs, 2yr self-employed or bank-statement programs, rental income, non-taxable gross-up), assets/reserves, LTV & down payment, gift funds, DPA programs.
-- DSCR (investors): the PROPERTY qualifies on market rent vs the payment (~1.0+), no tax returns / personal DTI; LLC vesting fine; STR income counts on many programs; no cap on financed properties.
-- Process: application → document collection → processing → underwriting → conditions → clear-to-close → closing/funding; typical timelines; what an appraisal / title / homeowners insurance are for.
-- Documents: what each program needs (investment loans need ZERO personal income docs; consumer loans need income docs).
-- Consumer protections (explain simply, accurately): TRID Loan Estimate & Closing Disclosure and the 3-day rules; RESPA (no kickbacks, servicing); ECOA/Reg B fair lending (we can't and don't discriminate); Ability-to-Repay/QM; the right to shop; Equal Housing Opportunity.
-- Escrows, PMI/MIP (and that conventional PMI cancels under the HPA), points concept (WITHOUT quoting), rate locks (concept only), pre-approval vs pre-qualification.`;
+${CORE_LAW}`;
 
 const LO_SYSTEM = `You are PENNY, a warm, sharp, genuinely helpful LOAN SPECIALIST at Fetti Financial Services LLC (licensed mortgage brokerage & lender, NMLS #2267023). You are on a LIVE PHONE CALL with a borrower who just asked to talk. This is a real, natural, human conversation — you are the kind of loan officer people trust: patient, plain-spoken, never salesy, never scripted, one thought at a time. Mirror their pace and energy. Make them feel genuinely helped and understood.
 
@@ -38,7 +36,7 @@ HARD COMPLIANCE — NEVER break these, even if asked directly:
 
 ${KNOWLEDGE}
 
-STYLE: spoken, not written — short sentences, contractions, natural fillers are fine, no lists read aloud, no jargon without a plain-English gloss. Keep each turn to 1-3 sentences unless they ask you to go deep. Ask a natural follow-up to keep it a conversation.
+STYLE: spoken, not written — short sentences, contractions, natural fillers are fine, no lists read aloud, no jargon without a plain-English gloss. Keep each turn to 1-3 sentences unless they ask you to go deep, and even then stay conversational — one flowing spoken answer, then a natural follow-up question. NEVER use markdown, asterisks, bold, bullet points, numbered lists, or headings — you are SPEAKING out loud, not writing.
 
 Respond with ONLY a JSON object:
 {"reply": "<exactly what to say next, spoken>", "book": <true when it's time to move them to booking Ramon>, "done": <true ONLY when the call is wrapping up and you're saying goodbye>, "topic": "<1-3 word topic they're asking about>"}`;
@@ -48,40 +46,86 @@ export type LOResult = { reply: string; book: boolean; done: boolean; topic?: st
 
 const SAFE_RATE_LINE = "That's exactly the kind of number I never want to guess at — your rate depends on your full picture and it moves daily. The honest way to get you a real one is a quick call with Ramon, who'll price your actual file. Want me to set that up?";
 
-// A DOWN-PAYMENT / LTV / EQUITY percentage ("3.5% down", "0% down", "20% equity",
-// "97% loan-to-value", "3% of the purchase price") is a compliant PROGRAM-FIT fact
-// and Penny's core job to explain — it is NOT an interest rate. The shared rate
-// firewall blocks any "\d%", so scrub these program percentages out FIRST, then run
-// the rate/payment/approval firewall on what's left. Interest-rate/APR percentages
-// (not in a down/LTV/equity context) still get caught.
-const SAFE_PCT = /\b\d{1,2}(\.\d{1,3})?\s?(%|percent)\s?(down(\s+payment)?|equity|l\.?t\.?v\.?|loan[-\s]to[-\s]value|of\s+(the\s+)?(purchase|price|value|home|property|appraised|loan))\b/gi;
+// Penny teaches PROGRAM percentages constantly — down payment, LTV, equity, DTI, MI
+// premiums, funding/guarantee fees, PMI-cancellation thresholds (80%/78%). Those are
+// facts, NOT the interest RATE / APR / PAYMENT / TERM the compliance rule targets.
+// Natural speech scatters the context before, after, or around the number ("LTV is
+// above 90%", "terminates at 78%", "80% of the value", "up to 50% DTI"), so a scrub
+// that requires the keyword to sit right after the % misses most of them. Instead we
+// look at the ~45-char window around each percentage: if it reads as PROGRAM context
+// and NOT rate context, treat it as a fact and scrub it; otherwise leave it for the
+// shared rate/payment/approval firewall. A bare "you'd be at 7%" (no program context)
+// stays and gets caught.
+const PCT_TOKEN = /\b\d{1,2}(\.\d{1,3})?\s?(%|percent)/gi;
+const PROGRAM_CTX = /(down|equity|\bl\.?t\.?v\.?\b|loan[-\s]?to[-\s]?value|mortgage insurance|\bmip\b|\bpmi\b|ufmip|premium|funding fee|guarantee fee|\bdti\b|debt[-\s]?to[-\s]?income|credit|score|\bvalue\b|appraised|purchase price|cancel|terminat|\breach|balance|financ|reserve|owners?|ownership|\bown\b|\bstake\b|self[-\s]?employ|business|gift|seasoned|closing cost|area median)/i;
+const RATE_CTX = /(\brate\b|\bapr\b|interest rate|note rate|\bpoints?\b|percentage rate)/i;
 function loViolates(reply: string): boolean {
-  return markReplyViolates(reply.replace(SAFE_PCT, " ratio "));
+  const scrubbed = reply.replace(PCT_TOKEN, (...a: unknown[]) => {
+    const m = a[0] as string;
+    const off = a[a.length - 2] as number;
+    const str = a[a.length - 1] as string;
+    const w = str.slice(Math.max(0, off - 45), off + m.length + 45).toLowerCase();
+    return PROGRAM_CTX.test(w) && !RATE_CTX.test(w) ? " ratio " : m;
+  });
+  return markReplyViolates(scrubbed);
+}
+
+// The reply is SPOKEN by TTS — strip any markdown the model slips in (bold, headers,
+// bullets, numbered lists) so ElevenLabs never reads "asterisk asterisk" out loud.
+function toSpoken(s: string): string {
+  return String(s || "")
+    .replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1").replace(/[#`>_*]/g, "")
+    .replace(/^\s*[-•]\s+/gm, "").replace(/^\s*\d+[.)]\s+/gm, "")
+    .replace(/\s*\n+\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+}
+
+// Parse the model's JSON. If it truncated at the token limit, salvage the reply
+// text and the book/done flags so Penny still says something useful — never a dead
+// "I didn't catch that" on a good, long answer that ran past max_tokens.
+function parseLO(raw: string): { reply: string; book: boolean; done: boolean; topic: string | null } {
+  try {
+    const c = JSON.parse(raw);
+    return { reply: String(c.reply || ""), book: !!c.book, done: !!c.done, topic: (c.topic ?? null) as string | null };
+  } catch {
+    const m = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
+    const reply = m ? m[1].replace(/\\"/g, '"').replace(/\\n/g, " ").replace(/\\t/g, " ").replace(/\\\\/g, "\\") : "";
+    return { reply, book: /"book"\s*:\s*true/.test(raw), done: /"done"\s*:\s*true/.test(raw), topic: null };
+  }
 }
 
 export async function loanOfficerTurn(history: Turn[]): Promise<LOResult> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) return { reply: "Thanks for calling Fetti. Let me get you set up with our team who can help — one moment.", book: true, done: false };
   try {
+    // Retrieve deep, verified detail for whatever they just asked about and inject
+    // it as a one-turn reference note (keeps the base prompt lean, depth on demand).
+    const lastUser = [...history].reverse().find((t) => t.role === "user")?.content || "";
+    const kb = kbContextFor(lastUser, 3);
+    const messages = [
+      { role: "system", content: LO_SYSTEM },
+      ...(kb ? [{ role: "system", content: kb }] : []),
+      ...history.slice(-16),
+    ];
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: "system", content: LO_SYSTEM }, ...history.slice(-16)],
+        messages,
         response_format: { type: "json_object" },
-        temperature: 0.6, max_tokens: 320,
+        temperature: 0.6, max_tokens: 420,
       }),
       signal: AbortSignal.timeout(12000),
     });
     const j = await r.json();
-    const c = JSON.parse(j.choices?.[0]?.message?.content || "{}");
-    let reply = String(c.reply || "Sorry, could you say that again?");
-    let book = !!c.book;
+    const parsed = parseLO(j.choices?.[0]?.message?.content || "{}");
+    let reply = toSpoken(parsed.reply) || "Sorry, could you say that again?";
+    let book = parsed.book;
     // DETERMINISTIC FIREWALL: if the model slipped a rate/payment/term/approval,
     // swap in the safe redirect and steer to booking.
     if (loViolates(reply)) { reply = SAFE_RATE_LINE; book = true; }
-    return { reply, book, done: !!c.done, topic: c.topic ?? null };
+    return { reply, book, done: parsed.done, topic: parsed.topic };
   } catch {
     return { reply: "I'm sorry — I didn't quite catch that. Could you say it once more?", book: false, done: false };
   }
