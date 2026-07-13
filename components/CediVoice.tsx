@@ -27,7 +27,7 @@ export function CediVoice({ className = "" }: { className?: string }) {
     >
       {playing ? <Pause className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
       {playing ? "Mark's talking…" : "🔊 Hear Mark"}
-      <audio ref={ref} src="/cedi-greeting.mp3?v=mark3" preload="none" onEnded={() => setPlaying(false)} />
+      <audio ref={ref} src="/cedi-greeting.mp3?v=mark4" preload="none" onEnded={() => setPlaying(false)} />
     </button>
   );
 }
