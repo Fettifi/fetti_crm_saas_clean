@@ -28,15 +28,30 @@ function inferType(name: string): string {
   return "application/octet-stream";
 }
 
-const SYSTEM = `You read U.S. mortgage documents (paystubs, W2s, bank statements, driver's licenses/IDs, 1003s, tax returns) and extract structured data for a Uniform Residential Loan Application (URLA/1003).
-Return ONLY valid JSON matching this partial shape — INCLUDE ONLY fields you can actually read from the document; omit everything else. Never guess.
+const SYSTEM = `You read U.S. mortgage documents and extract EVERY field you can for a Uniform Residential Loan Application (URLA/1003). Different documents carry different data — pull ALL of it:
+- Driver's license / state ID → borrower legal first & last name, DOB, current address, and citizenship if shown.
+- Paystub → employer name/address/phone, job title, hire/start date, and income (base, overtime, bonus, commission) as MONTHLY dollars (weekly×52/12, biweekly×26/12, semimonthly×24/12, annual/12; if only YTD is shown, divide by the number of months elapsed).
+- W-2 → employer name/address, employee name/SSN/address, annual wages → MONTHLY income.
+- Tax return (1040 + schedules) → name, SSN, address, filing status (Married Filing Jointly/Separately→"Married", Single→"Unmarried"), number of dependents, self-employment (Schedule C → employment.selfEmployed=true + net monthly income), rental real estate (Schedule E → a reo[] entry per property with address, monthly rental income, and mortgage figures), interest & dividends (→ income.other). A spouse on a JOINT return → a SECOND borrower (coBorrower).
+- Bank / brokerage statement → assets (account type, institution, last-4 account number, current balance) and the account holder's name/address.
+- Prior 1003 / URLA / loan application → EVERYTHING: all borrowers, employment history, income, assets, liabilities (creditor, balance, monthly payment), real estate owned, subject property, loan details, declarations, demographics.
+
+Return ONLY valid JSON in this shape — INCLUDE ONLY fields you can actually read; OMIT everything else; NEVER guess a value you cannot see:
 {
- "borrower": {"firstName","lastName","ssn","dob" (YYYY-MM-DD),"email","cellPhone","currentAddress":{"street","city","state" (2-letter),"zip"},
-   "employment":{"employerName","position","employerAddress":{"street","city","state","zip"}},
-   "income":{"base","overtime","bonus","commission","other"}  // MONTHLY dollars; if a paystub shows gross pay, convert to monthly; if a W2 shows annual wages, divide by 12 },
- "assets":[{"type" (CheckingAccount|SavingsAccount|MoneyMarketFund|RetirementFund|Stock|Other),"institution","balance"}],
+ "borrower": { "firstName","lastName","ssn" (###-##-####),"dob" (YYYY-MM-DD),"citizenship" ("US Citizen"|"Permanent Resident"|"Non-Permanent Resident"),"maritalStatus" ("Married"|"Separated"|"Unmarried"),"dependentsCount","email","homePhone","cellPhone",
+   "currentAddress":{"street","city","state" (2-letter),"zip"},"housingStatus" ("Own"|"Rent"),"monthlyHousingExpense","yearsAtAddress",
+   "employment":{"employerName","employerPhone","employerAddress":{"street","city","state","zip"},"position","startDate" (YYYY-MM-DD),"yearsInLineOfWork","selfEmployed" (bool)},
+   "income":{"base","overtime","bonus","commission","other"} },
+ "coBorrower": { same shape as borrower — ONLY when a second person clearly appears (joint tax-return spouse, co-applicant on a 1003) },
+ "assets":[{"type" (CheckingAccount|SavingsAccount|MoneyMarketFund|RetirementFund|Stock|Other),"institution","accountNumber" (last 4 only),"balance"}],
+ "liabilities":[{"type","creditor","balance","monthlyPayment"}],
+ "reo":[{"address","presentValue","status","monthlyRentalIncome","mortgageBalance","monthlyMortgage"}],
+ "property":{"address":{"street","city","state","zip"},"propertyType","occupancy" ("PrimaryResidence"|"SecondHome"|"Investment"),"presentValue"},
+ "loan":{"purpose" ("Purchase"|"Refinance"),"amount","loanType","amortizationType","termMonths"},
+ "declarations":{"intendToOccupyAsPrimary","ownsOtherProperty","borrowingDownPayment"},
  "docType": "paystub|w2|bankstatement|id|1003|taxreturn|other"
-}`;
+}
+All INCOME is MONTHLY dollars (convert annual → monthly). Balances/amounts stay as-is.`;
 
 function deepMerge(target: any, src: any): any {
   if (Array.isArray(src)) return src.length ? src : target;
@@ -62,7 +77,7 @@ async function extractOne(key: string, buf: Buffer, mediaType: string): Promise<
     headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || "claude-opus-4-8",
-      max_tokens: 1500,
+      max_tokens: 4000,
       system: SYSTEM,
       messages: [{ role: "user", content: [block, { type: "text", text: "Extract the URLA fields you can read. JSON only." }] }],
     }),
@@ -75,14 +90,39 @@ async function extractOne(key: string, buf: Buffer, mediaType: string): Promise<
   try { return JSON.parse(m ? m[0] : txt); } catch { return null; }
 }
 
-function mergeIntoUrla(cur: any, extracted: any): any {
-  if (extracted?.borrower) {
+// Dedupe list items by a content key (so re-running auto-fill, or the same account
+// appearing on two statements, doesn't pile up duplicates). Items with no readable
+// key are kept as-is.
+function dedupeBy(arr: any[], keyFn: (x: any) => string): any[] {
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (const x of arr) {
+    const k = keyFn(x).toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (k && seen.has(k)) continue;
+    if (k) seen.add(k);
+    out.push(x);
+  }
+  return out;
+}
+
+function mergeIntoUrla(cur: any, ex: any): any {
+  if (ex?.borrower) {
     cur.borrowers = cur.borrowers && cur.borrowers.length ? cur.borrowers : [{}];
-    cur.borrowers[0] = deepMerge(cur.borrowers[0], extracted.borrower);
+    cur.borrowers[0] = deepMerge(cur.borrowers[0], ex.borrower);
   }
-  if (Array.isArray(extracted?.assets) && extracted.assets.length) {
-    cur.assets = [...(cur.assets || []), ...extracted.assets];
+  if (ex?.coBorrower && Object.keys(ex.coBorrower).length) {
+    cur.borrowers = cur.borrowers && cur.borrowers.length ? cur.borrowers : [{}];
+    cur.borrowers[1] = deepMerge(cur.borrowers[1] || {}, ex.coBorrower);
   }
+  if (Array.isArray(ex?.assets) && ex.assets.length)
+    cur.assets = dedupeBy([...(cur.assets || []), ...ex.assets], (a) => `${a.institution || ""}|${a.type || ""}|${a.accountNumber || a.balance || ""}`);
+  if (Array.isArray(ex?.liabilities) && ex.liabilities.length)
+    cur.liabilities = dedupeBy([...(cur.liabilities || []), ...ex.liabilities], (l) => `${l.creditor || ""}|${l.balance || ""}`);
+  if (Array.isArray(ex?.reo) && ex.reo.length)
+    cur.reo = dedupeBy([...(cur.reo || []), ...ex.reo], (r) => JSON.stringify(r.address || r));
+  if (ex?.property && Object.keys(ex.property).length) cur.property = deepMerge(cur.property || {}, ex.property);
+  if (ex?.loan && Object.keys(ex.loan).length) cur.loan = deepMerge(cur.loan || {}, ex.loan);
+  if (ex?.declarations && Object.keys(ex.declarations).length) cur.declarations = deepMerge(cur.declarations || {}, ex.declarations);
   return cur;
 }
 
