@@ -7,8 +7,6 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { maybeAdvanceStage, resolvePortalToken, promoteLeadToLoanFile } from "@/lib/los";
 import { advanceLeadStage } from "@/lib/leadStage";
-import { sendSms, sendEmail, logComms } from "@/lib/comms";
-import { cfg } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -142,31 +140,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
           await supabaseAdmin.from("leads").update({ raw }).eq("id", leadId);
 
           const name = ((lead as any).first_name || (lead as any).full_name || "there").split(" ")[0];
-          const calendly = (await cfg("CALENDLY_URL")) || "";
 
-          // Top-priority task — outranks everything; the play is a same-day call.
+          // Top-priority task — outranks everything; the play is a same-day human call.
           await supabaseAdmin.from("org_tasks").insert([{
-            title: `🔥 DOCS IN — book the call with ${(lead as any).full_name || name} TODAY`.slice(0, 200),
-            detail: `${(lead as any).full_name || name} just uploaded documents (${(lead as any).loan_purpose || "loan"}) — they've shared personal info, the trust window is OPEN. Call or get them booked now${calendly ? `: ${calendly}` : "."}`,
+            title: `🔥 DOCS IN — connect with ${(lead as any).full_name || name} TODAY`.slice(0, 200),
+            detail: `${(lead as any).full_name || name} just uploaded documents (${(lead as any).loan_purpose || "loan"}) — they've shared personal info, the trust window is OPEN. They were offered video/phone/talk-now; reach out and lock a real conversation.`,
             source: "docs_hot", status: "open", priority: 10,
             dedup_key: `docshot:${leadId}`.slice(0, 80), cadence: "once", due_at: new Date().toISOString(),
           }]).select("id");
 
-          // Personal invite (know-first, short). SMS only with express consent —
-          // the same gate nurture uses; email otherwise.
-          const consentObj = raw.consent && typeof raw.consent === "object" ? raw.consent : {};
-          const smsOk = !raw.historical_import && raw.sms_consent !== false && !raw.sms_optout_at &&
-            (raw.sms_consent === true || consentObj.sms_optin === true);
-          const bookLine = calendly ? ` Grab a time that works here: ${calendly}` : " I'll call you shortly to map it out.";
-          const msg = `${name}, your documents just landed — you're officially in motion. Next step is a quick call to map your exact path.${bookLine} — Mark at Fetti (Reply STOP to opt out.)`;
-          if (smsOk && (lead as any).phone) {
-            const r = await sendSms((lead as any).phone, msg);
-            if (r.ok) await logComms({ leadId, channel: "sms", direction: "outbound", type: "docs_hot", body: msg, to: (lead as any).phone, status: "sent", providerId: r.sid, actor: "mark" });
-          } else if ((lead as any).email) {
-            const body = `Hey ${name} — your documents just came through, so you're officially in motion.\n\nThe next step is a quick call to map your exact path and keep this moving.${calendly ? `\n\nGrab a time that works: ${calendly}` : "\n\nWe'll reach out shortly to set it up."}\n\n— Mark at Fetti Financial Services`;
-            const r = await sendEmail((lead as any).email, "your documents are in — next step", { text: body });
-            if (r.ok) await logComms({ leadId, channel: "email", direction: "outbound", type: "docs_hot", subject: "your documents are in — next step", body, to: (lead as any).email, status: "sent", providerId: r.id, actor: "mark" });
-          }
+          // WHITE-GLOVE CONNECT: offer all three ways to reach a real person (video /
+          // phone / talk now) via the connect page — de-duped inside offerConnection
+          // (won't double-message if the app-completion offer just went out).
+          const { offerConnection } = await import("@/lib/connect");
+          await offerConnection({ id: leadId }, { trigger: "docs" });
         } catch (e) { console.warn("[upload] docs-hot flow failed", e); }
       });
     }

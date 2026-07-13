@@ -301,6 +301,15 @@ export async function POST(req: NextRequest) {
     // "nobody should be in the applications area unless they've uploaded a document."
     if ((body as any).app_completed && data?.id && !quarantined) {
       after(async () => { try { await advanceLeadStage(data.id, "Engaged", { actor: "borrower", reason: "completed application form (awaiting documents)" }); } catch { /* */ } });
+      // WHITE-GLOVE CONNECT (2026-07-12): finishing the application is a commitment
+      // moment — reach out warmly and offer the three ways to reach a real person
+      // (video / phone / talk now). De-duped 6h inside offerConnection.
+      after(async () => {
+        try {
+          const { offerConnection } = await import("@/lib/connect");
+          await offerConnection({ id: data.id }, { trigger: "app" });
+        } catch (e) { console.warn("[apply] connect offer failed", e); }
+      });
     }
 
     // For genuinely NEW leads, all post-response (after()) so the applicant's
