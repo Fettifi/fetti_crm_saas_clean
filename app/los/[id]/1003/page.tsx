@@ -93,6 +93,8 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
   const [bi, setBi] = useState(0);
   const [ocr, setOcr] = useState<string | null>(null);
   const [imp, setImp] = useState<string | null>(null);
+  const [pull, setPull] = useState<string | null>(null);
+  const [pulling, setPulling] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const xmlRef = useRef<HTMLInputElement>(null);
 
@@ -122,6 +124,22 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
       else setOcr("⚠️ " + (j.error || "Couldn't read it."));
     } catch { setOcr("⚠️ Upload failed."); }
     setTimeout(() => setOcr(null), 5000);
+  }
+
+  // Pull from the documents ALREADY uploaded to this loan file — no re-uploading.
+  async function pullFromFile() {
+    setPulling(true); setPull("Reading the documents on this file…");
+    try {
+      const r = await fetch(`/api/los/extract?file=${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
+      const j = await r.json();
+      if (r.ok) {
+        await load();
+        const types = [...new Set((j.read || []).map((x: any) => x.docType).filter(Boolean))].join(", ");
+        setPull(j.count ? `✓ Filled the 1003 from ${j.count} document${j.count > 1 ? "s" : ""}${types ? ` (${types})` : ""}.` : "Read the documents, but no new fields could be pulled.");
+      } else setPull("⚠️ " + (j.error || "Couldn't read the documents."));
+    } catch { setPull("⚠️ Failed."); }
+    setPulling(false);
+    setTimeout(() => setPull(null), 9000);
   }
 
   const load = useCallback(async () => {
@@ -168,13 +186,17 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
           {pct != null && <span className="text-sm font-semibold text-emerald-400 shrink-0">{pct}% complete</span>}
         </div>
 
-        {/* AI document auto-fill */}
+        {/* Auto-fill straight from the documents ALREADY uploaded & verified on this
+            loan file — no re-uploading. A one-off upload stays available as a fallback. */}
         <div className="bg-gradient-to-br from-emerald-950/40 to-slate-900/40 border border-emerald-800/40 rounded-2xl p-4 mb-4 flex items-center justify-between gap-3 flex-wrap">
-          <div className="text-sm text-slate-300">📎 <span className="font-semibold text-emerald-300">AI auto-fill:</span> drop a paystub, W2, bank statement, or ID and Claude reads it into the 1003.</div>
-          <div className="flex items-center gap-3">
-            {ocr && <span className="text-xs text-slate-400">{ocr}</span>}
+          <div className="text-sm text-slate-300">🗂️ <span className="font-semibold text-emerald-300">Auto-fill from the file&apos;s documents:</span> the borrower&apos;s uploaded paystubs, W-2s, bank statements &amp; ID — already on this loan file — read straight into the 1003. No re-uploading.</div>
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            {(pull || ocr) && <span className="text-xs text-slate-400 max-w-[16rem]">{pull || ocr}</span>}
+            <button onClick={pullFromFile} disabled={pulling} className="text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              {pulling ? <Loader2 className="w-4 h-4 animate-spin" /> : "✨"} Auto-fill from uploaded documents
+            </button>
             <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) autofillFromDoc(f); e.currentTarget.value = ""; }} />
-            <button onClick={() => fileRef.current?.click()} className="text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg flex items-center gap-1.5"><FileUp className="w-4 h-4" /> Upload document</button>
+            <button onClick={() => fileRef.current?.click()} className="text-xs text-slate-400 hover:text-white underline underline-offset-2">or upload a one-off</button>
           </div>
         </div>
 
