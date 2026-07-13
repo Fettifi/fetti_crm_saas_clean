@@ -134,22 +134,64 @@ export async function composeBrandCard(): Promise<string | null> {
 // day's post: our Ray & Mark scene + the day's hook burned on, brand watermark.
 // TikTok can't be auto-posted (no API for our account), so this is the daily
 // grab-and-post asset the /tiktok-today page serves. Custom art only — never stock.
-export async function composeTikTokCard(_hook: string): Promise<string | null> {
+// Parse the embedded font ONCE (module-cached). opentype turns text into vector
+// <path>s that render on ANY host — the fix for Vercel shipping no system fonts.
+let _font: any = null;
+async function displayFont() {
+  if (_font) return _font;
+  const opentype = await import("opentype.js");
+  const { DISPLAY_FONT_B64 } = await import("@/lib/fonts/display");
+  const bin = Buffer.from(DISPLAY_FONT_B64, "base64");
+  _font = (opentype as any).parse(bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength));
+  return _font;
+}
+function esc(s: string) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+export async function composeTikTokCard(hook: string): Promise<string | null> {
   try {
     const sharp = (await import("sharp")).default;
     const pick = BRAND_SCENES[new Date().getUTCDate() % BRAND_SCENES.length];
     const src = supabaseAdmin.storage.from("content").getPublicUrl(`brand-kit/${pick}`).data.publicUrl;
     const raw = Buffer.from(await (await fetch(src)).arrayBuffer());
-    // 9:16 TikTok-native crop of OUR brand scene. NO burned-in text: Vercel's
-    // serverless runtime ships no fonts, so any SVG/Pango text renders as tofu
-    // boxes. The hook, message, and full compliance disclosure ride in the CAPTION
-    // (TikTok shows it directly under the post). The 4 scenes rotate daily so the
-    // visuals stay varied (never the same image two days running).
-    const buf = await sharp(raw).resize(1080, 1920, { fit: "cover", position: "top" }).jpeg({ quality: 90 }).toBuffer();
-    const path = `tiktok/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
-    const { error } = await supabaseAdmin.storage.from("content").upload(path, buf, { contentType: "image/jpeg", upsert: false });
+    const W = 1080, H = 1920;
+    const base = await sharp(raw).resize(W, H, { fit: "cover", position: "top" }).toBuffer();
+
+    // Vectorize the hook: wrap by MEASURED width, then convert each line to an
+    // SVG path. No system font needed — the glyph outlines are baked in.
+    const font = await displayFont();
+    const marginX = 64, maxW = W - marginX * 2;
+    const fsize = 66, lh = 84;
+    const words = String(hook || "We do money.").trim().replace(/[.]$/, "").split(/\s+/);
+    const lines: string[] = []; let cur = "";
+    for (const w of words) {
+      const test = cur ? cur + " " + w : w;
+      if (font.getAdvanceWidth(test, fsize) > maxW && cur) { lines.push(cur); cur = w; } else cur = test;
+    }
+    if (cur) lines.push(cur);
+    const shown = lines.slice(0, 4);
+    const topBase = 260;
+    const paths = shown.map((l, i) => {
+      const p = font.getPath(l, marginX, topBase + i * lh, fsize);
+      return `<path d="${p.toPathData(2)}" fill="#ffffff"/>`;
+    }).join("");
+    // Watermark (also vectorized so it never tofus).
+    const wm = font.getPath("fettifi.com  ·  NMLS #2267023  ·  Equal Housing Opportunity", marginX, H - 56, 26);
+    const scrimH = topBase + shown.length * lh + 30;
+    const overlay = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="top" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#05080f" stop-opacity="0.9"/><stop offset="1" stop-color="#05080f" stop-opacity="0"/>
+      </linearGradient></defs>
+      <rect x="0" y="0" width="${W}" height="${scrimH}" fill="url(#top)"/>
+      <rect x="0" y="${H - 110}" width="${W}" height="110" fill="#05080f" fill-opacity="0.55"/>
+      ${paths}
+      <path d="${wm.toPathData(2)}" fill="#ffffff" fill-opacity="0.9"/>
+      <!--${esc("")}-->
+    </svg>`;
+    const buf = await sharp(base).composite([{ input: Buffer.from(overlay), top: 0, left: 0 }]).jpeg({ quality: 90 }).toBuffer();
+    const outPath = `tiktok/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
+    const { error } = await supabaseAdmin.storage.from("content").upload(outPath, buf, { contentType: "image/jpeg", upsert: false });
     if (error) { console.warn("[content] tiktok card upload:", error.message); return null; }
-    return supabaseAdmin.storage.from("content").getPublicUrl(path).data.publicUrl;
+    return supabaseAdmin.storage.from("content").getPublicUrl(outPath).data.publicUrl;
   } catch (e) { console.warn("[content] tiktok card error:", e); return null; }
 }
 
