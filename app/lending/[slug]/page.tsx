@@ -37,10 +37,36 @@ const PRODUCTS: Record<string, Product> = {
     ],
     scope: "consumer",
   },
+  "first-time-homebuyer": {
+    label: "First-Time Homebuyer Loans",
+    blurb: "Low down payments, buyer programs, and assistance to get you into your first home.",
+    intro: "Buying your first home in {state}? Fetti Financial Services is a nonbank lender built to get first-time buyers to the closing table — with low-down-payment loans (as little as 3% conventional, 3.5% FHA, and $0 on VA or USDA if you're eligible), first-time-buyer programs, and down payment assistance that can cover most or all of your upfront cost. Not sure where to start, or told no by a bank? That's exactly who we're here for.",
+    bullets: ["As little as 3–3.5% down (or $0 on VA/USDA)", "Down payment assistance to cover your upfront cost", "First-time-buyer programs (HomeReady, Home Possible, FHA)", "Same-day pre-approval — a specialist who picks up the phone"],
+    requirements: ["Government-issued ID", "Recent pay stubs / proof of income", "2 months of bank statements", "A price range or property in {state}"],
+    faqs: [
+      { q: "Do I really need 20% down to buy my first home in {state}?", a: "No — that's the biggest myth in home buying. Most first-time buyers put 3% down on a conventional loan or 3.5% on FHA, and down payment assistance can cover most or all of even that. VA and USDA can be $0 down if you're eligible. We'll show you the real number in a 2-minute chat, with no credit impact." },
+      { q: "What is down payment assistance?", a: "It's help — usually from a state or county housing program — that covers part or all of your down payment and closing costs. It can be a grant you never repay, a loan that's forgiven over time, or one you repay later when you sell or refinance. We help you find the programs you qualify for and pair them with your loan. Eligibility and terms vary by program." },
+      { q: "Does getting started hurt my credit?", a: "No. Pre-qualifying takes about two minutes with no hard credit pull, and there's no obligation. We'll map your options — loan type, down payment, and any assistance you may qualify for." },
+    ],
+    scope: "consumer",
+  },
+  "down-payment-assistance": {
+    label: "Down Payment Assistance",
+    blurb: "State, county, and national programs that can cover most or all of your down payment and closing costs.",
+    intro: "The down payment is the #1 thing that stops people from buying — and it's often the easiest to solve. Fetti Financial Services helps buyers in {state} tap down payment assistance programs — from your state housing agency (like CalHFA, Florida Housing, or MSHDA), your county, and national programs — that can cover most or all of your down payment and closing costs, paired with an FHA or conventional loan. A low or zero down payment isn't a weakness here; it's a program fit.",
+    bullets: ["Cover most or all of your down payment + closing costs", "Grants, forgivable seconds, or deferred assistance", "Pairs with FHA (3.5% down) and conventional (3% down)", "We help you find the programs you actually qualify for"],
+    requirements: ["Government-issued ID", "Recent pay stubs / proof of income", "2 months of bank statements", "The area or price range you're buying in {state}"],
+    faqs: [
+      { q: "How much of my down payment can assistance cover in {state}?", a: "Depending on the program and your eligibility, assistance can cover most or all of your down payment plus a chunk of your closing costs. Programs, amounts, and terms vary by state and county — we'll show you the ones you actually qualify for." },
+      { q: "Do I have to pay down payment assistance back?", a: "It depends on the program. Some assistance is a grant you never repay; some is a second loan that's forgiven over a few years; and some is deferred — you repay it only when you sell or refinance. We'll explain exactly how each option you qualify for works before you commit." },
+      { q: "Is down payment assistance only for first-time buyers?", a: "Often, but not always. Some programs define a 'first-time buyer' as anyone who hasn't owned a home in the last three years, and others are open to repeat buyers or specific professions like teachers, first responders, and veterans. We'll check what fits you." },
+    ],
+    scope: "consumer",
+  },
   "refinance-loans": {
     label: "Refinance & Cash-Out Loans",
     blurb: "Lower your rate or tap your home's equity.",
-    intro: "Refinancing in {state} can lower your monthly payment, shorten your term, or turn your home's equity into cash for renovations, debt payoff, or your next investment. Fetti is a nonbank lender that funds rate-and-term and cash-out refinances directly — including the ones banks turn down.",
+    intro: "Refinancing in {state} can lower your monthly payment, shorten your term, or turn your home's equity into cash for renovations, debt payoff, or your next investment. Fetti is a nonbank lender that gets rate-and-term and cash-out refinances done — including the ones banks turn down.",
     bullets: ["Rate-and-term refinance", "Cash-out for renovations or debt payoff", "Debt consolidation", "Streamline programs for FHA/VA"],
     requirements: ["Recent mortgage statement", "Proof of income", "Homeowner's insurance declarations", "Estimated home value in {state}"],
     faqs: [

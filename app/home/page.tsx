@@ -55,7 +55,7 @@ const CATEGORIES = [
 ];
 
 const STATS = [
-  { value: "Direct", label: "Straight to the people who get it done" },
+  { value: "Low/$0 down", label: "FHA, VA & USDA + down payment help" },
   { value: "All 50", label: "States. Investment & business" },
   { value: "Turned down?", label: "We figure out how to get it done" },
   { value: "2 min", label: "To pre-qualify · no credit pull" },
@@ -90,7 +90,8 @@ const WHY = [
 ];
 
 const FAQ = [
-  { q: "What makes Fetti different?", a: "We're a nonbank lender (NMLS #2267023) built to get the deals done that big banks won't — including the borrowers banks turn away: self-employed, investors, unusual income, tough scenarios. We're in your corner, working to get your loan closed. All loans are subject to credit approval and program guidelines." },
+  { q: "What makes Fetti different?", a: "We're a nonbank lender (NMLS #2267023) built to get the deals done that big banks won't — including the borrowers banks turn away: first-time buyers, self-employed, investors, unusual income, tough scenarios. We're in your corner, working to get your loan closed. All loans are subject to credit approval and program guidelines." },
+  { q: "Can you help with my down payment?", a: "Yes — for a lot of buyers, that's the easiest part to solve. Between FHA (3.5% down), VA and USDA ($0 down if you're eligible), and down payment assistance programs from state, county, and national sources, we can often cover most or all of your down payment and closing costs. Eligibility and terms vary by program — we'll show you exactly what you qualify for in a 2-minute chat, no credit impact." },
   { q: "Will getting started affect my credit?", a: "No. Pre-qualifying takes about two minutes with no hard credit pull. We only move forward when you're ready." },
   { q: "How fast can I close?", a: "It depends on the loan, but we move fast. Bridge and hard-money options can close in days, and we keep you posted at every step. All loans are subject to credit approval and program guidelines." },
   { q: "What states do you cover?", a: "Investment and business-purpose loans — DSCR, fix & flip, bridge, hard money, and business loans — are available nationwide, in all 50 states. Owner-occupied home loans are available in Florida, Michigan, and California. Not sure we cover your scenario? Start in two minutes and we'll tell you exactly what we can do." },
@@ -133,7 +134,7 @@ export default async function MarketingHome() {
             <span className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent">won&apos;t do.</span>
           </h1>
           <p className="mt-6 text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            We&apos;re a <span className="font-semibold text-slate-800">nonbank lender</span> built for the deals big banks turn down. Self-employed, investor, tough scenario, told no somewhere else? That&apos;s exactly who we&apos;re here for. Home, investment, and business loans. Start in two minutes. No credit impact.
+            We&apos;re a <span className="font-semibold text-slate-800">nonbank lender</span> built for the deals big banks turn down — and the buyers they overlook. First-time buyer, self-employed, investor, or short on the down payment? That&apos;s exactly who we&apos;re here for. Home, investment, and business loans — with down payment assistance for buyers who qualify. Start in two minutes. No credit impact.
           </p>
           <div className="mt-9 flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/apply/form" className="group inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">

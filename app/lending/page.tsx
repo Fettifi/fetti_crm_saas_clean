@@ -19,6 +19,8 @@ const GROUPS: { title: string; tag: string; products: { slug: string; label: str
     tag: "Owner-occupied · FL, MI, CA",
     products: [
       { slug: "home-purchase-loans", label: "Home Purchase Loans", blurb: "Conventional, FHA & VA to buy the home you'll live in." },
+      { slug: "first-time-homebuyer", label: "First-Time Homebuyer", blurb: "Low down payments + programs to get into your first home." },
+      { slug: "down-payment-assistance", label: "Down Payment Assistance", blurb: "Programs that can cover most or all of your down payment." },
       { slug: "refinance-loans", label: "Refinance & Cash-Out", blurb: "Lower your rate or tap your home's equity." },
     ],
   },

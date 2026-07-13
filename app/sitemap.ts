@@ -9,7 +9,7 @@ const ALL_PRODUCTS = [
   "dscr-loans", "fix-and-flip-loans", "hard-money-loans", "bridge-loans", "rental-property-loans",
   "commercial-real-estate-loans", "business-loans", "sba-loans",
 ];
-const CONSUMER_PRODUCTS = ["home-purchase-loans", "refinance-loans"];
+const CONSUMER_PRODUCTS = ["home-purchase-loans", "first-time-homebuyer", "down-payment-assistance", "refinance-loans"];
 const STATES = ["florida", "california", "texas", "michigan", "ohio", "arizona", "georgia", "nevada"];
 const CONSUMER_STATES = ["florida", "michigan", "california"];
 
