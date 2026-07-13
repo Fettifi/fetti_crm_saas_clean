@@ -13,13 +13,17 @@ export async function GET() {
     .from("content_posts").select("*").eq("status", "queued").order("created_at", { ascending: false }).limit(100);
   const { data: posted } = await supabaseAdmin
     .from("content_posts").select("*").eq("status", "posted").order("created_at", { ascending: false }).limit(30);
-  return NextResponse.json({ queued: queued || [], posted: posted || [] });
+  // Rows the pre-publish QC held back (broken render / failed check) — surfaced so a
+  // human can eyeball them; the script field carries the "[QC HOLD] ..." reason.
+  const { data: review } = await supabaseAdmin
+    .from("content_posts").select("*").eq("status", "needs_review").order("created_at", { ascending: false }).limit(50);
+  return NextResponse.json({ queued: queued || [], posted: posted || [], needsReview: review || [] });
 }
 
 export async function PATCH(req: NextRequest) {
   try {
     const { id, status } = await req.json();
-    if (!id || !["queued", "posted", "skipped"].includes(status)) {
+    if (!id || !["queued", "posted", "skipped", "needs_review"].includes(status)) {
       return NextResponse.json({ error: "id + valid status required" }, { status: 400 });
     }
     const { data, error } = await supabaseAdmin.from("content_posts").update({ status }).eq("id", id).select().single();

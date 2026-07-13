@@ -24,7 +24,7 @@ export async function generateStoryboard(topic = "", nBeats = 5): Promise<Storyb
 
 ${MARK_INFORMATIONAL}
 
-You are storyboarding a SHORT, FUN, EDUCATIONAL animated cartoon (9:16 vertical, ~25-40 seconds) starring MARK the golden owl. It must be genuinely entertaining to watch AND teach one real mortgage concept so the viewer wants to apply. Think top-tier fintech "explainer short": a scroll-stopping hook, 2-3 quick teaching beats with a vivid cartoon scene each, then a direct call to apply.
+You are storyboarding a SHORT, FUN, EDUCATIONAL animated cartoon (9:16 vertical, ~25-40 seconds) starring MARK the golden owl. MARK is a REAL OWL whose arms are feathered WINGS — wings only, never human hands, arms, or fingers. Any time a scene shows Mark holding, pointing at, or handling an object, he does it with his feathered wingtips, never a human hand. It must be genuinely entertaining to watch AND teach one real mortgage concept so the viewer wants to apply. Think top-tier fintech "explainer short": a scroll-stopping hook, 2-3 quick teaching beats with a vivid cartoon scene each, then a direct call to apply.
 
 Return STRICT JSON: {"title": "...", "product": "...", "beats": [ ... ]} with EXACTLY ${n} beats.
 - beats[0].kind = "hook"; the last beat.kind = "cta"; the middle beats.kind = "teach".
@@ -33,9 +33,9 @@ Each beat object:
 - vo: Mark's first-person spoken line for THIS scene only (1-2 short sentences, ~3-7 seconds spoken). Conversational, energetic, accurate.
 - caption: <= 6 words, the on-screen kinetic text for this scene (punchy).
 - bigText: OPTIONAL short punchy number/phrase to animate big on screen (e.g. "0% income docs", "1.0 DSCR", "2 min"). Omit if not useful.
-- bgPrompt: a CARTOON SCENE illustration description for THIS beat — vibrant flat-vector cartoon, bold clean outlines, bright colors, depicting the concept (e.g. "a cheerful cartoon rental house with green dollar arrows flowing in", "a cartoon bank vault opening", "a happy cartoon investor holding keys"). NO text, NO words, NO logos in the image.
+- bgPrompt: a CARTOON SCENE illustration description for THIS beat — vibrant flat-vector cartoon, bold clean outlines, bright colors, depicting the concept (e.g. "a cheerful cartoon rental house with green dollar arrows flowing in", "a cartoon bank vault opening", "a happy cartoon investor holding keys"). NO text, NO words, NO logos in the image. If MARK the owl appears in the scene, he MUST be drawn as an owl with feathered WINGS only — never human hands, arms, or fingers — holding or gesturing with his wingtips; append "no human hands, no fingers on Mark — wings only" to any bgPrompt that features Mark.
 
-Rules: the LAST beat's vo MUST end with "${MARK_COMPANY_SIGNOFF}" and its caption MUST be a direct apply CTA (e.g. "Apply in 2 minutes"). Teach accurately; compliant (NO rate or approval promises, no guarantees); Mark says "we've got the money"/"we fund it", NEVER "find your money". Topic focus: ${topic || "pick one high-interest mortgage topic (DSCR, bank-statement, fix & flip, cash-out refi, first-time buyer myths)"}.`;
+Rules: the LAST beat's vo MUST end with "${MARK_COMPANY_SIGNOFF}" and its caption MUST be a direct apply CTA (e.g. "Apply in 2 minutes"). Teach accurately; compliant (NO rate or approval promises, no guarantees); Mark says "we get it funded"/"we get it done"/"the loans banks won't", NEVER "find your money" and NEVER "our own capital" (keep the funding source open — we're a lender AND broker). Topic focus: ${topic || "pick one high-interest mortgage topic (DSCR, bank-statement, fix & flip, cash-out refi, first-time buyer myths)"}.`;
   try {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -86,7 +86,7 @@ Return STRICT JSON: {"concepts":[ ... ]}. Each concept object:
 - line: Mark's first-person voiceover, ~15-30 seconds spoken — teach how the product works AND how THEY'd use it for their situation, then a DIRECT call to apply now ("Tap the link and get pre-qualified today — no credit pull to start."); MUST end with "${MARK_COMPANY_SIGNOFF}"
 - prompt: a real-estate/finance photo description for the AI background (photorealistic, bright; NO text, NO logos, NO words)
 
-Rules: vary the topics across the ${n} concepts; teach accurately so the how-to is real; drive an application now (not "let's talk later"); compliant (NO rate or approval promises, no guarantees); Mark says "we've got the money"/"we fund it", NEVER "find your money".`;
+Rules: vary the topics across the ${n} concepts; teach accurately so the how-to is real; drive an application now (not "let's talk later"); compliant (NO rate or approval promises, no guarantees); Mark says "we get it funded"/"we get it done"/"the loans banks won't", NEVER "find your money" and NEVER "our own capital" (keep the funding source open — we're a lender AND broker).`;
   try {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",

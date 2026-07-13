@@ -39,6 +39,14 @@ export async function GET(req: NextRequest) {
       .eq("id", pick.id).eq("status", "scheduled").select("id");
     if (!claimed?.length) return NextResponse.json({ ok: true, due: 0, note: "claimed by another run" });
 
+    // Final pre-publish guard: never post a media row without usable media (belt to
+    // the vision QC at generation time — a needs_review row must never reach here).
+    if ((pick.type === "image" || pick.type === "reel_video") && !pick.image_url) {
+      await supabaseAdmin.from("content_posts").update({ status: "needs_review" }).eq("id", pick.id);
+      await logActivity({ entity_type: "org", entity_id: pick.id, actor: "agent:publisher", action: "content.qc_held", detail: { reason: "no media at publish" } }).catch(() => {});
+      return NextResponse.json({ ok: true, held: "no media" });
+    }
+
     try {
       const res = await publishPost(pick);
       if (res.connected && res.channels.some((c) => c.ok)) {

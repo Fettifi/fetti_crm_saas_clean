@@ -43,7 +43,8 @@ async function run(topic = "") {
       return { ok: true, created: (data || []).length, auto_scheduled: null, note: "auto slot already scheduled/posted" };
     }
     // tiktok_daily cards are TikTok-only (9:16, manual) — never IG/FB auto-publish.
-    const candidates = ((data || []) as any[]).filter((r) => r.type !== "tiktok_daily");
+    // tiktok_daily = TikTok-only; needs_review = held by pre-publish QC → never auto-schedule.
+    const candidates = ((data || []) as any[]).filter((r) => r.type !== "tiktok_daily" && r.status === "queued");
     // Include still-queued episode reels from EARLIER batches — an episode queued
     // on a day whose auto slot was already used must still get its shot the next day.
     const { data: queuedReels } = await supabaseAdmin.from("content_posts")

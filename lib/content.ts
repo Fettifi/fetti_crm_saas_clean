@@ -6,6 +6,7 @@
 // generated/stock image), and published episodes auto-queue as real Reels so the
 // show itself is what spreads.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { reviewImage } from "@/lib/contentQC";
 import { BRAND_BRIEF, CONTENT_PERSONALITY, CEDI_PERSONA } from "@/lib/brand";
 import { SHOW, RAY, MARK } from "@/lib/show/showBible";
 import { getSetting } from "@/lib/settings";
@@ -230,16 +231,26 @@ export async function generateBatch(topic = ""): Promise<Record<string, unknown>
   const imgPost = posts[3] || posts[0];
   if (imgPost) {
     const image_url = await composeBrandCard();
+    // PRE-PUBLISH QC — hold a broken render as needs_review instead of auto-queueing.
+    const imgQC = await reviewImage({ url: image_url || undefined, kind: "brand social image", expectText: imgPost.hook });
+    if (image_url) console.log(`[content] QC image: ${imgQC.severity}${imgQC.issues.length ? " — " + imgQC.issues.join("; ") : ""}`);
     rows.push({
-      platform: "all", type: "image", hook: imgPost.hook, script: imgPost.script || "", caption: imgPost.caption,
-      hashtags: imgPost.hashtags, image_url, status: "queued", scheduled_for: today, source: "auto",
+      platform: "all", type: "image", hook: imgPost.hook,
+      script: imgQC.pass && image_url ? (imgPost.script || "") : `[QC HOLD] ${imgQC.issues.join(" | ") || imgQC.notes || "no image"}`.slice(0, 500),
+      caption: imgPost.caption,
+      hashtags: imgPost.hashtags, image_url, status: image_url && imgQC.pass ? "queued" : "needs_review", scheduled_for: today, source: "auto",
     });
 
     // DAILY TIKTOK ASSET (coincides with the day's IG/FB post — same hook/message,
     // but 9:16 TikTok-native + full baked caption for manual paste). status
     // "tiktok_only" so the IG/FB auto-publisher never touches it. Served by
     // /tiktok-today for the daily grab-download-post-add-music ritual.
-    const ttCard = await composeTikTokCard(imgPost.hook || posts[0]?.hook || "We do money");
+    const ttHook = imgPost.hook || posts[0]?.hook || "We do money";
+    const ttCard = await composeTikTokCard(ttHook);
+    // PRE-PUBLISH QC — this is the exact path where the opentype tofu bug appeared;
+    // the hook is burned onto the image, so QC checks it renders correctly.
+    const ttQC = await reviewImage({ url: ttCard || undefined, kind: "TikTok card with burned-in headline", expectText: ttHook });
+    if (ttCard) console.log(`[content] QC tiktok: ${ttQC.severity}${ttQC.issues.length ? " — " + ttQC.issues.join("; ") : ""}`);
     const ttCaption = [
       imgPost.caption,
       imgPost.hashtags,
@@ -247,8 +258,10 @@ export async function generateBatch(topic = ""): Promise<Record<string, unknown>
       SOCIAL_DISCLOSURE,
     ].filter(Boolean).join("\n\n");
     rows.push({
-      platform: "tiktok", type: "tiktok_daily", hook: imgPost.hook, script: "", caption: ttCaption,
-      hashtags: imgPost.hashtags, image_url: ttCard, status: "tiktok_only", scheduled_for: today,
+      platform: "tiktok", type: "tiktok_daily", hook: imgPost.hook,
+      script: ttQC.pass && ttCard ? "" : `[QC HOLD] ${ttQC.issues.join(" | ") || ttQC.notes || "no image"}`.slice(0, 500),
+      caption: ttCaption,
+      hashtags: imgPost.hashtags, image_url: ttCard, status: ttCard && ttQC.pass ? "tiktok_only" : "needs_review", scheduled_for: today,
       source: "tiktok_daily_" + today,
     });
   }

@@ -19,6 +19,7 @@ function CopyBtn({ text }: { text: string }) {
 
 export default function ContentStudio() {
   const [queued, setQueued] = useState<Post[]>([]);
+  const [review, setReview] = useState<Post[]>([]);
   const [postedCount, setPostedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [gen, setGen] = useState(false);
@@ -27,7 +28,7 @@ export default function ContentStudio() {
   const [tt, setTt] = useState<any>(null);
   async function load() {
     const r = await fetch("/api/content"); const j = await r.json();
-    setQueued(j.queued || []); setPostedCount((j.posted || []).length); setLoading(false);
+    setQueued(j.queued || []); setReview(j.needsReview || []); setPostedCount((j.posted || []).length); setLoading(false);
     fetch("/api/meta/status").then((x) => x.json()).then(setMeta).catch(() => {});
     fetch("/api/tiktok/status").then((x) => x.json()).then(setTt).catch(() => {});
   }
@@ -56,6 +57,7 @@ export default function ContentStudio() {
   const [flash, setFlash] = useState<string | null>(null);
   async function setStatus(id: string, status: string) {
     setQueued((q) => q.filter((p) => p.id !== id));
+    setReview((q) => q.filter((p) => p.id !== id));
     await fetch("/api/content", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
     if (status === "posted") setPostedCount((c) => c + 1);
   }
@@ -120,6 +122,32 @@ export default function ContentStudio() {
           <div className="text-center py-16 text-slate-500">
             <CalendarClock className="w-10 h-10 mx-auto mb-3 text-emerald-400/50" />
             Your queue is empty. Hit <b className="text-slate-300">Generate now</b> to create a batch instantly — or wait for tomorrow morning&apos;s auto-drop.
+          </div>
+        )}
+
+        {review.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-amber-500/40 bg-amber-500/5 p-5">
+            <div className="flex items-center gap-2 text-amber-300 font-semibold">⚠️ Held by pre-publish review ({review.length})</div>
+            <p className="text-xs text-amber-200/70 mt-1">Our automatic once-over flagged these before posting. Fix or regenerate — approve only if it actually looks right.</p>
+            <div className="space-y-4 mt-4">
+              {review.map((p) => (
+                <div key={p.id} className="bg-slate-900/60 border border-amber-500/20 rounded-xl p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300">{p.type === "image" ? "🖼️ Image" : p.type === "tiktok_daily" ? "🎵 TikTok" : "🎬 Reel"}</span>
+                    <span className="text-[11px] text-slate-600">{new Date(p.created_at).toLocaleDateString()}</span>
+                  </div>
+                  {p.script?.startsWith("[QC HOLD]") && (
+                    <div className="mt-2 text-xs text-amber-200 bg-amber-500/10 rounded-md px-3 py-2">🔎 {p.script.replace("[QC HOLD]", "").trim()}</div>
+                  )}
+                  {p.image_url && <Image src={p.image_url} alt="" width={1024} height={1024} unoptimized className="rounded-xl w-full max-w-xs mt-3" />}
+                  <div className="mt-2 font-medium text-sm">🎯 {p.hook}</div>
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    <button onClick={() => setStatus(p.id, "queued")} className="text-xs px-3 py-1.5 rounded-md bg-emerald-600/80 hover:bg-emerald-500 font-semibold">Looks fine — approve</button>
+                    <button onClick={() => setStatus(p.id, "skipped")} className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-400">Dismiss</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
