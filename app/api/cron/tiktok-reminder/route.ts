@@ -22,8 +22,13 @@ export async function GET(req: NextRequest) {
       .select("hook").eq("type", "reel_video").gte("scheduled_for", today)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     const { data: card } = await supabaseAdmin.from("content_posts")
-      .select("hook").eq("type", "tiktok_daily").eq("scheduled_for", today)
+      .select("hook").eq("type", "tiktok_daily").eq("status", "tiktok_only").eq("scheduled_for", today)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    // Nothing valid to post today (no episode + card held/absent) → don't nudge to an
+    // empty page; skip the reminder rather than drive to a broken card.
+    if (!ep && !card) {
+      return NextResponse.json({ ok: true, sent: false, note: "no ready TikTok asset today" });
+    }
     const isEpisode = !!ep;
     const hook = (ep?.hook || card?.hook || "Today's Fetti post").toString();
     const link = `${APP}/tiktok-today`;

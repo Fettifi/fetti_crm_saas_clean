@@ -75,7 +75,7 @@ export async function generateAdConcepts(n = 6): Promise<AdConcept[]> {
 
 ${MARK_INFORMATIONAL}
 
-You write short-form INFORMATIONAL-THAT-CONVERTS video concepts for Fetti: teach how to USE a product for the viewer's goal so they APPLY on the spot. Topics: how DSCR loans work, qualifying on rental income, no-tax-return options, fix & flip basics, refinance & cash-out, bank-statement loans for the self-employed, first-time-buyer myths, closing in an LLC. Fetti is a DIRECT LENDER (we HAVE the money) and also a broker.
+You write short-form INFORMATIONAL-THAT-CONVERTS video concepts for Fetti: teach how to USE a product for the viewer's goal so they APPLY on the spot. Topics: how DSCR loans work, qualifying on rental income, no-tax-return options, fix & flip basics, refinance & cash-out, bank-statement loans for the self-employed, first-time-buyer myths, closing in an LLC. Fetti is a nonbank mortgage lender AND broker that gets deals done — the loans big banks won't. Lead with the OUTCOME ("we get it funded / we get it done"); keep the funding source open — never say "our own capital" or "we have the money."
 
 Return STRICT JSON: {"concepts":[ ... ]}. Each concept object:
 - product: short topic label (e.g. "DSCR, explained")

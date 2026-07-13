@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { publishPost } from "@/lib/publish";
+import { integrityOk } from "@/lib/contentQC";
 import { logActivity } from "@/lib/activity";
 import { cfg } from "@/lib/settings";
 
@@ -39,12 +40,18 @@ export async function GET(req: NextRequest) {
       .eq("id", pick.id).eq("status", "scheduled").select("id");
     if (!claimed?.length) return NextResponse.json({ ok: true, due: 0, note: "claimed by another run" });
 
-    // Final pre-publish guard: never post a media row without usable media (belt to
-    // the vision QC at generation time — a needs_review row must never reach here).
+    // Final pre-publish guard (belt to the generation-time QC): never post a media
+    // row without usable media, and re-decode image assets so a garbled/blank render
+    // or a row scheduled before QC existed can't slip through on its old slot.
     if ((pick.type === "image" || pick.type === "reel_video") && !pick.image_url) {
       await supabaseAdmin.from("content_posts").update({ status: "needs_review" }).eq("id", pick.id);
       await logActivity({ entity_type: "org", entity_id: pick.id, actor: "agent:publisher", action: "content.qc_held", detail: { reason: "no media at publish" } }).catch(() => {});
       return NextResponse.json({ ok: true, held: "no media" });
+    }
+    if (pick.type === "image" && !(await integrityOk(pick.image_url))) {
+      await supabaseAdmin.from("content_posts").update({ status: "needs_review" }).eq("id", pick.id);
+      await logActivity({ entity_type: "org", entity_id: pick.id, actor: "agent:publisher", action: "content.qc_held", detail: { reason: "image integrity at publish" } }).catch(() => {});
+      return NextResponse.json({ ok: true, held: "integrity" });
     }
 
     try {

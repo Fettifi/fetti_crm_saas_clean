@@ -11,18 +11,19 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const today = new Date().toISOString().slice(0, 10);
+    // Only surface QC-PASSED cards (status tiktok_only) — never a needs_review hold.
     const { data: card } = await supabaseAdmin
       .from("content_posts")
       .select("id, hook, caption, image_url, created_at, status")
-      .eq("type", "tiktok_daily").eq("scheduled_for", today)
+      .eq("type", "tiktok_daily").eq("status", "tiktok_only").eq("scheduled_for", today)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
 
-    // Fallback to the most recent tiktok_daily if today's hasn't generated yet.
+    // Fallback to the most recent PASSED tiktok_daily if today's hasn't generated yet.
     let daily = card;
     if (!daily) {
       const { data: latest } = await supabaseAdmin
         .from("content_posts").select("id, hook, caption, image_url, created_at, status")
-        .eq("type", "tiktok_daily").order("created_at", { ascending: false }).limit(1).maybeSingle();
+        .eq("type", "tiktok_daily").eq("status", "tiktok_only").order("created_at", { ascending: false }).limit(1).maybeSingle();
       daily = latest || null;
     }
 

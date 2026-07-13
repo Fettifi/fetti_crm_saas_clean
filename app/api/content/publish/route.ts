@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { publishPost } from "@/lib/publish";
+import { integrityOk } from "@/lib/contentQC";
 import { logActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,20 @@ export async function POST(req: NextRequest) {
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
     const { data: post } = await supabaseAdmin.from("content_posts").select("*").eq("id", id).maybeSingle();
     if (!post) return NextResponse.json({ error: "not found" }, { status: 404 });
+    // Never publish a QC-held row — it must be approved (→ "queued") from the review
+    // lane first. Only queued/scheduled rows are publishable.
+    if (!["queued", "scheduled"].includes(post.status)) {
+      return NextResponse.json({ error: `not approved for publish (status: ${post.status})`, posted: false }, { status: 409 });
+    }
+    // Media guard: a media row must have a usable, decodable asset.
+    if ((post.type === "image" || post.type === "reel_video") && !post.image_url) {
+      await supabaseAdmin.from("content_posts").update({ status: "needs_review" }).eq("id", id);
+      return NextResponse.json({ error: "no media — held for review", posted: false }, { status: 409 });
+    }
+    if (post.type === "image" && !(await integrityOk(post.image_url))) {
+      await supabaseAdmin.from("content_posts").update({ status: "needs_review" }).eq("id", id);
+      return NextResponse.json({ error: "image failed integrity check — held for review", posted: false }, { status: 409 });
+    }
 
     const result = await publishPost(post);
     const anyOk = result.channels.some((c) => c.ok);

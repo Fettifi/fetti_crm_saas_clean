@@ -232,7 +232,10 @@ export async function generateBatch(topic = ""): Promise<Record<string, unknown>
   if (imgPost) {
     const image_url = await composeBrandCard();
     // PRE-PUBLISH QC — hold a broken render as needs_review instead of auto-queueing.
-    const imgQC = await reviewImage({ url: image_url || undefined, kind: "brand social image", expectText: imgPost.hook });
+    // Brand card is a curated scene crop with NO burned-in headline — do NOT pass
+    // expectText (it would false-fail on a missing headline). The TikTok card below
+    // DOES burn the hook, so it keeps expectText.
+    const imgQC = await reviewImage({ url: image_url || undefined, kind: "brand social image", minW: 900, minH: 1100 });
     if (image_url) console.log(`[content] QC image: ${imgQC.severity}${imgQC.issues.length ? " — " + imgQC.issues.join("; ") : ""}`);
     rows.push({
       platform: "all", type: "image", hook: imgPost.hook,
@@ -249,7 +252,7 @@ export async function generateBatch(topic = ""): Promise<Record<string, unknown>
     const ttCard = await composeTikTokCard(ttHook);
     // PRE-PUBLISH QC — this is the exact path where the opentype tofu bug appeared;
     // the hook is burned onto the image, so QC checks it renders correctly.
-    const ttQC = await reviewImage({ url: ttCard || undefined, kind: "TikTok card with burned-in headline", expectText: ttHook });
+    const ttQC = await reviewImage({ url: ttCard || undefined, kind: "TikTok card with burned-in headline", expectText: ttHook, minW: 900, minH: 1500 });
     if (ttCard) console.log(`[content] QC tiktok: ${ttQC.severity}${ttQC.issues.length ? " — " + ttQC.issues.join("; ") : ""}`);
     const ttCaption = [
       imgPost.caption,
