@@ -40,7 +40,7 @@ export default function MarkChat() {
       {!open && (
         <button onClick={() => setOpen(true)} aria-label="Chat with Mark"
           className="fixed bottom-4 right-4 z-[90] flex items-center gap-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl pl-1.5 pr-4 py-1.5 transition">
-          <img src="/mark-owl.png" alt="" className="h-10 w-auto drop-shadow" />
+          <img src="/mark-owl.png?v=vest" alt="" className="h-10 w-auto drop-shadow" />
           <span className="text-sm font-semibold">Chat with Mark</span>
         </button>
       )}
@@ -49,7 +49,7 @@ export default function MarkChat() {
         <div className="fixed z-[90] inset-x-0 bottom-0 sm:inset-x-auto sm:right-4 sm:bottom-4 sm:w-[380px]">
           <div className="mx-2 mb-2 sm:mx-0 sm:mb-0 rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col h-[70vh] sm:h-[560px] overflow-hidden">
             <div className="flex items-center gap-2 bg-slate-900 text-white px-3 py-2.5 shrink-0">
-              <img src="/mark-owl.png" alt="Mark" className="h-10 w-auto" />
+              <img src="/mark-owl.png?v=vest" alt="Mark" className="h-10 w-auto" />
               <div className="leading-tight">
                 <div className="text-sm font-bold">Mark</div>
                 <div className="text-[10px] text-slate-300">Fetti AI assistant · NMLS #2267023</div>

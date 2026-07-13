@@ -33,7 +33,7 @@ const TEMPLATES = [
     hooks: ["Fund your next flip.", "Purchase + rehab, covered.", "Close fast on flips."],
     line: "Mark here. Found a flip? We fund the purchase and the rehab, close fast, and keep you interest-only through the project. You move quick — we move quicker. Let's fund it. Fetti. We do money.",
     prompt: "house mid-renovation with fresh exterior remodel, bright" },
-  { key: "Refinance", headline: "Lower Your Payment", sub: "Cut your rate or tap your equity — we fund it directly.", cta: "See my rate",
+  { key: "Refinance", headline: "Lower Your Payment", sub: "Cut your rate or tap your equity — we get it funded.", cta: "See my rate",
     hooks: ["Lower your payment.", "The loan your bank won't do.", "Tap your home's equity."],
     line: "I'm Mark, with Fetti. Looking for a lower payment, or cash from your home? We're a nonbank lender — we get it funded, including the refinances banks turn down. See your numbers in two minutes. Fetti. We do money.",
     prompt: "warm inviting suburban home exterior, lush landscaping, sunny" },
@@ -257,7 +257,7 @@ export default function CreativeStudio() {
   }, [fmt, editorScene]);
 
   useEffect(() => { const i = new Image(); i.src = "/fetti-emblem.png"; i.onload = () => { embRef.current = i; draw(); }; }, [draw]);
-  useEffect(() => { const i = new Image(); i.src = "/mark-golden-owl.png"; i.onload = () => { markRef.current = i; draw(); }; }, [draw]);
+  useEffect(() => { const i = new Image(); i.src = "/mark-golden-owl.png?v=vest"; i.onload = () => { markRef.current = i; draw(); }; }, [draw]);
   useEffect(() => { draw(); }, [draw]);
   // Load the auto-generated (daily-refreshed) idea queue on mount.
   useEffect(() => { (async () => { try { const r = await fetch("/api/studio/ideas"); if (r.ok) { const j = await r.json(); setIdeas(j.concepts || []); } } catch { /* */ } })(); }, []);

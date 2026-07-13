@@ -8,7 +8,7 @@ export function CediBubble({
   return (
     <div className={`flex w-full max-w-full items-end gap-2 sm:gap-3 ${center ? "justify-center" : ""} ${className}`}>
       <img
-        src="/mark-owl.png"
+        src="/mark-owl.png?v=vest"
         alt="Mark. The all-knowing Fetti owl"
         width={Math.round(size * 0.69)}
         height={size}

@@ -119,7 +119,7 @@ export default function AdsPage() {
             <List title="Headlines (mix for both)" items={["Cash-Out Your Rental Equity", "DSCR Cash-Out Refi", "Refi On Rental Income, No Tax Returns", "Lower Your Rate & Payment", "Tap Your Home Equity", "Pull Cash To Buy Your Next Deal", "Lender & Broker — Best Terms", "Pre-Qualify In 2 Minutes", "Shorten Your Term", "Fetti Financial · NMLS 2267023"]} />
             <List title="Descriptions" items={[
               "Pull equity from your rentals to fund the next deal. Qualify on cash flow, not tax returns.",
-              "Lower your payment or cash out. A nonbank lender that funds your refi directly — no games.",
+              "Lower your payment or cash out. A nonbank lender that gets your refi done — no games.",
               "DSCR refi closes in an LLC, nationwide. Pre-qualify with no credit pull to start.",
             ]} />
             <div className="grid grid-cols-1 gap-2">
