@@ -137,12 +137,17 @@ export async function POST(req: NextRequest) {
     let cur = (raw.urla && typeof raw.urla === "object") ? raw.urla : assembleUrla(lead, loanFile);
     const read: { name: string; docType: string }[] = [];
     const failed: string[] = [];
-    for (const s of sources) {
-      let extracted: any = null;
-      try { extracted = await extractOne(key, s.buf, s.mediaType); } catch (e) { console.warn("[los/extract]", s.label, e); }
-      if (extracted && (extracted.borrower || extracted.assets)) {
-        cur = mergeIntoUrla(cur, extracted);
-        read.push({ name: s.label, docType: extracted.docType || "document" });
+    // Read every document IN PARALLEL — a file with many docs read sequentially blows
+    // past the function timeout before it can save (15 docs was ~8s parallel vs 5min+
+    // sequential). Merge in source order afterward so the result is deterministic.
+    const outcomes = await Promise.all(sources.map(async (s) => {
+      try { return { s, ex: await extractOne(key, s.buf, s.mediaType) }; }
+      catch (e) { console.warn("[los/extract]", s.label, e); return { s, ex: null as any }; }
+    }));
+    for (const { s, ex } of outcomes) {
+      if (ex && (ex.borrower || ex.assets)) {
+        cur = mergeIntoUrla(cur, ex);
+        read.push({ name: s.label, docType: ex.docType || "document" });
       } else failed.push(s.label);
     }
 
