@@ -49,13 +49,13 @@ export async function SocialProofWall({
       <section className="border-t border-slate-100 bg-white">
         <div className="mx-auto max-w-5xl px-6 py-14 text-center">
           <p className="mb-3 font-mono text-xs uppercase tracking-widest text-emerald-600">
-            Licensed · Regulated · Verified
+            Licensed · Regulated · Real
           </p>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            A lender you can actually check.
+            A licensed lender built to get it done.
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-slate-500">
-            Verify our license on the national registry, then start in two minutes — no credit impact.
+            Fully licensed and regulated — and built for the deals big banks won&apos;t. Start in two minutes, no credit impact.
           </p>
           <div className="mt-8">
             <TrustBadgeRow />

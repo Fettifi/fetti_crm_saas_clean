@@ -72,8 +72,7 @@ export default function AboutPage() {
 
         <h2 className={H2}>Licensing &amp; credentials</h2>
         <p className="text-slate-700 leading-relaxed">
-          Fetti Financial Services LLC is licensed and regulated. You can verify the company and Ramon Dent on the
-          official <a href="https://www.nmlsconsumeraccess.org" target="_blank" rel="noreferrer" className="text-emerald-700 underline">NMLS Consumer Access</a> registry.
+          Fetti Financial Services LLC is a fully licensed and regulated mortgage lender, NMLS #2267023, founded by Ramon Dent (NMLS #2235992).
         </p>
         <p className="text-xs text-slate-500 mt-3 leading-relaxed">{LICENSING_NOTE}</p>
 
