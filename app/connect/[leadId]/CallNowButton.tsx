@@ -18,7 +18,7 @@ export default function CallNowButton({ leadId, t }: { leadId: string; t: string
   };
 
   if (state === "calling")
-    return <div style={{ padding: "18px 20px", borderRadius: 16, background: "#052e1a", border: "1px solid #10b981", color: "#d1fae5", fontWeight: 600 }}>📞 Connecting you now — your phone will ring in about a minute. Answer and you&apos;re straight through to our team.</div>;
+    return <div style={{ padding: "18px 20px", borderRadius: 16, background: "#052e1a", border: "1px solid #10b981", color: "#d1fae5", fontWeight: 600 }}>📞 Calling you now — your phone will ring in about a minute. Penny, our loan specialist, will answer any question you have, then set you up with Ramon.</div>;
   if (state === "team")
     return <div style={{ padding: "18px 20px", borderRadius: 16, background: "#0b1220", border: "1px solid #334155", color: "#cbd5e1", fontWeight: 600 }}>Got it — a member of our team will call you shortly. If you&apos;d like a set time, book one above.</div>;
   if (state === "err")
@@ -27,7 +27,7 @@ export default function CallNowButton({ leadId, t }: { leadId: string; t: string
   return (
     <button onClick={go} style={{ width: "100%", padding: "20px", borderRadius: 16, border: "none", background: "#e11d48", color: "#fff", fontSize: 18, fontWeight: 800, cursor: "pointer", textAlign: "left" }}>
       ☎️ Talk right now
-      <span style={{ display: "block", fontSize: 14, fontWeight: 500, opacity: 0.9, marginTop: 4 }}>We&apos;ll ring your phone and connect you with our team</span>
+      <span style={{ display: "block", fontSize: 14, fontWeight: 500, opacity: 0.9, marginTop: 4 }}>We&apos;ll call you — get every question answered on the spot</span>
     </button>
   );
 }
