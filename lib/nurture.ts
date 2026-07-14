@@ -44,27 +44,30 @@ const STEPS: { step: number; afterDays: number; msg: (name: string, purpose: str
   // see purpose at the send site. Do NOT add another "your"/"the" before ${p} (that
   // shipped the live "your your DSCR loan" automation tell). HOT_STEPS below follow
   // the same rule.
-  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's Mark at Fetti — I'm holding ${p} file open, ready when you are.` },
-  { step: 2, afterDays: 3, msg: (n, p) => `${n}, Mark again — about 3 minutes left on ${p} application, then I can pull real options. No credit pull.` },
-  { step: 3, afterDays: 7, msg: (n, p) => `Hi ${n} — even if you're early on ${p}, finishing now means your numbers are ready the day you are.` },
-  { step: 4, afterDays: 14, msg: (n, p) => `${n}, it's Mark — markets move, ${p} application doesn't. Whenever you finish, we work with that day's numbers.` },
-  { step: 5, afterDays: 30, msg: (n, p) => `Hi ${n}, Mark here — still have ${p} saved. If plans changed, tell me and I'll close it out; if not, you're minutes from done.` },
-  { step: 6, afterDays: 60, msg: (n, p) => `${n} — two months since you asked about ${p}. Rents and values drift; deals that didn't pencil then sometimes do now.` },
-  { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, last nudge from Mark on ${p} — your file stays open, nothing expires. Pick it up any time.` },
+  // Each message asks ONE genuine, low-friction question that invites a reply — that's
+  // what turns a delivered text into a conversation the concierge can work. NOT a one-way
+  // "finish your application" nag (real, reachable leads ignored those → ~0 replies).
+  { step: 1, afterDays: 1, msg: (n, p) => `Hey ${n}, it's Mark at Fetti (their AI assistant). You looked into ${p} — quick q so I point you the right way: buying, refinancing, or just seeing what's possible? (Txt STOP to opt out)` },
+  { step: 2, afterDays: 3, msg: (n, p) => `${n}, Mark again — on ${p}, what's the one number you'd want to know first: your rate, your monthly payment, or how much you'd need up front?` },
+  { step: 3, afterDays: 7, msg: (n, p) => `Hi ${n} — for ${p}, do you have a property + timeline in mind yet, or still early? Either way I can point you in the right direction.` },
+  { step: 4, afterDays: 14, msg: (n, p) => `${n}, it's Mark — anything about ${p} feel unclear or stuck? Tell me the confusing part and I'll break it down plain — no pitch.` },
+  { step: 5, afterDays: 30, msg: (n, p) => `Hi ${n} — still thinking about ${p}, or did plans shift? Totally fine either way; just let me know so I'm not bugging you.` },
+  { step: 6, afterDays: 60, msg: (n, p) => `${n} — been a couple months since you looked at ${p}. Rates and values move; a deal that didn't pencil then sometimes does now. Want me to take a fresh look?` },
+  { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, last check-in from Mark on ${p}. Door's open anytime — text back with a question and I've got you.` },
 ];
 
-// TIER-1 FAST LANE. A qualified lead is hot — don't drip them on the slow 1/3/7/14/30
-// cadence. Tighter touches, all pushing to FINISH THE APPLICATION (the conversion that
-// matters), because qualified leads go cold fast. Same step counter as STEPS; chosen by
-// tier below. STOP opt-out on every message (TCPA/CAN-SPAM).
+// TIER-1 FAST LANE. A qualified lead is hot — tighter cadence. Same reply-first rule as
+// STEPS: lead with a real question so the lead ENGAGES (the concierge then does the work
+// of getting them to finish). A pre-qualified lead ignored 7 "finish the application"
+// nags too. STOP opt-out on every message (TCPA/CAN-SPAM). Same step counter as STEPS.
 const HOT_STEPS: { step: number; afterDays: number; msg: (name: string, purpose: string) => string }[] = [
-  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's Mark with Fetti — good news on ${p}: from what you shared, you look pre-qualified. Let's lock it in — finish your application (2 min) and I'll get you real numbers + a pre-approval. (Reply STOP to opt out.)` },
-  { step: 2, afterDays: 2, msg: (n, p) => `Hi ${n}, Mark again — you're pre-qualified for ${p}. The sooner we finish the application, the sooner you close. Pick up here, or grab a quick call with me. (Reply STOP to opt out.)` },
-  { step: 3, afterDays: 4, msg: (n, p) => `Hi ${n}, Mark with Fetti — your ${p} is ready to move. 5 minutes to finish the application and I'll have your options + pre-approval same day. (Reply STOP to opt out.)` },
-  { step: 4, afterDays: 7, msg: (n, p) => `Hi ${n}, Mark — rates move daily, don't leave money on ${p}. Let's finish your application and lock your options now. (Reply STOP to opt out.)` },
-  { step: 5, afterDays: 12, msg: (n, p) => `Hi ${n}, Mark checking in — you pre-qualified for ${p} and I'd hate for it to stall. Two minutes to finish, or book a call and I'll do it with you. (Reply STOP to opt out.)` },
-  { step: 6, afterDays: 21, msg: (n, p) => `Hi ${n}, Mark at Fetti — still want to move on ${p}? You're pre-qualified; let's get the application done and get you funded. (Reply STOP to opt out.)` },
-  { step: 7, afterDays: 35, msg: (n, p) => `Hi ${n}, Mark — last nudge on ${p}. You qualified once; whenever you're ready, finish the application and we move fast. (Reply STOP to opt out.)` },
+  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's Mark at Fetti (I'm their AI — a real advisor's on your file too). Good news on ${p}: you look pre-qualified. Before I pull real numbers — got a property in mind, or still shopping? (Reply STOP to opt out.)` },
+  { step: 2, afterDays: 2, msg: (n, p) => `${n}, Mark again — to get ${p} numbers exact, what matters most to you: the lowest payment, the fastest close, or the least out of pocket? (Reply STOP to opt out.)` },
+  { step: 3, afterDays: 4, msg: (n, p) => `Hi ${n} — what's your rough timeline on ${p}? This month, a few months out, or just exploring? Helps me move at your pace. (Reply STOP to opt out.)` },
+  { step: 4, afterDays: 7, msg: (n, p) => `${n}, Mark — anything holding you up on ${p}? The rate, the down payment, the paperwork? Tell me the sticking point and I'll give you a straight answer. (Reply STOP to opt out.)` },
+  { step: 5, afterDays: 12, msg: (n, p) => `Hi ${n} — still want to move on ${p}? If yes, I'll get your options together today. If the timing shifted, just say so — either's completely fine. (Reply STOP to opt out.)` },
+  { step: 6, afterDays: 21, msg: (n, p) => `${n}, Mark at Fetti — on ${p}, what would need to be true for this to be a yes for you? Tell me and I'll work backwards from there. (Reply STOP to opt out.)` },
+  { step: 7, afterDays: 35, msg: (n, p) => `Hi ${n} — last note on ${p} for now. If anything changed or you've got a question, text me back and I'm on it. Otherwise I'll leave you be. (Reply STOP to opt out.)` },
 ];
 
 // After the 90-day drip, keep mining the lead forever: a value re-touch every

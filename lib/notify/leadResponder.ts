@@ -44,11 +44,15 @@ async function emailLead(l: LeadContact, fallbackBody: string) {
   // Channel-correct body: prefer email-specific copy; always scrub SMS-isms
   // ("Reply STOP/YES") that make an email read like spam.
   const body = scrubSmsIsms((l.emailBody && l.emailBody.trim()) || fallbackBody);
+  // Never send an empty email — a blank-body send is pure deliverability/reputation
+  // damage (and it happened: a live "Re: your FHA follow-up" went out with no body).
+  if (!body || !body.replace(/\s+/g, "")) return { ok: false as boolean, id: undefined as string | undefined, body: "" };
 
   // Human subject: prefer the touch-specific one; fall back to the panel's first-touch
   // subject pattern ("about your dscr loan") — short, lowercase, person-to-person.
-  const subject = (l.emailSubject && l.emailSubject.trim()) ||
-    renderTouch(EMAIL_TOUCHES.first_touch, { first_name: l.name, loan_purpose: l.loan_purpose }).subject;
+  const subject = ((l.emailSubject && l.emailSubject.trim()) ||
+    renderTouch(EMAIL_TOUCHES.first_touch, { first_name: l.name, loan_purpose: l.loan_purpose }).subject || "").trim()
+    || `a quick note about your ${(l.loan_purpose || "loan").toLowerCase()}`;
 
   // First touch stays a pure personal note (no CTA button — that's what made these read
   // as automation). Later kinds may carry the secure-link button since a doc/file
