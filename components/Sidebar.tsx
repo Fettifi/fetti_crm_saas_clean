@@ -7,38 +7,50 @@ import { LogOut } from "lucide-react";
 import { logActivity } from "@/lib/logger";
 import { createBrowserClient } from "@supabase/ssr";
 
-// Nav items matching the specialized screenshot
-const navItems = [
-  { href: "/rupee", label: "Rupee (AI Co-Founder)", icon: "🦉" },
-  { href: "/command", label: "Command Center", icon: "⚡" },
-  { href: "/", label: "Dashboard", icon: "📊" },
-  { href: "/leads", label: "Leads & Conversations", icon: "📋" },
-  { href: "/agents", label: "AI Agents", icon: "🧠" },
-  { href: "/growth", label: "Lead-Gen Launchpad", icon: "🚀" },
-  { href: "/funnel", label: "Funnel Analytics", icon: "📉" },
-  { href: "/ads", label: "Paid Ads Launch Kit", icon: "🎯" },
-  { href: "/content", label: "Content Studio", icon: "🎬" },
-  { href: "/studio", label: "Creative Studio", icon: "🎨" },
-  { href: "/show", label: "Ray & Mark Studio", icon: "🦉" },
-  { href: "/doctor", label: "CRM Doctor", icon: "🩺" },
-  { href: "/los", label: "Loan Files (LOS)", icon: "📁" },
-  { href: "/esign", label: "E-Sign", icon: "✍️" },
-  { href: "/pricing", label: "Pricing Comparison", icon: "💲" },
-  { href: "/pricer", label: "Quick Pricer", icon: "🧮" },
-  { href: "/income", label: "Income Calc", icon: "💵" },
-  { href: "/preapprovals", label: "Pre-Approvals", icon: "📝" },
-  { href: "/scenarios", label: "Scenario Desk", icon: "📑" },
-  { href: "/compare", label: "Loan Comparison", icon: "📊" },
-  { href: "/pipeline", label: "Pipeline", icon: "📈" },
-  { href: "/partners", label: "Referral Partners", icon: "🤝" },
-  { href: "/requests", label: "Requests", icon: "📥" },
-  { href: "/automations", label: "Automations", icon: "⚡" },
-  { href: "/settings", label: "Settings", icon: "⚙️" },
-  { href: "/security", label: "Security (MFA)", icon: "🔐" },
-  { href: "/team", label: "Team", icon: "👥" },
-  { href: "/training", label: "My Personal Assistant", icon: "🤖" },
-  { href: "/task-list", label: "Task List", icon: "✅" },
-  { href: "/roadmap", label: "Roadmap", icon: "🗺️" },
+// Nav grouped into scannable sections (architecture cleanup 2026-07-14). Removed from
+// nav — dead/misleading placeholders with no working backend: /pipeline (stub board,
+// /los covers it), /requests (empty scaffold), /automations (fake toggles; real engine
+// is on /funnel), /team (static stub), /training ("My Personal Assistant" that actually
+// mounts the borrower apply-chat; the real assistant is /rupee). The pages still exist;
+// they're just off the nav until built out or retired.
+const navSections = [
+  { section: "Home & AI", items: [
+    { href: "/", label: "Dashboard", icon: "📊" },
+    { href: "/rupee", label: "Rupee (AI Co-Founder)", icon: "🦉" },
+    { href: "/command", label: "Command Center", icon: "⚡" },
+    { href: "/agents", label: "AI Agents", icon: "🧠" },
+    { href: "/task-list", label: "Task List", icon: "✅" },
+  ] },
+  { section: "Pipeline & Leads", items: [
+    { href: "/leads", label: "Leads & Conversations", icon: "📋" },
+    { href: "/funnel", label: "Funnel Analytics", icon: "📉" },
+    { href: "/los", label: "Loan Files (LOS)", icon: "📁" },
+  ] },
+  { section: "Loan Tools", items: [
+    { href: "/pricer", label: "Quick Pricer", icon: "🧮" },
+    { href: "/income", label: "Income Calc", icon: "💵" },
+    { href: "/pricing", label: "Pricing Comparison", icon: "💲" },
+    { href: "/scenarios", label: "Scenario Desk", icon: "📑" },
+    { href: "/compare", label: "Loan Comparison", icon: "📊" },
+    { href: "/preapprovals", label: "Pre-Approvals", icon: "📝" },
+    { href: "/esign", label: "E-Sign", icon: "✍️" },
+  ] },
+  { section: "Marketing & Growth", items: [
+    { href: "/growth", label: "Lead-Gen Launchpad", icon: "🚀" },
+    { href: "/ads", label: "Paid Ads Launch Kit", icon: "🎯" },
+    { href: "/partners", label: "Referral Partners", icon: "🤝" },
+  ] },
+  { section: "Content & Creative", items: [
+    { href: "/content", label: "Content Studio", icon: "🎬" },
+    { href: "/studio", label: "Creative Studio", icon: "🎨" },
+    { href: "/show", label: "Ray & Mark Studio", icon: "🦉" },
+  ] },
+  { section: "System", items: [
+    { href: "/settings", label: "Settings", icon: "⚙️" },
+    { href: "/security", label: "Security (MFA)", icon: "🔐" },
+    { href: "/doctor", label: "CRM Doctor", icon: "🩺" },
+    { href: "/roadmap", label: "Roadmap", icon: "🗺️" },
+  ] },
 ];
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
@@ -82,39 +94,44 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
       </div>
 
       {/* Sidebar nav */}
-      <nav className="flex-1 space-y-0.5 px-3 py-6 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
-        {navItems.map((item) => {
-          const active =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
+      <nav className="flex-1 space-y-0.5 px-3 py-4 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
+        {navSections.map((sec) => (
+          <div key={sec.section} className="mb-1.5">
+            <p className="px-3 pt-3 pb-1 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-600">{sec.section}</p>
+            {sec.items.map((item) => {
+              const active =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href);
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => { logActivity('navigate_sidebar', { destination: item.href, label: item.label }); onNavigate?.(); }}
-              className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs transition-all duration-200 ${active
-                ? "bg-slate-800/80 text-emerald-400 font-medium border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]"
-                : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
-                }`}
-            >
-              {/* Active Indicator Dot */}
-              {active && (
-                <span className="absolute left-0 h-5 w-0.5 rounded-r-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-              )}
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => { logActivity('navigate_sidebar', { destination: item.href, label: item.label }); onNavigate?.(); }}
+                  className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs transition-all duration-200 ${active
+                    ? "bg-slate-800/80 text-emerald-400 font-medium border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]"
+                    : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                    }`}
+                >
+                  {/* Active Indicator Dot */}
+                  {active && (
+                    <span className="absolute left-0 h-5 w-0.5 rounded-r-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                  )}
 
-              <span className={`text-base ${active ? "scale-110" : "opacity-70 group-hover:scale-110 group-hover:opacity-100"} transition-transform`}>
-                {item.icon}
-              </span>
-              <span>{item.label}</span>
+                  <span className={`text-base ${active ? "scale-110" : "opacity-70 group-hover:scale-110 group-hover:opacity-100"} transition-transform`}>
+                    {item.icon}
+                  </span>
+                  <span>{item.label}</span>
 
-              {active && (
-                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.6)]" />
-              )}
-            </Link>
-          );
-        })}
+                  {active && (
+                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.6)]" />
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* Footer / User Profile */}
