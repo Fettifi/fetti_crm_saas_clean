@@ -9,6 +9,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { logComms } from "@/lib/comms";
 import { markSignatureLite } from "@/lib/notify/emailSignature";
+import { senderFrom } from "@/lib/notify/mailFrom";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   try {
     const key = process.env.RESEND_API_KEY;
-    const from = process.env.LEAD_RESPONSE_FROM_EMAIL;
+    const from = senderFrom();
     if (!key || !from) return NextResponse.json({ error: "Email isn't configured (RESEND_API_KEY / LEAD_RESPONSE_FROM_EMAIL)." }, { status: 503 });
 
     const form = await req.formData();

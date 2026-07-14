@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { buildIncomeWorksheetPdf, type WorksheetData } from "@/lib/incomePdf";
 import { logActivity } from "@/lib/activity";
 import { BRAND } from "@/lib/brand";
+import { senderFrom } from "@/lib/notify/mailFrom";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const bytes = await buildIncomeWorksheetPdf(data);
 
     const key = process.env.RESEND_API_KEY;
-    const from = process.env.LEAD_RESPONSE_FROM_EMAIL; // e.g. "Fetti Financial <hello@fettifi.com>"
+    const from = senderFrom(); // e.g. "Fetti Financial <hello@fettifi.com>"
     if (!key || !from) {
       return NextResponse.json({ error: "Email isn't configured on the server (RESEND_API_KEY / LEAD_RESPONSE_FROM_EMAIL)." }, { status: 503 });
     }

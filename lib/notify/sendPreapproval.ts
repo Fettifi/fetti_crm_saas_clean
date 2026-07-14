@@ -2,11 +2,13 @@
 // Both recipients are optional — only configured/provided ones get an email.
 // No-ops gracefully if Resend isn't configured.
 
+import { senderFrom } from "@/lib/notify/mailFrom";
+
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
 async function sendOne(to: string, subject: string, html: string, pdfB64: string, filename: string): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.LEAD_RESPONSE_FROM_EMAIL; // e.g. "Fetti Financial <hello@fettifi.com>"
+  const from = senderFrom(); // e.g. "Fetti Financial <hello@fettifi.com>"
   if (!key || !from) return false;
   try {
     const res = await fetch("https://api.resend.com/emails", {

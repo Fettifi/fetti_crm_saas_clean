@@ -13,9 +13,8 @@ const ASSET_BASE = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_S
 export async function markSignatureHtml(): Promise<string> {
   const phone = ((await cfg("OFFICE_PHONE")) || "").trim();
   const address = ((await cfg("COMPANY_MAILING_ADDRESS")) || "").trim();
-  const fromEnv = process.env.LEAD_RESPONSE_FROM_EMAIL || "";
-  const m = fromEnv.match(/<([^>]+)>/);
-  const contactEmail = ((await cfg("CONTACT_EMAIL")) || (m ? m[1] : "loans@fettifi.com")).trim();
+  // Monitored contact mailbox (see markSignatureLite) — never the unmonitored hello@ sender.
+  const contactEmail = ((await cfg("CONTACT_EMAIL")) || "frank@fettifi.com").trim();
 
   const emerald = "#0c7a52", slate = "#0f172a", body = "#475569", faint = "#94a3b8";
   const phonePart = phone
@@ -57,9 +56,10 @@ export async function markSignatureLite(unsubscribeUrl?: string): Promise<string
   const phone = ((await cfg("OFFICE_PHONE")) || "+1 424.675.6295").trim();
   const address = ((await cfg("COMPANY_MAILING_ADDRESS")) || "5777 W Century Blvd Suite 1435\nLos Angeles, CA 90045").trim();
   const addressHtml = address.split(/\n|,\s*(?=Los Angeles)/).map((l) => l.trim()).filter(Boolean).join(", ");
-  const fromEnv = process.env.LEAD_RESPONSE_FROM_EMAIL || "";
-  const fm = fromEnv.match(/<([^>]+)>/);
-  const email = ((await cfg("CONTACT_EMAIL")) || (fm ? fm[1] : "hello@fettifi.com")).trim();
+  // Displayed contact address. frank@fettifi.com is the ONE monitored mailbox (the CRM
+  // polls it via Graph; it's also the Reply-To), so borrowers who email it reach a human.
+  // Do NOT derive this from the send-domain sender — that was the unmonitored hello@.
+  const email = ((await cfg("CONTACT_EMAIL")) || "frank@fettifi.com").trim();
   const emerald = "#0c7a52", slate = "#0f172a", body = "#475569", faint = "#94a3b8";
   const unsub = unsubscribeUrl
     ? ` To stop receiving these, <a href="${unsubscribeUrl}" style="color:#cbd5e1">unsubscribe</a>.`

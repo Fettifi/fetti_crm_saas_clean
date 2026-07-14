@@ -7,6 +7,7 @@
 // isn't configured, and never throws.
 
 import { logComms } from "@/lib/comms";
+import { senderFrom } from "@/lib/notify/mailFrom";
 
 export type DocRequest = {
   to_name?: string | null;
@@ -34,7 +35,7 @@ function listHtml(docs: string[]): string {
 
 async function emailDocRequest(r: DocRequest): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.LEAD_RESPONSE_FROM_EMAIL; // e.g. "Fetti <hello@fettifi.com>"
+  const from = senderFrom(); // e.g. "Fetti <hello@fettifi.com>"
   if (!key || !from || !r.to_email) return false;
   const first = (r.to_name || "there").split(" ")[0];
   const who = r.lo_name || "Fetti Financial Services";
@@ -108,7 +109,7 @@ export type UploadLinkSend = {
 
 async function emailUploadLink(r: UploadLinkSend): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.LEAD_RESPONSE_FROM_EMAIL;
+  const from = senderFrom();
   if (!key || !from || !r.to_email) return false;
   const first = (r.to_name || "there").split(" ")[0];
   const who = r.lo_name || "Fetti Financial Services";
@@ -173,7 +174,7 @@ export type SignSend = {
 };
 async function emailSign(r: SignSend): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.LEAD_RESPONSE_FROM_EMAIL;
+  const from = senderFrom();
   if (!key || !from || !r.to_email) return false;
   const first = (r.to_name || "there").split(" ")[0];
   const who = r.lo_name || "Fetti Financial Services";

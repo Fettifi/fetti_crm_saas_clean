@@ -4,6 +4,7 @@ import { logActivity } from "@/lib/activity";
 import { advanceLeadStage } from "@/lib/leadStage";
 import { BRAND } from "@/lib/brand";
 import { LICENSING_NOTE } from "@/lib/legal";
+import { senderFrom } from "@/lib/notify/mailFrom";
 
 // ONE-TIME, MANUAL, EMAIL-ONLY re-engagement of historically-recovered Facebook
 // leads (raw.historical_import) that were correctly held from auto-contact (stale
@@ -40,7 +41,7 @@ function buildEmail(first: string): { subject: string; html: string } {
 
 async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.LEAD_RESPONSE_FROM_EMAIL;
+  const from = senderFrom();
   if (!key || !from) return false;
   try {
     const res = await fetch("https://api.resend.com/emails", {

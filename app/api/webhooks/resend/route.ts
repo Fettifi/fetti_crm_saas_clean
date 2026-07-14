@@ -13,6 +13,7 @@ import crypto from "crypto";
 import { listRequests, saveRequest } from "@/lib/esign";
 import { logActivity } from "@/lib/activity";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { senderFrom } from "@/lib/notify/mailFrom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ function verify(secret: string, h: Headers, body: string): boolean {
 }
 
 async function alertBounce(env: any, name: string, email: string, kind: string) {
-  const key = process.env.RESEND_API_KEY, from = process.env.LEAD_RESPONSE_FROM_EMAIL;
+  const key = process.env.RESEND_API_KEY, from = senderFrom();
   const to = process.env.LEAD_NOTIFY_EMAIL || "ramon@fettifi.com";
   if (!key || !from) return;
   const verb = kind === "complained" ? "was marked as spam by" : "could not be delivered to";

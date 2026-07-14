@@ -17,6 +17,7 @@ import { logActivity } from "@/lib/activity";
 import { unsubUrl } from "@/lib/notify/emailCopy";
 import { leadQuality, type LeadQuality } from "@/lib/leadQuality";
 import { leadReality, type LeadReality } from "@/lib/leadReality";
+import { senderFrom } from "@/lib/notify/mailFrom";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
@@ -103,7 +104,7 @@ export async function sendEmail(
 ): Promise<{ ok: boolean; id?: string; detail: string }> {
   try {
     const key = process.env.RESEND_API_KEY;
-    const from = process.env.LEAD_RESPONSE_FROM_EMAIL;
+    const from = senderFrom();
     if (!key || !from) return { ok: false, detail: "resend not configured" };
     if (!to) return { ok: false, detail: "no recipient email" };
     // Borrower replies must land where a human reads them, not the raw send alias.

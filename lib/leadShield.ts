@@ -20,6 +20,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { cfg, getSetting, setSetting } from "@/lib/settings";
 import { rateLimit } from "@/lib/rateLimit";
 import { logActivity } from "@/lib/activity";
+import { senderFrom } from "@/lib/notify/mailFrom";
 import { isDisposableDomain, FREEMAIL_DOMAINS } from "@/lib/disposableDomains";
 import crypto from "crypto";
 
@@ -585,7 +586,7 @@ export async function autoPromoteIfQuarantined(leadId: string, trigger: string):
 /** Gray-band verification email — template only, zero OpenAI, the self-promote path. */
 export async function sendVerificationEmail(lead: any): Promise<boolean> {
   try {
-    const key = process.env.RESEND_API_KEY, from = process.env.LEAD_RESPONSE_FROM_EMAIL;
+    const key = process.env.RESEND_API_KEY, from = senderFrom();
     if (!key || !from || !lead?.email) return false;
     const raw = (lead.raw && typeof lead.raw === "object" ? lead.raw : {}) as Record<string, any>;
     // Never mail a burner/dead box — that's handing junk a self-promote button.
@@ -620,7 +621,7 @@ If that wasn't you, just ignore this email and nothing happens.</div>${signature
 export async function notifyQuarantine(lead: any, v: ShieldVerdict): Promise<void> {
   try {
     if (v.band !== "gray" || lead?.tier !== "Tier 1") return;
-    const key = process.env.RESEND_API_KEY, from = process.env.LEAD_RESPONSE_FROM_EMAIL;
+    const key = process.env.RESEND_API_KEY, from = senderFrom();
     const to = (process.env.LEAD_NOTIFY_EMAIL_TO || "ramon@fettifi.com").trim();
     if (!key || !from) return;
     const app = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";

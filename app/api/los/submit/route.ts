@@ -4,6 +4,7 @@ import { assembleUrla, computeLoanMetrics } from "@/lib/urla";
 import { buildMismo34 } from "@/lib/mismo";
 import { getLenders } from "@/lib/pricing/lenders";
 import { logActivity } from "@/lib/activity";
+import { senderFrom } from "@/lib/notify/mailFrom";
 
 // Submit a loan file to a chosen wholesale lender: build the MISMO 3.4 file and
 // email it to the lender's submission address (with a borrower/loan summary).
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     const RESEND = process.env.RESEND_API_KEY;
     if (!RESEND) return NextResponse.json({ error: "Email not configured (RESEND_API_KEY)." }, { status: 503 });
-    const from = process.env.LEAD_RESPONSE_FROM_EMAIL || "Fetti Financial Services <files@fettifi.com>";
+    const from = senderFrom();
     const html = `<p>New loan submission from <b>Fetti Financial Services LLC</b> (NMLS #2267023).</p>
 <ul>
 <li><b>Borrower:</b> ${b.fullName || `${b.firstName || ""} ${b.lastName || ""}`}</li>

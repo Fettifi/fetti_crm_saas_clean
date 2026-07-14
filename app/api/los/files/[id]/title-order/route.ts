@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { buildTitleOrderPdf, type TitleOrderData } from "@/lib/titleOrderPdf";
 import { logActivity } from "@/lib/activity";
 import { logComms } from "@/lib/comms";
+import { senderFrom } from "@/lib/notify/mailFrom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const b = await req.json().catch(() => ({}));
   const toEmail = String(b.toEmail || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toEmail)) return NextResponse.json({ error: "A valid title-company email is required." }, { status: 400 });
-  const key = process.env.RESEND_API_KEY, from = process.env.LEAD_RESPONSE_FROM_EMAIL;
+  const key = process.env.RESEND_API_KEY, from = senderFrom();
   if (!key || !from) return NextResponse.json({ error: "Email isn't configured." }, { status: 503 });
   const r = await dataFor(id, b);
   if (!r) return NextResponse.json({ error: "Loan file not found" }, { status: 404 });

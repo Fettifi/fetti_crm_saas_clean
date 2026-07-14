@@ -5,6 +5,7 @@
 // needs RESEND_API_KEY (email) and/or Twilio creds (SMS).
 
 import { markSignatureLite } from "@/lib/notify/emailSignature";
+import { senderFrom } from "@/lib/notify/mailFrom";
 import { scrubSmsIsms, unsubUrl, renderTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
 import { cfg } from "@/lib/settings";
 import { logComms } from "@/lib/comms";
@@ -38,7 +39,7 @@ function defaultMessage(l: LeadContact): string {
 
 async function emailLead(l: LeadContact, fallbackBody: string) {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.LEAD_RESPONSE_FROM_EMAIL; // e.g. "Fetti <hello@fettifi.com>"
+  const from = senderFrom(); // e.g. "Fetti <hello@fettifi.com>"
   if (!key || !from || !l.email) return { ok: false as boolean, id: undefined as string | undefined, body: "" };
 
   // Channel-correct body: prefer email-specific copy; always scrub SMS-isms

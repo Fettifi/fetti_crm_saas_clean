@@ -8,6 +8,7 @@ import { getComparison, saveComparison, genId, comparisonNumber, type Comparison
 import { logComms } from "@/lib/comms";
 import { logActivity } from "@/lib/activity";
 import { BRAND } from "@/lib/brand";
+import { senderFrom } from "@/lib/notify/mailFrom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return NextResponse.json({ error: "A valid borrower email is required." }, { status: 400 });
 
     const key = process.env.RESEND_API_KEY;
-    const from = process.env.LEAD_RESPONSE_FROM_EMAIL;
+    const from = senderFrom();
     if (!key || !from) return NextResponse.json({ error: "Email isn't configured (RESEND_API_KEY / LEAD_RESPONSE_FROM_EMAIL)." }, { status: 503 });
 
     const bytes = await buildComparisonPdf(comparison);
