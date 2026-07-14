@@ -49,7 +49,7 @@ export default function AppChrome({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-50">
+    <div className="flex h-[100dvh] overflow-hidden bg-slate-950 text-slate-50">
       {/* Persistent sidebar on desktop */}
       <div className="hidden md:block shrink-0">
         <Sidebar />
@@ -72,9 +72,9 @@ export default function AppChrome({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <main className="flex-1 min-w-0 flex flex-col">
+      <main className="flex-1 min-w-0 flex flex-col min-h-0">
         {/* Top bar: Back (always) + menu (mobile) */}
-        <header className="sticky top-0 z-[60] flex items-center gap-2 border-b border-slate-900/80 bg-slate-950/80 backdrop-blur px-3 py-2">
+        <header className="shrink-0 z-[60] flex items-center gap-2 border-b border-slate-900/80 bg-slate-950/80 backdrop-blur px-3 py-2">
           <button
             onClick={() => setOpen(true)}
             className="md:hidden inline-flex items-center justify-center rounded-lg bg-slate-900 border border-slate-800 p-2 text-slate-200 hover:bg-slate-800"
@@ -90,7 +90,7 @@ export default function AppChrome({ children }: { children: ReactNode }) {
           </button>
         </header>
 
-        <div className="flex-1 min-w-0">{children}</div>
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto">{children}</div>
       </main>
     </div>
   );

@@ -186,9 +186,9 @@ export default function LeadWorkspace() {
   ];
 
   return (
-    <div className="flex h-[calc(100dvh-53px)] min-h-[460px] bg-slate-950 text-slate-100">
+    <div className="flex h-full min-h-0 overflow-hidden bg-slate-950 text-slate-100">
       {/* LEFT — lead list / table (hidden on mobile when a thread is open) */}
-      <div className={`${activeId && view === "inbox" ? "hidden md:flex" : "flex"} w-full ${view === "table" ? "" : "md:w-[22rem] lg:w-[26rem]"} shrink-0 border-r border-slate-900/80 flex-col min-w-0`}>
+      <div className={`${activeId && view === "inbox" ? "hidden md:flex" : "flex"} w-full ${view === "table" ? "" : "md:w-[22rem] lg:w-[26rem]"} shrink-0 border-r border-slate-900/80 flex-col min-w-0 min-h-0`}>
         <div className="px-4 pt-4 pb-2 border-b border-slate-900/80">
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-bold flex items-center gap-2"><Inbox className="w-5 h-5 text-emerald-400" /> Leads</h1>
@@ -280,7 +280,7 @@ export default function LeadWorkspace() {
 
       {/* RIGHT — thread + composer (hidden in table view; full-screen on mobile when open) */}
       {view === "inbox" && (
-        <div className={`${activeId ? "flex" : "hidden md:flex"} flex-1 min-w-0 flex-col`}>
+        <div className={`${activeId ? "flex" : "hidden md:flex"} flex-1 min-w-0 flex-col min-h-0`}>
           {!activeId ? (
             <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">Select a lead to view the conversation.</div>
           ) : (
