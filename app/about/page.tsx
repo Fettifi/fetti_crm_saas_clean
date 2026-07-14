@@ -22,14 +22,21 @@ const orgSchema = {
   identifier: "NMLS #2267023",
   founder: { "@type": "Person", name: "Ramon Dent", jobTitle: "Founder & Mortgage Solutions Specialist", identifier: "NMLS #2235992" },
   areaServed: "United States",
-  sameAs: ["https://www.nmlsconsumeraccess.org/EntityDetails.aspx/COMPANY/2267023"],
+  sameAs: [
+    "https://www.nmlsconsumeraccess.org/EntityDetails.aspx/COMPANY/2267023",
+    "https://www.linkedin.com/company/projectfetti",
+  ],
 };
 const personSchema = {
   "@context": "https://schema.org", "@type": "Person",
   name: "Ramon Dent", jobTitle: "Founder & Mortgage Solutions Specialist",
   worksFor: { "@type": "Organization", name: "Fetti Financial Services LLC", identifier: "NMLS #2267023" },
   identifier: "NMLS #2235992", url: "https://fettifi.com/about",
-  sameAs: ["https://www.nmlsconsumeraccess.org/EntityDetails.aspx/INDIVIDUAL/2235992"],
+  sameAs: [
+    "https://www.nmlsconsumeraccess.org/EntityDetails.aspx/INDIVIDUAL/2235992",
+    "https://www.linkedin.com/in/ramon-dent-3bb587239/",
+    "https://www.experience.com/reviews/ramon-dent-300719",
+  ],
 };
 
 export default function AboutPage() {
