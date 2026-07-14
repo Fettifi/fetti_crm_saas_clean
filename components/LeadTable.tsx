@@ -126,7 +126,7 @@ export default function LeadTable() {
         // exist, which made the whole query fail (PGRST200) and the leads page show
         // nothing. Select only real columns on the leads table.
         .select(
-          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, lead_source, tier, score, portal_viewed_at:raw->>portal_viewed_at, shield:raw->shield, deal_screen:raw->deal_screen"
+          "id, created_at, full_name, email, phone, state, loan_purpose, credit_band, stage, source, lead_source, tier, score, portal_viewed_at:raw->>portal_viewed_at, shield:raw->shield, deal_screen:raw->deal_screen, dup:raw->>duplicate_of"
         )
         .order("created_at", { ascending: false })
         .limit(200);
@@ -137,7 +137,8 @@ export default function LeadTable() {
         console.error(error);
         setError(error.message);
       } else if (data) {
-        setLeads(data as Lead[]);
+        // Hide neutralized duplicates (the surviving row is kept).
+        setLeads((data as any[]).filter((r) => !r.dup) as Lead[]);
       }
 
       setLoading(false);

@@ -437,7 +437,9 @@ export async function listPipeline(limit = 300): Promise<PipelineRow[]> {
     const { data: extra } = await supabaseAdmin.from("leads").select(LEAD_COLS).in("id", missing);
     for (const l of (extra || []) as any[]) leadMap.set(l.id, l);
   }
-  const leads = Array.from(leadMap.values());
+  // Neutralized duplicates (raw.duplicate_of set by the dedup reconciler / race guards)
+  // are hidden from the inbox — the surviving row carries the conversation.
+  const leads = Array.from(leadMap.values()).filter((l) => !(l.raw && l.raw.duplicate_of));
   if (!leads.length) return [];
   const idSet = new Set(leads.map((l) => l.id));
 
