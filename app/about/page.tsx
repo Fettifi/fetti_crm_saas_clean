@@ -20,7 +20,7 @@ const orgSchema = {
   name: "Fetti Financial Services LLC", url: "https://fettifi.com",
   description: "Licensed mortgage lender & broker. Home loans in FL, MI & CA; investment and business-purpose loans (DSCR, fix & flip, bridge, hard money, business) in all 50 states.",
   identifier: "NMLS #2267023",
-  founder: { "@type": "Person", name: "Ramon Dent", jobTitle: "Founder & Mortgage Solutions Specialist", identifier: "NMLS #2235992" },
+  founder: { "@type": "Person", name: "Ramon Dent", jobTitle: "Founder & Mortgage Solutions Specialist", identifier: "NMLS #2235992", image: "https://fettifi.com/ramon-dent.jpg" },
   areaServed: "United States",
   sameAs: [
     "https://www.nmlsconsumeraccess.org/EntityDetails.aspx/COMPANY/2267023",
@@ -32,10 +32,12 @@ const personSchema = {
   name: "Ramon Dent", jobTitle: "Founder & Mortgage Solutions Specialist",
   worksFor: { "@type": "Organization", name: "Fetti Financial Services LLC", identifier: "NMLS #2267023" },
   identifier: "NMLS #2235992", url: "https://fettifi.com/about",
+  image: "https://fettifi.com/ramon-dent.jpg",
   sameAs: [
     "https://www.nmlsconsumeraccess.org/EntityDetails.aspx/INDIVIDUAL/2235992",
     "https://www.linkedin.com/in/ramon-dent-3bb587239/",
     "https://www.experience.com/reviews/ramon-dent-300719",
+    "https://www.instagram.com/fettifounder/",
   ],
 };
 
@@ -70,6 +72,13 @@ export default function AboutPage() {
         </ul>
 
         <h2 className={H2}>Ramon Dent — founder</h2>
+        <img
+          src="/ramon-dent.jpg"
+          alt="Ramon Dent, founder of Fetti Financial Services LLC"
+          width={192}
+          height={240}
+          className="float-right ml-6 mb-3 w-40 sm:w-48 rounded-2xl shadow-lg object-cover"
+        />
         <p className="text-slate-700 leading-relaxed">
           Ramon Dent founded Fetti Financial Services to make financing straightforward and honest. He leads the firm as
           a licensed mortgage professional (NMLS #2235992), focused on matching each borrower to the right structure —
