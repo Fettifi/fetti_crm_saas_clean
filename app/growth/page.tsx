@@ -173,16 +173,28 @@ export default function GrowthHub() {
     if (p === "ads") setTab("ads");
   }, []);
 
+  const selectTab = (key: "launchpad" | "ads") => {
+    setTab(key);
+    try {
+      const url = new URL(window.location.href);
+      if (key === "launchpad") url.searchParams.delete("tab"); else url.searchParams.set("tab", key);
+      window.history.replaceState(null, "", url.toString());
+    } catch { /* */ }
+  };
+
   const tabBtn = (active: boolean) =>
     `px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${active ? "bg-emerald-600/80 text-white" : "bg-slate-900/40 border border-slate-800 text-slate-400 hover:text-white"}`;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
       <div className="max-w-4xl mx-auto mb-5 flex gap-2">
-        <button onClick={() => setTab("launchpad")} className={tabBtn(tab === "launchpad")}>Lead-Gen Launchpad</button>
-        <button onClick={() => setTab("ads")} className={tabBtn(tab === "ads")}>Paid Ads</button>
+        <button onClick={() => selectTab("launchpad")} className={tabBtn(tab === "launchpad")}>Lead-Gen Launchpad</button>
+        <button onClick={() => selectTab("ads")} className={tabBtn(tab === "ads")}>Paid Ads</button>
       </div>
-      {tab === "launchpad" ? <LaunchpadPanel /> : <PaidAdsPanel />}
+      {/* Both panels stay MOUNTED; toggle visibility so a typed topic + generated
+          posts survive a tab switch (no ternary unmount). */}
+      <div className={tab === "launchpad" ? "" : "hidden"}><LaunchpadPanel /></div>
+      <div className={tab === "ads" ? "" : "hidden"}><PaidAdsPanel /></div>
     </div>
   );
 }

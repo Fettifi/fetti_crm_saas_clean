@@ -403,18 +403,12 @@ export type PipelineRow = {
 };
 
 export async function listPipeline(limit = 300): Promise<PipelineRow[]> {
-  // 1) The universe: most-recent leads (includes never-contacted ones).
-  const { data: leads } = await supabaseAdmin
-    .from("leads")
-    .select("id, created_at, full_name, first_name, last_name, email, phone, state, loan_purpose, stage, tier, score, source, lead_source, raw")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (!leads || !leads.length) return [];
-  const idSet = new Set((leads as any[]).map((l) => l.id));
+  const LEAD_COLS = "id, created_at, full_name, first_name, last_name, email, phone, state, loan_purpose, stage, tier, score, source, lead_source, raw";
 
-  // 2) Recent comms in ONE pass (desc), reduced per lead: last real message + count
-  //    + whether we've ever contacted them. nurture.sent counts as "contacted" but is
-  //    never surfaced as a message body (it's an internal heartbeat).
+  // 1) Recent comms FIRST (desc). This does double duty: it tells us which leads are
+  //    ACTIVE — including an OLDER lead who just replied TODAY — and it feeds the
+  //    per-lead aggregate below. nurture.sent counts as "contacted" but is never
+  //    surfaced as a message body (internal heartbeat).
   const { data: acts } = await supabaseAdmin
     .from("activity_log")
     .select("lead_id, action, created_at, detail")
@@ -422,6 +416,32 @@ export async function listPipeline(limit = 300): Promise<PipelineRow[]> {
     .order("created_at", { ascending: false })
     .limit(4000);
 
+  // Ordered distinct active lead ids, most-recent activity first.
+  const activeIds: string[] = [];
+  const seenActive = new Set<string>();
+  for (const r of (acts || []) as any[]) {
+    const lid = r.lead_id;
+    if (lid && !seenActive.has(lid)) { seenActive.add(lid); activeIds.push(lid); }
+  }
+
+  // 2) The universe = newest-created leads (so brand-new / never-contacted leads show up)
+  //    UNION any ACTIVE lead not already in that set. Without the union, an older lead
+  //    who sends a fresh inbound reply would fall outside the newest-N window and vanish
+  //    from the inbox + the "Needs reply" queue — the exact opposite of the point.
+  const leadMap = new Map<string, any>();
+  const { data: newest } = await supabaseAdmin
+    .from("leads").select(LEAD_COLS).order("created_at", { ascending: false }).limit(limit);
+  for (const l of (newest || []) as any[]) leadMap.set(l.id, l);
+  const missing = activeIds.filter((id) => !leadMap.has(id)).slice(0, limit);
+  if (missing.length) {
+    const { data: extra } = await supabaseAdmin.from("leads").select(LEAD_COLS).in("id", missing);
+    for (const l of (extra || []) as any[]) leadMap.set(l.id, l);
+  }
+  const leads = Array.from(leadMap.values());
+  if (!leads.length) return [];
+  const idSet = new Set(leads.map((l) => l.id));
+
+  // 3) Reduce comms per lead over the FULL universe: last real message + count + contacted.
   type Agg = { last: ConversationMessage | null; count: number; contacted: boolean };
   const agg = new Map<string, Agg>();
   for (const r of (acts || []) as any[]) {
@@ -436,7 +456,7 @@ export async function listPipeline(limit = 300): Promise<PipelineRow[]> {
     }
   }
 
-  return (leads as any[]).map((l) => {
+  return leads.map((l) => {
     const a = agg.get(l.id);
     const last = a?.last || null;
     const name = l.full_name || [l.first_name, l.last_name].filter(Boolean).join(" ") || l.email || l.phone || "Unknown lead";

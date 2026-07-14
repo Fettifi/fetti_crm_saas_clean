@@ -767,13 +767,16 @@ export default function ScenariosPage() {
         </div>
       </div>
 
-      {tab === "scenarios" ? (
+      {/* Both panels stay MOUNTED; we toggle visibility so switching tabs never
+          discards in-progress work (uploaded quotes, unsaved scenario edits). */}
+      <div className={tab === "scenarios" ? "" : "hidden"}>
         <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-500 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin" /></div>}>
           <ScenarioDesk />
         </Suspense>
-      ) : (
+      </div>
+      <div className={tab === "compare" ? "" : "hidden"}>
         <LoanComparisonPanel />
-      )}
+      </div>
     </div>
   );
 }
