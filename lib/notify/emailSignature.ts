@@ -47,32 +47,37 @@ export async function markSignatureHtml(): Promise<string> {
   </div>`;
 }
 
-// LIGHT personal signature for borrower-facing follow-ups — reads like a person's
-// email footer, not a corporate banner (no logo table, no button, no boilerplate).
-// Includes the CAN-SPAM essentials: identity, mailing address, and a working
-// one-click unsubscribe when a URL is provided.
+// Full company-branded signature for borrower-facing follow-ups — a real loan officer's
+// email footer: Fetti logo, tagline, name + title, full contact (phone/email/web),
+// licensing (NMLS + CA), Equal Housing Opportunity, mailing address, and the CAN-SPAM
+// advertisement + one-click unsubscribe. All text renders even if a client blocks the
+// remote logo image. Office phone / address come from app_settings (OFFICE_PHONE,
+// COMPANY_MAILING_ADDRESS) with authoritative fallbacks.
 export async function markSignatureLite(unsubscribeUrl?: string): Promise<string> {
-  // Ramon's REAL email-signature format (his ask, 2026-07-02), adapted for Mark:
-  // Fetti logo (full stacked green/gold mark) → WE DO MONEY! → Mark (no title) →
-  // company → NMLS + CA license → office address → office line. The tiny unsubscribe
-  // link stays for CAN-SPAM. Values fall back to his authoritative signature if the
-  // app_settings aren't set.
   const phone = ((await cfg("OFFICE_PHONE")) || "+1 424.675.6295").trim();
   const address = ((await cfg("COMPANY_MAILING_ADDRESS")) || "5777 W Century Blvd Suite 1435\nLos Angeles, CA 90045").trim();
-  const addressHtml = address.split(/\n|,\s*(?=Los Angeles)/).map((l) => l.trim()).filter(Boolean).join("<br>");
+  const addressHtml = address.split(/\n|,\s*(?=Los Angeles)/).map((l) => l.trim()).filter(Boolean).join(", ");
+  const fromEnv = process.env.LEAD_RESPONSE_FROM_EMAIL || "";
+  const fm = fromEnv.match(/<([^>]+)>/);
+  const email = ((await cfg("CONTACT_EMAIL")) || (fm ? fm[1] : "hello@fettifi.com")).trim();
+  const emerald = "#0c7a52", slate = "#0f172a", body = "#475569", faint = "#94a3b8";
   const unsub = unsubscribeUrl
-    ? `<div style="margin-top:10px;font-size:10px;color:#cbd5e1"><a href="${unsubscribeUrl}" style="color:#cbd5e1">unsubscribe</a></div>`
-    : "";
+    ? ` To stop receiving these, <a href="${unsubscribeUrl}" style="color:#cbd5e1">unsubscribe</a>.`
+    : ` To stop receiving these, reply &ldquo;unsubscribe.&rdquo;`;
   return `
-  <div style="margin-top:28px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.55;color:#334155">
-    <img src="${ASSET_BASE}/fetti-logo.png" width="120" alt="Fetti Financial Services LLC" style="display:block;height:auto;margin-bottom:6px" />
-    <div style="font-weight:800;color:#0c7a52;letter-spacing:.5px">WE DO MONEY!</div>
-    <div style="margin-top:10px;font-weight:700;color:#0f172a">Mark</div>
-    <div style="font-weight:700">FETTI FINANCIAL SERVICES LLC</div>
-    <div>NMLS# 2267023</div>
-    <div>CA# 60DBO-153798</div>
-    <div>${addressHtml}</div>
-    <div>Office:&nbsp;&nbsp;<a href="tel:${phone.replace(/[^0-9+]/g, "")}" style="color:#334155;text-decoration:none">${phone}</a></div>
-    ${unsub}
+  <div style="margin-top:26px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:${body}">
+    <div style="border-top:2px solid ${emerald};max-width:430px;margin-bottom:14px"></div>
+    <img src="${ASSET_BASE}/fetti-logo.png" width="132" alt="Fetti Financial Services LLC" style="display:block;height:auto;margin-bottom:4px" />
+    <div style="font-weight:800;color:${emerald};letter-spacing:.6px;font-size:12px">WE DO MONEY!</div>
+    <div style="margin-top:11px;font-weight:700;color:${slate};font-size:15px">Mark</div>
+    <div style="font-weight:600;color:${emerald};font-size:12px">Client Concierge &middot; Fetti Financial Services LLC</div>
+    <div style="margin-top:8px;font-size:12px;color:${body}">
+      &#128222; <a href="tel:${phone.replace(/[^0-9+]/g, "")}" style="color:${body};text-decoration:none">${phone}</a>
+      &nbsp;&middot;&nbsp; &#9993; <a href="mailto:${email}" style="color:${body};text-decoration:none">${email}</a>
+      &nbsp;&middot;&nbsp; &#127760; <a href="${SITE}" style="color:${body};text-decoration:none">fettifi.com</a>
+    </div>
+    <div style="margin-top:4px;font-size:11px;color:${faint}">${addressHtml}</div>
+    <div style="margin-top:8px;font-size:10.5px;color:${faint}">NMLS #2267023 &nbsp;&middot;&nbsp; CA #60DBO-153798 &nbsp;&middot;&nbsp; &#127968; Equal Housing Opportunity</div>
+    <div style="margin-top:12px;font-size:9.5px;color:#cbd5e1;line-height:1.45;max-width:540px">This is an advertisement from Fetti Financial Services LLC, not a commitment to lend; all loans are subject to credit approval and program guidelines.${unsub}</div>
   </div>`;
 }
