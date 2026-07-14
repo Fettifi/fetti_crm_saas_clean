@@ -697,11 +697,17 @@ export default function ApplyWizard() {
 
   // ---- CONTACT (creates the lead) -------------------------------------------
   if (phase === "contact") {
+    // Name the specific product they qualified for at the highest-drop-off gate.
+    // Seeing "Your DSCR Purchase match is ready" (vs a generic "send your options")
+    // turns the contact ask into claiming something already earned — the endowment
+    // lever the wizard-learn insight flagged: high engagement, weak conversion.
+    // "Mortgage Inquiry" is the catch-all fallback, so we keep the generic copy there.
+    const matched = (() => { const p = product(answers); return p && p !== "Mortgage Inquiry" ? p : null; })();
     return (
       <Shell pct={pct} onBack={back}>
-        <h1 className="text-2xl font-bold">{prefill ? `Welcome back${prefill.first_name ? `, ${prefill.first_name}` : ""} 👋` : "Where should we send your options?"}</h1>
-        <p className="text-slate-500 mt-1 text-sm">{prefill ? "We saved everything — confirm your info and keep going. No impact to your credit." : "No impact to your credit. A real specialist follows up fast."}</p>
-        <CediBubble size={48} className="mt-4">{prefill ? "I kept your file warm. One click and we pick up right where we left off. 😎" : "Almost there. Drop your info and I'll get your options moving. 😎"}</CediBubble>
+        <h1 className="text-2xl font-bold">{prefill ? `Welcome back${prefill.first_name ? `, ${prefill.first_name}` : ""} 👋` : matched ? `Your ${matched} match is ready` : "Where should we send your options?"}</h1>
+        <p className="text-slate-500 mt-1 text-sm">{prefill ? "We saved everything — confirm your info and keep going. No impact to your credit." : matched ? "Confirm your info and I'll pull your real numbers. No impact to your credit." : "No impact to your credit. A real specialist follows up fast."}</p>
+        <CediBubble size={48} className="mt-4">{prefill ? "I kept your file warm. One click and we pick up right where we left off. 😎" : matched ? `Nice — you line up for a ${matched}. Drop your info and I'll get it moving. 😎` : "Almost there. Drop your info and I'll get your options moving. 😎"}</CediBubble>
         <form key={prefill ? "prefilled" : "blank"} onSubmit={submitContact} className="space-y-3 mt-5">
           <input type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: "absolute", left: "-9999px" }} />
           <input name="full_name" required placeholder="Full name" defaultValue={prefill?.full_name || ""} className={field} />
