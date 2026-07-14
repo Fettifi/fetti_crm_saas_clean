@@ -22,16 +22,33 @@ const GRACE_MS = 10 * 60000;        // give the real-time path 10 minutes before
 const LOOKBACK_MS = 48 * 3600000;
 
 async function pageOwner(text: string) {
+  // Last-resort owner page: SMS AND email both fire independently (one channel down
+  // must not sink the other). Check res.ok on each; if BOTH legs fail (or neither is
+  // configured), record a watchdog.page_failed row so a silent double-failure — the one
+  // thing that must never be quiet — is at least auditable.
+  let smsOk = false, emailOk = false;
   const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_FROM, to = process.env.LEAD_NOTIFY_SMS_TO;
   if (sid && tok && from && to) {
     try {
       const b = new URLSearchParams({ To: to, From: from, Body: text.slice(0, 1200) });
-      await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: b.toString() });
-    } catch { /* */ }
+      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: b.toString() });
+      smsOk = r.ok;
+      if (!r.ok) console.error("[watchdog] pageOwner SMS non-2xx:", r.status);
+    } catch (e: any) { console.error("[watchdog] pageOwner SMS failed:", e?.message); }
   }
   const key = process.env.RESEND_API_KEY, eto = process.env.LEAD_NOTIFY_EMAIL_TO, efrom = process.env.LEAD_NOTIFY_EMAIL_FROM;
   if (key && eto && efrom) {
-    try { await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: efrom, to: eto.split(",").map((s) => s.trim()), subject: "⚠️ Fetti watchdog alert", html: `<pre>${text.replace(/</g, "&lt;")}</pre>` }) }); } catch { /* */ }
+    try {
+      const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: efrom, to: eto.split(",").map((s) => s.trim()), subject: "⚠️ Fetti watchdog alert", html: `<pre>${text.replace(/</g, "&lt;")}</pre>` }) });
+      emailOk = r.ok;
+      if (!r.ok) console.error("[watchdog] pageOwner email non-2xx:", r.status);
+    } catch (e: any) { console.error("[watchdog] pageOwner email failed:", e?.message); }
+  }
+  if (!smsOk && !emailOk) {
+    console.error("[watchdog] pageOwner: BOTH channels failed — owner not paged:", text.slice(0, 200));
+    try {
+      await logActivity({ entity_type: "system", entity_id: "watchdog", actor: "system", action: "watchdog.page_failed", detail: { text: text.slice(0, 400), smsConfigured: !!(sid && tok && from && to), emailConfigured: !!(key && eto && efrom) } });
+    } catch { /* audit is best-effort, but we already logged to console above */ }
   }
 }
 
@@ -144,7 +161,11 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
         if (m.status !== "new" || !m.callback_number) continue;
         const age = Date.now() - new Date(m.created_at).getTime();
         if (age < 15 * 60000 || age > 4 * 3600000) continue;
-        if (/CALL ENDED EARLY|Testing|test/i.test(String(m.reason || "") + String(m.caller_name || ""))) continue;
+        // Skip salvage/test rows: an early-hangup salvage, a bridge test, OR an OUTBOUND
+        // salvage summary (a call WE placed) must never be auto-dialed back. Outbound
+        // salvage now stores no callback_number (see server.js), so the guard above
+        // already skips it; this reason match is belt-and-suspenders for older rows.
+        if (/CALL ENDED EARLY|Outbound .*call ended|Testing|test/i.test(String(m.reason || "") + String(m.caller_name || ""))) continue;
         const doneKey = `cbdone_${m.id}`;
         if (await getSetting(doneKey)) continue;
         await setSetting(doneKey, new Date().toISOString());

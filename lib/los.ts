@@ -5,6 +5,7 @@
 // - Helpers to create a file from a lead and keep one file per lead.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
+import { advanceLeadStage } from "@/lib/leadStage";
 
 // LOS pipeline stages, in order.
 export const STAGES = [
@@ -193,14 +194,17 @@ export async function maybeAdvanceStage(loanFileId: string): Promise<void> {
     if (!allIn) return;
     await supabaseAdmin.from("loan_files")
       .update({ stage: "Processing", updated_at: new Date().toISOString() }).eq("id", loanFileId);
-    // All required documents are in — this is now a COMPLETE APPLICATION, not a
-    // raw lead. Mark the lead "Application" so the Leads view and the
-    // Applications view stay cleanly separated.
+    // All required documents are in — this is now a COMPLETE, SUBMITTED
+    // application, not a raw lead. Advance via advanceLeadStage (forward-only,
+    // honors the shield's "Review" quarantine hold) rather than a raw update, so
+    // the guards are respected and the lead reaches the canonical "Submitted"
+    // stage — the state a docs-complete file represents (previously unreachable).
     if (file.lead_id) {
       try {
-        await supabaseAdmin.from("leads")
-          .update({ stage: "Application" }).eq("id", file.lead_id);
-      } catch (e) { console.warn("[los] mark lead application failed", e); }
+        await advanceLeadStage(file.lead_id, "Submitted", {
+          reason: "all required documents received",
+        });
+      } catch (e) { console.warn("[los] mark lead submitted failed", e); }
     }
     await logActivity({
       entity_type: "loan_file", entity_id: loanFileId, loan_file_id: loanFileId, lead_id: file.lead_id,

@@ -14,7 +14,7 @@ import { logActivity } from "@/lib/activity";
 // the same cadence — so an email never reads like a pasted text message again.
 import { renderTouch, EMAIL_TOUCHES, STEP_TOUCH, REACTIVATION_KEYS, prettyPurpose } from "@/lib/notify/emailCopy";
 import { magicApplyLink } from "@/lib/magicLink";
-import { getSetting, setSetting } from "@/lib/settings";
+import { setSetting } from "@/lib/settings";
 
 // Record every follow-up that actually goes out, so sends are AUDITABLE in
 // activity_log (the blind spot that let the phantom-status bug send 0 unnoticed).
@@ -78,7 +78,13 @@ const REACTIVATION: ((name: string, purpose: string) => string)[] = [
 const REACTIVATE_THROTTLE_DAYS = 45;
 
 const STOP_STAGES = ["closed", "won", "funded", "dead", "lost"];
-const APP_STAGES = ["application", "processing", "underwriting", "approved", "clear to close"];
+// Stages where the loan file is COMPLETE and the LO owns it — the lead exits the
+// automated funnel here. NOTE: "application" is deliberately EXCLUDED. An Application-
+// stage lead has an open loan file with required docs STILL MISSING (their first upload
+// promoted them out of "engaged"); exiting nurture there is exactly the bug that left
+// one-doc-and-stall borrowers un-chased. They must keep getting the doc-chaser until
+// every required doc is in — which flips them to Processing/beyond, i.e. into this list.
+const DONE_STAGES = ["processing", "underwriting", "approved", "clear to close"];
 const baseUrl = () => (process.env.NEXT_PUBLIC_SITE_URL || "https://app.fettifi.com").replace(/\/$/, "");
 const DOC_CHASE_THROTTLE_DAYS = 2;
 
@@ -88,14 +94,32 @@ const DOC_CHASE_THROTTLE_DAYS = 2;
 
 export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number }> {
   // OVERLAP GUARD: the daily cron and the Funnel-page "Run follow-ups" button can
-  // overlap and double-send to every unprocessed lead. A 10-minute soft lock in
-  // app_settings makes the second entrant a no-op.
-  const lock = await getSetting("NURTURE_RUN_LOCK");
-  if (lock && Date.now() - new Date(lock).getTime() < 10 * 60000) {
-    console.warn("[nurture] another run is in progress (lock", lock, ") — skipping");
+  // overlap and double-send TCPA texts/emails to every unprocessed lead. The old guard
+  // was a non-atomic getSetting-then-setSetting — both callers could read "free" before
+  // either wrote, pass the check, and run concurrently. Acquire ATOMICALLY instead: a
+  // single conditional UPDATE that only matches a free/stale lock. Postgres serialises
+  // the two writers on the row, so exactly one UPDATE returns a row (the winner); the
+  // loser re-evaluates the WHERE against the now-fresh value, matches nothing, and bails.
+  const nowIso = new Date().toISOString();
+  const staleBefore = new Date(Date.now() - 10 * 60000).toISOString();
+  // Ensure the lock row exists so the conditional UPDATE below has something to match.
+  // ignoreDuplicates → concurrent first-ever runs can't clobber a held lock: the unique
+  // `key` constraint lets exactly one insert win and the rest no-op (they never overwrite
+  // an existing value).
+  await supabaseAdmin.from("app_settings")
+    .upsert({ key: "NURTURE_RUN_LOCK", value: "" }, { onConflict: "key", ignoreDuplicates: true });
+  // Win the lock only if it's unset/empty or older than 10 min. ISO-8601 timestamps sort
+  // lexically, so `lte` is a valid time comparison against the text value.
+  const { data: won } = await supabaseAdmin.from("app_settings")
+    .update({ value: nowIso, updated_at: nowIso })
+    .eq("key", "NURTURE_RUN_LOCK")
+    .or(`value.is.null,value.eq.,value.lte.${staleBefore}`)
+    .select("key");
+  if (!won || won.length === 0) {
+    console.warn("[nurture] another run holds the lock — skipping");
     return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0 };
   }
-  await setSetting("NURTURE_RUN_LOCK", new Date().toISOString());
+  try {
   // Look back a full year so the dormant database keeps getting reactivated,
   // not just leads from the last 30 days.
   const cutoff = new Date(Date.now() - 365 * 86400000).toISOString();
@@ -166,15 +190,21 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     }
 
     if (STOP_STAGES.some((s) => stage.includes(s))) continue;
-    // Complete application — out of the lead funnel; the LO works it now.
-    if (APP_STAGES.some((s) => stage.includes(s))) continue;
+    // Loan file complete & in processing/beyond — out of the lead funnel; the LO works
+    // it now. Application-stage (docs still missing) intentionally falls through to the
+    // doc-chaser lane below instead of exiting here.
+    if (DONE_STAGES.some((s) => stage.includes(s))) continue;
 
     const name = (l.first_name || l.full_name || "there").split(" ")[0];
     const purpose = l.loan_purpose ? `your ${prettyPurpose(l.loan_purpose)}` : "your financing";
     const sinceLast = l.last_nurture_at ? (Date.now() - new Date(l.last_nurture_at).getTime()) / 86400000 : Infinity;
 
-    // --- Lane 2: Engaged → doc-chaser (keep them moving, never give up) ---
-    if (stage === "engaged") {
+    // --- Lane 2: Engaged/Application → doc-chaser (keep them moving, never give up) ---
+    // Both an "engaged" lead (uploaded ≥1 doc / booked a call) and an "application" lead
+    // (their first upload promoted them, the rest of the required docs still missing) get
+    // chased for what's left with their secure /file/<share_token> link — never the bare
+    // magic-apply link — until the file is complete.
+    if (stage === "engaged" || stage === "application") {
       if (sinceLast < DOC_CHASE_THROTTLE_DAYS) continue;
       const { data: file } = await supabaseAdmin
         .from("loan_files").select("id, share_token").eq("lead_id", l.id).limit(1).maybeSingle();
@@ -276,6 +306,10 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.ran",
     detail: { cron: "nurture", considered, sent, chased, reactivated, reviewsRequested },
   }).catch(() => {});
-  await setSetting("NURTURE_RUN_LOCK", "");
   return { considered, sent, chased, reactivated, reviewsRequested };
+  } finally {
+    // Always release, even if the run throws, so a crash never wedges the lock (the
+    // stale-check would still auto-expire it after 10 min, but releasing is cleaner).
+    await setSetting("NURTURE_RUN_LOCK", "");
+  }
 }

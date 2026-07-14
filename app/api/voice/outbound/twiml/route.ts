@@ -38,5 +38,8 @@ export async function POST(req: NextRequest) {
     `<Parameter name="first" value="${esc(ctx.first || "")}" />`,
     `<Parameter name="context" value="${esc(String(ctx.context || "").slice(0, 250))}" />`,
   ].join("");
-  return xml(`<Connect><Stream url="${url}">${params}</Stream></Connect>`);
+  // Deterministic CA SB 1001 + §632 disclosure BEFORE the model speaks — cannot be
+  // skipped or reworded by the LLM. The bridge's outbound opening no longer states it.
+  const disclosure = "Hi — this is Penny, an automated A.I. assistant with Fetti Financial Services, and just so you know, this call is recorded and transcribed for quality and record-keeping.";
+  return xml(`<Say voice="Polly.Joanna-Neural">${disclosure}</Say><Connect><Stream url="${url}">${params}</Stream></Connect>`);
 }

@@ -93,12 +93,19 @@ export async function GET(req: NextRequest) {
     if (hard || total >= qTh) {
       hits.push({ id: l.id, name: l.full_name, email: l.email, phone: l.phone, stage: l.stage, risk: total, signals: sigs.map((s) => `${s.key}:${s.pts}`) });
       if (apply) {
-        const raw = (l.raw && typeof l.raw === "object" ? l.raw : {}) as Record<string, any>;
-        raw.shield = {
+        const shield = {
           version: 1, verdict: "quarantine", band: hard || total >= 90 ? "junk" : "gray", risk: total,
           signals: sigs, channel: "api", retro: true,
           quarantined_at: new Date().toISOString(), pre_quarantine_stage: l.stage,
         };
+        // Concurrency-safe write: l.raw came from a bulk select that can be minutes old
+        // by the time this row is processed. Re-read the freshest raw and merge ONLY the
+        // shield key so a concurrent raw.* write (e.g. a URLA save) isn't reverted.
+        const { data: freshRow } = await supabaseAdmin.from("leads").select("raw").eq("id", l.id).maybeSingle();
+        const raw = ((freshRow as any)?.raw && typeof (freshRow as any).raw === "object"
+          ? (freshRow as any).raw
+          : (l.raw && typeof l.raw === "object" ? l.raw : {})) as Record<string, any>;
+        raw.shield = shield;
         await supabaseAdmin.from("leads").update({ stage: "Review", nurture_paused: true, raw }).eq("id", l.id);
         await logActivity({ entity_type: "lead", entity_id: l.id, lead_id: l.id, actor: "shield", action: "shield.quarantine", detail: { retro: true, risk: total, signals: raw.shield.signals.map((s: any) => s.key) } }).catch(() => {});
       }

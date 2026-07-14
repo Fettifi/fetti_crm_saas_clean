@@ -9,6 +9,22 @@ import { blanketAuthText, cardBrand, luhnValid, last4, encryptPan, encryptCvv, C
 
 export const dynamic = "force-dynamic";
 
+// Concurrency-safe persist: re-read the FRESHEST leads.raw immediately before writing and
+// merge ONLY this borrower's card_auth entry back. A whole-`raw` overwrite (read at the
+// top of the request, written seconds later after validation + encryption) silently loses
+// any concurrent writer's change — including a co-borrower's just-signed authorization or
+// an LO status update. Narrowing the write to a single jsonb key on a fresh read removes
+// that cross-key clobber. NOTE: a fully atomic write still requires a jsonb_set RPC or a
+// dedicated card_authorizations table (a DB migration) — see the deferred note.
+async function persistCardAuthEntry(leadId: string, index: number, entry: CardAuth) {
+  const { data: fresh } = await supabaseAdmin.from("leads").select("raw").eq("id", leadId).maybeSingle();
+  const raw = (fresh?.raw && typeof fresh.raw === "object") ? fresh.raw : {};
+  const auths: Record<string, CardAuth> = (raw.card_auths && typeof raw.card_auths === "object") ? raw.card_auths : {};
+  auths[String(index)] = entry;
+  raw.card_auths = auths;
+  return supabaseAdmin.from("leads").update({ raw }).eq("id", leadId);
+}
+
 async function resolve(token: string, b: string | null) {
   const i = Number(b);
   if (!token || token.length < 12 || !(i >= 0)) return null;
@@ -74,9 +90,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       consentText: blanketAuthText(r.file.file_number, r.auth.amount),
       signature, signedAt: new Date().toISOString(), signerIp: ip,
     };
-    const raw = r.lead.raw && typeof r.lead.raw === "object" ? r.lead.raw : {};
-    raw.card_auths = { ...r.auths, [String(r.i)]: updated };
-    const { error } = await supabaseAdmin.from("leads").update({ raw }).eq("id", r.lead.id);
+    // Merge onto a fresh read so a concurrent writer (co-borrower / LO) isn't clobbered.
+    const { error } = await persistCardAuthEntry(r.lead.id, r.i, updated);
     if (error) return NextResponse.json({ error: "Could not save your authorization. Please try again." }, { status: 500 });
 
     await logActivity({

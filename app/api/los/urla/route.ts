@@ -44,7 +44,13 @@ export async function POST(req: NextRequest) {
     if (!incoming || typeof incoming !== "object") {
       return NextResponse.json({ error: "Missing urla object." }, { status: 400 });
     }
-    const raw = lead.raw && typeof lead.raw === "object" ? lead.raw : {};
+    // Concurrency-safe write: lead.raw was selected in resolve() above. Re-read the
+    // freshest raw and replace ONLY the urla key so a concurrent raw.* writer (extract
+    // auto-fill, qualify/shield crons) isn't reverted by round-tripping a stale blob.
+    const { data: freshLead } = await supabaseAdmin.from("leads").select("raw").eq("id", lead.id).maybeSingle();
+    const raw = ((freshLead as any)?.raw && typeof (freshLead as any).raw === "object"
+      ? (freshLead as any).raw
+      : (lead.raw && typeof lead.raw === "object" ? lead.raw : {})) as any;
     raw.urla = encryptUrlaSsns(incoming); // SSN encrypted at rest (app-layer)
     const { error } = await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
     if (error) throw new Error(error.message);

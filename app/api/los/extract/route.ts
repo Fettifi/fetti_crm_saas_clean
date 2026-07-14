@@ -172,9 +172,8 @@ export async function POST(req: NextRequest) {
     }
     if (!sources.length) return NextResponse.json({ error: "Nothing readable to extract.", skipped }, { status: 400 });
 
-    // ---- Extract each + merge once ------------------------------------------
+    // ---- Extract each (parallel), then merge onto the FRESHEST urla ----------
     const raw = lead.raw && typeof lead.raw === "object" ? lead.raw : {};
-    let cur = (raw.urla && typeof raw.urla === "object") ? raw.urla : assembleUrla(lead, loanFile);
     const read: { name: string; docType: string }[] = [];
     const failed: string[] = [];
     // Read every document IN PARALLEL — a file with many docs read sequentially blows
@@ -184,15 +183,28 @@ export async function POST(req: NextRequest) {
       try { return { s, ex: await extractOne(key, s.buf, s.mediaType) }; }
       catch (e) { console.warn("[los/extract]", s.label, e); return { s, ex: null as any }; }
     }));
+
+    // Concurrency-safe write: the Anthropic OCR above can run for minutes, and a
+    // borrower/LO URLA save or a cron (qualify/shield) can mutate leads.raw in that
+    // window. Re-read the freshest raw HERE and (a) build the urla base from the FRESHEST
+    // urla — NOT the pre-OCR snapshot — so a concurrent 1003 edit made during the OCR is
+    // preserved and our deltas merge on top of it instead of reverting it, and (b) replace
+    // ONLY the urla key so every other raw.* change (shield/qualification) survives.
+    const { data: freshLead } = await supabaseAdmin.from("leads").select("raw").eq("id", lead.id).maybeSingle();
+    const freshRaw = ((freshLead as any)?.raw && typeof (freshLead as any).raw === "object"
+      ? (freshLead as any).raw
+      : (raw && typeof raw === "object" ? raw : {})) as any;
+    let cur = (freshRaw.urla && typeof freshRaw.urla === "object") ? freshRaw.urla : assembleUrla(lead, loanFile);
     for (const { s, ex } of outcomes) {
       if (ex && (ex.borrower || ex.assets)) {
         cur = mergeIntoUrla(cur, ex);
         read.push({ name: s.label, docType: ex.docType || "document" });
       } else failed.push(s.label);
     }
-
-    raw.urla = encryptUrlaSsns(cur); // SSN encrypted at rest (app-layer)
-    await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
+    // encryptUrlaSsns is idempotent on already-encrypted SSNs, so merging our deltas onto a
+    // fresh urla that may already carry encrypted SSNs re-encrypts safely (no double-encrypt).
+    freshRaw.urla = encryptUrlaSsns(cur); // SSN encrypted at rest (app-layer)
+    await supabaseAdmin.from("leads").update({ raw: freshRaw }).eq("id", lead.id);
 
     return NextResponse.json({
       ok: true,

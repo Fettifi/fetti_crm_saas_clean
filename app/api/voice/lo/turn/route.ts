@@ -24,11 +24,16 @@ const smsAllowed = (raw: any) => {
   return !raw?.historical_import && raw?.sms_consent !== false && !raw?.sms_optout_at && (raw?.sms_consent === true || c?.sms_optin === true);
 };
 
-async function sendBooking(leadId: string) {
+// What sendBooking actually did, so the spoken confirmation can tell the truth
+// (never say "I'm texting you" when SMS wasn't consented/sent — email-only or none).
+type BookChannel = "sms" | "email" | "none";
+
+async function sendBooking(leadId: string): Promise<BookChannel> {
   // Text/email Ramon's calendar + raise a top task. Once per call (guarded by caller).
+  let channel: BookChannel = "none";
   try {
     const { data: lead } = await supabaseAdmin.from("leads").select("id, full_name, first_name, phone, email, loan_purpose, raw").eq("id", leadId).maybeSingle();
-    if (!lead) return;
+    if (!lead) return channel;
     const raw = (lead as any).raw && typeof (lead as any).raw === "object" ? (lead as any).raw : {};
     const name = String((lead as any).first_name || (lead as any).full_name || "there").split(/\s+/)[0];
     const calendly = (await cfg("CALENDLY_URL")) || "";
@@ -36,11 +41,11 @@ async function sendBooking(leadId: string) {
       const msg = `${name}, it's Penny from Fetti — here's Ramon's calendar to lock your call: ${calendly} Grab any time and he'll walk your real options and numbers with you. (Reply STOP to opt out.)`;
       if (smsAllowed(raw) && (lead as any).phone) {
         const r = await sendSms((lead as any).phone, msg);
-        if (r.ok) await logComms({ leadId, channel: "sms", direction: "outbound", type: "book_link", body: msg, to: (lead as any).phone, status: "sent", providerId: r.sid, actor: "agent:penny" }).catch(() => {});
+        if (r.ok) { channel = "sms"; await logComms({ leadId, channel: "sms", direction: "outbound", type: "book_link", body: msg, to: (lead as any).phone, status: "sent", providerId: r.sid, actor: "agent:penny" }).catch(() => {}); }
       } else if ((lead as any).email) {
         const body = `Hi ${name},\n\nGreat talking just now. Here's Ramon's calendar to lock in your call — grab any time and he'll go through your real options and numbers with you:\n\n${calendly}\n\nTalk soon,\nPenny — Fetti Financial Services`;
         const r = await sendEmail((lead as any).email, "your call with Ramon — grab a time", { text: body });
-        if (r.ok) await logComms({ leadId, channel: "email", direction: "outbound", type: "book_link", subject: "your call with Ramon — grab a time", body, to: (lead as any).email, status: "sent", providerId: r.id, actor: "agent:penny" }).catch(() => {});
+        if (r.ok) { channel = "email"; await logComms({ leadId, channel: "email", direction: "outbound", type: "book_link", subject: "your call with Ramon — grab a time", body, to: (lead as any).email, status: "sent", providerId: r.id, actor: "agent:penny" }).catch(() => {}); }
       }
     }
     await supabaseAdmin.from("org_tasks").insert([{
@@ -49,8 +54,9 @@ async function sendBooking(leadId: string) {
       source: "ai_call_book", status: "open", priority: 9,
       dedup_key: `aicallbook:${leadId}`.slice(0, 80), cadence: "once", due_at: new Date().toISOString(),
     }]).select("id").then(() => {}, () => {});
-    await logActivity({ entity_type: "lead", entity_id: leadId, lead_id: leadId, actor: "agent:penny", action: "voice.booked", detail: {} }).catch(() => {});
+    await logActivity({ entity_type: "lead", entity_id: leadId, lead_id: leadId, actor: "agent:penny", action: "voice.booked", detail: { channel } }).catch(() => {});
   } catch (e) { console.warn("[lo/turn] sendBooking failed", e); }
+  return channel;
 }
 
 export async function POST(req: NextRequest) {
@@ -101,8 +107,16 @@ export async function POST(req: NextRequest) {
   let spoken = res.reply;
   if (res.book && leadId && !(await getSetting(bookedKey))) {
     await setSetting(bookedKey, "1");
-    await sendBooking(leadId);
-    spoken = `${res.reply} I'm texting you Ramon's calendar right now — grab any time that works and he'll go through your real options and numbers with you.`;
+    const channel = await sendBooking(leadId);
+    // Speak the channel we actually used — never promise a text the borrower won't get.
+    if (channel === "sms") {
+      spoken = `${res.reply} I'm texting you Ramon's calendar right now — grab any time that works and he'll go through your real options and numbers with you.`;
+    } else if (channel === "email") {
+      spoken = `${res.reply} I'm emailing you Ramon's calendar right now — grab any time that works and he'll go through your real options and numbers with you.`;
+    } else {
+      // Nothing went out (no consented channel / no contact / send failed) — hand off to the live desk instead of claiming we sent something.
+      spoken = `${res.reply} Ramon's team will reach out to lock in a time so he can go through your real options and numbers with you.`;
+    }
   }
   const replyVerb = await voiceVerb(spoken);
 

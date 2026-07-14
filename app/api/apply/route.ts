@@ -114,6 +114,8 @@ export async function POST(req: NextRequest) {
     // Never persist SSN in plaintext — encrypt at rest (app-layer AES-256-GCM via
     // SSN_ENCRYPTION_KEY) before it goes into `raw`. The URLA/1003 builder decrypts
     // it for the LO. Strip formatting so it stores as 9 digits, encrypted.
+    // FAIL CLOSED: in production/preview, encryptField returns undefined when the key is
+    // missing/malformed, so `?? null` drops the SSN entirely — plaintext PII is never written.
     const rawBody: Record<string, unknown> = { ...(body as Record<string, unknown>) };
     if (rawBody.ssn) rawBody.ssn = encryptField(String(rawBody.ssn).replace(/[^0-9]/g, "")) ?? null;
     if (trackingOptedOut) rawBody.tracking_opt_out = true;

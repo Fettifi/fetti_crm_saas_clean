@@ -12,9 +12,12 @@ export const maxDuration = 120;
 function authed(req: NextRequest): boolean {
   const sec = process.env.CRON_SECRET;
   if (!sec) return false;
+  // Accept the shared secret ONLY via the Authorization header. The prior
+  // `?secret=` query-string path leaked CRON_SECRET into access logs, proxy
+  // logs, browser history and Referer headers -- and this route MUTATES ad
+  // budgets / resumes spend, so a leaked secret is spend-control. Header only.
   const h = req.headers.get("authorization") || "";
-  const q = req.nextUrl.searchParams.get("secret") || "";
-  return h === `Bearer ${sec}` || q === sec;
+  return h === `Bearer ${sec}`;
 }
 
 function opts(req: NextRequest, write: boolean) {

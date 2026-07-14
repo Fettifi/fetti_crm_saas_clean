@@ -7,8 +7,97 @@ import { STAGES, deleteLoanFileCascade } from "@/lib/los";
 import { assembleUrla } from "@/lib/urla";
 import { sendMetaFundedEvent } from "@/lib/metaCapi";
 import { advanceLeadStage } from "@/lib/leadStage";
+import { cfg } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
+
+// Google Ads offline click-conversion upload — closes the Smart Bidding loop the same
+// way sendMetaFundedEvent closes Meta's. When a loan FUNDS we tell Google which ad click
+// (the gclid captured at intake) produced a real funded loan and its value, so Smart
+// Bidding optimizes toward FUNDED loans instead of raw form-fills. Uses the REST API
+// (customers/{id}:uploadClickConversions) with an OAuth refresh-token exchange — no SDK,
+// no npm dep. All creds are read via cfg() (DB-then-env) so they can be provisioned at
+// runtime; the function NO-OPS cleanly (returns {ok:false}) when ANY credential is unset,
+// which preserves today's exact behavior until the Google Ads developer token + OAuth
+// creds are wired. Best-effort; never throws into the request path.
+async function uploadGoogleAdsFundedConversion(opts: {
+  gclid: string;
+  value: number;
+  loanFileId: string;
+  conversionDateTime?: string;
+}): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const developerToken = await cfg("GOOGLE_ADS_DEVELOPER_TOKEN");
+    const customerIdRaw = await cfg("GOOGLE_ADS_CUSTOMER_ID");
+    const conversionAction = await cfg("GOOGLE_ADS_CONVERSION_ACTION");
+    const clientId = await cfg("GOOGLE_ADS_CLIENT_ID");
+    const clientSecret = await cfg("GOOGLE_ADS_CLIENT_SECRET");
+    const refreshToken = await cfg("GOOGLE_ADS_REFRESH_TOKEN");
+    // Any missing credential -> clean no-op (this is the current, un-provisioned state).
+    if (!developerToken || !customerIdRaw || !conversionAction || !clientId || !clientSecret || !refreshToken) {
+      return { ok: false, detail: "google ads creds not configured" };
+    }
+    const customerId = customerIdRaw.replace(/\D/g, ""); // API wants digits, no dashes
+    // login-customer-id header is required when uploading through a manager (MCC) account.
+    const loginCustomerId = (await cfg("GOOGLE_ADS_LOGIN_CUSTOMER_ID"))?.replace(/\D/g, "") || null;
+    const conversionActionResource = conversionAction.startsWith("customers/")
+      ? conversionAction
+      : `customers/${customerId}/conversionActions/${conversionAction.replace(/\D/g, "")}`;
+
+    // 1) Exchange the long-lived refresh token for a short-lived access token.
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+      }),
+      signal: AbortSignal.timeout(12000),
+    });
+    const tokenJson: any = await tokenRes.json().catch(() => ({}));
+    const accessToken = tokenJson?.access_token;
+    if (!accessToken) return { ok: false, detail: `oauth: ${tokenJson?.error_description || tokenJson?.error || `HTTP ${tokenRes.status}`}` };
+
+    // 2) Upload the click conversion. orderId = loanFileId gives Google its own
+    //    idempotency key, so a re-upload of the same funded loan is de-duped there too.
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${accessToken}`,
+      "developer-token": developerToken,
+    };
+    if (loginCustomerId) headers["login-customer-id"] = loginCustomerId;
+    const uploadRes = await fetch(
+      `https://googleads.googleapis.com/v18/customers/${customerId}:uploadClickConversions`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          conversions: [{
+            gclid: opts.gclid,
+            conversionAction: conversionActionResource,
+            // "YYYY-MM-DD HH:MM:SS+00:00" (Google requires a timezone offset).
+            conversionDateTime: opts.conversionDateTime || (new Date().toISOString().slice(0, 19).replace("T", " ") + "+00:00"),
+            conversionValue: Math.max(0, Math.round(opts.value)),
+            currencyCode: "USD",
+            orderId: opts.loanFileId,
+          }],
+          partialFailure: true,
+        }),
+        signal: AbortSignal.timeout(12000),
+      },
+    );
+    const uploadJson: any = await uploadRes.json().catch(() => ({}));
+    if (!uploadRes.ok) return { ok: false, detail: uploadJson?.error?.message || `HTTP ${uploadRes.status}` };
+    // partialFailure surfaces per-row errors in partialFailureError even on HTTP 200.
+    const pf = uploadJson?.partialFailureError;
+    if (pf?.message) return { ok: false, detail: `partial: ${pf.message}` };
+    return { ok: true, detail: `uploaded ${(uploadJson?.results || []).length} conversion(s)` };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : "error" };
+  }
+}
 
 // DELETE ?purge=1 -> permanently delete this loan file + its documents, activity,
 // preapprovals, and (when purge) the uploaded files in storage. Irreversible.
@@ -75,10 +164,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     // CONVERSION LOOP-BACK: a loan just FUNDED — the bottom-of-funnel money event.
-    // Report it to Meta (Purchase, value = loan amount) so ad delivery optimizes
-    // toward real loans, advance the lead to Funded, and log conversion.funded with
-    // the gclid/fbclid + value so the Google offline import (pending an Ads API
-    // token) can backfill it. Runs after the response; never blocks the LO.
+    // Report it to BOTH ad platforms so delivery optimizes toward real funded loans:
+    //   • Meta   — Purchase event (value = loan amount) via sendMetaFundedEvent.
+    //   • Google — offline click conversion via uploadGoogleAdsFundedConversion
+    //              (keyed off raw.gclid + value), closing the Smart Bidding loop.
+    // Then advance the lead to Funded and log conversion.funded with the gclid/fbclid +
+    // value + created_at (the conversion timestamp). Runs after the response; never
+    // blocks the LO.
+    //
+    // The Google uploader is fully implemented but self-gates on cfg() creds
+    // (GOOGLE_ADS_DEVELOPER_TOKEN / CUSTOMER_ID / CONVERSION_ACTION / CLIENT_ID /
+    // CLIENT_SECRET / REFRESH_TOKEN — DB-then-env), so it NO-OPS cleanly until those are
+    // provisioned. Whenever a gclid isn't actually reported (creds unset, opt-out, or a
+    // failed upload) we keep google_pending=true on the conversion.funded row below, so
+    // that row remains the durable queue a future importer/cron can backfill from — no
+    // funded event is ever lost.
     if (patch.stage === "Funded" && prevStage !== "Funded" && file.lead_id) {
       after(async () => {
         try {
@@ -95,15 +195,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           const value = Number(urla.loan?.amount) || Number((lead as any).loan_amount_requested) || Number(raw.loan_amount_requested) || 0;
           // Respect a stored privacy opt-out from intake (cross-context ad reporting).
           const optedOut = raw.tracking_opt_out === true || raw?.consent?.do_not_sell === true;
+          let googleReported = false;
           if (!optedOut) {
             const res = await sendMetaFundedEvent(lead, { value, loanFileId: id });
             if (!res.ok) console.warn("[funded] meta CAPI:", res.detail);
+            // Close the Google Smart Bidding loop when this lead came from a Google ad
+            // click (gclid captured at intake). No-ops cleanly until Ads creds are wired.
+            if (raw.gclid) {
+              const g = await uploadGoogleAdsFundedConversion({ gclid: String(raw.gclid), value, loanFileId: id });
+              googleReported = g.ok;
+              if (!g.ok) console.warn("[funded] google ads offline:", g.detail);
+            }
           }
           await advanceLeadStage((lead as any).id, "Funded", { actor: "lo", reason: "loan funded" });
           await logActivity({
             entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: (lead as any).id,
             actor: "system", action: "conversion.funded",
-            detail: { value, currency: "USD", gclid: raw.gclid || null, fbclid: raw.fbclid || null, meta_reported: !optedOut, google_pending: !!raw.gclid },
+            // google_pending stays true until the click conversion is actually accepted,
+            // keeping this row as the backfill queue for any gclid we couldn't report yet.
+            detail: { value, currency: "USD", gclid: raw.gclid || null, fbclid: raw.fbclid || null, meta_reported: !optedOut, google_reported: googleReported, google_pending: !!raw.gclid && !googleReported },
           });
         } catch (e) { console.warn("[funded] loop-back failed", e); }
       });

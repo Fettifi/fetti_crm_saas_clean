@@ -67,6 +67,24 @@ export async function POST(req: NextRequest) {
     const digits = from.replace(/\D/g, "").slice(-10);
     const msgSid = String(params["MessageSid"] || ""); // Twilio's unique id for THIS inbound — used for retry idempotency
 
+    // IDEMPOTENCY (before ANY branch): Twilio redelivers this webhook if our response
+    // is slow, and EVERY path below has an unguarded side effect on retry — the owner
+    // task-by-text double-inserts a task, the keyword opt-in re-fires the alert + reply,
+    // and an unmatched sender creates a PHANTOM duplicate lead (none of these had a
+    // MessageSid guard; the lead-scoped activity_log check further down only covered the
+    // matched-lead reply path). rate_limit_hit is an ATOMIC per-key Postgres counter, so
+    // the first delivery of a given MessageSid wins (returns true) and any retry returns
+    // false — record it up front (idempotency BEFORE side effects) and short-circuit with
+    // a 200 so Twilio stops retrying. Fail-OPEN: a limiter hiccup returns true, so we
+    // never silently drop a real inbound (the activity_log check below still backstops
+    // the matched-lead path in that rare case).
+    if (msgSid) {
+      const firstDelivery = await rateLimit(`smsidem:${msgSid}`, 1, 3 * 86400);
+      if (!firstDelivery) {
+        return new NextResponse("<Response></Response>", { status: 200, headers: { "Content-Type": "text/xml" } });
+      }
+    }
+
     // OWNER TASK-BY-TEXT: Ramon dictates tasks from his phone ("task call the CPA",
     // "daily review new leads"). Only honored from the owner's own cell (OWNER_CELL
     // setting; default his alert number), so no lead can inject tasks. "daily …" /
@@ -173,8 +191,13 @@ export async function POST(req: NextRequest) {
         if (!lead && digits) {
           try {
             const { data: created } = await supabaseAdmin.from("leads").insert({
+              // Someone who texts a mortgage line unprompted is a WARM, self-initiated
+              // lead, not a cold Tier-3 import — seed a non-zero score/Tier 2 so it sorts
+              // above the cold drip and gets prioritized. (Stay honest: we know nothing
+              // about their file yet, so this isn't a Tier-1 "qualified" claim; the hot-
+              // reply task below + Mark's live concierge reply are what actually work it.)
               phone: digits, source: "sms_inbound", lead_source: "sms_inbound",
-              stage: "New Lead", score: 0, tier: "Tier 3",
+              stage: "New Lead", score: 40, tier: "Tier 2",
               notes: `Inbound text (no prior lead matched): "${body.slice(0, 200)}"`,
               raw: { sms_inbound_origin: true, phone_status: "us", consent: { sms_optin: true, sms_optin_at: new Date().toISOString(), source: "texted_in" } },
             }).select("id, full_name, first_name, phone, loan_purpose, state, stage").single();

@@ -58,30 +58,45 @@ export async function POST(req: NextRequest) {
   }
   const toE164 = to.length === 10 ? `+1${to}` : `+${to}`;
 
-  // One attempt per number per mode per day.
+  // One attempt per number per mode per day. Write the key up-front so two
+  // overlapping sweeps can't double-dial the same target, but RELEASE it on any
+  // failure below so a transient error doesn't permanently suppress the day's
+  // reminder — the next sweep must be free to retry. (getSetting treats "" as
+  // unset, and there's no delete helper, so an empty value clears the lock.)
   const dayKey = `aicall_${mode}_${to}_${new Date().toISOString().slice(0, 10)}`;
   if (await getSetting(dayKey)) return NextResponse.json({ called: false, error: "already attempted today" });
   await setSetting(dayKey, new Date().toISOString());
+  const releaseDayKey = () => setSetting(dayKey, "").catch(() => {});
 
   const tsid = process.env.TWILIO_ACCOUNT_SID, ttok = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_FROM;
-  if (!tsid || !ttok || !from) return NextResponse.json({ called: false, error: "not configured" });
+  if (!tsid || !ttok || !from) { await releaseDayKey(); return NextResponse.json({ called: false, error: "not configured" }); }
   const secret = await cfg("VOICE_INGEST_TOKEN");
   const nonce = "OB" + crypto.randomBytes(15).toString("hex");
   await setSetting(`outbound_${nonce}`, JSON.stringify({ mode, first, context, to: toE164, lead_id: leadId }));
   const t = decisionToken(nonce, secret || "fetti");
 
-  const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${tsid}/Calls.json`, {
-    method: "POST",
-    headers: { Authorization: "Basic " + Buffer.from(`${tsid}:${ttok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      To: toE164, From: from,
-      Url: `${APP_URL}/api/voice/outbound/twiml?n=${nonce}&t=${t}`,
-      MachineDetection: "Enable", MachineDetectionTimeout: "8",
-      Timeout: "22",
-    }).toString(),
-  });
+  let r: Response;
+  try {
+    r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${tsid}/Calls.json`, {
+      method: "POST",
+      headers: { Authorization: "Basic " + Buffer.from(`${tsid}:${ttok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        To: toE164, From: from,
+        Url: `${APP_URL}/api/voice/outbound/twiml?n=${nonce}&t=${t}`,
+        MachineDetection: "Enable", MachineDetectionTimeout: "8",
+        Timeout: "22",
+      }).toString(),
+    });
+  } catch (e) {
+    // Network-level failure reaching Twilio is transient — release the lock so the next sweep retries.
+    console.error("[voice/outbound] call fetch threw:", (e as any)?.message || e);
+    await releaseDayKey();
+    return NextResponse.json({ called: false, error: "twilio unreachable" }, { status: 502 });
+  }
   if (!r.ok) {
     console.error("[voice/outbound] call failed:", r.status, (await r.text()).slice(0, 200));
+    // Twilio rejected placement (transient/config) — release the lock so the next sweep retries.
+    await releaseDayKey();
     return NextResponse.json({ called: false, error: "twilio rejected the call" }, { status: 502 });
   }
   if (leadId) await logComms({ leadId, channel: "sms", direction: "outbound", type: "ai_call", body: `📞 Penny ${mode === "confirm" ? "appointment-confirmation" : "return"} call placed to ${toE164}`, to: toE164, actor: "agent:penny" }).catch(() => {});

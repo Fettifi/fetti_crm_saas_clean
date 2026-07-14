@@ -64,6 +64,14 @@ async function emailLead(l: LeadContact, fallbackBody: string) {
   // choice 2026-07-02). Overridable via the REPLY_TO_EMAIL setting without a redeploy.
   const replyTo = ((await cfg("REPLY_TO_EMAIL")) || "frank@fettifi.com").trim();
 
+  // Bulk-sender hygiene (Gmail/Yahoo 2024 rules + CAN-SPAM): first-touch/nurture mail
+  // must carry a one-click List-Unsubscribe or it's penalized as spam. Signed one-click
+  // URL when we have the lead id (POST honored by /api/unsubscribe), mailto fallback else.
+  const unsub = l.id ? unsubUrl(l.id) : null;
+  const listUnsubHeaders: Record<string, string> = unsub
+    ? { "List-Unsubscribe": `<${unsub}>, <mailto:unsubscribe@fettifi.com>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" }
+    : { "List-Unsubscribe": "<mailto:unsubscribe@fettifi.com>" };
+
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -72,6 +80,7 @@ async function emailLead(l: LeadContact, fallbackBody: string) {
       to: [l.email],
       reply_to: [replyTo],
       subject,
+      headers: listUnsubHeaders,
       html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#0f172a;max-width:560px">${body.replace(/\n/g, "<br>")}${button}</div>${signature}`,
     }),
   });

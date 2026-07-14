@@ -48,12 +48,18 @@ export async function GET() {
   try {
     const { org, ours, all } = await context(pat);
     const active = ours.find((s: any) => s?.state === "active");
+    const signingKeyStored = !!(await cfg("CALENDLY_WEBHOOK_SIGNING_KEY"));
     return NextResponse.json({
       configured: true, organization: org, expected: WEBHOOK,
       registered: !!active, state: active?.state || null,
       events: active?.events || null, createdAt: active?.created_at || null,
       otherSubscriptions: all.length - ours.length,
-      signingKeyStored: !!(await cfg("CALENDLY_WEBHOOK_SIGNING_KEY")),
+      signingKeyStored,
+      // Single roll-up signal for the doctor/health cron to assert on: the booking→CRM
+      // loop is only live when the subscription is active AND we hold the signing key
+      // to verify (and create unmatched leads). If this is ever false in prod, bookings
+      // from unknown emails are being dropped — alert + re-run POST to re-register.
+      healthy: !!active && signingKeyStored,
     });
   } catch (e: any) {
     const msg = e?.message || "lookup failed";

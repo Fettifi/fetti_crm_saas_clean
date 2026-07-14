@@ -111,7 +111,10 @@ export const LP_CONFIGS: Record<string, LpConfig> = {
     headline: "Buy your first home —",
     accent: "we make it simple.",
     subhead: "Low-down-payment options, first-time buyer programs, and down payment assistance. We carry the load so the biggest purchase of your life feels handled.",
-    bullets: ["🏡 FHA from 3.5% down · VA/USDA $0 down options", "⚡ Pre-qualify in 2 minutes — no credit pull to start", "🛡️ A real specialist, start to funded"],
+    // Reg Z §1026.24(d): a stated down-payment amount/percentage (incl. "$0/no down")
+    // is a "triggering term" that would require companion APR + repayment-terms
+    // disclosures on this consumer ad. Kept qualitative instead — no specific figures.
+    bullets: ["🏡 Low-down-payment FHA, VA & USDA options", "⚡ Pre-qualify in 2 minutes — no credit pull to start", "🛡️ A real specialist, start to funded"],
     occupancy: "Owner", productType: "Residential",
     purposes: [{ value: "purchase", label: "Home purchase", loanPurpose: "Home Purchase" }],
     statesNote: "Owner-occupied home loans offered in FL, MI & CA.",

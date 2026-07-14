@@ -1,7 +1,14 @@
 import { SchemaType } from '@google/generative-ai';
 import {
-    runSoftPull, runAVM, scheduleMeeting, generateTermSheet, runMonteCarlo,
-    matchSecondaryMarket, securitizeAsset, adjustFedRates, learnFromUser,
+    // NOTE: The simulated financial tools (runSoftPull, runAVM, scheduleMeeting,
+    // generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset,
+    // adjustFedRates) are intentionally NOT imported/wired here. They return
+    // FABRICATED credit scores, AVM valuations, dead term-sheet URLs, fake
+    // secondary-market bids and fake Fed actions. Exposing them to the live AI
+    // agent lets the model surface fabricated financial data to real borrowers,
+    // which violates our no-fabrication / compliance rules. They remain exported
+    // from god-mode.ts for offline/dev scripts only until backed by real vendors.
+    learnFromUser,
     deepResearch, getWeather, submitFeatureRequest, manageRoadmap,
     getKnowledgeBase, readCodebase, exploreCodebase, upgradeSystem,
     deploySystem, checkSystemHealth, startAutopilot, seeProjectStructure,
@@ -12,103 +19,13 @@ import {
     assistantCreateTask, assistantListTasks, assistantCompleteTask
 } from '@/lib/ai/assistantTools';
 
+// NOTE: The simulated financial tools (runSoftPull, runAVM, scheduleMeeting,
+// generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset,
+// adjustFedRates) were removed from this registry. They fabricate credit scores,
+// AVM valuations, term-sheet URLs, secondary-market bids and Fed actions; leaving
+// them callable let the live AI agent present fake financial data to real
+// borrowers. Re-add ONLY once backed by real vendor integrations.
 export const toolDefinitions = [
-    {
-        name: "runSoftPull",
-        description: "Runs a soft credit pull for a user.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                name: { type: SchemaType.STRING },
-                address: { type: SchemaType.STRING }
-            },
-            required: ["name"]
-        }
-    },
-    {
-        name: "runAVM",
-        description: "Runs an Automated Valuation Model (AVM) for a property.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                address: { type: SchemaType.STRING }
-            },
-            required: ["address"]
-        }
-    },
-    {
-        name: "scheduleMeeting",
-        description: "Schedules a meeting on the calendar.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                topic: { type: SchemaType.STRING },
-                time: { type: SchemaType.STRING }
-            },
-            required: ["topic", "time"]
-        }
-    },
-    {
-        name: "generateTermSheet",
-        description: "Generates a term sheet for a loan.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                loanAmount: { type: SchemaType.NUMBER },
-                propertyAddress: { type: SchemaType.STRING }
-            },
-            required: ["loanAmount", "propertyAddress"]
-        }
-    },
-    {
-        name: "runMonteCarlo",
-        description: "Runs Monte Carlo simulations for risk assessment.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                creditScore: { type: SchemaType.NUMBER },
-                loanAmount: { type: SchemaType.NUMBER },
-                income: { type: SchemaType.NUMBER }
-            },
-            required: ["creditScore", "loanAmount", "income"]
-        }
-    },
-    {
-        name: "matchSecondaryMarket",
-        description: "Matches a loan to secondary market buyers.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                loanAmount: { type: SchemaType.NUMBER },
-                creditScore: { type: SchemaType.NUMBER },
-                propertyType: { type: SchemaType.STRING }
-            },
-            required: ["loanAmount", "creditScore", "propertyType"]
-        }
-    },
-    {
-        name: "securitizeAsset",
-        description: "Structures a Mortgage Backed Security (MBS).",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                loanAmount: { type: SchemaType.NUMBER },
-                creditScore: { type: SchemaType.NUMBER }
-            },
-            required: ["loanAmount", "creditScore"]
-        }
-    },
-    {
-        name: "adjustFedRates",
-        description: "Simulates an adjustment to Federal Reserve rates.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                basisPoints: { type: SchemaType.NUMBER }
-            },
-            required: ["basisPoints"]
-        }
-    },
     {
         name: "learnFromUser",
         description: "Learns a new rule or insight from the user.",
@@ -350,14 +267,10 @@ export interface ToolResult {
 
 export async function executeTool(name: string, args: Record<string, any>): Promise<ToolResult | any> {
     try {
-        if (name === "runSoftPull") return await runSoftPull(args.name, args.address || "Unknown");
-        if (name === "runAVM") return await runAVM(args.address);
-        if (name === "scheduleMeeting") return await scheduleMeeting(args.topic, args.time);
-        if (name === "generateTermSheet") return await generateTermSheet(args.loanAmount, args.propertyAddress);
-        if (name === "runMonteCarlo") return await runMonteCarlo(args.creditScore, args.loanAmount, args.income);
-        if (name === "matchSecondaryMarket") return await matchSecondaryMarket(args.loanAmount, args.creditScore, args.propertyType);
-        if (name === "securitizeAsset") return await securitizeAsset(args.loanAmount, args.creditScore);
-        if (name === "adjustFedRates") return await adjustFedRates(args.basisPoints);
+        // Simulated financial tools (runSoftPull, runAVM, scheduleMeeting,
+        // generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset,
+        // adjustFedRates) are intentionally not dispatched here — they returned
+        // fabricated financial data. See toolDefinitions note above.
         if (name === "learnFromUser") return await learnFromUser(args.topic, args.insight);
         if (name === "deepResearch") return await deepResearch(args.topic);
         if (name === "getWeather") return await getWeather(args.city);

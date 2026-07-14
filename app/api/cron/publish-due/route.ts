@@ -12,6 +12,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { publishPost } from "@/lib/publish";
 import { integrityOk } from "@/lib/contentQC";
 import { logActivity } from "@/lib/activity";
+import { notifyTeam } from "@/lib/notify/leadAlert";
 import { cfg } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -68,13 +69,27 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       // Retry with backoff; give up after ~36h so a dead post can't retry forever.
       const tooOld = Date.now() - Date.parse(pick.created_at) > 36 * 3600_000;
+      const errMsg = e instanceof Error ? e.message : "error";
       await supabaseAdmin.from("content_posts").update(
         tooOld
           ? { status: "error" }
           : { status: "scheduled", scheduled_for: new Date(Date.now() + 2 * 3600_000).toISOString() }
       ).eq("id", pick.id);
       console.warn("[publish-due] publish failed", e);
-      return NextResponse.json({ ok: false, retry: !tooOld, error: e instanceof Error ? e.message : "error" });
+      if (tooOld) {
+        // Terminal give-up: previously this dropped to status "error" silently, so
+        // generated content could just never publish with no one the wiser. Leave a
+        // durable activity trail AND alert the owner so it can be re-scheduled/fixed.
+        await logActivity({
+          entity_type: "org", entity_id: pick.id, actor: "agent:publisher", action: "content.publish_gave_up",
+          detail: { scheduled_for: pick.scheduled_for, type: pick.type, error: errMsg },
+        }).catch(() => {});
+        await notifyTeam(
+          "Fetti: scheduled post gave up (never published)",
+          `A scheduled ${pick.type} post (id ${pick.id}) failed to publish for >36h and was marked "error" — it will NOT retry.\nScheduled for: ${pick.scheduled_for}\nLast error: ${errMsg}`,
+        ).catch(() => {});
+      }
+      return NextResponse.json({ ok: false, retry: !tooOld, error: errMsg });
     }
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "error" }, { status: 500 });

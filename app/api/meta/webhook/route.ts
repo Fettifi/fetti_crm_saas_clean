@@ -22,6 +22,12 @@ import crypto from "crypto";
 //   3. The Page access token (META_ACCESS_TOKEN) must have `leads_retrieval` permission
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Paid Meta leads are processed AFTER we ACK Meta (via after()), so the background
+// work runs on this invocation's clock. The Vercel default cap (~10s) can kill a
+// multi-lead batch mid-flight — a redelivery/refresh can carry several leadgen
+// events, each doing a Graph fetch + full /api/apply intake. Give the function
+// room so a burst of paid leads all finish instead of some being silently dropped.
+export const maxDuration = 300;
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 const GRAPH = "https://graph.facebook.com/v21.0";
@@ -235,7 +241,10 @@ export async function POST(req: NextRequest) {
             meta: { leadgen_id: leadgenId, form_id: v.form_id, page_id: v.page_id, ad_id: v.ad_id, created_time: v.created_time },
           };
           // Route through the same intake the website uses (scoring, auto-response, alert, agents).
-          const ar = await fetch(`${APP_URL}/api/apply`, { method: "POST", headers: internalHeaders, body: JSON.stringify(body) });
+          // Bound the self-call: one hung intake must not eat the whole maxDuration budget
+          // and starve the remaining leads in this batch. On timeout the catch below saves
+          // a fallback lead so the paid lead is never lost.
+          const ar = await fetch(`${APP_URL}/api/apply`, { method: "POST", headers: internalHeaders, body: JSON.stringify(body), signal: AbortSignal.timeout(60000) });
           if (!ar.ok) {
             console.error("[meta/webhook] /api/apply rejected:", ar.status);
             await saveFallbackLead(v, mapped, `intake rejected (HTTP ${ar.status})`);

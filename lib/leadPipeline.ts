@@ -35,7 +35,9 @@ export async function runNewLeadPipeline(newLead: any, opts: PipelineOpts = {}):
   const phone = newLead.phone || null;
   const raw = (newLead.raw && typeof newLead.raw === "object" ? newLead.raw : {}) as Record<string, any>;
   const optedOutSms = raw.sms_consent === false || !!raw.sms_optout_at;
-  const smsConsent = !optedOutSms && (raw.sms_consent === true || raw.consent?.sms_optin === true);
+  // A prior text that came back failed/undelivered (flagged by /api/sms/status) means
+  // this number is dead — a pipeline replay must not burn another text on it (email only).
+  const smsConsent = !optedOutSms && !raw.sms_undeliverable && (raw.sms_consent === true || raw.consent?.sms_optin === true);
   const smsCapable = opts.smsCapable !== false;
   const loan_purpose = newLead.loan_purpose || null;
   const score = newLead.score ?? 0;

@@ -15,6 +15,14 @@ export const CRON_EXPECTED: Record<string, number> = {
   content: 26 * 3600,        // daily
   doctor: 8 * 3600,          // every 6h
   heal: 2 * 3600,            // hourly
+  // High-frequency revenue pipes the watchdog was blind to. These die silently
+  // (Graph outage, plan limit, bad deploy) with no alert — now the doctor pages
+  // on staleness. Grace = several missed runs so ordinary Vercel-cron jitter
+  // never false-pages, while a truly dead pipe still surfaces within the hour.
+  "email-poll": 20 * 60,        // every 5m (inbound-reply pipe) — tolerate ~3 misses
+  "import-leads": 50 * 60,      // every 15m (safety-net lead importer) — tolerate ~2 misses
+  "publish-due": 50 * 60,       // every 15m (scheduled social publisher) — tolerate ~2 misses
+  "social-insights": 26 * 3600, // daily (content ROI ingest)
 };
 
 export async function recordHeartbeat(name: string): Promise<void> {

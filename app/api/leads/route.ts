@@ -2,10 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
 import { deleteLeadCascade } from "@/lib/los";
 
 const INTERNAL_TOKEN = process.env.INTERNAL_LEAD_API_TOKEN;
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
 // This route's POST is token-authed (machine intake), so /api/leads is NOT in the
 // proxy session-gate. The DELETE therefore verifies the staff session itself.
@@ -53,7 +53,7 @@ export async function DELETE(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    // 1) Simple auth using a shared Bearer token
+    // 1) Simple auth using a shared Bearer token (public-facing machine-intake gate).
     const authHeader = req.headers.get("authorization") || "";
     const expected = `Bearer ${INTERNAL_TOKEN}`;
     if (!INTERNAL_TOKEN || authHeader !== expected) {
@@ -63,23 +63,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2) Parse body
+    // 2) Parse + minimal validation
     const body = await req.json();
-
-    const {
-      full_name,
-      email,
-      phone,
-      state,
-      loan_purpose,
-      occupancy,
-      property_value,
-      credit_band,
-      liquid_assets,
-      notes,
-      source,
-    } = body;
-
+    const { email, phone } = body || {};
     if (!email && !phone) {
       return NextResponse.json(
         { error: "At least email or phone is required" },
@@ -87,84 +73,42 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3) Simple scoring (Tier 1 / Tier 2 style)
-    let score = 0;
-
-    // Credit band
-    if (credit_band === "720+" || credit_band === "700-719") score += 40;
-    else if (credit_band === "680-699") score += 30;
-    else if (credit_band === "650-679") score += 20;
-
-    // Assets
-    if (liquid_assets && liquid_assets >= 100000) score += 30;
-    else if (liquid_assets && liquid_assets >= 50000) score += 20;
-
-    // Property value
-    if (property_value && property_value >= 750000) score += 20;
-    else if (property_value && property_value >= 350000) score += 10;
-
-    // Purpose weighting
-    if (
-      typeof loan_purpose === "string" &&
-      loan_purpose.toLowerCase().includes("dscr")
-    ) {
-      score += 10;
-    }
-
-    let tier: "Tier 1" | "Tier 2" | "Tier 3" = "Tier 3";
-    if (score >= 70) tier = "Tier 1";
-    else if (score >= 40) tier = "Tier 2";
-
-    const stage = "New Lead";
-
-    // 4) Normalize + dedupe like EVERY other ingest path (this token intake used to
-    // bypass all safeguards: formatted phones, uppercase emails, duplicate rows).
-    const phoneNorm = canonicalPhone(phone);
-    const emailNorm = email ? String(email).trim().toLowerCase() : null;
-    const orParts: string[] = [];
-    if (emailNorm) orParts.push(`email.eq.${emailNorm}`);
-    if (phoneNorm) for (const f of phoneMatchForms(phoneNorm)) orParts.push(`phone.eq.${f}`);
-    if (orParts.length) {
-      const { data: existing } = await supabaseAdmin
-        .from("leads").select("id").or(orParts.join(",")).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (existing) {
-        return NextResponse.json({ success: true, lead_id: (existing as any).id, deduped: true }, { status: 200 });
-      }
-    }
-    const { data, error } = await supabaseAdmin
-      .from("leads")
-      .insert([
-        {
-          full_name,
-          email: emailNorm,
-          phone: phoneNorm,
-          state,
-          loan_purpose,
-          occupancy,
-          property_value,
-          credit_band,
-          liquid_assets,
-          notes,
-          stage,
-          source: source || "api",
-          score,
-          tier,
-        },
-      ])
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Supabase insert error:", error);
+    // 3) Delegate to the SINGLE lead front door (/api/apply) instead of scoring and
+    // inserting here. This token intake used to run its OWN divergent scoring formula
+    // and write UNSHIELDED rows straight into `leads` — a dead-end that bypassed
+    // Lead Shield (bot/fake quarantine → Review lane), the canonical scoreLead tiering,
+    // and the entire new-lead pipeline (first touch, owner alert, agents, Meta CAPI).
+    // Forwarding server-to-server gives it the IDENTICAL treatment as the website and
+    // the Meta webhook. We carry the internal secret so /api/apply skips the per-IP
+    // limiter (this self-call has no real client IP), exactly like the Meta webhook.
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (process.env.CRON_SECRET) headers["x-fetti-internal"] = process.env.CRON_SECRET;
+    const forwardBody = { ...body, source: body?.source || "api" };
+    const ar = await fetch(`${APP_URL}/api/apply`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(forwardBody),
+    });
+    const result = await ar.json().catch(() => ({} as any));
+    if (!ar.ok) {
+      console.error("[/api/leads] /api/apply rejected:", ar.status, result?.error);
       return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
+        { error: result?.error || "intake failed" },
+        { status: ar.status }
       );
     }
 
+    // Preserve a response compatible with the prior contract (success + tier + lead
+    // id), now sourced from the canonical intake so external callers see the REAL tier.
     return NextResponse.json(
-      { success: true, lead: data, tier },
-      { status: 201 }
+      {
+        success: true,
+        lead_id: result?.lead_id ?? null,
+        tier: result?.tier,
+        score: result?.score,
+        deduped: !!result?.deduped,
+      },
+      { status: ar.status }
     );
   } catch (err: any) {
     console.error("Lead API error:", err);

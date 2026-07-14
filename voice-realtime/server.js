@@ -25,13 +25,15 @@ const VOICE_INGEST_TOKEN = process.env.VOICE_INGEST_TOKEN || "";
 const CRM_LOOKUP_URL = process.env.CRM_LOOKUP_URL || "https://app.fettifi.com/api/voice/lookup";
 const CRM_TRANSFER_URL = process.env.CRM_TRANSFER_URL || "https://app.fettifi.com/api/voice/transfer";
 
-// MANDATORY opening line — Penny's FIRST utterance, NON-INTERRUPTIBLE (barge-in ignored
-// until it finishes). Combines CA SB 1001 (automated-AI disclosure) + CA §632 (recorded/
-// transcribed → continuing = implied consent).
-const OPENING = "You've reached Fetti Financial Services. Quick heads-up — this is Penny, an automated A.I. assistant, and this call is recorded and transcribed for quality and record-keeping. Now — who am I speaking with, and what can I help you with today?";
+// Penny's first spoken line. The LEGAL disclosure (CA SB 1001 automated-AI + CA §632
+// recorded/transcribed) is now emitted DETERMINISTICALLY by Twilio as a <Say> BEFORE this
+// media stream opens (see /api/voice/incoming + /api/voice/outbound/twiml) — so it can
+// never be skipped or reworded by the model. Penny therefore opens warmly here; she does
+// NOT repeat the disclosure.
+const OPENING = "So — who am I speaking with, and what can I help you with today?";
 
 const INSTRUCTIONS = `You are Penny, the warm, sharp, professional receptionist and virtual assistant for Fetti Financial Services LLC (a licensed mortgage lender & broker, NMLS 2267023). California-cool, intelligent, smooth — never robotic. You are an automated A.I. assistant and must never claim to be human.
-Your VERY FIRST words on the call must be, word for word: "${OPENING}" — say exactly that before anything else (it is a legally required disclosure that you're an automated A.I. assistant and the call is recorded), then continue naturally. Never skip it, shorten it, or talk over it.
+The phone system has ALREADY played the legally required disclosure (that you are an automated A.I. assistant and the call is recorded and transcribed) to the caller BEFORE you were connected — do NOT repeat it. Open warmly; your first words should be, essentially: "${OPENING}". Then continue naturally.
 After the opening, talk like a real person on the phone: natural, brief, conversational; let the caller interrupt you and roll with it.
 LIVE TRANSFER: you CAN attempt a live transfer to Ramon when the caller asks to speak with him or the matter is clearly urgent/time-sensitive (existing borrower with a live deal, deadline, or a referral partner). FIRST get their name and the reason. Then say something like "Let me see if he's available — one moment, stay with me" and CALL the transfer_call tool. NEVER promise he'll pick up. CRITICAL: while checking, NEVER say he is available, never say you are transferring or connecting — you do NOT know yet. Say only that you're checking. Announce a connection ONLY if the tool returns connected; if it returns unavailable, apologize warmly ("he's tied up right now") and take a detailed message. If the tool says he's unavailable, say he's tied up right now and take a detailed message instead. Never give out his direct line/email/personal contact. For routine inquiries, vendors, and solicitors, take a message — don't attempt a transfer. TRANSFER ELIGIBILITY: attempt transfer_call ONLY for (a) callers matched in the CRM as clients/leads, or (b) business callers who have FULLY identified themselves (name + company + reason) with a clearly legitimate, deal-related, time-sensitive matter — and include their company in the transfer reason. NEVER attempt a transfer for an unidentified caller or anyone selling something.
 Get the caller's name, best callback number, and the FULL, specific reason for the call (loan type, property, dollar amount, timeline, who referred them, urgency). Ask natural follow-ups until it's genuinely detailed.
@@ -130,11 +132,17 @@ wss.on("connection", (twilio) => {
     salvaged = true;
     try {
       await postToCrm({
-        caller_name: obFirst || null, callback_number: caller || null,
+        caller_name: obFirst || null,
+        // OUTBOUND salvage: do NOT set a callback_number. The watchdog callback sweep
+        // dials back any "new" message that has one — which for an outbound salvage would
+        // mean Penny re-dialing a number WE just proactively called. The number is already
+        // known (we placed the call); keep it only in the transcript/reason, not as a
+        // callback target. Inbound salvage still carries the caller's number to call back.
+        callback_number: obMode ? null : (caller || null),
         // An OUTBOUND call ending without a saved outcome is normal wrap-up, not an
         // emergency — label it as a summary instead of a callback alarm.
         reason: obMode
-          ? `📞 Outbound ${obMode} call ended — transcript below`
+          ? `📞 Outbound ${obMode} call ended${caller ? ` (was calling ${caller})` : ""} — transcript below`
           : `⚠️ CALL ENDED EARLY (${why}) — partial transcript below; call back`,
         // A dropped/partial call is a normal-priority callback, not an emergency.
         // (It used to fire "high" on every early hangup — false alarms.) The full
@@ -160,9 +168,12 @@ wss.on("connection", (twilio) => {
       // OUTBOUND CALL (we dialed them): different opening + tight scope. Consent and
       // no-cold-call gates were enforced server-side before this call was placed.
       const who = obFirst ? ` Am I speaking with ${obFirst}?` : " Who am I speaking with?";
+      // The AI + recorded/transcribed disclosure is delivered deterministically by the
+      // Twilio <Say> in /api/voice/outbound/twiml before this stream — so the opening
+      // here is warm and does not restate it.
       const obOpening = obMode === "confirm"
-        ? `Hi! This is Penny, the automated A.I. assistant for Fetti Financial Services — quick heads-up, this call is recorded and transcribed.${who}`
-        : `Hi! This is Penny, the automated A.I. assistant for Fetti Financial Services, returning your call — and a quick heads-up, this call is recorded and transcribed.${who}`;
+        ? `Hi! This is Penny with Fetti Financial Services.${who}`
+        : `Hi! This is Penny with Fetti Financial Services, returning your call.${who}`;
       ctx = `\n\nOUTBOUND MODE (${obMode}): WE called THEM — ${obContext}\n` + (obMode === "confirm"
         ? `Your ONLY job: warmly confirm they can still make the appointment. If yes: great, tell them Ramon is looking forward to it, ask if there's anything they'd like him to prepare, then wrap up and CALL save_message with the outcome (reason starting "APPT CONFIRMED — "). If they need to reschedule: no problem — tell them a fresh scheduling link is coming by text/email, use book_call, and save_message (reason starting "WANTS RESCHEDULE — "). Keep the whole call under two minutes; do NOT sell, do NOT collect documents, do NOT quote numbers. If they ask to speak to Ramon now, you may use transfer_call as usual. If they say stop calling / not interested: apologize once, confirm no more calls, save_message (reason starting "CALL OPT-OUT — "), and end warmly.`
         : `You're RETURNING their call — they reached out to us first. Ask how you can help, handle it exactly like an inbound call (messages, booking, transfer_call if they want Ramon — whisper rules apply). If they don't remember calling or want no calls: apologize once, confirm no more calls, save_message (reason starting "CALL OPT-OUT — "), and end warmly.`);
@@ -197,8 +208,8 @@ wss.on("connection", (twilio) => {
       },
       tools: TOOLS, tool_choice: "auto",
     } }));
-    // The verbatim SB 1001 + §632 disclosure is mandated as Penny's first utterance inside
-    // INSTRUCTIONS; a bare response.create kicks it off (non-interruptible via `greeted`).
+    // The SB 1001 + §632 disclosure was already played deterministically by Twilio before
+    // this stream opened; a bare response.create kicks off Penny's warm opening line.
     oai.send(JSON.stringify({ type: "response.create" }));
   }
 

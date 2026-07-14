@@ -29,6 +29,21 @@ async function load(id: string) {
   return { loanFile, lead };
 }
 
+// Concurrency-safe persist: re-read the FRESHEST leads.raw right before writing and merge
+// ONLY this borrower's card_auth entry. A whole-`raw` overwrite loses any change a
+// concurrent writer (e.g. the borrower e-signing at the token endpoint, or a co-borrower's
+// request) made between our load() and this write. Narrowing to a single jsonb key on a
+// fresh read removes that cross-key clobber. A fully atomic write would need a jsonb_set
+// RPC or a dedicated card_authorizations table (DB migration) — deferred.
+async function persistCardAuthEntry(leadId: string, index: number, entry: CardAuth) {
+  const { data: fresh } = await supabaseAdmin.from("leads").select("raw").eq("id", leadId).maybeSingle();
+  const raw = (fresh?.raw && typeof fresh.raw === "object") ? fresh.raw : {};
+  const auths: Record<string, CardAuth> = (raw.card_auths && typeof raw.card_auths === "object") ? raw.card_auths : {};
+  auths[String(index)] = entry;
+  raw.card_auths = auths;
+  return supabaseAdmin.from("leads").update({ raw }).eq("id", leadId);
+}
+
 function borrowerNames(lead: any, loanFile: any): string[] {
   const u = assembleUrla(lead, loanFile);
   return (u.borrowers || []).map((b: any, i: number) =>
@@ -44,7 +59,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Housekeeping: drop any CVV that has passed its TTL (PCI — never retain CVV past use).
   let changed = false;
   for (const k of Object.keys(auths)) { const before = auths[k]?.cvvEnc; purgeExpiredCvv(auths[k]); if (before && !auths[k]?.cvvEnc) changed = true; }
-  if (changed) { const raw = lead.raw && typeof lead.raw === "object" ? lead.raw : {}; raw.card_auths = auths; await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id); }
+  if (changed) {
+    // Purge onto a FRESH read so this housekeeping write can't clobber a borrower who
+    // e-signed (or a co-borrower request) between load() above and here.
+    const { data: fresh } = await supabaseAdmin.from("leads").select("raw").eq("id", lead.id).maybeSingle();
+    const raw = (fresh?.raw && typeof fresh.raw === "object") ? fresh.raw : {};
+    const freshAuths: Record<string, CardAuth> = (raw.card_auths && typeof raw.card_auths === "object") ? raw.card_auths : {};
+    for (const k of Object.keys(freshAuths)) purgeExpiredCvv(freshAuths[k]);
+    raw.card_auths = freshAuths;
+    await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
+  }
   return NextResponse.json({
     shareToken: loanFile.share_token,
     fileNumber: loanFile.file_number,
@@ -75,8 +99,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const cvv = cvvLive(a) ? decryptCvv(a.cvvEnc) : undefined;
       a.revealedAt = new Date().toISOString();
       purgeExpiredCvv(a);
-      auths[key] = a; raw.card_auths = auths;
-      await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
+      await persistCardAuthEntry(lead.id, i, a); // single-key merge — don't clobber other borrowers
       await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: lead.id, actor: "lo", action: "card_auth.revealed", detail: { borrowerIndex: i, last4: a.last4 } }).catch(() => {});
       return NextResponse.json({ pan, cvv, cvvExpiresAt: cvvLive(a) ? a.cvvExpiresAt : undefined, cardholder: a.cardholder, exp: `${a.expMonth}/${a.expYear}`, brand: a.brand, billingZip: a.billingZip });
     }
@@ -84,7 +107,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Clear the CVV immediately (LO has finished keying the charge).
     if (body.action === "clear_cvv") {
       const a = auths[key];
-      if (a) { delete a.cvvEnc; delete a.cvvExpiresAt; auths[key] = a; raw.card_auths = auths; await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id); }
+      if (a) { delete a.cvvEnc; delete a.cvvExpiresAt; await persistCardAuthEntry(lead.id, i, a); }
       await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: lead.id, actor: "lo", action: "card_auth.cvv_cleared", detail: { borrowerIndex: i } }).catch(() => {});
       return NextResponse.json({ ok: true });
     }
@@ -102,8 +125,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         requestedAt: ex?.requestedAt || new Date().toISOString(),
         borrowerName: names[i] || `Borrower ${i + 1}`,
       };
-      raw.card_auths = auths;
-      await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
+      await persistCardAuthEntry(lead.id, i, auths[key]); // single-key merge — don't clobber other borrowers
 
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
       const link = `${appUrl}/card-auth/${loanFile.share_token}?b=${i}`;
@@ -131,8 +153,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       requestedAt: existing?.requestedAt || new Date().toISOString(),
       borrowerName: names[i] || `Borrower ${i + 1}`,
     };
-    raw.card_auths = auths;
-    const { error } = await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
+    const { error } = await persistCardAuthEntry(lead.id, i, auths[key]); // single-key merge — don't clobber other borrowers
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: lead.id, actor: "lo", action: "card_auth.requested", detail: { borrowerIndex: i, amount } }).catch(() => {});
 

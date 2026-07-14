@@ -14,6 +14,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { cfg } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
+import { unsubUrl } from "@/lib/notify/emailCopy";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
@@ -96,7 +97,7 @@ export async function sendSms(
 export async function sendEmail(
   to: string,
   subject: string,
-  opts: { html?: string; text?: string }
+  opts: { html?: string; text?: string; leadId?: string | null }
 ): Promise<{ ok: boolean; id?: string; detail: string }> {
   try {
     const key = process.env.RESEND_API_KEY;
@@ -107,6 +108,14 @@ export async function sendEmail(
     const replyTo = ((await cfg("REPLY_TO_EMAIL")) || "frank@fettifi.com").trim();
     const payload: Record<string, unknown> = { from, to: [to], subject, reply_to: [replyTo] };
     if (opts.html) payload.html = opts.html; else payload.text = opts.text || "";
+    // Bulk-sender hygiene (Gmail/Yahoo 2024 rules + CAN-SPAM): lead-facing mail must
+    // advertise one-click unsubscribe or it gets penalized as spam. Emit the signed
+    // one-click List-Unsubscribe URL when we know the lead id (POST handled by
+    // /api/unsubscribe), always with a mailto fallback.
+    const unsub = opts.leadId ? unsubUrl(opts.leadId) : null;
+    payload.headers = unsub
+      ? { "List-Unsubscribe": `<${unsub}>, <mailto:unsubscribe@fettifi.com>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" }
+      : { "List-Unsubscribe": "<mailto:unsubscribe@fettifi.com>" };
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },

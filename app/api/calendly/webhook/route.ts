@@ -64,13 +64,22 @@ export async function POST(req: NextRequest) {
         : null;
       const phoneRaw: string | null = p?.text_reminder_number || p?.invitee?.text_reminder_number || qaPhone;
       const phone = phoneRaw ? String(phoneRaw).replace(/[^\d+]/g, "").slice(0, 16) || null : null;
-      const { score, tier } = scoreLead({});
+      // A self-scheduled call is the STRONGEST intent signal in the funnel — human-
+      // verified, high-effort. scoreLead({}) has no borrower data and would floor this
+      // to score 0 / Tier 3 (cold drip), burying the hottest lead we get. Seed Tier 1
+      // so it rides the tighter HOT_STEPS nurture cadence, and denormalize a qualified
+      // verdict in the after() block below so the qualified-lead task + Meta signal fire
+      // (parity with every other source, which runs applyQualification via the pipeline).
+      const { score: baseScore } = scoreLead({});
+      const score = Math.max(baseScore, 70); // >=70 ⇒ Tier 1 in scoreLead's own banding
+      const tier = "Tier 1";
+      const leadRaw = { calendly: { event: eventName || null, start_time: startTime || null, created_from: "webhook_unmatched_invitee" } };
       const { data: created, error } = await supabaseAdmin.from("leads").insert({
         full_name: inviteeName, email, phone,
         stage: "Engaged", source: "calendly", lead_source: "calendly",
         score, tier,
         notes: `Booked "${eventName || "a call"}" via Calendly${startTime ? ` for ${startTime}` : ""} — created from the booking (no prior lead matched this email).`,
-        raw: { calendly: { event: eventName || null, start_time: startTime || null, created_from: "webhook_unmatched_invitee" } },
+        raw: leadRaw,
       }).select("id, stage").single();
       if (error || !created) {
         // Never lose the booking silently — leave a trail even when insert fails.
@@ -90,6 +99,18 @@ export async function POST(req: NextRequest) {
           const { notifyNewLead } = await import("@/lib/notify/leadAlert");
           await notifyNewLead({ lead_id: createdId, full_name: inviteeName, email, phone, tier, score, source: "calendly", loan_purpose: eventName || null } as any);
         } catch { /* best-effort */ }
+        // A booking is a qualified, hot lead. Denormalize a qualified verdict onto the
+        // record so the top-priority "work this lead" org_task is raised and Meta learns
+        // this converting profile — the same effect /api/apply gets from its Qualify
+        // agent, without spending an AI call on a lead we already know booked a call.
+        try {
+          const { applyQualification } = await import("@/lib/qualify");
+          await applyQualification(
+            { id: createdId, raw: leadRaw, full_name: inviteeName, email, phone },
+            { summary: `Booked "${eventName || "a call"}" via Calendly`, output: { decision: "qualified", tier: "Tier 1", reasons: ["Self-scheduled a call via Calendly (high intent)"] } },
+            { fullName: inviteeName, phone, ruleTier: "Tier 1", loanPurpose: eventName || null, optedOut: false },
+          );
+        } catch { /* best-effort — the lead is already created + alerted above */ }
       });
     }
     if (!lead) {

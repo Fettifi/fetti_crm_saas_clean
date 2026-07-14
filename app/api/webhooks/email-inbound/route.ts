@@ -16,14 +16,17 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    // Auth: shared secret via ?token= or x-inbound-token header. If a secret is set,
-    // enforce it (fail-closed); if not yet configured, accept + log (so the pipe can
-    // be tested) — set EMAIL_INBOUND_SECRET to harden.
+    // Auth: shared secret via ?token= or x-inbound-token header. FAIL CLOSED —
+    // if no secret is configured we reject rather than ingest, because this route
+    // has real side effects (lead ingestion + Mark auto-replies) that a forged
+    // inbound payload could otherwise drive. Set EMAIL_INBOUND_SECRET to enable.
     const secret = await cfg("EMAIL_INBOUND_SECRET");
-    if (secret) {
-      const got = req.nextUrl.searchParams.get("token") || req.headers.get("x-inbound-token");
-      if (got !== secret) return NextResponse.json({ error: "bad token" }, { status: 401 });
+    if (!secret) {
+      console.error("[email-inbound] rejected: EMAIL_INBOUND_SECRET is not configured (fail-closed)");
+      return NextResponse.json({ error: "inbound webhook not configured" }, { status: 503 });
     }
+    const got = req.nextUrl.searchParams.get("token") || req.headers.get("x-inbound-token");
+    if (got !== secret) return NextResponse.json({ error: "bad token" }, { status: 401 });
 
     const ct = req.headers.get("content-type") || "";
     let body: any = {};

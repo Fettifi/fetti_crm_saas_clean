@@ -23,15 +23,23 @@ type Product = {
   requirements: string[]; faqs: { q: string; a: string }[]; scope: "consumer" | "all";
 };
 
+// Reg Z / TILA §1026.24(d) compliance: on the CONSUMER products below (scope: "consumer"),
+// a stated down-payment amount or percentage — including "$0 down" / "no down" — is a
+// "triggering term" that would require companion disclosures (representative APR + terms of
+// repayment) on the same page. We keep the down-payment language qualitative here instead
+// (we cannot state a representative APR without a real rate quote), so no triggering term is
+// advertised. Investment/business-purpose products (scope: "all", e.g. DSCR, fix & flip, SBA)
+// are exempt from Reg Z, so their leverage/down figures are left as-is.
+
 const PRODUCTS: Record<string, Product> = {
   "home-purchase-loans": {
     label: "Home Purchase Loans",
     blurb: "Conventional, FHA, and VA financing to buy the home you'll live in.",
     intro: "Buying a home in {state}? Fetti Financial Services is a nonbank lender — we fund conventional, FHA, and VA loans, get you pre-approved fast, and close with a specialist who actually picks up the phone. Told no by a bank? That's exactly who we're built for.",
-    bullets: ["Low-down-payment options (as little as 3–3.5%)", "First-time buyer programs", "Same-day pre-approval letters", "Competitive fixed rates"],
+    bullets: ["Low-down-payment options", "First-time buyer programs", "Same-day pre-approval letters", "Competitive fixed rates"],
     requirements: ["Government-issued ID", "Recent pay stubs / proof of income", "2 months of bank statements", "A property or price range in {state}"],
     faqs: [
-      { q: "How much do I need to put down to buy a home in {state}?", a: "Many buyers qualify with 3% down on conventional loans, 3.5% on FHA, and $0 down on VA loans if you're eligible. The right answer depends on your credit, income, and goals — we'll map it in a 2-minute conversation with no credit impact." },
+      { q: "How much do I need to put down to buy a home in {state}?", a: "Many buyers qualify with a low down payment on conventional and FHA loans, and eligible VA borrowers may qualify for especially low upfront costs. The right answer depends on your credit, income, and goals — we'll map your exact number in a 2-minute conversation with no credit impact." },
       { q: "How fast can I get pre-approved?", a: "Often the same day. Start your application online and a Fetti specialist follows up quickly with your numbers and a pre-approval letter so sellers take you seriously." },
       { q: "Does Fetti lend on home purchases in {state}?", a: "Yes — Fetti Financial Services (NMLS #2267023) originates home purchase loans in {state}. Start online and we'll confirm your options." },
     ],
@@ -40,11 +48,14 @@ const PRODUCTS: Record<string, Product> = {
   "first-time-homebuyer": {
     label: "First-Time Homebuyer Loans",
     blurb: "Low down payments, buyer programs, and assistance to get you into your first home.",
-    intro: "Buying your first home in {state}? Fetti Financial Services is a nonbank lender built to get first-time buyers to the closing table — with low-down-payment loans (as little as 3% conventional, 3.5% FHA, and $0 on VA or USDA if you're eligible), first-time-buyer programs, and down payment assistance that can cover most or all of your upfront cost. Not sure where to start, or told no by a bank? That's exactly who we're here for.",
-    bullets: ["As little as 3–3.5% down (or $0 on VA/USDA)", "Down payment assistance to cover your upfront cost", "First-time-buyer programs (HomeReady, Home Possible, FHA)", "Same-day pre-approval — a specialist who picks up the phone"],
+    intro: "Buying your first home in {state}? Fetti Financial Services is a nonbank lender built to get first-time buyers to the closing table — with low-down-payment loans, first-time-buyer programs, and down payment assistance that can cover most or all of your upfront cost. Not sure where to start, or told no by a bank? That's exactly who we're here for.",
+    bullets: ["Low-down-payment options, including VA & USDA for eligible buyers", "Down payment assistance to cover your upfront cost", "First-time-buyer programs (HomeReady, Home Possible, FHA)", "Same-day pre-approval — a specialist who picks up the phone"],
     requirements: ["Government-issued ID", "Recent pay stubs / proof of income", "2 months of bank statements", "A price range or property in {state}"],
     faqs: [
-      { q: "Do I really need 20% down to buy my first home in {state}?", a: "No — that's the biggest myth in home buying. Most first-time buyers put 3% down on a conventional loan or 3.5% on FHA, and down payment assistance can cover most or all of even that. VA and USDA can be $0 down if you're eligible. We'll show you the real number in a 2-minute chat, with no credit impact." },
+      // Reg Z §1026.24(d): removed ALL specific down-payment figures — including the
+      // "20%" myth reference, because a stated down-payment percentage is a triggering
+      // term on a consumer ad whether it's affirmed OR debunked. Kept fully qualitative.
+      { q: "Do I really need a big down payment to buy my first home in {state}?", a: "No — that's the biggest myth in home buying. Most first-time buyers put far less down than they expect on conventional and FHA loans, and down payment assistance can cover most or all of it. Eligible VA and USDA buyers may qualify with little to nothing upfront. We'll show you the real number in a 2-minute chat, with no credit impact." },
       { q: "What is down payment assistance?", a: "It's help — usually from a state or county housing program — that covers part or all of your down payment and closing costs. It can be a grant you never repay, a loan that's forgiven over time, or one you repay later when you sell or refinance. We help you find the programs you qualify for and pair them with your loan. Eligibility and terms vary by program." },
       { q: "Does getting started hurt my credit?", a: "No. Pre-qualifying takes about two minutes with no hard credit pull, and there's no obligation. We'll map your options — loan type, down payment, and any assistance you may qualify for." },
     ],
@@ -53,8 +64,10 @@ const PRODUCTS: Record<string, Product> = {
   "down-payment-assistance": {
     label: "Down Payment Assistance",
     blurb: "State, county, and national programs that can cover most or all of your down payment and closing costs.",
-    intro: "The down payment is the #1 thing that stops people from buying — and it's often the easiest to solve. Fetti Financial Services helps buyers in {state} tap down payment assistance programs — from your state housing agency (like CalHFA, Florida Housing, or MSHDA), your county, and national programs — that can cover most or all of your down payment and closing costs, paired with an FHA or conventional loan. A low or zero down payment isn't a weakness here; it's a program fit.",
-    bullets: ["Cover most or all of your down payment + closing costs", "Grants, forgivable seconds, or deferred assistance", "Pairs with FHA (3.5% down) and conventional (3% down)", "We help you find the programs you actually qualify for"],
+    intro: "The down payment is the #1 thing that stops people from buying — and it's often the easiest to solve. Fetti Financial Services helps buyers in {state} tap down payment assistance programs — from your state housing agency (like CalHFA, Florida Housing, or MSHDA), your county, and national programs — that can cover most or all of your down payment and closing costs, paired with an FHA or conventional loan. Needing help with the down payment isn't a weakness here; it's exactly what these programs are for.",
+    // Reg Z §1026.24(d): dropped "zero down payment" and the specific "3.5% / 3% down"
+    // figures — triggering terms on a consumer ad. Kept the benefit qualitative.
+    bullets: ["Cover most or all of your down payment + closing costs", "Grants, forgivable seconds, or deferred assistance", "Pairs with low-down-payment FHA and conventional loans", "We help you find the programs you actually qualify for"],
     requirements: ["Government-issued ID", "Recent pay stubs / proof of income", "2 months of bank statements", "The area or price range you're buying in {state}"],
     faqs: [
       { q: "How much of my down payment can assistance cover in {state}?", a: "Depending on the program and your eligibility, assistance can cover most or all of your down payment plus a chunk of your closing costs. Programs, amounts, and terms vary by state and county — we'll show you the ones you actually qualify for." },

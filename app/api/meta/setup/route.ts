@@ -14,8 +14,7 @@ function authed(req: NextRequest): boolean {
   const sec = process.env.CRON_SECRET;
   if (!sec) return false;
   const h = req.headers.get("authorization") || "";
-  const q = req.nextUrl.searchParams.get("secret") || "";
-  return h === `Bearer ${sec}` || q === sec;
+  return h === `Bearer ${sec}`;
 }
 
 async function run(test: boolean, userToken?: string, capitest?: boolean) {

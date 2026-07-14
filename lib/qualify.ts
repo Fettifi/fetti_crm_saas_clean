@@ -31,8 +31,7 @@ export async function applyQualification(
 
   // A) Denormalize the verdict onto the lead record.
   try {
-    const raw = lead?.raw && typeof lead.raw === "object" ? lead.raw : {};
-    raw.qualification = {
+    const qualification = {
       decision: out.decision || null,
       tier,
       reasons: Array.isArray(out.reasons) ? out.reasons.slice(0, 8) : [],
@@ -40,6 +39,15 @@ export async function applyQualification(
       summary: qualify?.summary || out.summary || null,
       at: new Date().toISOString(),
     };
+    // Concurrency-safe write: this lead may have been snapshotted seconds ago (crons
+    // run the agent per-lead in a loop), and a borrower 1003/URLA save could land in
+    // between. Re-read the freshest raw and merge ONLY our key so we never revert
+    // another writer's raw.* change by round-tripping a stale whole blob.
+    const { data: fresh } = await supabaseAdmin.from("leads").select("raw").eq("id", lead.id).maybeSingle();
+    const raw = ((fresh as any)?.raw && typeof (fresh as any).raw === "object"
+      ? (fresh as any).raw
+      : (lead?.raw && typeof lead.raw === "object" ? lead.raw : {})) as any;
+    raw.qualification = qualification;
     await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
     lead.raw = raw; // keep the in-memory copy fresh for later steps
   } catch (e) {

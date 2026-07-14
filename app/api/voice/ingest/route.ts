@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addMessage } from "@/lib/phoneMessages";
+import { addMessage, alertOwnerSms } from "@/lib/phoneMessages";
 import { cfg } from "@/lib/settings";
 import crypto from "crypto";
 
@@ -48,15 +48,9 @@ async function alertTeam(summary: string) {
     } catch (e: any) { console.error("[voice/ingest] alert email failed:", e?.message); }
   } else console.error("[voice/ingest] alert email SKIPPED — missing", { key: !!key, to: !!to, from: !!from });
   // SMS — the reliable channel (lead alerts already reach the owner's cell this way).
-  // A phone message is time-sensitive; never depend on email alone.
-  const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN, smsFrom = process.env.TWILIO_FROM, smsTo = process.env.LEAD_NOTIFY_SMS_TO;
-  if (sid && tok && smsFrom && smsTo) {
-    try {
-      const body = new URLSearchParams({ To: smsTo, From: smsFrom, Body: `📞 New phone message\n${summary}`.slice(0, 1500) });
-      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() });
-      if (!r.ok) console.error("[voice/ingest] alert SMS rejected:", r.status);
-    } catch (e: any) { console.error("[voice/ingest] alert SMS failed:", e?.message); }
-  }
+  // A phone message is time-sensitive; never depend on email alone. Shared with the
+  // turn-based fallback so both intake paths keep the SMS leg.
+  await alertOwnerSms(`📞 New phone message\n${summary}`);
 }
 
 export async function POST(req: NextRequest) {
@@ -84,7 +78,7 @@ export async function POST(req: NextRequest) {
     // no body" false alarms on early hang-ups, and ships without a bridge redeploy.
     let urgency: "low" | "normal" | "high" = ["low", "normal", "high"].includes(b.urgency) ? b.urgency : "normal";
     if (/CALL ENDED EARLY/i.test(String(reason || ""))) urgency = "normal";
-    const msg = await addMessage({
+    const { message: msg, inserted } = await addMessage({
       caller_name: callerName || undefined,
       callback_number: b.callback_number || undefined,
       for_whom: b.for_whom || "Ramon",
@@ -96,13 +90,17 @@ export async function POST(req: NextRequest) {
     // Put the actual conversation IN the alert. Previously the alert showed only
     // From/Urgency/Reason — so a partial call read as "Unknown / high / no body".
     // Now every alert carries what was said; the SMS leg truncates in alertTeam.
-    await alertTeam(
-      `From: ${callerName || "Unknown"} (${b.callback_number || "?"})\n` +
-      `Urgency: ${msg.urgency}\n` +
-      `Reason: ${reason || "(see transcript)"}` +
-      (transcriptText ? `\n\n—— What was said ——\n${transcriptText}` : "\n\n(No speech was captured on this call.)")
-    );
-    return NextResponse.json({ ok: true, id: msg.id });
+    // Only alert on a genuinely NEW message: a retry/salvage for the same call_sid
+    // updates the existing row in place (idempotent) and must not re-alert the owner.
+    if (inserted) {
+      await alertTeam(
+        `From: ${callerName || "Unknown"} (${b.callback_number || "?"})\n` +
+        `Urgency: ${msg.urgency}\n` +
+        `Reason: ${reason || "(see transcript)"}` +
+        (transcriptText ? `\n\n—— What was said ——\n${transcriptText}` : "\n\n(No speech was captured on this call.)")
+      );
+    }
+    return NextResponse.json({ ok: true, id: msg.id, deduped: !inserted });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "ingest failed" }, { status: 500 });
   }

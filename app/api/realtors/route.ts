@@ -33,7 +33,9 @@ async function save(a: Agent[]) { await setSetting(KEY, JSON.stringify(a)); }
 function rid() { return "ag_" + Math.random().toString(36).slice(2, 10); }
 function codeFor(name: string) { return (name || "agent").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) + Math.random().toString(36).slice(2, 5); }
 
-// RESPA-safe intro: relationship + co-marketing + preferred-lender, NEVER pay-for-leads.
+// RESPA-safe intro: leads with relationship + service value + preferred-lender, NEVER
+// pay-for-leads and NEVER free co-marketing (a "thing of value" to a referral source under
+// §8) — any co-marketing is deferred to a written, each-side-pays-fair-market-value deal.
 function introEmail(a: Agent): { subject: string; body: string } {
   const first = (a.name || "there").split(" ")[0];
   return {
@@ -45,7 +47,7 @@ I'm Ramon Dent with Fetti Financial Services — a licensed mortgage lender & br
 
 What your buyers get with us: fast pre-approvals (often same day), straight answers on tricky files — DSCR/investor, self-employed, jumbo, first-time buyers with down-payment assistance — and a specialist who actually picks up the phone. When your deal needs to close, we don't fumble the financing.
 
-For you: I'm happy to co-host a first-time-buyer workshop, co-brand a market update for your sphere, or just be the lender you can hand a tough scenario to and trust it gets done. No cost, no strings — I'd rather earn a spot on your preferred-lender list by being useful.
+For you: I'm the lender you can hand a tough scenario to and trust it gets done — clear communication, proactive status updates through closing, and a specialist your buyers can reach directly. I'd rather earn a spot on your preferred-lender list by being genuinely useful on your deals. (If down the road we want to co-market, we'll set it up the compliant way — a written agreement where each side pays its own fair-market share.)
 
 Open to a 15-minute call this week? I'll come with a one-pager on how we make your closings smoother.
 
