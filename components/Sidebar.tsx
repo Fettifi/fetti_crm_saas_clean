@@ -15,9 +15,8 @@ import { createBrowserClient } from "@supabase/ssr";
 // they're just off the nav until built out or retired.
 const navSections = [
   { section: "Home & AI", items: [
-    { href: "/", label: "Dashboard", icon: "📊" },
+    { href: "/", label: "Dashboard", icon: "📊" }, // Command Center now a tab here
     { href: "/rupee", label: "Rupee (AI Co-Founder)", icon: "🦉" },
-    { href: "/command", label: "Command Center", icon: "⚡" },
     { href: "/agents", label: "AI Agents", icon: "🧠" },
     { href: "/task-list", label: "Task List", icon: "✅" },
   ] },
@@ -30,14 +29,12 @@ const navSections = [
     { href: "/pricer", label: "Quick Pricer", icon: "🧮" },
     { href: "/income", label: "Income Calc", icon: "💵" },
     { href: "/pricing", label: "Pricing Comparison", icon: "💲" },
-    { href: "/scenarios", label: "Scenario Desk", icon: "📑" },
-    { href: "/compare", label: "Loan Comparison", icon: "📊" },
+    { href: "/scenarios", label: "Scenario Desk", icon: "📑" }, // Loan Comparison now a tab here
     { href: "/preapprovals", label: "Pre-Approvals", icon: "📝" },
     { href: "/esign", label: "E-Sign", icon: "✍️" },
   ] },
   { section: "Marketing & Growth", items: [
-    { href: "/growth", label: "Lead-Gen Launchpad", icon: "🚀" },
-    { href: "/ads", label: "Paid Ads Launch Kit", icon: "🎯" },
+    { href: "/growth", label: "Lead-Gen Launchpad", icon: "🚀" }, // Paid Ads now a tab here
     { href: "/partners", label: "Referral Partners", icon: "🤝" },
   ] },
   { section: "Content & Creative", items: [
@@ -46,8 +43,7 @@ const navSections = [
     { href: "/show", label: "Ray & Mark Studio", icon: "🦉" },
   ] },
   { section: "System", items: [
-    { href: "/settings", label: "Settings", icon: "⚙️" },
-    { href: "/security", label: "Security (MFA)", icon: "🔐" },
+    { href: "/settings", label: "Settings", icon: "⚙️" }, // Security (MFA) now a tab here
     { href: "/doctor", label: "CRM Doctor", icon: "🩺" },
     { href: "/roadmap", label: "Roadmap", icon: "🗺️" },
   ] },

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import AddressInput from "@/components/AddressInput";
+import LoanComparisonPanel from "@/components/LoanComparisonPanel";
 import {
   SCENARIO_SECTIONS, fmtMoney, fmtPercent,
   type Scenario, type Wholesaler, type Quote, type Field, type ScenarioStatus,
@@ -717,10 +718,62 @@ function ScenarioDesk() {
   );
 }
 
+type TabKey = "scenarios" | "compare";
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "scenarios", label: "Scenario Desk" },
+  { key: "compare", label: "Loan Comparison" },
+];
+
 export default function ScenariosPage() {
+  const [tab, setTab] = useState<TabKey>("scenarios");
+
+  // Read the active tab from the URL (?tab=compare) on mount, without
+  // useSearchParams (which would require its own Suspense boundary).
+  useEffect(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (t === "compare" || t === "scenarios") setTab(t);
+    } catch { /* */ }
+  }, []);
+
+  const selectTab = (key: TabKey) => {
+    setTab(key);
+    try {
+      const url = new URL(window.location.href);
+      if (key === "scenarios") url.searchParams.delete("tab");
+      else url.searchParams.set("tab", key);
+      window.history.replaceState(null, "", url.toString());
+    } catch { /* */ }
+  };
+
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-500 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin" /></div>}>
-      <ScenarioDesk />
-    </Suspense>
+    <div className="min-h-screen bg-slate-950">
+      <div className="max-w-[1400px] mx-auto px-6 pt-5">
+        <div className="flex items-center gap-1 border-b border-slate-800">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => selectTab(t.key)}
+              className={`px-4 py-2.5 text-sm font-medium -mb-px border-b-2 transition ${
+                tab === t.key
+                  ? "border-emerald-500 text-emerald-300"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "scenarios" ? (
+        <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-500 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin" /></div>}>
+          <ScenarioDesk />
+        </Suspense>
+      ) : (
+        <LoanComparisonPanel />
+      )}
+    </div>
   );
 }

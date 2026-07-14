@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import DashboardOverview from '@/components/dashboard/DashboardOverview';
@@ -9,6 +9,7 @@ import RoadmapView from '@/components/dashboard/RoadmapView';
 import TaskList from '@/components/dashboard/TaskList';
 import AssistantInterface from '@/components/dashboard/AssistantInterface';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import CommandCenterPanel from '@/components/CommandCenterPanel';
 
 type TabId =
   | 'dashboard'
@@ -143,18 +144,65 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
   );
 }
 
+// In-page tab shell: keeps the entire existing dashboard as the default tab
+// and adds a "Command Center" tab merged in from the old /command route.
+type PageTab = 'default' | 'command';
+
 export default function DashboardPage() {
   const pathname = usePathname();
   // Simple mapping for current path to TabId for sync
   const currentTab = TABS.find(t => pathname.includes(t.id))?.id || 'dashboard';
   const active = TABS.find((t) => t.id === currentTab)!;
 
+  // Read the active in-page tab from the ?tab= query param (client-side only,
+  // to avoid the useSearchParams Suspense requirement that breaks the build).
+  const [pageTab, setPageTab] = useState<PageTab>('default');
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    setPageTab(tab === 'command' ? 'command' : 'default');
+  }, []);
+
+  function selectTab(tab: PageTab) {
+    setPageTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === 'command') url.searchParams.set('tab', 'command');
+    else url.searchParams.delete('tab');
+    window.history.replaceState(null, '', url.toString());
+  }
+
+  const pageTabs: { id: PageTab; label: string }[] = [
+    { id: 'default', label: active.label },
+    { id: 'command', label: 'Command Center' },
+  ];
+
   return (
     <AppLayout
       title={active.label}
       description={active.description}
     >
-      <ActiveTabContent activeTab={currentTab} />
+      <div className="flex items-center gap-1 border-b border-slate-800 -mt-2 mb-2">
+        {pageTabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => selectTab(t.id)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              pageTab === t.id
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {pageTab === 'command' ? (
+        <ErrorBoundary>
+          <CommandCenterPanel />
+        </ErrorBoundary>
+      ) : (
+        <ActiveTabContent activeTab={currentTab} />
+      )}
     </AppLayout>
   );
 }
