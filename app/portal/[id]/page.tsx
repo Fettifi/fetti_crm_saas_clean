@@ -14,29 +14,27 @@ export default function ApplicationPortal() {
     const [uploading, setUploading] = useState<string | null>(null);
 
     useEffect(() => {
-        const session = localStorage.getItem('portal_session');
-        if (!session || session !== id) {
-            router.push('/portal/login');
-            return;
-        }
-        if (id) fetchApplication();
-    }, [id, router]);
+        fetchApplication();
+        // Real authorization is the signed httpOnly cookie, checked server-side by
+        // /api/portal/data — not this URL id or any localStorage value.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-    const handleSignOut = () => {
+    const handleSignOut = async () => {
         localStorage.removeItem('portal_session');
+        try { await fetch('/api/portal/data', { method: 'DELETE' }); } catch { /* clear cookie best-effort */ }
         router.push('/portal/login');
     };
 
     const fetchApplication = async () => {
         try {
-            const { data, error } = await supabase
-                .from('applications')
-                .select('*, leads(*)')
-                .eq('lead_id', id)
-                .single();
-
-            if (error) throw error;
-            setApplication(data);
+            // Authorized read via the session cookie (sent automatically). No borrower
+            // PII crosses the wire except what the portal renders.
+            const res = await fetch('/api/portal/data', { cache: 'no-store' });
+            if (res.status === 401) { router.push('/portal/login'); return; }
+            if (!res.ok) throw new Error('load failed');
+            const data = await res.json();
+            setApplication(data.application);
         } catch (error) {
             console.error('Error fetching application:', error);
         } finally {

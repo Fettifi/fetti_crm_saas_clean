@@ -69,7 +69,7 @@ async function run(topic = "") {
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   try { const out = await run(); await recordHeartbeat("content"); return NextResponse.json(out); }

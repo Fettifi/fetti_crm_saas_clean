@@ -205,18 +205,16 @@ export function captureData(step: string, input: string, data: any) {
             data.email = emailMatch ? emailMatch[0] : input.trim();
             break;
 
-        // Verification Captures (Simulated)
+        // Verification steps. No real credit/identity/asset verification provider is
+        // wired yet, so we must NOT fabricate values: a hardcoded credit score or asset
+        // figure lands in the borrower's 1003 and lead score as if real (a 580 applicant
+        // recorded as 740/$125k), and "verified=true" claims a check that never ran.
+        // Leave these fields unset (honest = unknown) — the borrower's own entered assets
+        // (MORTGAGE_ASSETS) are preserved. Wire a real soft-pull / asset-verification
+        // provider here before writing creditScore/liquidAssets or the verified flags.
         case 'VERIFY_IDENTITY':
-            data.identityVerified = true;
-            data.creditScore = 740; // Mock enrichment
-            break;
         case 'VERIFY_ASSETS':
-            data.assetsVerified = true;
-            data.liquidAssets = 125000; // Mock enrichment
-            break;
         case 'VERIFY_PROPERTY':
-            data.propertyVerified = true;
-            // data.arv = 850000; // Could enrich here
             break;
         case 'MORTGAGE_DOB': data.dob = input; break;
         case 'MORTGAGE_SSN': data.ssn = input; break;

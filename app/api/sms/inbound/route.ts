@@ -17,6 +17,29 @@ export const maxDuration = 120;
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
+// TCPA opt-out detection. Under the FCC's 2024 TCPA Report & Order (47 CFR
+// 64.1200(a)(10), eff. Apr 2025) a consumer may revoke consent by ANY reasonable
+// means, and words like stop/quit/end/cancel/unsubscribe/opt-out are per se
+// reasonable EVEN when embedded in a longer message. A bare-keyword-only match
+// misses "stop texting me" / "remove me from your list". This detector catches
+// embedded revocations while deliberately NOT misfiring on the ambiguous uses the
+// funnel must keep as hot replies ("cancel my 3pm appointment", "stop by the office").
+function isRevocation(raw: string): boolean {
+  const t = (raw || "").trim().toLowerCase();
+  if (!t) return false;
+  // 1) The message IS a single opt-out keyword (± trailing punctuation).
+  if (/^(stop\s?all|stop|unsubscribe|cancel|end|quit|optout|opt[-\s]?out|revoke|remove)[.!?\s]*$/.test(t)) return true;
+  // 2) Words with no other reading in an SMS reply → opt-out even when embedded.
+  if (/\bunsubscribe\b|\bopt[-\s]?out\b|\bstop\s?all\b/.test(t)) return true;
+  // 3) "stop"/"quit"/"cease"/"no more"/"don't"/"do not" tied to a contact channel.
+  if (/\b(?:stop|quit|cease|halt|no more|don'?t|do not|please stop)\b[^.!?]{0,24}\b(?:text|texts|texting|messag|contact|call|calls|calling|email|emails)\b/.test(t)) return true;
+  // 4) Explicit removal requests.
+  if (/\b(?:remove|take)\s+me\b/.test(t) || /\bno more (?:texts?|messages?|calls?|emails?)\b/.test(t) || /\bleave me alone\b/.test(t)) return true;
+  // 5) A leading, standalone "stop" command (but not "stop by ...").
+  if (/^stop\b/.test(t) && !/^stop by\b/.test(t)) return true;
+  return false;
+}
+
 // Twilio inbound SMS webhook ("A message comes in"). When a lead replies:
 //  - pause their automated nurture (they're engaged — a human takes over)
 //  - ping the team in Discord with the reply so they respond fast
@@ -124,12 +147,10 @@ export async function POST(req: NextRequest) {
       }
 
       // Only a genuine opt-out pauses nurture (TCPA). A normal reply is a HOT
-      // engagement signal — keep nurturing (throttled) and alert the team to jump
-      // in; don't silently kill follow-up forever just because they asked a question.
-      // Carrier-standard opt-out: the keyword must BE the message (allowing trailing
-      // punctuation), not merely appear in it — "yes, cancel my 3pm and call me" is a
-      // HOT reply, not an opt-out.
-      const isStop = /^(STOP|STOPALL|UNSUBSCRIBE|CANCEL|END|QUIT|OPTOUT|OPT[- ]?OUT|REVOKE)[.!]?$/.test(body.trim().toUpperCase());
+      // engagement signal — keep nurturing (throttled) and alert the team to jump in.
+      // isRevocation (module scope) catches embedded opt-outs per the FCC 2024 order
+      // while keeping ambiguous uses ("cancel my 3pm appointment") as hot replies.
+      const isStop = isRevocation(body);
       if (isStop && digits) {
         // Revoke on EVERY row sharing this phone (dup groups, legacy forms) — an
         // opt-out that only hits the newest row is a TCPA violation waiting on the rest.
@@ -203,6 +224,12 @@ export async function POST(req: NextRequest) {
         after(async () => {
           try {
             if ((await cfg("AI_SMS_CONCIERGE")) === "off") return;
+            // TCPA opt-out guard: never auto-reply to a number that has opted out. They
+            // can text in again without re-consenting (the consent bridge above refuses to
+            // resurrect an opted-out number) — mirror that here and stay silent. Fetched up
+            // front so it guards BOTH the live-bridge hold text and the AI reply below.
+            const { data: leadRow } = await supabaseAdmin.from("leads").select("raw, nurture_paused").eq("id", leadId).maybeSingle();
+            if ((leadRow as any)?.nurture_paused === true || (leadRow as any)?.raw?.sms_optout_at) return;
             const aiToday = await countRecentOutbound(leadId, "ai_reply", 24 * 3600000);
             if (aiToday >= 8) return;
             // SHIELD: global daily concierge cap — one runaway bot conversation can't
@@ -220,8 +247,7 @@ export async function POST(req: NextRequest) {
               const { data: docs } = await supabaseAdmin.from("loan_documents").select("name, status, required").eq("loan_file_id", (lf as any).id);
               missingDocs = (docs || []).filter((d: any) => d.required && d.status !== "received" && d.status !== "accepted").map((d: any) => String(d.name));
             }
-            // Conversation memory from prior days.
-            const { data: leadRow } = await supabaseAdmin.from("leads").select("raw, nurture_paused").eq("id", leadId).maybeSingle();
+            // Conversation memory from prior days (leadRow fetched above for the opt-out guard).
             const knownFacts: string[] = Array.isArray((leadRow as any)?.raw?.concierge_facts) ? (leadRow as any).raw.concierge_facts : [];
             // Handoff: certain signals page the owner in parallel (AI still replies).
             const signal = handoffSignal(body);

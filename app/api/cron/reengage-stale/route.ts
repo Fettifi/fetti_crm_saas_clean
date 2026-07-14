@@ -94,7 +94,7 @@ async function run(dry: boolean) {
 export async function POST(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization");
-  if (secret && auth !== `Bearer ${secret}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!secret || auth !== `Bearer ${secret}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const dry = req.nextUrl.searchParams.get("dry") === "1";
   try { return NextResponse.json({ ok: true, ...(await run(dry)) }); }
   catch (e: any) { return NextResponse.json({ error: e?.message || "failed" }, { status: 500 }); }

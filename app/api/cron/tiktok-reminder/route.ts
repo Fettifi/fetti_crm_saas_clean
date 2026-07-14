@@ -12,7 +12,7 @@ const APP = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   try {
