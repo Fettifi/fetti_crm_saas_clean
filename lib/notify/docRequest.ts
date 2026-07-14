@@ -35,7 +35,7 @@ function listHtml(docs: string[]): string {
 
 async function emailDocRequest(r: DocRequest): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  const from = senderFrom(); // e.g. "Fetti <hello@fettifi.com>"
+  const from = senderFrom(); // e.g. "Fetti <frank@fettifi.com>"
   if (!key || !from || !r.to_email) return false;
   const first = (r.to_name || "there").split(" ")[0];
   const who = r.lo_name || "Fetti Financial Services";

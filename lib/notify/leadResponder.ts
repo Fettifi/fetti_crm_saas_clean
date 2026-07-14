@@ -39,7 +39,7 @@ function defaultMessage(l: LeadContact): string {
 
 async function emailLead(l: LeadContact, fallbackBody: string) {
   const key = process.env.RESEND_API_KEY;
-  const from = senderFrom(); // e.g. "Fetti <hello@fettifi.com>"
+  const from = senderFrom(); // e.g. "Fetti <frank@fettifi.com>"
   if (!key || !from || !l.email) return { ok: false as boolean, id: undefined as string | undefined, body: "" };
 
   // Channel-correct body: prefer email-specific copy; always scrub SMS-isms
