@@ -1,13 +1,7 @@
-import AppLayout from "@/components/AppLayout";
-import LeadTable from "@/components/LeadTable";
+import LeadWorkspace from "@/components/LeadWorkspace";
 
+// Leads = the unified workspace (list + conversations + reality check). The old
+// spreadsheet lives on inside it as the "Table" toggle.
 export default function LeadsPage() {
-  return (
-    <AppLayout
-      title="All Leads"
-      description="Live view of leads from your Supabase leads table."
-    >
-      <LeadTable />
-    </AppLayout>
-  );
+  return <LeadWorkspace />;
 }

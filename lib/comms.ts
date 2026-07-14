@@ -15,6 +15,8 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { cfg } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
 import { unsubUrl } from "@/lib/notify/emailCopy";
+import { leadQuality, type LeadQuality } from "@/lib/leadQuality";
+import { leadReality, type LeadReality } from "@/lib/leadReality";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
@@ -365,4 +367,99 @@ export async function listConversations(limit = 200): Promise<ConversationSummar
   }
   out.sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
   return out;
+}
+
+// ---------------------------------------------------------------- pipeline ---
+// One row per lead for the UNIFIED workspace (Leads + Conversations merged). Unlike
+// listConversations (which only shows leads that already have comms), this returns
+// EVERY recent lead — including brand-new ones nobody has messaged yet — so the
+// speed-to-lead gap ("a real person came in and no conversation ever started") is
+// impossible to miss. Each row carries the last message, whether we're waiting on a
+// reply, the funnel stage, the QUALITY badge, and the REALITY (real/suspect/invalid)
+// check, so the list sorts and filters as a real work queue.
+
+export type PipelineRow = {
+  leadId: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  stage: string | null;
+  tier: string | null;
+  score: number | null;
+  purpose: string | null;
+  source: string | null;
+  createdAt: string;
+  // last comms (nulls when nobody has messaged this lead yet)
+  lastChannel: CommsChannel | null;
+  lastDirection: CommsDirection | null;
+  lastBody: string;
+  lastAt: string | null;
+  msgCount: number;
+  needsReply: boolean;    // last real message was inbound → they're waiting on us
+  contacted: boolean;     // we've ever sent this lead anything
+  quality: LeadQuality;
+  reality: LeadReality;
+};
+
+export async function listPipeline(limit = 300): Promise<PipelineRow[]> {
+  // 1) The universe: most-recent leads (includes never-contacted ones).
+  const { data: leads } = await supabaseAdmin
+    .from("leads")
+    .select("id, created_at, full_name, first_name, last_name, email, phone, state, loan_purpose, stage, tier, score, source, lead_source, raw")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (!leads || !leads.length) return [];
+  const idSet = new Set((leads as any[]).map((l) => l.id));
+
+  // 2) Recent comms in ONE pass (desc), reduced per lead: last real message + count
+  //    + whether we've ever contacted them. nurture.sent counts as "contacted" but is
+  //    never surfaced as a message body (it's an internal heartbeat).
+  const { data: acts } = await supabaseAdmin
+    .from("activity_log")
+    .select("lead_id, action, created_at, detail")
+    .in("action", ["comms.message", "nurture.sent"])
+    .order("created_at", { ascending: false })
+    .limit(4000);
+
+  type Agg = { last: ConversationMessage | null; count: number; contacted: boolean };
+  const agg = new Map<string, Agg>();
+  for (const r of (acts || []) as any[]) {
+    const lid = r.lead_id;
+    if (!lid || !idSet.has(lid)) continue;
+    let a = agg.get(lid);
+    if (!a) { a = { last: null, count: 0, contacted: false }; agg.set(lid, a); }
+    a.contacted = true;
+    if (r.action === "comms.message") {
+      a.count++;
+      if (!a.last) { const m = rowToMessage(r as Row); if (m) a.last = m; } // rows desc → first seen = latest
+    }
+  }
+
+  return (leads as any[]).map((l) => {
+    const a = agg.get(l.id);
+    const last = a?.last || null;
+    const name = l.full_name || [l.first_name, l.last_name].filter(Boolean).join(" ") || l.email || l.phone || "Unknown lead";
+    const raw: any = l.raw || {};
+    return {
+      leadId: l.id,
+      name,
+      email: l.email || null,
+      phone: l.phone || null,
+      stage: l.stage || null,
+      tier: l.tier || null,
+      score: typeof l.score === "number" ? l.score : null,
+      purpose: l.loan_purpose || null,
+      source: l.source || l.lead_source || null,
+      createdAt: l.created_at,
+      lastChannel: last?.channel || null,
+      lastDirection: last?.direction || null,
+      lastBody: last?.body || "",
+      lastAt: last?.at || null,
+      msgCount: a?.count || 0,
+      needsReply: last?.direction === "inbound",
+      contacted: !!a?.contacted,
+      quality: leadQuality({ tier: l.tier, score: l.score, decision: raw.qualify?.decision || raw.decision || null }),
+      reality: leadReality({ raw, name, email: l.email, phone: l.phone }),
+    } as PipelineRow;
+  });
 }

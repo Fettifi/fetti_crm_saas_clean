@@ -5,9 +5,11 @@
 // Auth-gated by the /api/conversations matcher in proxy.ts (staff only).
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { sendSms, sendEmail, logComms, getLeadTimeline, listConversations, getLeadMessagesForAI } from "@/lib/comms";
+import { sendSms, sendEmail, logComms, getLeadTimeline, listPipeline, getLeadMessagesForAI } from "@/lib/comms";
 import { markConciergeReply, expertiseFor } from "@/lib/markConcierge";
 import { magicApplyLink } from "@/lib/magicLink";
+import { leadQuality } from "@/lib/leadQuality";
+import { leadReality } from "@/lib/leadReality";
 import { cfg } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -24,21 +26,13 @@ export async function GET(req: NextRequest) {
   const leadId = req.nextUrl.searchParams.get("leadId");
   try {
     if (!leadId) {
-      const conversations = await listConversations();
-      // Enrich rows with lead quality so the inbox doubles as a priority queue.
-      const ids = conversations.map((c: any) => c.leadId).filter(Boolean);
-      if (ids.length) {
-        const { data: ls } = await supabaseAdmin.from("leads").select("id, tier, loan_purpose, stage").in("id", ids.slice(0, 200));
-        const byId = new Map<string, any>((ls || []).map((l: any) => [l.id, l]));
-        for (const c of conversations as any[]) {
-          const l = byId.get(c.leadId);
-          if (l) { c.tier = l.tier || null; c.purpose = l.loan_purpose || null; c.stage = l.stage || c.stage; }
-        }
-      }
+      // Unified workspace list: EVERY recent lead (incl. never-contacted), each with
+      // last comms, needs-reply, funnel stage, quality badge, and reality check.
+      const conversations = await listPipeline();
       return NextResponse.json({ conversations });
     }
     const { data: lead } = await supabaseAdmin
-      .from("leads").select("id, full_name, first_name, last_name, email, phone, stage, tier, score, loan_purpose, state, raw, nurture_paused").eq("id", leadId).maybeSingle();
+      .from("leads").select("id, created_at, full_name, first_name, last_name, email, phone, stage, tier, score, loan_purpose, state, source, lead_source, raw, nurture_paused").eq("id", leadId).maybeSingle();
     if (!lead) return NextResponse.json({ error: "lead not found" }, { status: 404 });
     const messages = await getLeadTimeline(leadId);
     // Conversion context: everything the LO needs at a glance next to the thread.
@@ -53,6 +47,9 @@ export async function GET(req: NextRequest) {
       lead: {
         id: lead.id, name: leadName(lead), email: lead.email || null, phone: lead.phone || null, stage: lead.stage || null,
         tier: (lead as any).tier || null, score: (lead as any).score ?? null, purpose: (lead as any).loan_purpose || null, state: (lead as any).state || null,
+        source: (lead as any).source || (lead as any).lead_source || null, createdAt: (lead as any).created_at || null,
+        quality: leadQuality({ tier: (lead as any).tier, score: (lead as any).score, decision: raw.qualify?.decision || raw.decision || null }),
+        reality: leadReality({ raw, name: leadName(lead), email: lead.email, phone: lead.phone }),
         facts: Array.isArray(raw.concierge_facts) ? raw.concierge_facts : [],
         smsConsent: raw.sms_consent === true || raw.consent?.sms_optin === true,
         aiCallConsent: raw.ai_call_consent === true,
