@@ -164,7 +164,7 @@ wss.on("connection", (twilio) => {
     if (started || !oaiOpen || !startSeen) return;
     started = true;
     let ctx = "";
-    if (obMode === "confirm" || obMode === "callback") {
+    if (obMode === "confirm" || obMode === "callback" || obMode === "new_lead") {
       // OUTBOUND CALL (we dialed them): different opening + tight scope. Consent and
       // no-cold-call gates were enforced server-side before this call was placed.
       const who = obFirst ? ` Am I speaking with ${obFirst}?` : " Who am I speaking with?";
@@ -173,9 +173,14 @@ wss.on("connection", (twilio) => {
       // here is warm and does not restate it.
       const obOpening = obMode === "confirm"
         ? `Hi! This is Penny with Fetti Financial Services.${who}`
+        : obMode === "new_lead"
+        ? `Hi${obFirst ? " " + obFirst : ""}! This is Penny with Fetti Financial Services — you just reached out to us about financing, so I wanted to call you right back. Is now an okay time?`
         : `Hi! This is Penny with Fetti Financial Services, returning your call.${who}`;
-      ctx = `\n\nOUTBOUND MODE (${obMode}): WE called THEM — ${obContext}\n` + (obMode === "confirm"
+      ctx = `\n\nOUTBOUND MODE (${obMode}): WE called THEM — ${obContext}\n` + (
+        obMode === "confirm"
         ? `Your ONLY job: warmly confirm they can still make the appointment. If yes: great, tell them Ramon is looking forward to it, ask if there's anything they'd like him to prepare, then wrap up and CALL save_message with the outcome (reason starting "APPT CONFIRMED — "). If they need to reschedule: no problem — tell them a fresh scheduling link is coming by text/email, use book_call, and save_message (reason starting "WANTS RESCHEDULE — "). Keep the whole call under two minutes; do NOT sell, do NOT collect documents, do NOT quote numbers. If they ask to speak to Ramon now, you may use transfer_call as usual. If they say stop calling / not interested: apologize once, confirm no more calls, save_message (reason starting "CALL OPT-OUT — "), and end warmly.`
+        : obMode === "new_lead"
+        ? `SPEED-TO-LEAD: they JUST submitted an inquiry and consented to a call, so you're calling within seconds — YOU dialed THEM, not the other way around. Be warm, upbeat, and brief. First confirm it's a good time; if not, offer to text and try again later and save_message. If yes: ask what they're looking to do and their timeline, answer basic questions helpfully, and — if it makes sense — offer to lock in a time with Ramon (book_call), or transfer_call if they want him now (whisper rules apply). Do NOT quote rates, payments, or approval odds; do NOT collect SSN or documents on this call. If they say stop calling / not interested: apologize once, confirm no more calls, save_message (reason starting "CALL OPT-OUT — "), and end warmly.`
         : `You're RETURNING their call — they reached out to us first. Ask how you can help, handle it exactly like an inbound call (messages, booking, transfer_call if they want Ramon — whisper rules apply). If they don't remember calling or want no calls: apologize once, confirm no more calls, save_message (reason starting "CALL OPT-OUT — "), and end warmly.`);
       // Outbound opening replaces the inbound one for this session.
       dynamicOpening = obOpening;
