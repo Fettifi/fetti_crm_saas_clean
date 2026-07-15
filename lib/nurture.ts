@@ -262,9 +262,9 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         // Conversion CTA: the PRE-FILLED application (magic link), not the bare doc-upload
         // page — a drip lead hasn't finished applying, so "finish the app" IS the next step.
         const link = magicApplyLink(l);
-        const finishLine = ` Finish your application (everything you gave us is saved): ${link}`;
+        const finishLine = ` Whenever you're ready, your saved application is right here: ${link}`;
         const emailT = renderTouch(EMAIL_TOUCHES[STEP_TOUCH[due.step]] || EMAIL_TOUCHES.d30, l);
-        const emailBody = emailT.body + `\n\nP.S. Your application's already started — finishing takes about 3 minutes, nothing re-types: ${link}` + textMeLine;
+        const emailBody = emailT.body + `\n\nP.S. Whenever you're ready your saved application is right here — or just reply and I'll help: ${link}` + textMeLine;
         const res = await respondToLead({
           id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
           message: due.msg(name, purpose) + finishLine + bookLine,   // SMS copy
@@ -288,13 +288,13 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     const msg = REACTIVATION[rIdx](name, purpose);
     try {
       const link = magicApplyLink(l);
-      const finishLine = ` Your application's still saved — finish any time: ${link}`;
+      const finishLine = ` Your saved application is still here whenever you want it: ${link}`;
       const emailT = renderTouch(EMAIL_TOUCHES[REACTIVATION_KEYS[rIdx]] || EMAIL_TOUCHES.r1, l);
       const res = await respondToLead({
         id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
         message: msg + finishLine + bookLine,                        // SMS copy
         emailSubject: emailT.subject,                                 // email copy
-        emailBody: emailT.body + `\n\nP.S. Your application's still saved — finishing takes about 3 minutes: ${link}` + textMeLine,
+        emailBody: emailT.body + `\n\nP.S. Your saved application is still here whenever you want it — or just reply: ${link}` + textMeLine,
       });
       if ((res?.sent || []).length) {
         await supabaseAdmin.from("leads").update({ nurture_step: curStep + 1, last_nurture_at: new Date().toISOString() }).eq("id", l.id);

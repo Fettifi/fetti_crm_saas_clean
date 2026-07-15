@@ -198,6 +198,6 @@ export function renderFirstTouch(lead: EmailLead, opts: { appLink?: string | nul
   // Identity/NMLS live in the signature footer (markSignatureLite) — body stays personal.
   return {
     subject: `your ${purpose}`,
-    body: `${greet} ${purpose} request just came through, so let me skip the pleasantries and give you the one thing worth knowing up front.\n\n${insight}\n\nYour application is already started: what you sent is loaded in, and finishing takes about 3 minutes with no credit pull at this step.\n${opts.appLink}\n\n— Mark\n\n${ps}`,
+    body: `${greet} ${purpose} request just came through, so let me skip the pleasantries and give you the one thing worth knowing up front.\n\n${insight}\n\nSo I point you the right way instead of guessing — where are you in the process right now, and what's your timeline looking like?\n\n— Mark\n\n${ps}`,
   };
 }

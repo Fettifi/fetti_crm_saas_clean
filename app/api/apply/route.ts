@@ -422,7 +422,7 @@ export async function POST(req: NextRequest) {
                 phone: smsOk ? phone : null, loan_purpose: body.loan_purpose,
                 message: `Hey ${first}, it's Mark at Fetti — saw you stopped by again about the ${purpose}. Anything I can help with? No rush; your saved application is here whenever you want it: ${backLink}`,
                 emailSubject: "saw you came back",
-                emailBody: `Hey ${first} — noticed you stopped by again about the ${purpose}. Happy to answer whatever's on your mind — just reply here.\n\nAnd whenever you're ready, your application is still saved (about 3 minutes to finish, nothing re-types):\n${backLink}\n\n— Mark`,
+                emailBody: `Hey ${first} — noticed you stopped by again about the ${purpose}. Happy to answer whatever's on your mind — just reply here.\n\nAnd whenever you're ready, your saved application is still right here:\n${backLink}\n\n— Mark`,
               });
               if (res.sent.length) console.log("[/api/apply] returning-lead touch sent via", res.sent.join("+"), "for", data.id);
             } catch (e) { console.warn("[/api/apply] returning-lead touch failed:", e); }

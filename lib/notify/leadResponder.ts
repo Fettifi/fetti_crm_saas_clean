@@ -124,10 +124,11 @@ export async function respondToLead(lead: LeadContact): Promise<{ sent: string[]
   // PRE-FILLED application link, the first text DOES carry it: it's the one tap that
   // converts, and "your application is already started" is service, not a demand.
   // Later touches (nurture/doc-chase) append the file link since the conversation is going.
+  // First touch is a CONVERSATION opener — NO application link and no "finish in 3 min"
+  // nag. That app-push on the first text is what made every FB/IG lead get the same
+  // spammy reply and never respond. The pre-filled app link is offered later by the
+  // concierge (markConcierge), only once the lead has actually replied / shown intent.
   let smsBody = (lead.link && kind !== "first_touch") ? `${body}\n\nUpload your documents securely here: ${lead.link}` : body;
-  if (kind === "first_touch" && lead.appLink && !smsBody.includes(lead.appLink)) {
-    smsBody += `\n\nI started your application for you — finishing takes ~3 min, everything you gave us is already filled in: ${lead.appLink}`;
-  }
   // Every automated text carries opt-out language (carrier requirement + TCPA hygiene).
   if (lead.phone && !/reply\s+stop/i.test(smsBody)) smsBody += " (Reply STOP to opt out.)";
   const sent: string[] = [];
