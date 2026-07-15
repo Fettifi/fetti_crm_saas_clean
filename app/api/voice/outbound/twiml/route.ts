@@ -25,6 +25,8 @@ export async function POST(req: NextRequest) {
   if (answeredBy.startsWith("machine")) {
     const vm = ctx.mode === "confirm"
       ? `Hi${ctx.first ? " " + esc(ctx.first) : ""}, this is Penny, the A.I. assistant at Fetti Financial Services, calling to confirm your upcoming appointment with Ramon. If anything changed, just call us back or reply to our text — otherwise we'll see you then. Talk soon!`
+      : ctx.mode === "new_lead"
+      ? `Hi${ctx.first ? " " + esc(ctx.first) : ""}, this is Penny, the A.I. assistant at Fetti Financial Services — you just reached out about financing, so I wanted to say a quick hi and see how I can help. Call or text us back anytime and I'll pick right up, or Ramon will follow up with you personally. Talk soon!`
       : `Hi${ctx.first ? " " + esc(ctx.first) : ""}, this is Penny, the A.I. assistant at Fetti Financial Services, returning your call. Sorry we missed each other — call us back anytime and I'll pick right up, or Ramon will follow up personally. Talk soon!`;
     return xml(`<Pause length="1"/><Say voice="Polly.Joanna-Neural">${vm}</Say><Hangup/>`);
   }

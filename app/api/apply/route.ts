@@ -385,6 +385,25 @@ export async function POST(req: NextRequest) {
             optedOut: trackingOptedOut, loanFile, fileLink, appCompleted,
           });
         });
+        // INSTANT SPEED-TO-LEAD CALL — a live voice within seconds beats any text. Fires
+        // ONLY when the lead gave explicit AI-call consent (raw.ai_call_consent, set by
+        // the on-site /apply/form — never Facebook's email-only consent). /api/voice/outbound
+        // re-verifies consent, lead-local TCPA calling hours, opt-out, active-stage, and a
+        // one-call-per-day lock. Kill switch: app_settings INSTANT_CALL_ON_NEW_LEAD = "off".
+        after(async () => {
+          try {
+            if ((rawBody as any)?.ai_call_consent !== true) return;
+            const flag = String((await cfg("INSTANT_CALL_ON_NEW_LEAD")) || "on").toLowerCase();
+            if (["off", "false", "0", "no"].includes(flag)) return;
+            if (!process.env.CRON_SECRET) return;
+            await fetch(`${process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com"}/api/voice/outbound`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-fetti-internal": process.env.CRON_SECRET },
+              body: JSON.stringify({ mode: "new_lead", lead_id: newLead.id }),
+              signal: AbortSignal.timeout(15000),
+            }).catch(() => {});
+          } catch (e) { console.warn("[/api/apply] instant-call trigger failed:", e); }
+        });
       }
     } else if (!quarantined && !promoteScheduled) {
       // A KNOWN lead came back — strong signal. Alert the team AND text/email them a
