@@ -610,7 +610,7 @@ export default function ApplyWizard() {
     // gave — unchecked means "no new grant", not "revoke" (STOP is the revocation path).
     const c = {
       full_name: fd.get("full_name"), email: fd.get("email"), phone: fd.get("phone"),
-      state: fd.get("state"), hp: String(fd.get("company") || ""),
+      state: fd.get("state"), zip: String(fd.get("zip") || "").replace(/\D/g, "").slice(0, 5) || undefined, hp: String(fd.get("company") || ""),
       ...(smsOptin ? {
         sms_consent: true,
         sms_consent_at: new Date().toISOString(),
@@ -738,10 +738,15 @@ export default function ApplyWizard() {
               {phoneHint && <p className="text-[11px] text-amber-600 mt-1">{phoneHint}</p>}
             </div>
           </div>
-          <select name="state" required defaultValue={prefill?.state && STATES.includes(prefill.state) ? prefill.state : ""} className={field}>
-            <option value="" disabled>Property state</option>
-            {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <div className="flex gap-3">
+            <select name="state" required defaultValue={prefill?.state && STATES.includes(prefill.state) ? prefill.state : ""} className={`${field} flex-1`}>
+              <option value="" disabled>Property state</option>
+              {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <input name="zip" inputMode="numeric" pattern="[0-9]{5}" maxLength={5} placeholder="ZIP"
+              onChange={(e) => { e.currentTarget.value = e.currentTarget.value.replace(/\D/g, "").slice(0, 5); }}
+              className={`${field} w-28`} />
+          </div>
           {isConsumer(answers) ? (
             <p className="text-[11px] text-amber-700">Owner-occupied home loans are offered in FL, MI &amp; CA. Other states: we'll connect you with the right option.</p>
           ) : (

@@ -64,26 +64,38 @@ const ZIP3_TZ: Record<string, string> = {
   "463": CT, "464": CT, "476": CT, "477": CT,
 };
 
+function zipTz(zip?: string | null): string | null {
+  const z = String(zip || "").replace(/\D/g, "");
+  return z.length >= 3 ? (ZIP3_TZ[z.slice(0, 3)] || null) : null;
+}
+function areaTz(phone?: string | null): string | null {
+  const d = String(phone || "").replace(/\D/g, "");
+  const ten = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+  return ten.length === 10 ? (AREA_TZ[ten.slice(0, 3)] || null) : null;
+}
+function stateTz(state?: string | null): string | null {
+  const s = String(state || "").trim().toUpperCase();
+  return s ? (STATE_TZ[s] || null) : null;
+}
+
+/** Best single timezone estimate (ZIP → phone area code → state) for display/logging. */
 export function borrowerTz(opts: { zip?: string | null; phone?: string | null; state?: string | null }): string | null {
-  const zip = String(opts.zip || "").replace(/\D/g, "");
-  if (zip.length >= 3 && ZIP3_TZ[zip.slice(0, 3)]) return ZIP3_TZ[zip.slice(0, 3)];
-  const digits = String(opts.phone || "").replace(/\D/g, "");
-  const ten = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
-  if (ten.length === 10 && AREA_TZ[ten.slice(0, 3)]) return AREA_TZ[ten.slice(0, 3)];
-  const st = String(opts.state || "").trim().toUpperCase();
-  if (st && STATE_TZ[st]) return STATE_TZ[st];
-  return null;
+  return zipTz(opts.zip) || areaTz(opts.phone) || stateTz(opts.state) || null;
 }
 
 function hourInTz(tz: string): number {
   return Number(new Date().toLocaleString("en-US", { timeZone: tz, hour: "2-digit", hour12: false }));
 }
+const inHours = (tz: string) => { const h = hourInTz(tz); return h >= 8 && h < 21; };
 
-/** True if it's currently 8am–9pm at the borrower's location (TCPA). Unknown zone →
- *  a window that's safe across the whole continental US (12:00–20:00 ET = 9am–5pm PT). */
+/** TCPA-safe calling-hours check. It must be 8am–9pm in EVERY location signal we have —
+ *  the borrower ZIP AND the phone's area code. Requiring them to agree means a ported
+ *  number or an out-of-area investment property can only NARROW the window, never cause
+ *  a too-early/too-late call. With no usable signal, fall back to a window that's inside
+ *  8am–9pm across the entire continental US (12:00–20:00 ET = 9am–5pm PT). */
 export function withinCallingHours(opts: { zip?: string | null; phone?: string | null; state?: string | null }): boolean {
-  const tz = borrowerTz(opts);
-  if (tz) { const h = hourInTz(tz); return h >= 8 && h < 21; }
-  const et = hourInTz(ET);
-  return et >= 12 && et < 20;
+  const zones = [zipTz(opts.zip), areaTz(opts.phone)].filter(Boolean) as string[];
+  if (!zones.length) { const st = stateTz(opts.state); if (st) zones.push(st); }
+  if (!zones.length) { const et = hourInTz(ET); return et >= 12 && et < 20; }
+  return zones.every(inHours);
 }
