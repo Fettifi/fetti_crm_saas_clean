@@ -13,6 +13,7 @@ import { getMessages } from "@/lib/phoneMessages";
 import { logComms } from "@/lib/comms";
 import { logActivity } from "@/lib/activity";
 import { decisionToken } from "@/lib/voiceTransfer";
+import { withinCallingHours } from "@/lib/callingHours";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
@@ -20,33 +21,8 @@ export const dynamic = "force-dynamic";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
-// TCPA calling hours = 8am–9pm in the CALLED party's local time. Derive the lead's
-// zone from their state; when the state is unknown, restrict to a window that's legal
-// across the entire continental US (12:00–20:00 ET = 9am–5pm PT).
-const STATE_TZ: Record<string, string> = {
-  AL: "America/Chicago", AK: "America/Anchorage", AZ: "America/Phoenix", AR: "America/Chicago",
-  CA: "America/Los_Angeles", CO: "America/Denver", CT: "America/New_York", DE: "America/New_York",
-  DC: "America/New_York", FL: "America/New_York", GA: "America/New_York", HI: "Pacific/Honolulu",
-  ID: "America/Boise", IL: "America/Chicago", IN: "America/Indiana/Indianapolis", IA: "America/Chicago",
-  KS: "America/Chicago", KY: "America/New_York", LA: "America/Chicago", ME: "America/New_York",
-  MD: "America/New_York", MA: "America/New_York", MI: "America/New_York", MN: "America/Chicago",
-  MS: "America/Chicago", MO: "America/Chicago", MT: "America/Denver", NE: "America/Chicago",
-  NV: "America/Los_Angeles", NH: "America/New_York", NJ: "America/New_York", NM: "America/Denver",
-  NY: "America/New_York", NC: "America/New_York", ND: "America/Chicago", OH: "America/New_York",
-  OK: "America/Chicago", OR: "America/Los_Angeles", PA: "America/New_York", RI: "America/New_York",
-  SC: "America/New_York", SD: "America/Chicago", TN: "America/Chicago", TX: "America/Chicago",
-  UT: "America/Denver", VT: "America/New_York", VA: "America/New_York", WA: "America/Los_Angeles",
-  WV: "America/New_York", WI: "America/Chicago", WY: "America/Denver",
-};
-function hourInTz(tz: string): number {
-  return Number(new Date().toLocaleString("en-US", { timeZone: tz, hour: "2-digit", hour12: false }));
-}
-function withinCallingHours(state?: string | null): boolean {
-  const tz = state ? STATE_TZ[String(state).trim().toUpperCase()] : null;
-  if (tz) { const h = hourInTz(tz); return h >= 8 && h < 21; }        // 8am–9pm the lead's local time
-  const et = hourInTz("America/New_York");
-  return et >= 12 && et < 20;                                          // unknown zone: CONUS-safe window
-}
+// Calling-hours + borrower-timezone resolution (ZIP → phone area code → state →
+// CONUS-safe fallback) lives in lib/callingHours.ts.
 
 export async function POST(req: NextRequest) {
   if (!process.env.CRON_SECRET || req.headers.get("x-fetti-internal") !== process.env.CRON_SECRET) {
@@ -56,7 +32,7 @@ export async function POST(req: NextRequest) {
   const mode = String(b.mode || "");
   if (!["confirm", "callback", "new_lead"].includes(mode)) return NextResponse.json({ called: false, error: "unknown mode — cold calls are not a thing here" }, { status: 400 });
 
-  let to = "", first = "", context = "", leadId: string | null = null, leadState: string | null = null;
+  let to = "", first = "", context = "", leadId: string | null = null, leadState: string | null = null, leadZip: string | null = null;
 
   if (mode === "callback") {
     // Evidence required: an actual message THEY left, with THEIR callback number.
@@ -76,7 +52,7 @@ export async function POST(req: NextRequest) {
     to = String((lead as any).phone).replace(/\D/g, "");
     first = String((lead as any).first_name || (lead as any).full_name || "").split(/\s+/)[0] || "";
     context = `They have an appointment booked: ${String(b.when_text || "an upcoming call with Ramon").slice(0, 140)}. You're calling to warmly confirm they can still make it.`;
-    leadId = (lead as any).id; leadState = (lead as any).state || null;
+    leadId = (lead as any).id; leadState = (lead as any).state || null; leadZip = (lead as any).raw?.zip || (lead as any).raw?.property_zip || (lead as any).raw?.zipcode || (lead as any).raw?.postal_code || null;
   } else {
     // new_lead: SPEED-TO-LEAD. Someone who JUST submitted an on-site inquiry AND gave
     // explicit AI-call consent (raw.ai_call_consent, set by /apply/form). Not a cold
@@ -91,9 +67,9 @@ export async function POST(req: NextRequest) {
     first = String((lead as any).first_name || (lead as any).full_name || "").split(/\s+/)[0] || "";
     const purpose = String((lead as any).loan_purpose || "financing").toLowerCase();
     context = `They JUST submitted an inquiry about ${purpose} moments ago and agreed to a call. You're calling right away to introduce yourself as Penny with Fetti, answer any quick questions, and — if it makes sense — offer to lock in a time with Ramon. Warm, brief, genuinely helpful; never pushy, never quote a rate, payment, or approval.`;
-    leadId = (lead as any).id; leadState = (lead as any).state || null;
+    leadId = (lead as any).id; leadState = (lead as any).state || null; leadZip = (lead as any).raw?.zip || (lead as any).raw?.property_zip || (lead as any).raw?.zipcode || (lead as any).raw?.postal_code || null;
   }
-  if (!withinCallingHours(leadState)) return NextResponse.json({ called: false, error: "outside TCPA calling hours (8am–9pm lead-local)" });
+  if (!withinCallingHours({ phone: to, state: leadState, zip: leadZip })) return NextResponse.json({ called: false, error: "outside TCPA calling hours (8am–9pm borrower-local)" });
   const toE164 = to.length === 10 ? `+1${to}` : `+${to}`;
 
   // One attempt per number per mode per day. Write the key up-front so two
