@@ -422,17 +422,17 @@ export default function UnderwritePage() {
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = [
-      "Address", "Verdict", "Price", "Monthly Rent", "Max Loan", "Binding Constraint",
+      "Address", "Verdict", "Price", "Monthly Rent", "Annual Taxes", "Taxes Estimated?", "Max Loan", "Binding Constraint",
       "LTV @ Max %", "DSCR @ Max", "Cap Rate %", "NOI Annual", "PITIA Monthly",
-      "Monthly Cashflow", "Cash Needed", "Cash-on-Cash %", "Back Tax Status", "Back Tax Amount", "Flags",
+      "Monthly Cashflow", "Cash Needed", "Cash-on-Cash %", "Back Tax Status", "Back Tax Amount", "Flags", "Tax / Title Notes",
     ];
     const lines = computed.results.map((x) => {
       const r = rowById.get(x.id);
       return [
-        x.address, x.verdict, r?.price ?? "", r?.rent_monthly ?? "", x.max_loan, x.binding_constraint,
+        x.address, x.verdict, r?.price ?? "", r?.rent_monthly ?? "", r?.taxes_annual ?? "", x.taxes_estimated ? "estimated" : "verified/input", x.max_loan, x.binding_constraint,
         x.ltv_at_max_loan_pct ?? "", x.dscr_at_max_loan ?? "", x.cap_rate_pct ?? "", x.noi_annual, x.pitia_at_max_loan_m,
         x.monthly_cashflow, x.cash_needed, x.cash_on_cash_pct ?? "", r?.back_tax_status ?? "", r?.back_tax_amount ?? "",
-        x.flags.join(" | "),
+        x.flags.join(" | "), r?.notes ?? "",
       ].map(esc).join(",");
     });
     const csv = [header.join(","), ...lines].join("\n");
@@ -733,6 +733,12 @@ function RowPair({
                     <div className="text-[11px] text-slate-500 font-semibold mb-1.5">Back-tax verification</div>
                     <BackTaxEditor id={r.id} status={r.back_tax_status} amount={r.back_tax_amount} onStatus={onStatus} onAmount={onAmount} />
                     <div className="text-[10px] text-slate-600 mt-1.5">Owed amounts add straight to cash-needed and recompute live.</div>
+                  </div>
+                )}
+                {r?.notes && (
+                  <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-2.5 mt-2">
+                    <div className="text-[11px] text-slate-500 font-semibold mb-1">Tax / title notes</div>
+                    <div className="text-[11px] leading-relaxed text-slate-300 whitespace-pre-wrap">{r.notes}</div>
                   </div>
                 )}
               </div>
