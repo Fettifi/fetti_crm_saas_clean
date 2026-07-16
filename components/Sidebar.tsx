@@ -30,6 +30,7 @@ const navSections = [
     { href: "/income", label: "Income Calc", icon: "💵" },
     { href: "/pricing", label: "Pricing Comparison", icon: "💲" },
     { href: "/scenarios", label: "Scenario Desk", icon: "📑" }, // Loan Comparison now a tab here
+    { href: "/underwrite", label: "Portfolio Underwriter", icon: "🏘️" },
     { href: "/preapprovals", label: "Pre-Approvals", icon: "📝" },
     { href: "/esign", label: "E-Sign", icon: "✍️" },
   ] },
