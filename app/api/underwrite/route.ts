@@ -140,7 +140,7 @@ async function aiMapping(headers: string[], sampleRows: unknown[][]): Promise<Re
 }
 
 // Row mapping happens in CODE — cheap, deterministic, no per-row AI.
-function buildRows(headers: string[], dataRows: unknown[][], mapping: Record<string, string>): PropertyRow[] {
+function buildRows(headers: string[], dataRows: unknown[][], mapping: Record<string, string>, sourceSheet?: string, idOffset = 0): PropertyRow[] {
   // header index → canonical field
   const fieldAt: (string | null)[] = headers.map((h) => {
     const f = mapping[h];
@@ -159,7 +159,8 @@ function buildRows(headers: string[], dataRows: unknown[][], mapping: Record<str
 
     const backTax = toNum(rec.back_tax_amount);
     rows.push({
-      id: "p" + rows.length,
+      id: "p" + (idOffset + rows.length),
+      source_sheet: sourceSheet ?? null,
       address,
       city: toStr(rec.city),
       state: toStr(rec.state),
@@ -231,16 +232,14 @@ async function handleParse(body: any) {
   } catch {
     return jsonError(`Could not read "${filename}" — upload an .xlsx, .xls, or .csv spreadsheet.`);
   }
-  // Real portfolio workbooks rarely cooperate: the first sheet is often a cover page,
-  // and headers sit under title/logo/blank rows. Scan EVERY sheet × the first 15 rows
-  // and pick the (sheet, header-row) whose cells look most like underwriting headers
-  // (synonym hits weigh heaviest), with actual data rows beneath it.
-  let best: { sheet: string; headerIdx: number; headers: string[]; dataRows: unknown[][]; score: number } | null = null;
-  for (const sheetName of wb.SheetNames) {
-    const ws = wb.Sheets[sheetName];
-    if (!ws) continue;
-    const grid: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, blankrows: false });
-    if (grid.length < 2) continue;
+  // Portfolio workbooks spread properties across MULTIPLE tabs (per city / pool /
+  // category), often with cover pages and title rows. So: for EVERY sheet, detect its
+  // own header row (synonym hits weigh heaviest), map its own columns (headers differ
+  // tab to tab), rescue an address column when none is named, and AGGREGATE all rows
+  // into one portfolio. Properties appearing on two tabs are de-duplicated by address
+  // so the totals never double-count.
+  const detectHeader = (grid: unknown[][]) => {
+    let best: { headerIdx: number; headers: string[]; score: number } | null = null;
     for (let hi = 0; hi < Math.min(grid.length - 1, 15); hi++) {
       const cand = (grid[hi] || []).map((h) => (h == null ? "" : String(h).trim()));
       const textCells = cand.filter((c) => c && !/^[\d$.,%\s-]+$/.test(c));
@@ -248,20 +247,12 @@ async function handleParse(body: any) {
       const synHits = cand.filter((c) => c && synonymFor(c)).length;
       const dataBelow = grid.length - hi - 1;
       const score = synHits * 10 + textCells.length + Math.min(dataBelow, 50) / 10;
-      if (!best || score > best.score) {
-        best = { sheet: sheetName, headerIdx: hi, headers: cand, dataRows: grid.slice(hi + 1, hi + 1 + MAX_ROWS), score };
-      }
+      if (!best || score > best.score) best = { headerIdx: hi, headers: cand, score };
     }
-  }
-  if (!best) return jsonError(`No tabular data found. Sheets seen: ${wb.SheetNames.join(", ") || "none"}. Make sure one sheet has a header row with property columns.`, 422);
-  const { headers, dataRows } = best;
-
-  let mapping = (await aiMapping(headers, dataRows)) ?? fallbackMapping(headers);
-
-  // ADDRESS RESCUE: if no column mapped to "address", find the most address-looking
-  // column (values like "123 Main St" — digits followed by words) or, failing that,
-  // the most-unique text column, and use it. Better a flagged guess than zero rows.
-  if (!Object.values(mapping).includes("address")) {
+    return best;
+  };
+  const rescueAddress = (headers: string[], dataRows: unknown[][], mapping: Record<string, string>) => {
+    if (Object.values(mapping).includes("address")) return mapping;
     let bestCol = -1, bestScore = 0;
     for (let i = 0; i < headers.length; i++) {
       const vals = dataRows.slice(0, 50).map((r) => (r?.[i] == null ? "" : String(r[i]).trim())).filter(Boolean);
@@ -272,21 +263,68 @@ async function handleParse(body: any) {
       const score = addressish * 3 + (textish > 0.8 ? uniq : 0);
       if (score > bestScore) { bestScore = score; bestCol = i; }
     }
-    if (bestCol >= 0 && bestScore >= 0.5) {
-      mapping = { ...mapping, [headers[bestCol]]: "address" };
+    return bestCol >= 0 && bestScore >= 0.5 ? { ...mapping, [headers[bestCol]]: "address" } : mapping;
+  };
+
+  const allRows: PropertyRow[] = [];
+  const mergedMapping: Record<string, string> = {};
+  const sheetsRead: { sheet: string; header_row: number; rows: number }[] = [];
+  const sheetsSkipped: string[] = [];
+  const mappingCache = new Map<string, Record<string, string>>(); // same headers across tabs → one AI call
+  let aiCalls = 0;
+
+  for (const sheetName of wb.SheetNames) {
+    if (allRows.length >= MAX_ROWS) break;
+    const ws = wb.Sheets[sheetName];
+    if (!ws) { sheetsSkipped.push(sheetName); continue; }
+    const grid: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, blankrows: false });
+    if (grid.length < 2) { sheetsSkipped.push(sheetName); continue; }
+    const det = detectHeader(grid);
+    if (!det) { sheetsSkipped.push(sheetName); continue; }
+    const headers = det.headers;
+    const dataRows = grid.slice(det.headerIdx + 1, det.headerIdx + 1 + (MAX_ROWS - allRows.length));
+
+    const sig = headers.map(norm).join("|");
+    let mapping = mappingCache.get(sig);
+    if (!mapping) {
+      // Cap AI mapping calls at 4 distinct header shapes per workbook; synonym
+      // fallback handles the rest (and everything when AI is unavailable).
+      mapping = (aiCalls < 4 ? (aiCalls++, await aiMapping(headers, dataRows)) : null) ?? fallbackMapping(headers);
+      mappingCache.set(sig, mapping);
     }
+    mapping = rescueAddress(headers, dataRows, mapping);
+
+    const rows = buildRows(headers, dataRows, mapping, sheetName, allRows.length);
+    if (!rows.length) { sheetsSkipped.push(sheetName); continue; }
+    allRows.push(...rows);
+    Object.assign(mergedMapping, mapping);
+    sheetsRead.push({ sheet: sheetName, header_row: det.headerIdx + 1, rows: rows.length });
   }
 
-  const rows = buildRows(headers, dataRows, mapping);
-  if (!rows.length) {
+  if (!allRows.length) {
     return jsonError(
-      `No usable rows. Sheet "${best.sheet}" (header row ${best.headerIdx + 1}) has columns: ${headers.filter(Boolean).join(" | ") || "(none)"} — none could be read as a property address. Rename the property column to "Address" and re-upload.`,
+      `No usable rows on any tab. Tabs seen: ${wb.SheetNames.join(", ") || "none"}. None had a column readable as a property address — rename the property column to "Address" and re-upload.`,
       422
     );
   }
 
+  // De-dupe by normalized address across tabs — keep the row with MORE filled fields
+  // (a detail tab beats a summary tab), so portfolio totals never double-count.
+  const filled = (r: PropertyRow) => Object.values(r).filter((v) => v != null && v !== "").length;
+  const byAddr = new Map<string, PropertyRow>();
+  for (const r of allRows) {
+    const key = r.address.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const prev = byAddr.get(key);
+    if (!prev || filled(r) > filled(prev)) byAddr.set(key, r);
+  }
+  const rows = Array.from(byAddr.values()).map((r, i) => ({ ...r, id: "p" + i }));
+  const dupesRemoved = allRows.length - rows.length;
+
   const { results, summary } = underwritePortfolio(rows, DEFAULT_ASSUMPTIONS);
-  return NextResponse.json({ ok: true, columns: headers, mapping, rows, results, summary, sheet: best.sheet, header_row: best.headerIdx + 1 });
+  return NextResponse.json({
+    ok: true, columns: Object.keys(mergedMapping), mapping: mergedMapping, rows, results, summary,
+    sheets: sheetsRead, sheets_skipped: sheetsSkipped, duplicates_removed: dupesRemoved,
+  });
 }
 
 function sanitizeAssumptions(a: unknown): Partial<Assumptions> {

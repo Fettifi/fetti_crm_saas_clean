@@ -28,6 +28,7 @@ export type PropertyRow = {
   back_tax_status: BackTaxStatus;
   back_tax_amount?: number | null;
   notes?: string | null;
+  source_sheet?: string | null;    // which workbook tab this property came from
 };
 
 export type Assumptions = {
