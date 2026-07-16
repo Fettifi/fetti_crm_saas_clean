@@ -56,6 +56,16 @@ const STEPS: { step: number; afterDays: number; msg: (name: string, purpose: str
   { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, last check-in from Mark on ${p}. Door's open anytime — text back with a question and I've got you.` },
 ];
 
+// TIER-2 WARM LANE. A Tier-2 lead is genuinely warm (not junk, not fully pre-qualified) —
+// it deserves a tighter cadence than the standard drip, but NOT the HOT_STEPS copy, which
+// tells the lead "you look pre-qualified" (accurate only for Tier 1 / agent-qualified —
+// saying it to a Tier-2 lead would overpromise). So we reuse the neutral, honest STEPS
+// copy verbatim and only COMPRESS the timing (~2× faster to the finish line). Directly
+// serves the Enterprise Brain's top priorities: focus on higher-tier leads + intensify
+// follow-up. Same throttle / STOP / SMS-consent gates as every other lane.
+const WARM_AFTER_DAYS = [1, 2, 5, 10, 20, 40, 75];
+const WARM_STEPS = STEPS.map((s, i) => ({ ...s, afterDays: WARM_AFTER_DAYS[i] ?? s.afterDays }));
+
 // TIER-1 FAST LANE. A qualified lead is hot — tighter cadence. Same reply-first rule as
 // STEPS: lead with a real question so the lead ENGAGES (the concierge then does the work
 // of getting them to finish). A pre-qualified lead ignored 7 "finish the application"
@@ -242,8 +252,12 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     // --- Lane 1: Cold/qualified lead → drip, then long-term reactivation ---
     // Qualified leads (Tier 1, or agent-qualified) ride the tighter HOT_STEPS cadence
     // that pushes to finish the application; everyone else gets the standard drip.
-    const isHot = String(l.tier || "").toLowerCase() === "tier 1" || l.raw?.qualification?.decision === "qualified";
-    const lane = isHot ? HOT_STEPS : STEPS;
+    const tierNorm = String(l.tier || "").toLowerCase();
+    const isHot = tierNorm === "tier 1" || l.raw?.qualification?.decision === "qualified";
+    // Tier-2 = warm lane (compressed timing, honest STEPS copy). Hot takes precedence
+    // (a Tier-2 lead the agent later qualifies rides the true fast lane instead).
+    const isWarm = !isHot && tierNorm === "tier 2";
+    const lane = isHot ? HOT_STEPS : isWarm ? WARM_STEPS : STEPS;
     const ageDays = (Date.now() - new Date(l.created_at).getTime()) / 86400000;
     const lastStep = lane[lane.length - 1].step;
     const curStep = l.nurture_step || 0;
@@ -273,7 +287,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         if ((res?.sent || []).length) {
           await supabaseAdmin.from("leads").update({ nurture_step: due.step, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
           sent++;
-          await logSent(l.id, isHot ? "hot_drip" : "drip", due.step, res.sent);
+          await logSent(l.id, isHot ? "hot_drip" : isWarm ? "warm_drip" : "drip", due.step, res.sent);
         } else console.warn("[nurture] drip step", due.step, "delivered on no channel for", l.id, "— not advancing");
       } catch (e) { console.warn("[nurture] drip failed for", l.id, e); }
       continue;
