@@ -163,7 +163,15 @@ function TaxWorklistRow({
             {item.status === "unknown" ? "unverified" : item.status}
             {item.status === "owed" && item.amount ? ` · ${fm(item.amount)}` : ""}
           </span>
+          {item.taxesAnnual != null && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300">
+              {fm(item.taxesAnnual)}/yr tax
+            </span>
+          )}
         </div>
+        {item.notes && (
+          <div className="text-[11px] text-slate-400 leading-relaxed mt-1 whitespace-pre-wrap">{item.notes}</div>
+        )}
         <div className="flex items-center gap-3 mt-1 text-[12px]">
           <button
             type="button" onClick={() => onCopy(item.id, item.pasteAddress)}
@@ -584,6 +592,7 @@ export default function UnderwritePage() {
                     <th className="px-3 py-2.5 font-semibold">Address</th>
                     <th className="px-3 py-2.5 font-semibold text-right">Price</th>
                     <th className="px-3 py-2.5 font-semibold text-right">Rent</th>
+                    <th className="px-3 py-2.5 font-semibold text-right">Taxes /yr</th>
                     <th className="px-3 py-2.5 font-semibold">Verdict</th>
                     <th className="px-3 py-2.5 font-semibold text-right">Max loan</th>
                     <th className="px-3 py-2.5 font-semibold">Constraint</th>
@@ -672,6 +681,9 @@ function RowPair({
         </td>
         <td className="px-3 py-2.5 text-right text-slate-300">{fm(r?.price)}</td>
         <td className="px-3 py-2.5 text-right text-slate-300">{fm(r?.rent_monthly)}</td>
+        <td className={`px-3 py-2.5 text-right ${x.taxes_estimated ? "text-amber-300" : "text-slate-200"}`} title={x.taxes_estimated ? "Estimated from price — no verified tax on file" : "Verified / input annual tax"}>
+          {fm(r?.taxes_annual ?? x.taxes_m * 12)}{x.taxes_estimated ? " ~" : ""}
+        </td>
         <td className="px-3 py-2.5"><VerdictBadge v={x.verdict} /></td>
         <td className="px-3 py-2.5 text-right font-semibold text-emerald-300">{fm(x.max_loan)}</td>
         <td className="px-3 py-2.5"><ConstraintChip c={x.binding_constraint} /></td>
@@ -690,7 +702,7 @@ function RowPair({
       </tr>
       {open && (
         <tr className="border-b border-slate-800/60 bg-slate-900/60">
-          <td colSpan={12} className="px-4 py-4">
+          <td colSpan={13} className="px-4 py-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               {/* Income + expenses */}
               <div>

@@ -14,6 +14,8 @@ export type TaxLookup = {
   searchUrl: string;      // targeted web search for the county tax collector
   status: PropertyRow["back_tax_status"];
   amount: number | null;
+  taxesAnnual: number | null;  // verified/input annual tax bill (feeds PITIA)
+  notes: string | null;        // tax/title narrative (owner of record, parcel quirks, pending checks)
 };
 
 export function taxLookupFor(p: PropertyRow): TaxLookup {
@@ -36,6 +38,8 @@ export function taxLookupFor(p: PropertyRow): TaxLookup {
     searchUrl: `https://www.google.com/search?q=${encodeURIComponent(q)}`,
     status: p.back_tax_status,
     amount: p.back_tax_amount ?? null,
+    taxesAnnual: p.taxes_annual ?? null,
+    notes: p.notes ?? null,
   };
 }
 
