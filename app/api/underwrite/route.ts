@@ -231,26 +231,62 @@ async function handleParse(body: any) {
   } catch {
     return jsonError(`Could not read "${filename}" — upload an .xlsx, .xls, or .csv spreadsheet.`);
   }
-  const sheetName = wb.SheetNames[0];
-  const ws = sheetName ? wb.Sheets[sheetName] : null;
-  if (!ws) return jsonError("The spreadsheet has no sheets.");
+  // Real portfolio workbooks rarely cooperate: the first sheet is often a cover page,
+  // and headers sit under title/logo/blank rows. Scan EVERY sheet × the first 15 rows
+  // and pick the (sheet, header-row) whose cells look most like underwriting headers
+  // (synonym hits weigh heaviest), with actual data rows beneath it.
+  let best: { sheet: string; headerIdx: number; headers: string[]; dataRows: unknown[][]; score: number } | null = null;
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    if (!ws) continue;
+    const grid: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, blankrows: false });
+    if (grid.length < 2) continue;
+    for (let hi = 0; hi < Math.min(grid.length - 1, 15); hi++) {
+      const cand = (grid[hi] || []).map((h) => (h == null ? "" : String(h).trim()));
+      const textCells = cand.filter((c) => c && !/^[\d$.,%\s-]+$/.test(c));
+      if (textCells.length < 2) continue;
+      const synHits = cand.filter((c) => c && synonymFor(c)).length;
+      const dataBelow = grid.length - hi - 1;
+      const score = synHits * 10 + textCells.length + Math.min(dataBelow, 50) / 10;
+      if (!best || score > best.score) {
+        best = { sheet: sheetName, headerIdx: hi, headers: cand, dataRows: grid.slice(hi + 1, hi + 1 + MAX_ROWS), score };
+      }
+    }
+  }
+  if (!best) return jsonError(`No tabular data found. Sheets seen: ${wb.SheetNames.join(", ") || "none"}. Make sure one sheet has a header row with property columns.`, 422);
+  const { headers, dataRows } = best;
 
-  const grid: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, blankrows: false });
-  if (!grid.length) return jsonError("The first sheet is empty.");
+  let mapping = (await aiMapping(headers, dataRows)) ?? fallbackMapping(headers);
 
-  const headers = (grid[0] || []).map((h) => (h == null ? "" : String(h).trim()));
-  if (!headers.some(Boolean)) return jsonError("No header row found on the first sheet.");
-  const dataRows = grid.slice(1, 1 + MAX_ROWS);
-  if (!dataRows.length) return jsonError("The sheet has a header row but no data rows.");
+  // ADDRESS RESCUE: if no column mapped to "address", find the most address-looking
+  // column (values like "123 Main St" — digits followed by words) or, failing that,
+  // the most-unique text column, and use it. Better a flagged guess than zero rows.
+  if (!Object.values(mapping).includes("address")) {
+    let bestCol = -1, bestScore = 0;
+    for (let i = 0; i < headers.length; i++) {
+      const vals = dataRows.slice(0, 50).map((r) => (r?.[i] == null ? "" : String(r[i]).trim())).filter(Boolean);
+      if (vals.length < 2) continue;
+      const addressish = vals.filter((v) => /\d+\s+\S+/.test(v) && /[a-z]/i.test(v)).length / vals.length;
+      const uniq = new Set(vals).size / vals.length;
+      const textish = vals.filter((v) => /[a-z]/i.test(v)).length / vals.length;
+      const score = addressish * 3 + (textish > 0.8 ? uniq : 0);
+      if (score > bestScore) { bestScore = score; bestCol = i; }
+    }
+    if (bestCol >= 0 && bestScore >= 0.5) {
+      mapping = { ...mapping, [headers[bestCol]]: "address" };
+    }
+  }
 
-  const mapping = (await aiMapping(headers, dataRows)) ?? fallbackMapping(headers);
   const rows = buildRows(headers, dataRows, mapping);
   if (!rows.length) {
-    return jsonError("No usable rows — could not find an address column. Check the sheet's headers.", 422);
+    return jsonError(
+      `No usable rows. Sheet "${best.sheet}" (header row ${best.headerIdx + 1}) has columns: ${headers.filter(Boolean).join(" | ") || "(none)"} — none could be read as a property address. Rename the property column to "Address" and re-upload.`,
+      422
+    );
   }
 
   const { results, summary } = underwritePortfolio(rows, DEFAULT_ASSUMPTIONS);
-  return NextResponse.json({ ok: true, columns: headers, mapping, rows, results, summary });
+  return NextResponse.json({ ok: true, columns: headers, mapping, rows, results, summary, sheet: best.sheet, header_row: best.headerIdx + 1 });
 }
 
 function sanitizeAssumptions(a: unknown): Partial<Assumptions> {
