@@ -14,7 +14,9 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Building2, Upload, Loader2, ChevronDown, ChevronRight, Save,
   Trash2, Download, Copy, Check, ExternalLink, Search, AlertTriangle, X,
+  FileSpreadsheet, ShieldAlert, ShieldCheck,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import {
   underwritePortfolio, DEFAULT_ASSUMPTIONS,
   type PropertyRow, type Assumptions, type UnderwriteResult, type PortfolioSummary, type BackTaxStatus,
@@ -198,11 +200,11 @@ function TaxWorklistRow({
 
 // Save bar: portfolio name + saved-list dropdown. Inputs, so module scope.
 function SaveBar({
-  name, onName, saving, onSave, saved, onOpen, currentId, onDelete, onExport, canExport,
+  name, onName, saving, onSave, saved, onOpen, currentId, onDelete, onExport, onExportXlsx, canExport,
 }: {
   name: string; onName: (v: string) => void; saving: boolean; onSave: () => void;
   saved: SavedMeta[]; onOpen: (id: string) => void; currentId: string | null;
-  onDelete: () => void; onExport: () => void; canExport: boolean;
+  onDelete: () => void; onExport: () => void; onExportXlsx: () => void; canExport: boolean;
 }) {
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -234,10 +236,17 @@ function SaveBar({
         </button>
       )}
       <button
+        type="button" onClick={onExportXlsx} disabled={!canExport}
+        className="bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+        title="3-sheet workbook: Dashboard, All Doors, Tax & Title Risk"
+      >
+        <FileSpreadsheet className="w-3.5 h-3.5" /> Export Excel
+      </button>
+      <button
         type="button" onClick={onExport} disabled={!canExport}
         className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 border border-slate-700"
       >
-        <Download className="w-3.5 h-3.5" /> Export CSV
+        <Download className="w-3.5 h-3.5" /> CSV
       </button>
     </div>
   );
@@ -319,7 +328,7 @@ export default function UnderwritePage() {
   const rowById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
 
   // --- UI state ----------------------------------------------------------------
-  const [tab, setTab] = useState<"results" | "tax">("results");
+  const [tab, setTab] = useState<"dashboard" | "results" | "tax">("dashboard");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showMapping, setShowMapping] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -463,6 +472,92 @@ export default function UnderwritePage() {
   const worklistActive = worklist.filter((w) => w.status !== "clear");
   const worklistClear = worklist.length - worklistActive.length;
 
+  // --- Tax & title risk rollup for the dashboard + Excel export -----------------------
+  const risk = useMemo(() => {
+    const urgent: PropertyRow[] = [], delinquent: PropertyRow[] = [], shared: PropertyRow[] = [];
+    const flags: PropertyRow[] = [], clean: PropertyRow[] = [], pending: PropertyRow[] = [];
+    let pastDue = 0;
+    for (const r of rows) {
+      const n = r.notes || "";
+      const isUrgent = /TAX.?SALE/i.test(n);
+      if (/title flag|confirm[^.]*?(title|ownership|entity|pairing)/i.test(n)) flags.push(r);
+      if (r.back_tax_status === "owed") {
+        pastDue += Number(r.back_tax_amount) || 0;
+        if (isUrgent) urgent.push(r);
+        else if ((Number(r.back_tax_amount) || 0) > 0) delinquent.push(r);
+        else shared.push(r);
+      } else if (r.back_tax_status === "clear") clean.push(r);
+      else pending.push(r);
+    }
+    delinquent.sort((a, b) => (Number(b.back_tax_amount) || 0) - (Number(a.back_tax_amount) || 0));
+    return { urgent, delinquent, shared, flags, clean, pending, pastDue };
+  }, [rows]);
+
+  // --- Excel export: Dashboard + All Doors + Tax & Title Risk sheets ------------------
+  const exportXlsx = useCallback(() => {
+    if (!computed) return;
+    const s = computed.summary;
+    const wb = XLSX.utils.book_new();
+    const dash: (string | number)[][] = [
+      ["Portfolio", name || "Portfolio"],
+      ["Exported", new Date().toLocaleString()],
+      [],
+      ["OVERVIEW", ""],
+      ["Doors", rows.length],
+      ["Total value", s.total_price],
+      ["Total max loan", s.total_max_loan],
+      ["Blended DSCR", s.blended_dscr ?? ""],
+      ["Blended LTV %", s.blended_ltv_pct ?? ""],
+      ["Monthly cashflow", s.total_monthly_cashflow],
+      ["Cash needed (incl. past-due taxes)", s.total_cash_needed],
+      [],
+      ["TAX & TITLE RISK", ""],
+      ["Past-due taxes total", risk.pastDue],
+      ["Tax-sale alerts", risk.urgent.length],
+      ["Delinquent doors", risk.delinquent.length + risk.shared.length],
+      ["Title / entity flags", risk.flags.length],
+      ["Verified current", risk.clean.length],
+      ["Unverified", risk.pending.length],
+      [],
+      ["TAX-SALE ALERTS — act immediately", ""],
+      ...risk.urgent.map((r): (string | number)[] => [r.address, Number(r.back_tax_amount) || 0]),
+      [],
+      ["DELINQUENT — past-due estimate", ""],
+      ...risk.delinquent.map((r): (string | number)[] => [r.address, Number(r.back_tax_amount) || 0]),
+      [],
+      ["TITLE / ENTITY FLAGS", ""],
+      ...risk.flags.map((r): (string | number)[] => [r.address, (r.notes || "").slice(0, 200)]),
+    ];
+    const wsDash = XLSX.utils.aoa_to_sheet(dash);
+    wsDash["!cols"] = [{ wch: 42 }, { wch: 95 }];
+    XLSX.utils.book_append_sheet(wb, wsDash, "Dashboard");
+
+    const header = ["Address", "City", "County", "Price", "Monthly Rent", "Annual Taxes", "Tax Status", "Past-Due Taxes", "Verdict", "Max Loan", "DSCR", "LTV %", "Monthly Cashflow", "Cash Needed", "County Notes"];
+    const body = computed.results.map((x) => {
+      const r = rowById.get(x.id);
+      return [
+        x.address, r?.city ?? "", r?.county ?? "", r?.price ?? "", r?.rent_monthly ?? "", r?.taxes_annual ?? "",
+        r?.back_tax_status ?? "", r?.back_tax_amount ?? "", x.verdict, x.max_loan, x.dscr_at_max_loan ?? "", x.ltv_at_max_loan_pct ?? "",
+        x.monthly_cashflow, x.cash_needed, r?.notes ?? "",
+      ];
+    });
+    const wsAll = XLSX.utils.aoa_to_sheet([header, ...body]);
+    wsAll["!cols"] = header.map((_, i) => ({ wch: i === 0 ? 26 : i === 14 ? 110 : 14 }));
+    XLSX.utils.book_append_sheet(wb, wsAll, "All Doors");
+
+    const rBody = [
+      ...risk.urgent.map((r) => ["TAX SALE ALERT", r.address, Number(r.back_tax_amount) || 0, r.notes || ""]),
+      ...risk.delinquent.map((r) => ["Delinquent", r.address, Number(r.back_tax_amount) || 0, r.notes || ""]),
+      ...risk.shared.map((r) => ["Delinquent (shared parcel)", r.address, 0, r.notes || ""]),
+      ...risk.flags.map((r) => ["Title / entity flag", r.address, "", r.notes || ""]),
+    ];
+    const wsRisk = XLSX.utils.aoa_to_sheet([["Category", "Address", "Past-Due $", "County Notes"], ...rBody]);
+    wsRisk["!cols"] = [{ wch: 24 }, { wch: 26 }, { wch: 12 }, { wch: 110 }];
+    XLSX.utils.book_append_sheet(wb, wsRisk, "Tax & Title Risk");
+
+    XLSX.writeFile(wb, `${(name || "portfolio").replace(/[^\w.-]+/g, "_")}_underwrite.xlsx`);
+  }, [computed, rows, risk, name, rowById]);
+
   // ===========================================================================
   // RENDER
   // ===========================================================================
@@ -491,7 +586,7 @@ export default function UnderwritePage() {
             <SaveBar
               name={name} onName={setName} saving={saving} onSave={savePortfolio}
               saved={saved} onOpen={openPortfolio} currentId={currentId} onDelete={deletePortfolio}
-              onExport={exportCsv} canExport={!!computed}
+              onExport={exportCsv} onExportXlsx={exportXlsx} canExport={!!computed}
             />
           </div>
         </div>
@@ -570,6 +665,7 @@ export default function UnderwritePage() {
         {rows.length > 0 && (
           <div className="mt-5 flex items-center gap-1 border-b border-slate-800">
             {([
+              ["dashboard", "Deal dashboard"],
               ["results", `Results (${rows.length})`],
               ["tax", `Tax worklist${worklistActive.length ? ` (${worklistActive.length})` : ""}`],
             ] as const).map(([key, label]) => (
@@ -582,6 +678,84 @@ export default function UnderwritePage() {
                 {label}
               </button>
             ))}
+          </div>
+        )}
+
+        {/* Deal dashboard — the plain-English tax & title picture */}
+        {computed && tab === "dashboard" && (
+          <div className="mt-4 space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <SummaryCard label="Past-due taxes" value={fm(risk.pastDue)} sub="verified at the county" tone={risk.pastDue > 0 ? "red" : "emerald"} />
+              <SummaryCard label="Tax-sale alerts" value={String(risk.urgent.length)} sub="act immediately" tone={risk.urgent.length ? "red" : "emerald"} />
+              <SummaryCard label="Delinquent doors" value={String(risk.delinquent.length + risk.shared.length)} tone={risk.delinquent.length ? "red" : "emerald"} />
+              <SummaryCard label="Title / entity flags" value={String(risk.flags.length)} sub="owner of record differs" />
+              <SummaryCard label="Verified current" value={String(risk.clean.length)} tone="emerald" />
+              <SummaryCard label="Unverified" value={String(risk.pending.length)} />
+            </div>
+
+            {risk.urgent.length > 0 && (
+              <div className="bg-red-500/[0.07] border border-red-500/40 rounded-xl p-4">
+                <div className="flex items-center gap-2 text-red-300 font-bold text-sm mb-2">
+                  <ShieldAlert className="w-4 h-4" /> TAX-SALE ALERTS — these can cost the property. Handle before anything else.
+                </div>
+                {risk.urgent.map((r) => (
+                  <div key={r.id} className="py-2 border-t border-red-500/20 first:border-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-white font-semibold text-sm">{r.address}</span>
+                      <span className="text-red-300 font-bold text-sm">{fm(Number(r.back_tax_amount) || 0)}</span>
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1 leading-relaxed">{r.notes}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {risk.delinquent.length > 0 && (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
+                <div className="text-sm font-bold text-amber-300 mb-2 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4" /> Delinquent taxes (largest first) — added to cash-needed
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">
+                  {risk.delinquent.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-3 py-1 border-b border-slate-800/60 text-sm">
+                      <span className="text-slate-200 truncate">{r.address}</span>
+                      <span className="text-amber-300 font-semibold shrink-0">{fm(Number(r.back_tax_amount) || 0)}</span>
+                    </div>
+                  ))}
+                  {risk.shared.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-3 py-1 border-b border-slate-800/60 text-sm">
+                      <span className="text-slate-400 truncate">{r.address}</span>
+                      <span className="text-slate-500 text-xs shrink-0">on shared parcel</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {risk.flags.length > 0 && (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
+                <div className="text-sm font-bold text-sky-300 mb-2">Title / entity flags — county owner of record differs from the package</div>
+                {risk.flags.map((r) => (
+                  <div key={r.id} className="py-2 border-t border-slate-800/60 first:border-0">
+                    <div className="text-white font-semibold text-sm">{r.address}</div>
+                    <div className="text-xs text-slate-400 mt-0.5 leading-relaxed">{r.notes}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {risk.clean.length > 0 && (
+              <div className="bg-emerald-500/[0.05] border border-emerald-500/25 rounded-xl p-4">
+                <div className="text-sm font-bold text-emerald-300 mb-2 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4" /> Verified current at the county ({risk.clean.length})
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {risk.clean.map((r) => (
+                    <span key={r.id} className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-200 text-xs">{r.address}</span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
