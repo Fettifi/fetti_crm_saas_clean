@@ -29,7 +29,7 @@ Each tradeline: {
  "balance": number|null (current balance in dollars; null if not shown),
  "status": one of "open","closed","collection","chargeoff","disputed","unknown"
 }
-RULES: List each unique account ONCE (tri-merge reports repeat the same account per bureau — deduplicate by creditor+balance). Merged reports (e.g. Factual Data) also contain RECAP sections ("Adverse Summary", "Account Summary") that REPEAT accounts already listed in the tradeline sections — never count those again. Include open accounts, collections, and charge-offs. Mark paid/closed/transferred accounts status "closed". NEVER invent numbers — null when a figure isn't on the report. Do NOT return SSNs, dates of birth, addresses, or account numbers.`;
+RULES: List each unique account ONCE (tri-merge reports repeat the same account per bureau — deduplicate by creditor+balance). Merged reports (e.g. Factual Data) also contain RECAP sections ("Adverse Summary", "Account Summary") that REPEAT accounts already listed in the tradeline sections — never count those again. **JOINT / CO-BORROWER ACCOUNTS (critical for married couples): this input may be a JOINT report or TWO reports for two borrowers. A single JOINT account (shared by both spouses — often marked ECOA "J"/Joint or appearing on both borrowers' reports) is ONE debt and must be listed ONCE — never once per borrower. When the same account (same creditor + same account type + the same or nearly-identical balance/payment) appears under both borrowers or on both reports, output it a SINGLE time. Do not double-count shared household debt.** Include open accounts, collections, and charge-offs. Mark paid/closed/transferred accounts status "closed". NEVER invent numbers — null when a figure isn't on the report. Do NOT return SSNs, dates of birth, addresses, or account numbers.`;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const numf = (v: unknown): number | null => { const n = Number(String(v ?? "").replace(/[^0-9.]/g, "")); return isFinite(n) && n > 0 ? Math.round(n) : null; };
@@ -65,7 +65,51 @@ export function normalizeTradelines(ex: any): CreditLiability[] {
     if (!monthly && include) { include = false; note = note || (balance ? "no payment reported — verify the obligation" : "no payment or balance reported"); }
     liabilities.push({ id: uid(), creditor, type, monthly, balance, status, include, note });
   }
-  return liabilities;
+  return dedupeLiabilities(liabilities);
+}
+
+// DETERMINISTIC dedup safety net (do not trust the model alone) — the LOS feeds BOTH
+// borrowers' credit reports into one extraction, so a JOINT account shared by a married
+// couple can arrive twice. Two layers:
+//   1. EXACT duplicate (same normalized creditor + type + balance) → collapse to ONE
+//      (keep the higher reported monthly), so shared debt is never double-counted in DTI.
+//   2. NEAR duplicate (same creditor + type, balances within a small tolerance — e.g. the
+//      same joint account reported a few dollars apart across the two spouses' bureaus) →
+//      keep both but FLAG them so the LO verifies rather than the system silently guessing.
+const dkey = (l: CreditLiability) =>
+  `${l.creditor.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16)}|${l.type}|${l.balance ?? "x"}`;
+const dcreditor = (l: CreditLiability) => l.creditor.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
+
+export function dedupeLiabilities(liabs: CreditLiability[]): CreditLiability[] {
+  const seen = new Map<string, CreditLiability>();
+  const out: CreditLiability[] = [];
+  for (const l of liabs) {
+    const k = dkey(l);
+    const prev = seen.get(k);
+    if (prev) {
+      // identical account listed twice (joint/co-borrower or cross-bureau) → merge into one
+      prev.monthly = Math.max(prev.monthly || 0, l.monthly || 0);
+      prev.note = ((prev.note ? prev.note + " " : "") + "(merged an identical duplicate tradeline — counted once)").slice(0, 240);
+      continue;
+    }
+    seen.set(k, l);
+    out.push(l);
+  }
+  // flag near-duplicates (likely the SAME joint account with slightly different balances)
+  for (let i = 0; i < out.length; i++) {
+    for (let j = i + 1; j < out.length; j++) {
+      const a = out[i], b = out[j];
+      if (a.balance == null || b.balance == null) continue;
+      if (dcreditor(a) !== dcreditor(b) || a.type !== b.type) continue;
+      const diff = Math.abs(a.balance - b.balance);
+      if (diff > 0 && diff <= Math.max(250, a.balance * 0.05)) {
+        const flag = " ⚠️ possible joint/duplicate of another tradeline — verify this isn't the same debt counted twice";
+        a.note = ((a.note || "") + flag).slice(0, 240);
+        b.note = ((b.note || "") + flag).slice(0, 240);
+      }
+    }
+  }
+  return out;
 }
 
 /** Run the extraction over prepared Anthropic content blocks (documents/images). */
