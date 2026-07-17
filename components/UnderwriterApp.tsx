@@ -180,8 +180,11 @@ function TaxWorklistRow({
             {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
             {copiedId === item.id ? "Copied" : "Copy address"}
           </button>
+          <a href={item.countyUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold">
+            <ExternalLink className="w-3 h-3" /> {item.countyName}
+          </a>
           <a href={item.netrUrl} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:text-sky-300 flex items-center gap-1">
-            <ExternalLink className="w-3 h-3" /> County records
+            <ExternalLink className="w-3 h-3" /> NETR
           </a>
           <a href={item.searchUrl} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:text-sky-300 flex items-center gap-1">
             <Search className="w-3 h-3" /> Search
@@ -628,8 +631,10 @@ export default function UnderwritePage() {
             <div className="bg-amber-500/[0.07] border border-amber-500/30 rounded-xl px-3 py-2.5 text-xs text-amber-200/90 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
               <span>
-                <b>TitlePro247:</b> paste the address in your TitlePro tab — no public API exists, so verification stays a
-                human step; the numbers you enter flow straight into cash-needed.
+                <b>County-first:</b> the county treasurer record is the authority — search it <b>by the property address</b>,
+                then cross-check the owner of record against the expected entity (a mismatch is a title flag). It shows live
+                amounts due, delinquencies, and tax-sale flags that assessment-roll tools like TitlePro miss. The numbers you
+                enter flow straight into cash-needed.
               </span>
             </div>
             {worklistActive.length === 0 && (
