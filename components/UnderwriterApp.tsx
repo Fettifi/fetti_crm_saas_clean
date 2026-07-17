@@ -198,6 +198,56 @@ function TaxWorklistRow({
   );
 }
 
+// Single-property manual entry form. Inputs, so module scope.
+function ManualPropertyForm({ onAdd, hasRows }: {
+  onAdd: (r: Omit<PropertyRow, "id" | "back_tax_status">) => void; hasRows: boolean;
+}) {
+  const [f, setF] = useState({ address: "", city: "", state: "", zip: "", price: "", rent: "", taxes: "", insurance: "", hoa: "", rehab: "", arv: "" });
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const num = (s: string) => { const n = Number(String(s).replace(/[$,\s]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
+  const canAdd = f.address.trim().length > 3 && num(f.price) != null && num(f.rent) != null;
+  const submit = () => {
+    if (!canAdd) return;
+    onAdd({
+      address: f.address.trim(), city: f.city.trim() || null, state: f.state.trim().toUpperCase() || null, zip: f.zip.trim() || null,
+      price: num(f.price), rent_monthly: num(f.rent), taxes_annual: num(f.taxes), insurance_annual: num(f.insurance),
+      hoa_monthly: num(f.hoa), rehab_budget: num(f.rehab), arv: num(f.arv),
+    });
+    setF({ address: "", city: "", state: "", zip: "", price: "", rent: "", taxes: "", insurance: "", hoa: "", rehab: "", arv: "" });
+  };
+  const cls = "bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 w-full";
+  return (
+    <div className="mt-3 bg-slate-900/40 border border-slate-800 rounded-xl p-4">
+      <div className="text-sm font-semibold text-white mb-1">Single property analysis</div>
+      <div className="text-xs text-slate-500 mb-3">
+        Address, price, and monthly rent are all it takes — taxes and insurance are estimated if you leave them blank
+        (verify at the county via the Tax worklist).{hasRows ? " This adds the property to the portfolio that's already loaded." : ""}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="col-span-2"><input className={cls} placeholder="Street address *" value={f.address} onChange={set("address")} /></div>
+        <input className={cls} placeholder="City" value={f.city} onChange={set("city")} />
+        <div className="grid grid-cols-2 gap-2">
+          <input className={cls} placeholder="ST" maxLength={2} value={f.state} onChange={set("state")} />
+          <input className={cls} placeholder="ZIP" value={f.zip} onChange={set("zip")} />
+        </div>
+        <input className={cls} placeholder="Purchase price / value *" value={f.price} onChange={set("price")} />
+        <input className={cls} placeholder="Monthly rent *" value={f.rent} onChange={set("rent")} />
+        <input className={cls} placeholder="Annual taxes (optional)" value={f.taxes} onChange={set("taxes")} />
+        <input className={cls} placeholder="Annual insurance (optional)" value={f.insurance} onChange={set("insurance")} />
+        <input className={cls} placeholder="HOA /mo (optional)" value={f.hoa} onChange={set("hoa")} />
+        <input className={cls} placeholder="Rehab budget (optional)" value={f.rehab} onChange={set("rehab")} />
+        <input className={cls} placeholder="ARV (optional)" value={f.arv} onChange={set("arv")} />
+        <button
+          type="button" onClick={submit} disabled={!canAdd}
+          className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 text-sm font-bold rounded-lg px-3 py-1.5"
+        >
+          Underwrite it
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Save bar: portfolio name + saved-list dropdown. Inputs, so module scope.
 function SaveBar({
   name, onName, saving, onSave, saved, onOpen, currentId, onDelete, onExport, onExportXlsx, canExport,
@@ -468,6 +518,16 @@ export default function UnderwritePage() {
   // --- derived --------------------------------------------------------------------
   const summary = computed?.summary || null;
   const taxAttention = summary ? summary.tax_unverified + summary.tax_owed : 0;
+  // --- single-property manual entry (no spreadsheet needed) ---------------------------
+  const [showManual, setShowManual] = useState(false);
+  const addManualRow = useCallback((r: Omit<PropertyRow, "id" | "back_tax_status">) => {
+    const row: PropertyRow = { ...r, id: crypto.randomUUID(), back_tax_status: "unknown" };
+    setRows((prev) => [...prev, row]);
+    setName((n) => n || r.address || "Single property");
+    setShowManual(false);
+    setTab("results");
+  }, []);
+
   const worklist = useMemo(() => (rows.length ? taxWorklist(rows) : []), [rows]);
   const worklistActive = worklist.filter((w) => w.status !== "clear");
   const worklistClear = worklist.length - worklistActive.length;
@@ -601,6 +661,15 @@ export default function UnderwritePage() {
         {/* Upload */}
         <div className="mt-5">
           <UploadZone parsing={parsing} onFile={onFile} />
+          <div className="mt-2 text-center">
+            <button
+              type="button" onClick={() => setShowManual((v) => !v)}
+              className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold"
+            >
+              {showManual ? "− Hide single-property form" : "+ Or run a single property — enter it manually, no spreadsheet needed"}
+            </button>
+          </div>
+          {showManual && <ManualPropertyForm onAdd={addManualRow} hasRows={rows.length > 0} />}
         </div>
 
         {/* Column mapping */}
