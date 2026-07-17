@@ -609,7 +609,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
         </div>
 
         {/* Income & qualification — the income calc embedded in the file, prefilled from the 1003 */}
-        {mismo?.metrics && <IncomeQualifier metrics={mismo.metrics} loan={mismo.urla?.loan} fileId={id} borrowerEmail={file.email} />}
+        {mismo?.metrics && <IncomeQualifier key={id} metrics={mismo.metrics} loan={mismo.urla?.loan} fileId={id} borrowerEmail={file.email} />}
         <CardAuthPanel fileId={id} />
 
         {/* AI Deal Screen (Relip-style triage + lender match) */}

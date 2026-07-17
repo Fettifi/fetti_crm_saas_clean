@@ -58,6 +58,23 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   const [downPct, setDownPct] = useState(String(defaultDown));
   const [excluded, setExcluded] = useState<Set<number>>(new Set()); // borrowers omitted from the calc
   const [lineBorrower, setLineBorrower] = useState<Record<number, number>>({}); // per-line borrower override (index → 1|2)
+  // ── LO income review (persists per file via /income-review) ─────────────────
+  // Each AI flag is the LO's call: ACCEPT (keep as a condition to resolve) or OMIT
+  // (reviewed — doesn't hold; dropped from the file's open flags, optional reason).
+  type FlagState = "open" | "accepted" | "omitted";
+  // Keyed by the flag's INDEX in verified.report.flags (not its text) so two identical
+  // flag strings are decided independently. `verified` is frozen + persisted, so the
+  // index is stable across reload.
+  const [flagDecisions, setFlagDecisions] = useState<Record<number, FlagState>>({});
+  const [flagNotes, setFlagNotes] = useState<Record<number, string>>({});
+  // Per-line include toggle (keyed by the AI breakdown line index): omit a line the
+  // AI counted, OR the LO adds lines the AI held back so ALL real income counts.
+  const [lineIncluded, setLineIncluded] = useState<Record<number, boolean>>({});
+  type AddedLine = { label: string; monthly: number; basis: string; borrower: number };
+  const [addedLines, setAddedLines] = useState<AddedLine[]>([]);
+  const [reviewLoaded, setReviewLoaded] = useState(false);
+  const [reviewSaved, setReviewSaved] = useState<null | "saving" | "saved">(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Direct overrides — the underwriter can ALWAYS type the qualifying income / gross
   // rent, regardless of what the 1003 or AI extraction produced. Blank => use the
   // computed value (1003 / AI-verified breakdown). Once edited, the typed value wins.
@@ -100,28 +117,44 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     return () => { cancelled = true; };
   }, [metrics?.zip, value]);
 
-  // AI-verified income breakdown (underwriter monthly per line) with any manual
-  // borrower re-assignment applied by line index, so the LO can split a couple's
-  // documents and qualify on a single spouse.
-  const effBreakdown = useMemo(() => (verified?.breakdown || []).map((l: any, i: number) => ({ ...l, borrower: lineBorrower[i] ?? (Number(l.borrower) || 1), monthly: Number(l.monthly) || 0 })), [verified, lineBorrower]);
+  // Unified income lines the qualifying total is built from: the AI-verified breakdown
+  // (with per-line borrower re-assignment + include/exclude), PLUS any income the LO
+  // ADDS back that the AI held behind a flag. `included` is what actually counts, so the
+  // LO can count all real income at their discretion after reviewing the flags.
+  const allLines = useMemo(() => {
+    const base = ((verified?.breakdown || []) as any[]).map((l: any, i: number) => ({
+      idx: i, added: false, key: `v${i}`,
+      label: String(l.label || "Income"), basis: String(l.basis || ""), flag: l.flag,
+      borrower: lineBorrower[i] ?? (Number(l.borrower) || 1),
+      monthly: Number(l.monthly) || 0,
+      included: lineIncluded[i] !== false, // default: count it
+    }));
+    const extra = addedLines.map((l, j) => ({
+      idx: j, added: true, key: `a${j}`,
+      label: l.label || "Additional income", basis: l.basis || "Added by loan officer", flag: undefined,
+      borrower: Number(l.borrower) || 1, monthly: Number(l.monthly) || 0,
+      included: true,
+    }));
+    return [...base, ...extra];
+  }, [verified, lineBorrower, lineIncluded, addedLines]);
 
-  // Which borrowers exist (from the verified breakdown, else the 1003 per-borrower income).
+  // Which borrowers exist (from the income lines, else the 1003 per-borrower income).
   const borrowersPresent = useMemo(() => {
-    if (effBreakdown.length) return (Array.from(new Set(effBreakdown.map((l: any) => l.borrower))) as number[]).sort((a, b) => a - b);
+    if (allLines.length) return (Array.from(new Set(allLines.map((l: any) => l.borrower))) as number[]).sort((a, b) => a - b);
     const bb = metrics?.byBorrower || {};
     const ks = Object.keys(bb).map(Number).filter((b) => (bb as any)[b] > 0).sort((a, b) => a - b);
     return ks.length ? ks : [1];
-  }, [effBreakdown, metrics?.byBorrower]);
+  }, [allLines, metrics?.byBorrower]);
   const includedBorrowers = borrowersPresent.filter((b) => !excluded.has(b));
 
   // Qualifying income for the INCLUDED borrowers — sum the underwriter's monthly
   // breakdown lines (already correctly computed: base annualized, variable 2-yr-avg,
   // no double-count). Falls back to the 1003 per-borrower income with no AI verify.
   const incomeCalc = useMemo(() => {
-    if (effBreakdown.length) {
+    if (allLines.length) {
       const byB: Record<number, number> = {};
       let inc = 0;
-      for (const l of effBreakdown) { if (excluded.has(l.borrower)) continue; inc += l.monthly; byB[l.borrower] = (byB[l.borrower] || 0) + l.monthly; }
+      for (const l of allLines) { if (!l.included || excluded.has(l.borrower)) continue; inc += l.monthly; byB[l.borrower] = (byB[l.borrower] || 0) + l.monthly; }
       return { income: inc, rentalDebt: 0, byB };
     }
     const bb = metrics?.byBorrower || {};
@@ -130,7 +163,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
       return { income: inc, rentalDebt: 0, byB: bb as Record<number, number> };
     }
     return { income: metrics?.monthlyIncome || 0, rentalDebt: 0, byB: {} as Record<number, number> };
-  }, [effBreakdown, excluded, metrics?.byBorrower, metrics?.monthlyIncome]);
+  }, [allLines, excluded, metrics?.byBorrower, metrics?.monthlyIncome]);
   // Effective qualifying income / rent: the LO's typed override wins; otherwise the
   // computed value (AI breakdown → 1003 per-borrower → 1003 total). This is what makes
   // the whole tool respond — type the real income and the DTI/max-loan recompute live.
@@ -207,17 +240,87 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     try {
       const r = await fetch(`/api/los/files/${fileId}/verify-income`, { method: "POST" });
       const j = await r.json();
-      if (!r.ok) { setVerifyErr(j?.error || "Verification failed."); setVerified(null); } else { setVerified(j); setLineBorrower({}); setExcluded(new Set()); incomeEditedRef.current = false; setIncomeInput(""); }
+      if (!r.ok) { setVerifyErr(j?.error || "Verification failed."); setVerified(null); } else { setVerified(j); setLineBorrower({}); setLineIncluded({}); setExcluded(new Set()); setFlagDecisions({}); setFlagNotes({}); incomeEditedRef.current = false; setIncomeInput(""); }
     } catch (e: any) { setVerifyErr(e?.message || "Verification failed."); } finally { setVerifying(false); }
   }
+
+  // ── Flag accept/omit + add-income helpers (the LO's discretion) ─────────────
+  function decideFlag(i: number, next: FlagState, flagText: string) {
+    setFlagDecisions((p) => ({ ...p, [i]: next }));
+    if (next === "omitted" && fileId) {
+      // Audit: an LO overriding an underwriting flag goes on the file's record.
+      fetch(`/api/los/files/${fileId}/income-review`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: { action: "income.flag_omitted", detail: { flag: String(flagText).slice(0, 200), reason: (flagNotes[i] || "").slice(0, 200) } } }),
+      }).catch(() => {});
+    }
+  }
+  const setFlagNote = (i: number, note: string) => setFlagNotes((p) => ({ ...p, [i]: note }));
+  function toggleLine(i: number) { clearIncomeOverride(); setLineIncluded((p) => ({ ...p, [i]: p[i] === false ? true : false })); }
+  function addIncomeLine() { clearIncomeOverride(); setAddedLines((p) => [...p, { label: "", monthly: 0, basis: "Added by loan officer", borrower: 1 }]); }
+  const updAdded = (j: number, patch: Partial<AddedLine>) => { clearIncomeOverride(); setAddedLines((p) => p.map((l, k) => (k === j ? { ...l, ...patch } : l))); };
+  const removeAdded = (j: number) => { clearIncomeOverride(); setAddedLines((p) => p.filter((_, k) => k !== j)); };
+
+  // Restore the saved review for this file (so a reload keeps the LO's verify + flag
+  // decisions + added income). Runs once per file.
+  useEffect(() => {
+    if (!fileId) { setReviewLoaded(true); return; }
+    let cancel = false;
+    fetch(`/api/los/files/${fileId}/income-review`).then((r) => (r.ok ? r.json() : null)).then((j) => {
+      if (cancel) return;
+      const rv = j?.review;
+      if (rv && typeof rv === "object") {
+        if (rv.verified) setVerified(rv.verified);
+        if (rv.flagDecisions) setFlagDecisions(rv.flagDecisions);
+        if (rv.flagNotes) setFlagNotes(rv.flagNotes);
+        if (rv.lineIncluded) setLineIncluded(rv.lineIncluded);
+        if (rv.lineBorrower) setLineBorrower(rv.lineBorrower);
+        if (Array.isArray(rv.addedLines)) setAddedLines(rv.addedLines);
+        if (Array.isArray(rv.excluded)) setExcluded(new Set(rv.excluded));
+        if (typeof rv.incomeOverride === "string" && rv.incomeOverride !== "") { incomeEditedRef.current = true; setIncomeInput(rv.incomeOverride); }
+        if (typeof rv.rentOverride === "string" && rv.rentOverride !== "") { rentEditedRef.current = true; setRentInput(rv.rentOverride); }
+      }
+      setReviewLoaded(true);
+    }).catch(() => setReviewLoaded(true));
+    return () => { cancel = true; };
+  }, [fileId]);
+
+  // Persist the review (debounced) whenever the LO's decisions change — only after the
+  // initial load and only once there's a verified result to attach them to.
+  useEffect(() => {
+    if (!fileId || !reviewLoaded || !verified) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setReviewSaved("saving");
+    saveTimer.current = setTimeout(() => {
+      const review = {
+        verified, flagDecisions, flagNotes, lineIncluded, lineBorrower, addedLines,
+        excluded: Array.from(excluded),
+        incomeOverride: incomeEditedRef.current ? incomeInput : "",
+        rentOverride: rentEditedRef.current ? rentInput : "",
+        updatedAt: new Date().toISOString(),
+      };
+      fetch(`/api/los/files/${fileId}/income-review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review }) })
+        .then((r) => setReviewSaved(r.ok ? "saved" : null)).catch(() => setReviewSaved(null));
+    }, 800);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileId, reviewLoaded, verified, flagDecisions, flagNotes, lineIncluded, lineBorrower, addedLines, excluded, incomeInput, rentInput]);
   // The PDF/email payload built from the EFFECTIVE on-screen state so the printed
   // headline income AND breakdown match exactly what the LO sees — reflecting a typed
   // income override, excluded borrowers, and any B1/B2 line reassignment. (Never ship
   // the raw AI `verified.result`, which is frozen at verify time.)
   function worksheetBody(audience: "lender" | "borrower") {
-    const effLines = effBreakdown
-      .filter((l: any) => !excluded.has(l.borrower))
+    const effLines = allLines
+      .filter((l: any) => l.included && !excluded.has(l.borrower))
       .map((l: any) => ({ label: l.label, basis: l.basis, monthly: l.monthly, flag: l.flag }));
+    // The underwriting copy records the LO's flag decisions (accepted → still a
+    // condition; omitted → reviewed + why), so the override is documented on the file.
+    const annotatedFlags = ((verified?.report?.flags || []) as string[]).map((f, idx) => {
+      const st = flagDecisions[idx];
+      if (st === "omitted") return `OMITTED by LO${flagNotes[idx] ? ` (${flagNotes[idx]})` : ""}: ${f}`;
+      if (st === "accepted") return `ACCEPTED — condition to resolve: ${f}`;
+      return f;
+    });
     return {
       audience,
       loanType: isInvestment ? "Investment / DSCR" : "Conventional & FHA",
@@ -228,7 +331,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         warnings: verified?.result?.warnings || [],
         derivedDebts: verified?.result?.derivedDebts,
       },
-      report: audience === "lender" ? verified?.report : undefined,
+      report: audience === "lender" && verified?.report ? { ...verified.report, flags: annotatedFlags } : undefined,
       docsRead: audience === "lender" ? verified?.docsRead : undefined,
       comparison, qualification, borrowersNote,
     };
@@ -311,27 +414,72 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
                 <div className="text-sm text-emerald-300 font-semibold">AI-verified income: {money(verified.qualifyingMonthlyIncome || 0)}/mo{borrowersNote ? ` · using ${money(income)}/mo` : ""}</div>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">{verified.docsRead?.length || 0} doc{(verified.docsRead?.length || 0) === 1 ? "" : "s"} · confidence {verified.report?.confidence}</span>
               </div>
-              <div className="mt-1 text-[10px] text-slate-500">Two borrowers? Set each line to B1 / B2, then uncheck one under &ldquo;Qualify with&rdquo; below to qualify on a single spouse.</div>
-              <div className="mt-1 space-y-1">
-                {(verified.breakdown || []).map((l: any, i: number) => {
-                  if (l.monthly === 0 && !l.label) return null;
-                  const bw = lineBorrower[i] ?? (Number(l.borrower) || 1);
+              <div className="mt-1 text-[10px] text-slate-500">Uncheck a line to drop it, set B1/B2 for a couple, or <span className="text-emerald-400">+ Add income</span> below to count income the read held back. The total is the sum of the checked lines — your call.</div>
+              <div className="mt-1.5 space-y-1">
+                {allLines.map((l: any) => {
+                  if (!l.added && l.monthly === 0 && !l.label) return null;
+                  const off = !l.included || excluded.has(l.borrower);
                   return (
-                    <div key={i} className={`flex items-start justify-between gap-2 text-[11px] ${excluded.has(bw) ? "opacity-40 line-through" : ""}`}>
-                      <div className="flex items-start gap-1.5">
-                        <select value={bw} onChange={(e) => { clearIncomeOverride(); setLineBorrower((p) => ({ ...p, [i]: Number(e.target.value) })); }} className="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-slate-300 no-underline" title="Assign this income to Borrower 1 or 2">
+                    <div key={l.key} className={`flex items-start justify-between gap-2 text-[11px] ${off ? "opacity-45" : ""}`}>
+                      <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                        <input type="checkbox" checked={l.included} disabled={l.added}
+                          onChange={() => { if (!l.added) toggleLine(l.idx); }}
+                          className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-emerald-500 disabled:opacity-40"
+                          title={l.added ? "Added income — always counted (remove with ✕)" : "Count this income line"} />
+                        <select value={l.borrower} onChange={(e) => { clearIncomeOverride(); if (l.added) updAdded(l.idx, { borrower: Number(e.target.value) }); else setLineBorrower((p) => ({ ...p, [l.idx]: Number(e.target.value) })); }} className="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-slate-300 shrink-0" title="Assign this income to Borrower 1 or 2">
                           <option value={1}>B1</option><option value={2}>B2</option>
                         </select>
-                        <div><span className="text-slate-300">{l.label}</span> <span className="text-slate-500">— {l.basis}</span>{l.flag && <div className="text-amber-400/90 no-underline">⚠ {l.flag}</div>}</div>
+                        {l.added ? (
+                          <input value={l.label} onChange={(e) => updAdded(l.idx, { label: e.target.value })} placeholder="e.g. Second job — continuous employment" className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] text-white focus:border-emerald-500 focus:outline-none" />
+                        ) : (
+                          <div className={`min-w-0 ${off ? "line-through" : ""}`}><span className="text-slate-300">{l.label}</span> <span className="text-slate-500">— {l.basis}</span>{l.flag && <div className="text-amber-400/90 no-underline">⚠ {l.flag}</div>}</div>
+                        )}
                       </div>
-                      <div className={`whitespace-nowrap ${l.monthly < 0 ? "text-amber-400" : "text-slate-200"}`}>{money(l.monthly)}/mo</div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {l.added ? (
+                          <>
+                            <CurrencyInput value={l.monthly ? String(l.monthly) : ""} onChange={(v) => updAdded(l.idx, { monthly: num(v) })} className="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-[11px] text-white text-right" placeholder="$/mo" />
+                            <button onClick={() => removeAdded(l.idx)} className="text-slate-500 hover:text-red-300 text-xs px-1 leading-none" title="Remove this added income">✕</button>
+                          </>
+                        ) : (
+                          <div className={`whitespace-nowrap ${off ? "line-through opacity-70" : ""} ${l.monthly < 0 ? "text-amber-400" : "text-slate-200"}`}>{money(l.monthly)}/mo</div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <button onClick={addIncomeLine} className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300">+ Add income</button>
+                <div className="text-[11px] text-slate-400">Counted: <span className="font-bold text-emerald-300">{money(income)}/mo</span>{reviewSaved === "saved" ? <span className="ml-2 text-slate-600">saved ✓</span> : reviewSaved === "saving" ? <span className="ml-2 text-slate-600">saving…</span> : null}</div>
+              </div>
               {verified.report?.perDoc?.length > 0 && <div className="mt-2 text-[11px] text-slate-400"><div className="text-slate-500 uppercase text-[10px] mb-0.5">Documents read</div>{verified.report.perDoc.map((p: any, i: number) => <div key={i}>• {p.docType}{p.source ? ` — ${p.source}` : ""}: <span className="text-slate-300">{p.keyFigures}</span></div>)}</div>}
               {verified.report?.crossChecks?.length > 0 && <div className="mt-2 text-[11px] text-slate-400"><div className="text-slate-500 uppercase text-[10px] mb-0.5">Cross-checks</div>{verified.report.crossChecks.map((c: string, i: number) => <div key={i}>• {c}</div>)}</div>}
-              {verified.report?.flags?.length > 0 && <div className="mt-2 text-[11px] text-amber-300"><div className="uppercase text-[10px] mb-0.5">Flags to resolve</div>{verified.report.flags.map((f: string, i: number) => <div key={i}>• {f}</div>)}</div>}
+              {verified.report?.flags?.length > 0 && (
+                <div className="mt-2.5">
+                  <div className="uppercase text-[10px] text-slate-500 mb-1">Flags — your call: accept or omit</div>
+                  <div className="space-y-1">
+                    {verified.report.flags.map((f: string, i: number) => {
+                      const st: FlagState = flagDecisions[i] || "open";
+                      return (
+                        <div key={i} className={`rounded-lg px-2 py-1.5 ${st === "omitted" ? "bg-slate-800/40" : st === "accepted" ? "bg-emerald-500/5 border border-emerald-700/30" : "bg-amber-500/10"}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className={`flex-1 text-[11px] ${st === "omitted" ? "line-through text-slate-500" : "text-amber-200"}`}>{st === "accepted" ? "✓ " : st === "omitted" ? "⦸ " : "⚠ "}{f}</div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button onClick={() => decideFlag(i, st === "accepted" ? "open" : "accepted", f)} className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st === "accepted" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`} title="Keep as a condition to resolve">Accept</button>
+                              <button onClick={() => decideFlag(i, st === "omitted" ? "open" : "omitted", f)} className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st === "omitted" ? "bg-slate-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`} title="You reviewed it — it doesn't hold">Omit</button>
+                            </div>
+                          </div>
+                          {st === "omitted" && (
+                            <input value={flagNotes[i] || ""} onChange={(e) => setFlagNote(i, e.target.value)} placeholder="Why it doesn't hold (e.g. changed jobs — continuous employment, no gap)" className="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200 focus:border-emerald-500 focus:outline-none" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[10px] text-slate-600 mt-1">Accept = keep it as a condition to resolve. Omit = you reviewed it and it doesn&apos;t hold — documented (with your reason) on the underwriting copy and dropped from the open flags.</div>
+                </div>
+              )}
               {verified.report?.notes && <div className="mt-2 text-[11px] text-slate-500">{verified.report.notes}</div>}
             </div>
           )}
