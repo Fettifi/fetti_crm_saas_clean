@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { assembleUrla } from "@/lib/urla";
 import { logActivity } from "@/lib/activity";
-import { getCardAuths, publicCardView, blanketAuthText, decryptPan, decryptCvv, cvvLive, purgeExpiredCvv, type CardAuth } from "@/lib/cardAuth";
+import { getCardAuths, publicCardView, blanketAuthText, decryptPan, decryptCvv, cvvLive, purgeExpiredCvv, cardAuthSig, type CardAuth } from "@/lib/cardAuth";
 import { sendSignRequest } from "@/lib/notify/docRequest";
 
 export const dynamic = "force-dynamic";
@@ -128,7 +128,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await persistCardAuthEntry(lead.id, i, auths[key]); // single-key merge — don't clobber other borrowers
 
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
-      const link = `${appUrl}/card-auth/${loanFile.share_token}?b=${i}`;
+      const link = `${appUrl}/card-auth/${loanFile.share_token}?b=${i}&s=${cardAuthSig(loanFile.share_token, i)}`;
       const { email, phone } = borrowerContact(lead, loanFile, i);
       if (!email && !phone) {
         return NextResponse.json({ error: "No email or phone on file for this borrower — add their contact on the lead / 1003, or copy the link to send it yourself.", link }, { status: 422 });
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
     return NextResponse.json({
       ok: true,
-      link: `${appUrl}/card-auth/${loanFile.share_token}?b=${i}`,
+      link: `${appUrl}/card-auth/${loanFile.share_token}?b=${i}&s=${cardAuthSig(loanFile.share_token, i)}`,
       preview: blanketAuthText(loanFile.file_number, amount),
       auth: publicCardView(auths[key]),
     });

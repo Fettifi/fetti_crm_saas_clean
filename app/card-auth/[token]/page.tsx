@@ -13,6 +13,7 @@ type Info = { company: string; nmls: string; fileNumber?: string; borrowerName?:
 export default function CardAuthPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const [b, setB] = useState<string>("0");
+  const [sig, setSig] = useState<string>("");
   const [info, setInfo] = useState<Info | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -22,9 +23,12 @@ export default function CardAuthPage({ params }: { params: Promise<{ token: stri
   const [f, setF] = useState({ cardholder: "", cardNumber: "", expMonth: "", expYear: "", cvv: "", billingZip: "", signature: "", consent: false });
 
   useEffect(() => {
-    const bi = new URLSearchParams(window.location.search).get("b") || "0";
-    setB(bi);
-    fetch(`/api/card-auth/${token}?b=${bi}`).then((r) => (r.ok ? r.json() : Promise.reject())).then((j) => {
+    const qs = new URLSearchParams(window.location.search);
+    const bi = qs.get("b") || "0";
+    const s = qs.get("s") || "";
+    setB(bi); setSig(s);
+    const q = `b=${encodeURIComponent(bi)}&s=${encodeURIComponent(s)}`;
+    fetch(`/api/card-auth/${token}?${q}`).then((r) => (r.ok ? r.json() : Promise.reject())).then((j) => {
       setInfo(j); if (j.alreadyAuthorized) setDone({ brand: "", last4: j.last4 || "" }); setLoading(false);
     }).catch(() => { setNotFound(true); setLoading(false); });
   }, [token]);
@@ -34,7 +38,7 @@ export default function CardAuthPage({ params }: { params: Promise<{ token: stri
     if (!f.consent) { setErr("Please check the authorization box."); return; }
     setBusy(true);
     try {
-      const r = await fetch(`/api/card-auth/${token}?b=${b}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+      const r = await fetch(`/api/card-auth/${token}?b=${encodeURIComponent(b)}&s=${encodeURIComponent(sig)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
       const j = await r.json();
       if (!r.ok) { setErr(j?.error || "Could not submit."); return; }
       setDone({ brand: j.brand, last4: j.last4 });

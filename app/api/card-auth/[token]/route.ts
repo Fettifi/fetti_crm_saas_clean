@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { BRAND } from "@/lib/brand";
-import { blanketAuthText, cardBrand, luhnValid, last4, encryptPan, encryptCvv, CVV_TTL_HOURS, type CardAuth } from "@/lib/cardAuth";
+import { blanketAuthText, cardBrand, luhnValid, last4, encryptPan, encryptCvv, CVV_TTL_HOURS, cardAuthSigValid, type CardAuth } from "@/lib/cardAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +25,12 @@ async function persistCardAuthEntry(leadId: string, index: number, entry: CardAu
   return supabaseAdmin.from("leads").update({ raw }).eq("id", leadId);
 }
 
-async function resolve(token: string, b: string | null) {
+async function resolve(token: string, b: string | null, sig: string | null) {
   const i = Number(b);
   if (!token || token.length < 12 || !(i >= 0)) return null;
+  // Per-borrower binding: the ?b index must carry a valid HMAC (?s=). This stops a
+  // holder of the file token from iterating ?b to reach another borrower's card entry.
+  if (!cardAuthSigValid(token, i, sig)) return null;
   const { data: file } = await supabaseAdmin.from("loan_files").select("id, file_number, lead_id, share_token").eq("share_token", token).maybeSingle();
   if (!file?.lead_id) return null;
   const { data: lead } = await supabaseAdmin.from("leads").select("*").eq("id", file.lead_id).maybeSingle();
@@ -38,7 +41,7 @@ async function resolve(token: string, b: string | null) {
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const r = await resolve(token, req.nextUrl.searchParams.get("b"));
+  const r = await resolve(token, req.nextUrl.searchParams.get("b"), req.nextUrl.searchParams.get("s"));
   if (!r || !r.auth) return NextResponse.json({ error: "This authorization link is invalid or has expired." }, { status: 404 });
   return NextResponse.json({
     company: BRAND.company, nmls: BRAND.nmls,
@@ -55,7 +58,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   try {
-    const r = await resolve(token, req.nextUrl.searchParams.get("b"));
+    const r = await resolve(token, req.nextUrl.searchParams.get("b"), req.nextUrl.searchParams.get("s"));
     if (!r || !r.auth) return NextResponse.json({ error: "This authorization link is invalid or has expired." }, { status: 404 });
     const body = await req.json();
 

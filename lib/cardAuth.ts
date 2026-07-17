@@ -5,6 +5,24 @@
 // prohibits storing CVV, and a signed card-on-file authorization is the basis to charge.
 import { encryptField, decryptField } from "@/lib/crypto";
 import { BRAND } from "@/lib/brand";
+import { signingSecret } from "@/lib/signingSecret";
+import crypto from "crypto";
+
+// SECURITY: bind each borrower's card-auth link to that borrower. The public link is
+// /card-auth/<fileShareToken>?b=<index>; without binding, anyone holding the file token
+// could iterate ?b to view/overwrite ANOTHER borrower-on-the-file's card entry (IDOR).
+// The signature is an HMAC over (shareToken:index) with the app secret, so ?b can't be
+// forged. Staff (session-gated /api/los/... routes) don't need it and don't pass it.
+export function cardAuthSig(shareToken: string, index: number): string {
+  return crypto.createHmac("sha256", signingSecret() + ":cardauth")
+    .update(`${shareToken}:${index}`).digest("hex").slice(0, 32);
+}
+export function cardAuthSigValid(shareToken: string, index: number, sig: string | null | undefined): boolean {
+  if (!sig) return false;
+  const expected = cardAuthSig(shareToken, index);
+  const a = Buffer.from(expected), b = Buffer.from(String(sig));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 export type CardAuth = {
   amount: number;            // blanket max authorized for this loan transaction
