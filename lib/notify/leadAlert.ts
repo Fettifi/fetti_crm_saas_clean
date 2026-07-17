@@ -7,6 +7,10 @@
 //   - Generic webhook  LEAD_NOTIFY_WEBHOOK   (free: Slack/Discord/Zapier -> phone)
 //   - Email (Resend)   RESEND_API_KEY, LEAD_NOTIFY_EMAIL_TO, LEAD_NOTIFY_EMAIL_FROM
 //   - SMS (Twilio)     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM, LEAD_NOTIFY_SMS_TO
+//   - Voice page       (Tier-1 only) Penny calls Ramon's cell "press 1 to connect" —
+//                      gated by app_settings HOTLEAD_VOICE_PAGE=on (default off)
+import { pageOwnerHotLead } from "@/lib/hotLead";
+import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 
 export type LeadAlert = {
   lead_id: string;
@@ -168,6 +172,23 @@ export async function notifyNewLead(lead: LeadAlert): Promise<{ sent: string[] }
       }
     })
   );
+  // HOT-LEAD VOICE PAGE: for Tier-1 (highest-value) leads, ring Ramon's cell so he
+  // can press 1 to connect live — speed-to-lead without opening the app. The page is
+  // self-gated (HOTLEAD_VOICE_PAGE=on, valid consented US phone, throttled) inside
+  // pageOwnerHotLead, so this branch is safe to always attempt for Tier-1.
+  if (lead.tier === "Tier 1" && lead.lead_id) {
+    try {
+      const { data: row } = await supabaseAdmin.from("leads")
+        .select("id, first_name, full_name, phone, email, raw, nurture_paused").eq("id", lead.lead_id).maybeSingle();
+      if (row) {
+        const pitch = ["Tier one lead", lead.loan_purpose ? `for a ${lead.loan_purpose}` : null, lead.state ? `in ${lead.state}` : null]
+          .filter(Boolean).join(" ");
+        const r = await pageOwnerHotLead(row, pitch);
+        if (r.paged) sent.push("voice-page");
+      }
+    } catch (e) { console.warn("[leadAlert] hot-lead voice page failed:", e); }
+  }
+
   if (sent.length === 0) {
     console.log("[leadAlert] no alert channels configured; skipping (lead still saved).");
   }
