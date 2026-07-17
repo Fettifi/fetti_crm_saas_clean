@@ -31,9 +31,10 @@ function mediaTypeFor(name: string): string {
 const SYSTEM = `You are a senior U.S. residential mortgage underwriter. Read the borrower's ACTUAL income documents and compute QUALIFYING MONTHLY INCOME using sound underwriting JUDGMENT. Reason it through, then output JSON only.
 
 PRINCIPLES (use judgment — do not be mechanical):
-- APPLICANTS vs SPOUSE (READ FIRST): compute income ONLY for the loan APPLICANT(S) named in the user message — usually ONE borrower unless a co-borrower is explicitly named. A JOINT (married-filing-jointly) tax return lists a SPOUSE who is usually NOT on this loan. Attribute each W-2 / pay stub / 1099 by the NAME on the document; use ONLY the named applicant(s)' income; IGNORE a non-applicant spouse's wages, self-employment (Schedule C), and the 1040 combined totals. NEVER use a 1040 "total income" or "AGI" as the applicant's income — tax returns only CORROBORATE the applicant's own wages.
+- APPLICANTS & CO-BORROWERS vs a joint-return SPOUSE (READ FIRST): count income for the loan APPLICANT(S) — the named borrower(s) PLUS any CO-BORROWER who has their OWN income document uploaded on this file. A second person who has their own W-2 / pay stub / 1099 / income tax transcript here IS a co-borrower on the loan — put their income under borrower 2. The 1003 is OFTEN INCOMPLETE and omits a co-borrower or lists the primary borrower's name TWICE, so do NOT drop a person who is clearly documented here with their own income just because the named list doesn't include them (e.g. if the named list is one person twice but a second person's W-2/1099 is uploaded, that second person is the co-borrower — count them). By contrast, a SPOUSE who appears ONLY on a joint (married-filing-jointly) 1040 and has NO income document of their OWN on this file is usually NOT on the loan — IGNORE that spouse's wages, self-employment (Schedule C), and the 1040 combined totals. NEVER use a 1040 "total income" or "AGI" as anyone's income — tax returns only CORROBORATE a person's own wages. Attribute each W-2 / pay stub / 1099 by the NAME on the document. If a NAMED co-borrower's income is hard to qualify (e.g. volatile 1099 self-employment WITHOUT a Schedule C to net it, or a small/recent W-2), STILL output a breakdown line for that person (your best defensible estimate, or 0) AND a flag saying exactly what is needed to count it (e.g. "Paul: 2 yrs of tax returns / Schedule C to average self-employment net; W-2 acting income is variable"). NEVER silently omit or zero a named co-borrower with no explanation.
 - JOB CHANGE vs EMPLOYMENT GAP (critical — never confuse the two): multiple W-2s from DIFFERENT employers usually mean the borrower CHANGED JOBS, not that they hold several jobs at once. A job change where the new job begins around when the prior one ends (no gap, or a gap under ~30 days) is NORMAL, CONTINUOUS employment; a move within the SAME or a similar field actually STRENGTHENS the 2-year work history. Qualify on the CURRENT employer's base; prior-employer W-2s prove work-history continuity, NOT extra income — do NOT add them, and do NOT treat the change itself as a risk. NEVER call a clean job change a "break in income", an "income gap", or a "gap in employment", and NEVER add it as a flag. Only raise a gap as a flag for a GENUINE stretch with NO employment that the dates actually show (e.g. several months between the last pay date at one employer and the first at the next); label it "employment gap ~<approx dates>", and even then it is an explain-by-letter condition, not a disqualifier. When two jobs are ADJACENT and you merely can't pin the exact day-count around the transition, assume a normal job change and do NOT flag it. BUT when the history has an UNDOCUMENTED SPAN — e.g. a prior full-year W-2, then current pay stubs, with a stretch in between covered by NO income document — you may NOT assume continuity: add a LOW-confidence flag "verify employment continuity / possible gap ~<approx dates> — request a letter of explanation". You MAY note a job change in "notes" as continuity — never as a problem.
 - WAGE-EARNER BASE (always the qualifying foundation): take the CURRENT base from the MOST RECENT pay stub and annualize it (salaried: gross per period × periods/yr — weekly 52, biweekly 26, semi-monthly 24, monthly 12; hourly: rate × hours/wk × 52). ALWAYS qualify a wage-earner on this base-from-stub. NEVER use a full-year W-2 Box 1 as the qualifying figure or as "total comp" — Box 1 ALREADY INCLUDES base + bonus + RSU, so use it ONLY to corroborate and to DERIVE the variable component, never as the income itself and never added on top of the base.
+  - PAY-FREQUENCY: pick the frequency from the stub's pay-period DATES — two stub dates within one calendar month ⇒ semi-monthly (24/yr); ~14 days apart ⇒ biweekly (26/yr); one per month ⇒ monthly (12/yr). 2× CROSS-CHECK (catches the single most common error — a MONTHLY salary figure counted as semi-monthly, or biweekly counted as weekly): if your annualized base comes out roughly DOUBLE (about 1.8–2.2×) the most recent full-year W-2 Box 1, you doubled the frequency — HALVE it. A normal raise makes the current base only ~1.0–1.3× the prior W-2 and is fine — do NOT change those, and do NOT pull overtime/shift/variable pay into base to reach a YTD figure.
 - VARIABLE pay (bonus, overtime, commission, RSU/stock vesting, tips): countable ONLY with a CONTINUOUS 2-YEAR HISTORY at the CURRENT employer. DETERMINISTIC RULE (mandatory — the same file must always yield the same number): if the borrower has FEWER THAN TWO FULL CALENDAR YEARS at the current employer (e.g. a recent job change, or only one full prior-year W-2 at this employer), variable income is NOT yet usable → qualify on BASE ONLY and add a flag that RSU/bonus can be credited once a 2-year history + continuance is documented. Do NOT count partial-year or single-year variable pay. ONLY when two+ FULL years at the current employer exist, add the 2-YEAR AVERAGE of the variable component (each year = that year's full W-2 Box 1 − that year's annualized base; use the lower/most-recent if clearly declining).
 - SELF-EMPLOYMENT: 2-year average of NET (post-expense) income; a loss reduces income.
 - FIXED / BENEFIT (Social Security, pension, disability, child support, alimony, VA): monthly amount; gross up ONLY documented non-taxable income (×1.25 conventional / ×1.15 FHA).
@@ -64,17 +65,46 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (loanFile.lead_id) { const r = await supabaseAdmin.from("leads").select("*").eq("id", loanFile.lead_id).maybeSingle(); lead = r.data; }
     const urla: Urla = assembleUrla(lead, loanFile);
     const loanType: LoanType = /fha/i.test(urla.loan?.loanType || "") ? "fha" : "conventional";
-    // The actual loan applicant(s) — so the AI never pulls a non-borrower spouse's
-    // income or a joint tax return's combined total.
-    const applicantNames = (urla.borrowers || [])
-      .map((b: any) => [b.firstName, b.lastName].filter(Boolean).join(" ").trim())
-      .filter(Boolean);
-    const applicants = applicantNames.length ? applicantNames.join(" and ") : (loanFile.borrower_name || "the borrower");
-    const soleNote = applicantNames.length <= 1 ? " (SOLE borrower — there is NO co-borrower; ignore any spouse on a joint tax return)" : "";
+    // The named applicant(s), DEDUPED case-insensitively — a broken 1003 routinely lists
+    // the SAME borrower twice (which would read as two applicants), and a real CO-BORROWER
+    // is often missing from the 1003 entirely even though their own income docs are on the
+    // file. We therefore do NOT assert "sole borrower" from the 1003 alone; the doc set is
+    // the source of truth for who has income here (see the co-borrower instruction below).
+    const _seenApplicant = new Set<string>();
+    const applicantNames: string[] = [];
+    for (const b of (urla.borrowers || []) as any[]) {
+      const nm = [b.firstName, b.lastName].filter(Boolean).join(" ").trim();
+      const k = nm.toLowerCase();
+      if (nm && !_seenApplicant.has(k)) { _seenApplicant.add(k); applicantNames.push(nm); }
+    }
+    let applicants = applicantNames.length ? applicantNames.join(" and ") : (loanFile.borrower_name || "the borrower");
 
     const { data: docs } = await supabaseAdmin.from("loan_documents")
       .select("id, name, category, file_name, storage_path, status")
       .eq("loan_file_id", id).not("storage_path", "is", null);
+    // DETERMINISTIC co-borrower detection — a co-borrower is routinely missing from the
+    // 1003 but unmistakably documented: their name LEADS several checklist labels ("Paul
+    // 2025 w2", "Paul ID", "Paul DD214"…). Find a proper-name token that starts ≥2 doc
+    // labels, isn't the applicant, and isn't a document-type word, and name them
+    // explicitly so the income read counts them as borrower 2 (not a spouse to ignore).
+    const DOC_WORDS = new Set(["bank", "pay", "tax", "credit", "recent", "government", "additional", "statements", "statement", "returns", "return", "stubs", "stub", "paystub", "paystubs", "income", "w2", "form", "gift", "letter", "photo", "license", "coe", "transcript", "proof", "voe", "award", "social", "pension", "mortgage", "insurance", "purchase", "contract", "entity", "lease", "property", "assets", "down", "payment", "file", "loan", "other", "document", "documents", "scan", "image", "employee", "employeepaystub", "earnings", "checking", "savings", "profit", "self", "business", "schedule", "disability", "alimony", "child", "support", "annuity", "retirement", "pension", "identification"]);
+    const applicantWords = new Set(applicants.toLowerCase().split(/[^a-z]+/).filter(Boolean));
+    const INCOME_LEAD = /w-?2|1099|k-?1|pay.?stub|paystub|paycheck|wage|earnings|income|salary/i;
+    const leadName = new Map<string, { display: string; count: number; income: boolean }>();
+    for (const d of (docs || []) as any[]) {
+      const label = String(d.name || "");
+      const first = label.trim().split(/[^A-Za-z]+/)[0] || "";
+      const lc = first.toLowerCase();
+      if (first.length < 3 || !/^[A-Za-z]+$/.test(first)) continue;
+      if (applicantWords.has(lc) || DOC_WORDS.has(lc)) continue;
+      const prev = leadName.get(lc);
+      // Only treat a recurring lead-name as a co-borrower if it heads at least one real
+      // INCOME document (their W-2 / 1099 / pay stub) — this filters out doc-workflow words
+      // ("Trust", "Provide", "Completed", "June", "Voided") that happen to lead labels.
+      leadName.set(lc, { display: prev?.display || (first[0].toUpperCase() + first.slice(1).toLowerCase()), count: (prev?.count || 0) + 1, income: (prev?.income || false) || INCOME_LEAD.test(label) });
+    }
+    const coBorrowers = [...leadName.values()].filter((v) => v.count >= 2 && v.income).map((v) => v.display);
+    if (coBorrowers.length) applicants += ` and ${coBorrowers.join(" and ")} (co-borrower${coBorrowers.length > 1 ? "s" : ""} — documented on this file with their own income docs even if not in the 1003; count their income under borrower 2)`;
     // Rank income docs so the MAX_DOCS budget spends on what actually SETS income — W-2s
     // (base + 2-yr job history) and pay stubs (current base) first, bank statements last.
     const isStub = (d: any) => /pay.?stub|check.?stub|paystub|earnings/i.test(`${d.name || ""} ${d.file_name || ""}`);
@@ -144,7 +174,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
     if (!blocks.length) return NextResponse.json({ error: "Could not read any of the uploaded income documents — they may be corrupt/truncated or an unsupported format. Re-request clean copies from the borrower.", unreadableDocs: unreadable }, { status: 422 });
 
-    const userText = `Loan applicant(s) on THIS file: ${applicants}${soleNote}. Compute qualifying monthly income for ONLY this applicant(s) — exclude any non-applicant spouse and never use a joint tax return's combined total. Loan type: ${loanType}. JSON only.`;
+    const userText = `Loan applicant(s) named on THIS file's 1003: ${applicants}. IMPORTANT: the 1003 may be INCOMPLETE or list a name twice — a CO-BORROWER is often documented on this file (their OWN W-2 / pay stub / 1099 / tax transcript) without appearing in that named list. Count qualifying monthly income for the named applicant(s) AND for ANY co-borrower who has their OWN income documents here — attribute each document by the NAME printed on it, and put a second person's income under borrower 2. ONLY exclude a spouse/person who appears SOLELY on a joint tax return with NO income document of their own on this file; never use a joint return's combined total. The income documents uploaded on this file are: ${read.join("; ")}. Loan type: ${loanType}. JSON only.`;
     // Resilient call: if Anthropic rejects a specific PDF block as invalid, drop THAT
     // document and retry the rest — one corrupt upload never fails the whole read.
     // NOTE: no `temperature` — Opus 4.8 rejects it; determinism comes from the prompt.
