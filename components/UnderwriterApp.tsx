@@ -22,6 +22,7 @@ import {
   type PropertyRow, type Assumptions, type UnderwriteResult, type PortfolioSummary, type BackTaxStatus,
 } from "@/lib/underwrite/engine";
 import { taxWorklist, type TaxLookup } from "@/lib/underwrite/taxLinks";
+import { qualifyDeal } from "@/lib/underwrite/dealQualifier";
 
 // ----------------------------------------------------------------------------
 // Shared style tokens (emerald-on-slate dark theme, same as Scenario Desk)
@@ -526,6 +527,7 @@ export default function UnderwritePage() {
     setName((n) => n || r.address || "Single property");
     setShowManual(false);
     setTab("results");
+    setExpandedId(row.id); // open straight into the deal qualifier
   }, []);
 
   const worklist = useMemo(() => (rows.length ? taxWorklist(rows) : []), [rows]);
@@ -856,7 +858,7 @@ export default function UnderwritePage() {
                     const open = expandedId === x.id;
                     return (
                       <RowPair
-                        key={x.id} x={x} r={r} open={open}
+                        key={x.id} x={x} r={r} open={open} assumptions={assumptions}
                         onToggle={() => setExpandedId(open ? null : x.id)}
                         onStatus={setTaxStatus} onAmount={setTaxAmount}
                       />
@@ -909,9 +911,10 @@ export default function UnderwritePage() {
 // Table row + expandable detail panel (module scope — contains inputs via BackTaxEditor)
 // ============================================================================
 function RowPair({
-  x, r, open, onToggle, onStatus, onAmount,
+  x, r, open, assumptions, onToggle, onStatus, onAmount,
 }: {
-  x: UnderwriteResult; r: PropertyRow | undefined; open: boolean; onToggle: () => void;
+  x: UnderwriteResult; r: PropertyRow | undefined; open: boolean; assumptions: Assumptions;
+  onToggle: () => void;
   onStatus: (id: string, s: BackTaxStatus) => void;
   onAmount: (id: string, v: string) => void;
 }) {
@@ -1003,10 +1006,159 @@ function RowPair({
                 )}
               </div>
             </div>
+            {r && <DealQualifierPanel r={r} a={assumptions} />}
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+// ============================================================================
+// DEAL QUALIFIER — what this deal needs to work, plus on-demand market intel.
+// ============================================================================
+const V_STYLE: Record<string, string> = {
+  works: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+  works_if: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+  thin: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+  no: "bg-red-500/15 text-red-300 border-red-500/40",
+};
+
+function DealQualifierPanel({ r, a }: { r: PropertyRow; a: Assumptions }) {
+  const q = useMemo(() => qualifyDeal(r, a), [r, a]);
+  const [intel, setIntel] = useState<any | null>(null);
+  const [intelBusy, setIntelBusy] = useState(false);
+  const [intelErr, setIntelErr] = useState<string | null>(null);
+
+  const fetchIntel = useCallback(async () => {
+    setIntelBusy(true); setIntelErr(null);
+    try {
+      const resp = await fetch("/api/underwrite", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "market",
+          address: r.address, city: r.city, state: r.state, zip: r.zip,
+          price: r.price, rent_monthly: r.rent_monthly, rehab_budget: r.rehab_budget, arv: r.arv,
+          required_rent: q.rental.requiredRent, arv_needed: q.flip.arvNeededProfit,
+        }),
+      });
+      const j = await resp.json();
+      if (!resp.ok || j?.ok === false) throw new Error(j?.error || "Market lookup failed");
+      setIntel(j);
+    } catch (e) { setIntelErr(e instanceof Error ? e.message : "Market lookup failed"); }
+    finally { setIntelBusy(false); }
+  }, [r, q]);
+
+  const addrQ = encodeURIComponent([r.address, r.city, r.state, r.zip].filter(Boolean).join(", "));
+  const compsLinks = [
+    { name: "Zillow sold comps", url: `https://www.zillow.com/homes/recently_sold/${addrQ}_rb/` },
+    { name: "Redfin", url: `https://www.redfin.com/search?q=${addrQ}` },
+    { name: "Realtor.com", url: `https://www.realtor.com/realestateandhomes-search?searchQuery=${addrQ}` },
+  ];
+
+  return (
+    <div className="mt-4 bg-slate-950/70 border border-emerald-500/20 rounded-xl p-4">
+      <div className="text-sm font-bold text-white mb-1">🎯 Deal qualifier — what this deal needs</div>
+      <div className="text-[13px] text-emerald-200 font-semibold mb-3">{q.headline}</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className={`border rounded-lg p-3 ${V_STYLE[q.rental.verdict]}`}>
+          <div className="text-[11px] font-bold uppercase tracking-wide mb-1">🏠 Rental (DSCR hold)</div>
+          <div className="text-xs leading-relaxed text-slate-200">{q.rental.line}</div>
+          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">loan {fm(q.rental.loanAtMaxLtv)}</span>
+            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">PITIA {fm(q.rental.pitiaAtMaxLtv)}/mo</span>
+            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">needs {fm(q.rental.requiredRent)}/mo</span>
+            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">break-even {fm(q.rental.breakevenRent)}/mo</span>
+          </div>
+        </div>
+        <div className={`border rounded-lg p-3 ${q.flip.verdict ? V_STYLE[q.flip.verdict] : "bg-slate-900/60 border-slate-700"}`}>
+          <div className="text-[11px] font-bold uppercase tracking-wide mb-1">🔨 Fix &amp; flip</div>
+          <div className="text-xs leading-relaxed text-slate-200">{q.flip.line}</div>
+          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">all-in {fm(q.flip.allIn)}</span>
+            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">ARV needed {fm(q.flip.arvNeededProfit)}</span>
+            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">70% rule {fm(q.flip.arvNeeded70Rule)}</span>
+          </div>
+        </div>
+        <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+          <div className="text-[11px] font-bold uppercase tracking-wide mb-1 text-sky-300">🔁 BRRRR</div>
+          <div className="text-xs leading-relaxed text-slate-200">{q.brrrr.line}</div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-3 flex-wrap">
+        <button
+          type="button" onClick={fetchIntel} disabled={intelBusy}
+          className="bg-sky-600/80 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+        >
+          {intelBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+          {intel ? "Refresh market intel" : "Get market intel (census + AI area analysis)"}
+        </button>
+        {compsLinks.map((l) => (
+          <a key={l.name} href={l.url} target="_blank" rel="noopener noreferrer" className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1">
+            <ExternalLink className="w-3 h-3" /> {l.name}
+          </a>
+        ))}
+      </div>
+      {intelErr && <div className="mt-2 text-xs text-red-400">{intelErr}</div>}
+
+      {intel && (
+        <div className="mt-3 space-y-3">
+          {intel.census && (
+            <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">
+                Census hard data — ZIP {intel.census.zip}{intel.census.vintage ? ` (ACS ${intel.census.vintage}${intel.census.trend_from ? `, trend vs ${intel.census.trend_from}` : ""})` : ""}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <CensusStat label="Median home value" now={intel.census.median_home_value} pct={intel.census.home_value_change_pct} money />
+                <CensusStat label="Median gross rent" now={intel.census.median_rent} pct={intel.census.rent_change_pct} money />
+                <CensusStat label="Median HH income" now={intel.census.median_income} pct={intel.census.income_change_pct} money />
+                <CensusStat label="Renter share" now={intel.census.renter_share_pct} pct={null} suffix="%" />
+              </div>
+            </div>
+          )}
+          {intel.ai && (
+            <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3 space-y-2">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                AI area analysis <span className="normal-case font-normal text-slate-600">— knowledge-based assessment; verify locally before committing capital</span>
+              </div>
+              {intel.ai.trajectory && (
+                <div className="text-xs text-slate-200"><b className="text-white">Trajectory:</b> {intel.ai.trajectory}</div>
+              )}
+              {Array.isArray(intel.ai.gentrification_signals) && intel.ai.gentrification_signals.length > 0 && (
+                <div className="text-xs text-slate-200"><b className="text-white">Gentrification signals:</b> {intel.ai.gentrification_signals.join(" · ")}</div>
+              )}
+              {intel.ai.rent_context && <div className="text-xs text-slate-200"><b className="text-white">Rent reality-check:</b> {intel.ai.rent_context}</div>}
+              {intel.ai.price_context && <div className="text-xs text-slate-200"><b className="text-white">Price/ARV reality-check:</b> {intel.ai.price_context}</div>}
+              {Array.isArray(intel.ai.risks) && intel.ai.risks.length > 0 && (
+                <div className="text-xs text-amber-200"><b className="text-amber-300">Risks:</b> {intel.ai.risks.join(" · ")}</div>
+              )}
+              {intel.ai.strategy && (
+                <div className="text-xs text-emerald-200 bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-2.5 py-2">
+                  <b className="text-emerald-300">Recommended play:</b> {intel.ai.strategy}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CensusStat({ label, now, pct, money, suffix }: { label: string; now: number | null; pct: number | null; money?: boolean; suffix?: string }) {
+  return (
+    <div>
+      <div className="text-slate-500 text-[10px]">{label}</div>
+      <div className="text-white font-semibold">
+        {now == null ? "—" : money ? fm(now) : `${now}${suffix || ""}`}
+        {pct != null && (
+          <span className={`ml-1.5 text-[10px] font-bold ${pct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+            {pct >= 0 ? "▲" : "▼"}{Math.abs(pct)}%/5yr
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 

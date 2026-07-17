@@ -346,6 +346,93 @@ async function handleUnderwrite(body: any) {
   return NextResponse.json({ ok: true, results, summary });
 }
 
+// ---- MARKET INTEL: Census ACS hard data (by ZIP) + AI area analysis ----------------
+// Census API is free/public (no key at this volume). AI brief rides the existing
+// claudeChat fallback chain and is labeled as a knowledge-based assessment.
+const ACS_VARS = "B19013_001E,B25077_001E,B25064_001E,B25003_001E,B25003_003E"; // income, home value, rent, tenure total, renter-occupied
+
+async function acsFetch(vintage: number, zip: string): Promise<number[] | null> {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 7000);
+    const r = await fetch(
+      `https://api.census.gov/data/${vintage}/acs/acs5?get=${ACS_VARS}&for=zip%20code%20tabulation%20area:${encodeURIComponent(zip)}`,
+      { signal: ctl.signal }
+    );
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!Array.isArray(j) || j.length < 2) return null;
+    return (j[1] as string[]).slice(0, 5).map((v) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? n : NaN;
+    });
+  } catch { return null; }
+}
+
+async function handleMarket(body: any) {
+  const zip = (toStr(body?.zip) || "").replace(/\D/g, "").slice(0, 5);
+  const city = toStr(body?.city), state = toStr(body?.state), address = toStr(body?.address);
+  if (!zip && !city) return jsonError("Need a ZIP or city for market intel");
+
+  // 1) Census: latest available vintage + a ~5-years-earlier vintage for trend.
+  let census: any = null;
+  if (zip) {
+    let nowVals: number[] | null = null, nowVintage = 0;
+    for (const v of [2023, 2022, 2021]) {
+      nowVals = await acsFetch(v, zip);
+      if (nowVals) { nowVintage = v; break; }
+    }
+    if (nowVals) {
+      const oldVintage = nowVintage - 5;
+      const oldVals = await acsFetch(oldVintage, zip);
+      const pct = (now: number, old: number | undefined) =>
+        old && Number.isFinite(old) && old > 0 && Number.isFinite(now) ? Math.round(((now - old) / old) * 1000) / 10 : null;
+      const [inc, hv, rent, tenTotal, renters] = nowVals;
+      census = {
+        zip, vintage: nowVintage, trend_from: oldVals ? oldVintage : null,
+        median_income: Number.isFinite(inc) ? inc : null,
+        median_home_value: Number.isFinite(hv) ? hv : null,
+        median_rent: Number.isFinite(rent) ? rent : null,
+        renter_share_pct: Number.isFinite(tenTotal) && Number.isFinite(renters) && tenTotal > 0 ? Math.round((renters / tenTotal) * 100) : null,
+        income_change_pct: oldVals ? pct(inc, oldVals[0]) : null,
+        home_value_change_pct: oldVals ? pct(hv, oldVals[1]) : null,
+        rent_change_pct: oldVals ? pct(rent, oldVals[2]) : null,
+      };
+    }
+  }
+
+  // 2) AI area analysis, anchored to the census figures + the deal's numbers.
+  let ai: any = null;
+  try {
+    const raw = await claudeChat({
+      system:
+        `You are a rigorous residential real-estate investment analyst. Given a property location, ` +
+        `census figures, and deal numbers, produce a JSON assessment. Be SPECIFIC to the neighborhood/ZIP ` +
+        `(landmarks, corridors, developments you know of), honest about uncertainty, and never invent statistics — ` +
+        `qualitative claims only, anchored to the census numbers provided. Respond with STRICT JSON: ` +
+        `{"trajectory":"gentrifying|improving|stable|declining + 1-2 sentences why","gentrification_signals":["..."],` +
+        `"rent_context":"is the required/entered rent realistic for this area — 1-2 sentences",` +
+        `"price_context":"is the price/ARV realistic for this area — 1-2 sentences",` +
+        `"risks":["top 3 area-specific risks"],"strategy":"the single best play for this deal (rental/flip/BRRRR/avoid) and why, 2-3 sentences"}`,
+      messages: [{
+        role: "user",
+        content:
+          `Property: ${address || "(address withheld)"}, ${city}, ${state} ${zip}\n` +
+          `Census (ACS${census?.vintage ? ` ${census.vintage}` : ""}): ${JSON.stringify(census || "unavailable")}\n` +
+          `Deal: price ${body?.price ?? "?"}, entered rent/mo ${body?.rent_monthly ?? "none"}, rehab ${body?.rehab_budget ?? "none"}, ARV ${body?.arv ?? "none"}\n` +
+          `Qualifier math: rent needed for target DSCR ${body?.required_rent ?? "?"}/mo; ARV needed for a profitable flip ${body?.arv_needed ?? "?"}.\n` +
+          `Return ONLY the JSON object.`,
+      }],
+      json: true, maxTokens: 900, timeoutMs: 30000,
+    });
+    if (raw) { try { ai = JSON.parse(raw); } catch { ai = null; } }
+  } catch { ai = null; }
+
+  if (!census && !ai) return jsonError("Market intel unavailable right now — census and AI both unreachable.", 502);
+  return NextResponse.json({ ok: true, census, ai });
+}
+
 async function handleSave(body: any) {
   const p = body?.portfolio;
   const name = toStr(p?.name);
@@ -424,6 +511,7 @@ export async function POST(req: Request) {
     switch (action) {
       case "parse": return await handleParse(body);
       case "underwrite": return await handleUnderwrite(body);
+      case "market": return await handleMarket(body);
       case "save": return await handleSave(body);
       case "list": return await handleList();
       case "get": return await handleGet(body);
