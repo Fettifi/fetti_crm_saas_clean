@@ -206,7 +206,7 @@ function ManualPropertyForm({ onAdd, hasRows }: {
   const [f, setF] = useState({ address: "", city: "", state: "", zip: "", price: "", rent: "", taxes: "", insurance: "", hoa: "", rehab: "", arv: "" });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF((p) => ({ ...p, [k]: e.target.value }));
   const num = (s: string) => { const n = Number(String(s).replace(/[$,\s]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
-  const canAdd = f.address.trim().length > 3 && num(f.price) != null && num(f.rent) != null;
+  const canAdd = f.address.trim().length > 3 && num(f.price) != null;
   const submit = () => {
     if (!canAdd) return;
     onAdd({
@@ -221,8 +221,8 @@ function ManualPropertyForm({ onAdd, hasRows }: {
     <div className="mt-3 bg-slate-900/40 border border-slate-800 rounded-xl p-4">
       <div className="text-sm font-semibold text-white mb-1">Single property analysis</div>
       <div className="text-xs text-slate-500 mb-3">
-        Address, price, and monthly rent are all it takes — taxes and insurance are estimated if you leave them blank
-        (verify at the county via the Tax worklist).{hasRows ? " This adds the property to the portfolio that's already loaded." : ""}
+        An address and a price are all it takes — the Deal Qualifier tells you the rent and ARV the deal needs to work.
+        Add rent/rehab/ARV if you have them and it grades the deal against them.{hasRows ? " This adds the property to the portfolio that's already loaded." : ""}
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div className="col-span-2"><input className={cls} placeholder="Street address *" value={f.address} onChange={set("address")} /></div>
@@ -232,7 +232,7 @@ function ManualPropertyForm({ onAdd, hasRows }: {
           <input className={cls} placeholder="ZIP" value={f.zip} onChange={set("zip")} />
         </div>
         <input className={cls} placeholder="Purchase price / value *" value={f.price} onChange={set("price")} />
-        <input className={cls} placeholder="Monthly rent *" value={f.rent} onChange={set("rent")} />
+        <input className={cls} placeholder="Monthly rent (optional — I'll tell you what's needed)" value={f.rent} onChange={set("rent")} />
         <input className={cls} placeholder="Annual taxes (optional)" value={f.taxes} onChange={set("taxes")} />
         <input className={cls} placeholder="Annual insurance (optional)" value={f.insurance} onChange={set("insurance")} />
         <input className={cls} placeholder="HOA /mo (optional)" value={f.hoa} onChange={set("hoa")} />
