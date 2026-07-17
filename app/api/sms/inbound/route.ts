@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
+import { twilioGate, webhookCandidateUrls } from "@/lib/twilioVerify";
 import { logHotLeadReply } from "@/lib/notify/hotLeadReply";
 import { logComms, sendSms, getLeadMessagesForAI, countRecentOutbound } from "@/lib/comms";
 import { autoPromoteIfQuarantined, checkPhonePattern } from "@/lib/leadShield";
@@ -50,15 +50,14 @@ export async function POST(req: NextRequest) {
     const params: Record<string, string> = {};
     form.forEach((v, k) => { params[k] = String(v); });
 
-    // Reject forged webhooks: verify Twilio's signature. Fail-open only if no
-    // auth token is configured (can't verify) so this never silently blocks.
-    const token = process.env.TWILIO_AUTH_TOKEN || "";
-    if (token) {
-      const sig = req.headers.get("x-twilio-signature") || "";
-      const ok = twilioSignatureValid(token, sig, webhookCandidateUrls(req, "/api/sms/inbound"), params);
-      if (!ok) {
-        console.warn("[sms/inbound] rejected: invalid Twilio signature");
-        return new NextResponse("Forbidden", { status: 403 });
+    // Reject forged webhooks: verify Twilio's signature. Fail-CLOSED — a valid
+    // signature is required when a token is set, and a missing token in production
+    // rejects (503) rather than silently accepting forged SMS.
+    {
+      const gate = twilioGate(req, webhookCandidateUrls(req, "/api/sms/inbound"), params);
+      if (gate) {
+        console.warn(`[sms/inbound] rejected: Twilio gate ${gate.status}`);
+        return new NextResponse(gate.status === 503 ? "Service Unavailable" : "Forbidden", { status: gate.status });
       }
     }
 

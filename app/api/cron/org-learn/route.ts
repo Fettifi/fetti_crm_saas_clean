@@ -5,6 +5,7 @@
 // toward one goal: every action feeds it, and its guidance flows back out.
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { isStaffOrCron } from "@/lib/authSession";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { runOrgBrain } from "@/lib/agents/orgBrain";
 import { logActivity } from "@/lib/activity";
@@ -141,8 +142,9 @@ export async function GET(req: NextRequest) {
 
 // Manual trigger from the Command Center (debounced).
 export async function POST(req: NextRequest) {
-  // Unauthenticated manual trigger (Command Center button) — bound abuse: this endpoint
-  // burns paid OpenAI calls, so cap per-IP invocations hard.
+  // SECURITY: this endpoint burns paid OpenAI calls. Require a logged-in staff
+  // session (the Command Center trigger) OR the cron secret — never anonymous.
+  if (!(await isStaffOrCron(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!(await rateLimit(`learn:${clientIp(req)}`, 3, 3600))) {
     return NextResponse.json({ error: "rate limited" }, { status: 429 });
   }

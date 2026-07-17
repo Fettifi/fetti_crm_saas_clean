@@ -23,6 +23,22 @@ export function twilioSignatureValid(
   return false;
 }
 
+// Shared gate for every Twilio webhook. Returns null to PROCEED, or an object
+// with the HTTP status to REJECT with. Fail-closed semantics:
+//  • token set  → require a valid signature (rejects forged/unsigned → 403).
+//  • token unset → in production this is a misconfiguration; reject 503 (Twilio
+//    retries once the token is restored) rather than silently accepting forgeries.
+//    In local dev (no token) we allow, so testing isn't blocked.
+export function twilioGate(req: Request, candidateUrls: string[], params: Record<string, string>): { status: number } | null {
+  const token = process.env.TWILIO_AUTH_TOKEN || "";
+  if (!token) {
+    const prod = process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production";
+    return prod ? { status: 503 } : null;
+  }
+  const sig = req.headers.get("x-twilio-signature") || "";
+  return twilioSignatureValid(token, sig, candidateUrls, params) ? null : { status: 403 };
+}
+
 export function webhookCandidateUrls(req: Request, path: string): string[] {
   const out: string[] = [];
   const base = (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com").replace(/\/$/, "");

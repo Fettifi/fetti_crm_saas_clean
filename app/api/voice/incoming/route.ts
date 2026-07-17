@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { voiceVerb } from "@/lib/voice/say";
 import { cfg } from "@/lib/settings";
-import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
+import { twilioGate, webhookCandidateUrls } from "@/lib/twilioVerify";
 
 // Twilio inbound-voice webhook. Point your Twilio number's "A call comes in" to
 // POST https://app.fettifi.com/api/voice/incoming. Penny greets with the required
@@ -50,12 +50,12 @@ export async function POST(req: NextRequest) {
   // read the caller's From number (handed to the realtime bridge for a CRM lookup).
   const params: Record<string, string> = {};
   try { const fd = await req.formData(); fd.forEach((v, k) => { params[k] = String(v); }); } catch { /* body may be empty */ }
-  // Verify the request really came from Twilio (HMAC-signed with the Auth Token). Enforce
-  // only when a signature is present; fail-open only if TWILIO_AUTH_TOKEN isn't configured.
-  const authToken = process.env.TWILIO_AUTH_TOKEN || "";
-  const sig = req.headers.get("x-twilio-signature") || "";
-  if (authToken && sig && !twilioSignatureValid(authToken, sig, webhookCandidateUrls(req, "/api/voice/incoming"), params)) {
-    return new NextResponse("Forbidden", { status: 403 });
+  // Verify the request really came from Twilio (HMAC-signed with the Auth Token).
+  // Fail-closed: when a token is configured a valid signature is REQUIRED (a missing
+  // signature header no longer bypasses this); in production a missing token → 503.
+  {
+    const gate = twilioGate(req, webhookCandidateUrls(req, "/api/voice/incoming"), params);
+    if (gate) return new NextResponse(gate.status === 503 ? "Service Unavailable" : "Forbidden", { status: gate.status });
   }
   return buildTwiml(params.From || null);
 }

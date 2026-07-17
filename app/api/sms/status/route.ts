@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
+import { twilioGate, webhookCandidateUrls } from "@/lib/twilioVerify";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 
@@ -13,12 +13,9 @@ export async function POST(req: NextRequest) {
     const form = await req.formData();
     const params: Record<string, string> = {};
     form.forEach((v, k) => { params[k] = String(v); });
-    const token = process.env.TWILIO_AUTH_TOKEN || "";
-    if (token) {
-      const sig = req.headers.get("x-twilio-signature") || "";
-      if (!twilioSignatureValid(token, sig, webhookCandidateUrls(req, "/api/sms/status"), params)) {
-        return new NextResponse("Forbidden", { status: 403 });
-      }
+    {
+      const gate = twilioGate(req, webhookCandidateUrls(req, "/api/sms/status"), params);
+      if (gate) return new NextResponse(gate.status === 503 ? "Service Unavailable" : "Forbidden", { status: gate.status });
     }
     const sid = params["MessageSid"];
     const status = params["MessageStatus"];

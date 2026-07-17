@@ -49,8 +49,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     const stamp = Date.now();
     const path = `${file.id}/${stamp}-${safeName}`;
     const buf = Buffer.from(await upload.arrayBuffer());
+    // SECURITY: never persist the client-supplied MIME type — derive it from the
+    // validated extension so a spoofed text/html type can't later be served inline.
+    const _ext = safeName.toLowerCase().split(".").pop() || "";
+    const _CT: Record<string, string> = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", heic: "image/heic", heif: "image/heic", tif: "image/tiff", tiff: "image/tiff" };
     const { error: upErr } = await supabaseAdmin.storage.from(BUCKET).upload(path, buf, {
-      contentType: upload.type || "application/octet-stream", upsert: false,
+      contentType: _CT[_ext] || "application/octet-stream", upsert: false,
     });
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
 

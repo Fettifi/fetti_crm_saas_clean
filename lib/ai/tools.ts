@@ -8,11 +8,22 @@ import {
     // agent lets the model surface fabricated financial data to real borrowers,
     // which violates our no-fabrication / compliance rules. They remain exported
     // from god-mode.ts for offline/dev scripts only until backed by real vendors.
+    // SECURITY (2026-07-16 audit): the self-modification / shell tools —
+    // runTerminal (arbitrary shell = RCE), editFile/manageArtifacts('write')
+    // (arbitrary file write), upgradeSystem (opens a code PR), deploySystem
+    // (auto-merges to production), startAutopilot (autonomous loop that can chain
+    // the above) — are NO LONGER imported or wired into the live AI registry.
+    // On /api/chat the model's tool calls are executed server-side, and tool-loop
+    // inputs include untrusted data (web-search results, DB lead fields), so a
+    // prompt-injection payload could steer the model into calling runTerminal and
+    // exfiltrate the Supabase service-role key / every secret. These have no
+    // legitimate server-side caller outside this loop (grep-verified) and are also
+    // neutralized at the source in god-mode.ts as defense-in-depth.
     learnFromUser,
     deepResearch, getWeather, submitFeatureRequest, manageRoadmap,
-    getKnowledgeBase, readCodebase, exploreCodebase, upgradeSystem,
-    deploySystem, checkSystemHealth, startAutopilot, seeProjectStructure,
-    sendMessage, runTerminal, manageArtifacts
+    readCodebase, exploreCodebase,
+    checkSystemHealth, seeProjectStructure,
+    sendMessage
 } from '@/lib/integrations/god-mode';
 import {
     findContact, assistantSendEmail, assistantSendText,
@@ -106,46 +117,11 @@ export const toolDefinitions = [
         }
     },
     {
-        name: "upgradeSystem",
-        description: "Proposes a system upgrade (code change).",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                filePath: { type: SchemaType.STRING },
-                content: { type: SchemaType.STRING },
-                message: { type: SchemaType.STRING }
-            },
-            required: ["filePath", "content", "message"]
-        }
-    },
-    {
-        name: "deploySystem",
-        description: "Deploys a system upgrade.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                prNumber: { type: SchemaType.NUMBER }
-            },
-            required: ["prNumber"]
-        }
-    },
-    {
         name: "checkSystemHealth",
         description: "Checks system health (lint, build, connectivity).",
         parameters: {
             type: SchemaType.OBJECT,
             properties: {},
-        }
-    },
-    {
-        name: "startAutopilot",
-        description: "Starts an autonomous task execution loop.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                goal: { type: SchemaType.STRING }
-            },
-            required: ["goal"]
         }
     },
     {
@@ -234,39 +210,31 @@ export const toolDefinitions = [
             properties: { idOrTitle: { type: SchemaType.STRING } },
             required: ["idOrTitle"],
         },
-    },
-    {
-        name: "runTerminal",
-        description: "Executes a terminal command.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                command: { type: SchemaType.STRING }
-            },
-            required: ["command"]
-        }
-    },
-    {
-        name: "editFile",
-        description: "Edits or creates a file.",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                filePath: { type: SchemaType.STRING },
-                content: { type: SchemaType.STRING }
-            },
-            required: ["filePath", "content"]
-        }
     }
 ];
+
+// SECURITY: names the model is never allowed to invoke, even if a future edit
+// accidentally re-adds a definition or the hallucinated-JSON fallback in
+// app/api/chat/route.ts tries to dispatch one. executeTool refuses these
+// unconditionally. Shell/file-write/SQL/self-deploy = RCE surface.
+const FORBIDDEN_TOOLS = new Set([
+    "runTerminal", "editFile", "upgradeSystem", "deploySystem",
+    "startAutopilot", "runSQL", "manageDependencies", "manageArtifacts",
+]);
 
 export interface ToolResult {
     error?: string;
     [key: string]: any; // Allow flexible return values for now, but error is standard
 }
 
-export async function executeTool(name: string, args: Record<string, any>): Promise<ToolResult | any> {
+export async function executeTool(name: string, args: Record<string, any>, ctx?: { userText?: string }): Promise<ToolResult | any> {
     try {
+        // SECURITY: hard refuse the RCE / self-modification tools regardless of how
+        // the call arrived (function-call or the hallucinated-JSON fallback).
+        if (FORBIDDEN_TOOLS.has(name)) {
+            console.warn(`[Tool Security] Refused disabled tool: ${name}`);
+            return { error: `Tool '${name}' is disabled for security and cannot be executed.` };
+        }
         // Simulated financial tools (runSoftPull, runAVM, scheduleMeeting,
         // generateTermSheet, runMonteCarlo, matchSecondaryMarket, securitizeAsset,
         // adjustFedRates) are intentionally not dispatched here — they returned
@@ -278,21 +246,18 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         if (name === "manageRoadmap") return await manageRoadmap(args.goal, args.category);
         if (name === "exploreCodebase") return await exploreCodebase(args.dirPath);
         if (name === "readCodebase") return await readCodebase(args.filePath);
-        if (name === "upgradeSystem") return await upgradeSystem(args.filePath, args.content, args.message);
-        if (name === "deploySystem") return await deploySystem(args.prNumber);
         if (name === "checkSystemHealth") return await checkSystemHealth();
-        if (name === "startAutopilot") return await startAutopilot(args.goal);
         if (name === "seeProjectStructure") return await seeProjectStructure(args.depth);
         if (name === "sendMessage") return await sendMessage(args.platform, args.recipient, args.content);
         // Executive-assistant actions (real: Resend + Twilio + org_tasks)
         if (name === "findContact") return await findContact(args.query);
-        if (name === "sendEmail") return await assistantSendEmail(args.to, args.subject, args.body, args.direct === true);
-        if (name === "sendText") return await assistantSendText(args.to, args.message, args.direct === true);
+        // `direct` is re-derived server-side from Ramon's actual message (ctx.userText);
+        // the model-supplied args.direct is intentionally NOT trusted.
+        if (name === "sendEmail") return await assistantSendEmail(args.to, args.subject, args.body, ctx?.userText);
+        if (name === "sendText") return await assistantSendText(args.to, args.message, ctx?.userText);
         if (name === "createTask") return await assistantCreateTask(args.title, args.detail, args.dueInHours);
         if (name === "listTasks") return await assistantListTasks();
         if (name === "completeTask") return await assistantCompleteTask(args.idOrTitle);
-        if (name === "runTerminal") return await runTerminal(args.command);
-        if (name === "editFile") return await manageArtifacts('write', args.filePath, args.content);
 
         console.warn(`[Tool Error] Unknown tool: ${name}`);
         return { error: `Unknown tool: ${name}` };

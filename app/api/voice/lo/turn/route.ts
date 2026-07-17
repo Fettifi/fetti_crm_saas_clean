@@ -2,10 +2,11 @@
 // speech; we run the LO brain, answer, and keep going. When they're ready, we TEXT
 // them Ramon's Calendly, raise a top team task, and hand off to the live booking.
 import { NextRequest, NextResponse } from "next/server";
+import { signingSecret } from "@/lib/signingSecret";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { getSetting, setSetting, cfg } from "@/lib/settings";
-import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
+import { twilioGate, webhookCandidateUrls } from "@/lib/twilioVerify";
 import { loanOfficerTurn, type Turn } from "@/lib/voice/loanOfficer";
 import { voiceVerb } from "@/lib/voice/say";
 import { sendSms, sendEmail, logComms } from "@/lib/comms";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 const VOICE = "Polly.Joanna-Neural";
 const twiml = (b: string) => new NextResponse(`<?xml version="1.0" encoding="UTF-8"?><Response>${b}</Response>`, { status: 200, headers: { "Content-Type": "text/xml" } });
 function tokenFor(nonce: string): string {
-  return crypto.createHmac("sha256", (process.env.CRON_SECRET || "fetti") + ":lovoice").update(nonce).digest("hex").slice(0, 24);
+  return crypto.createHmac("sha256", signingSecret() + ":lovoice").update(nonce).digest("hex").slice(0, 24);
 }
 const smsAllowed = (raw: any) => {
   const c = raw?.consent && typeof raw.consent === "object" ? raw.consent : {};
@@ -69,16 +70,14 @@ export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
     const params: Record<string, string> = {}; form.forEach((v, k) => { params[k] = String(v); });
-    const token = process.env.TWILIO_AUTH_TOKEN || "";
-    if (token) {
+    {
       // Twilio signs the FULL url INCLUDING ?n=&t=; webhookCandidateUrls drops the
-      // query, so build query-aware candidates here. (The per-call token above is
-      // already strong auth; this is defense-in-depth.)
+      // query, so build query-aware candidates here. (There is also a per-call token
+      // in n/t; this signature check is defense-in-depth.) Fail-closed via twilioGate.
       const qs = `?n=${n}&t=${t}`;
       const cands = webhookCandidateUrls(req, "/api/voice/lo/turn").map((u) => u + qs);
-      if (!twilioSignatureValid(token, req.headers.get("x-twilio-signature") || "", cands, params)) {
-        return new NextResponse("Forbidden", { status: 403 });
-      }
+      const gate = twilioGate(req, cands, params);
+      if (gate) return new NextResponse(gate.status === 503 ? "Service Unavailable" : "Forbidden", { status: gate.status });
     }
     sid = params["CallSid"] || "";
     speech = String(params["SpeechResult"] || "").trim();

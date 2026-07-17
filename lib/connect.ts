@@ -5,6 +5,7 @@
 // personal. The AI (Mark) ushers them to a HUMAN conversation; it never pretends
 // the human call is a bot.
 import "server-only";
+import { signingSecret } from "@/lib/signingSecret";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { cfg } from "@/lib/settings";
@@ -14,7 +15,7 @@ const APP = (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com").repla
 
 // HMAC-signed token so the borrower connect page can't be guessed/enumerated.
 export function connectToken(leadId: string): string {
-  return crypto.createHmac("sha256", (process.env.CRON_SECRET || "fetti") + ":connect").update(leadId).digest("hex").slice(0, 20);
+  return crypto.createHmac("sha256", signingSecret() + ":connect").update(leadId).digest("hex").slice(0, 20);
 }
 export function connectTokenValid(leadId: string, t: string): boolean {
   const expected = connectToken(leadId);

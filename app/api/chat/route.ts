@@ -223,8 +223,9 @@ ${knowledgeString}
                     await new Promise(resolve => setTimeout(resolve, 50));
 
                     try {
-                        // Execute Tool
-                        functionResult = await executeTool(name, args);
+                        // Execute Tool (pass Ramon's actual message so send-gates can
+                        // verify a raw recipient server-side, not trust a model flag)
+                        functionResult = await executeTool(name, args, { userText: lastUserMessage });
                         console.log(`[Rupee] Tool ${name} success. Result:`, JSON.stringify(functionResult).substring(0, 100) + "...");
                     } catch (e: any) {
                         console.error(`[Tool Error] Execution failed for ${name}:`, e);
@@ -287,7 +288,7 @@ ${knowledgeString}
                             let functionResult;
 
                             // Execute the hallucinated tool
-                            functionResult = await executeTool(toolName, args);
+                            functionResult = await executeTool(toolName, args, { userText: lastUserMessage });
 
                             if (functionResult) {
                                 // Since the model didn't *actually* call a function (it hallucinated text),

@@ -72,17 +72,30 @@ export async function proxy(request: NextRequest) {
         )
     } catch (e) {
         console.error("Proxy Supabase Init Failed:", e);
-        // If Supabase fails, allow request but session will be null
-        return response;
+        // FAIL CLOSED: if Supabase can't initialize we do NOT return early here.
+        // Falling through with session=null means protected APIs still get 401 and
+        // protected pages still redirect to /login — an auth outage must not open
+        // the gate. (Previously this returned `response`, silently bypassing the
+        // apiProtected 401 check below — a fail-OPEN on any init failure.)
+        supabase = undefined;
     }
 
     let session = null;
     if (supabase) {
         try {
-            const { data } = await supabase.auth.getSession();
-            session = data.session;
+            // SECURITY: use getUser(), NOT getSession(). getSession() reads the
+            // session straight from the (attacker-controllable, app-unsigned) auth
+            // cookie and only checks expires_at — it does NOT verify the JWT
+            // signature, so a forged cookie yields a truthy session and bypasses
+            // this entire gate. getUser() revalidates the JWT against the Supabase
+            // auth server on every request. It signals an invalid/forged token via
+            // `error` (it does not throw), so treat any error OR a null user as
+            // unauthenticated. Mirrors the correct pattern in app/api/leads/route.ts.
+            const { data, error } = await supabase.auth.getUser();
+            session = error ? null : data.user;
         } catch (e) {
             console.error("Proxy Session Check Failed:", e);
+            session = null;
         }
     }
 

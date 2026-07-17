@@ -11,6 +11,7 @@
 // NEVER: rates/payments/"approved"/"guaranteed", "no obligation", "circling back",
 // "I hope this finds you well", CTA buttons, SMS artifacts, mail-merge greeting lines.
 import "server-only";
+import { signingSecret } from "@/lib/signingSecret";
 import crypto from "crypto";
 
 export type EmailTouch = { subject: string; body: string };
@@ -85,7 +86,7 @@ export function scrubSmsIsms(body: string): string {
 // Signed one-click unsubscribe URL (CAN-SPAM). HMAC keyed on CRON_SECRET.
 const APP = (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com").replace(/\/$/, "");
 export function unsubToken(leadId: string): string {
-  return crypto.createHmac("sha256", process.env.CRON_SECRET || "fetti").update(leadId).digest("hex").slice(0, 16);
+  return crypto.createHmac("sha256", signingSecret()).update(leadId).digest("hex").slice(0, 16);
 }
 export function unsubUrl(leadId: string): string {
   return `${APP}/api/unsubscribe?l=${encodeURIComponent(leadId)}&t=${unsubToken(leadId)}`;

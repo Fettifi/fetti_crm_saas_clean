@@ -5,6 +5,7 @@
 //    learning compounds, then bank the new insight (config feeds the live wizard).
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { isStaffOrCron } from "@/lib/authSession";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { runOptimizer } from "@/lib/agents/optimizer";
 import { recordHeartbeat } from "@/lib/heartbeat";
@@ -157,8 +158,8 @@ export async function GET(req: NextRequest) {
 // it), but debounced: refuse to re-run if we learned in the last 2 minutes, so it
 // can't be spammed into repeated OpenAI calls.
 export async function POST(req: NextRequest) {
-  // Unauthenticated manual trigger (Command Center button) — bound abuse: this endpoint
-  // burns paid OpenAI calls, so cap per-IP invocations hard.
+  // SECURITY: burns paid OpenAI calls — require staff session OR cron secret.
+  if (!(await isStaffOrCron(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!(await rateLimit(`learn:${clientIp(req)}`, 3, 3600))) {
     return NextResponse.json({ error: "rate limited" }, { status: 429 });
   }

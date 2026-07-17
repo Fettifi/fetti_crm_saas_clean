@@ -4,6 +4,7 @@
 // the call is placed in the background. Degrades to a team task if voice isn't
 // configured or the number is unusable.
 import { NextRequest, NextResponse } from "next/server";
+import { signingSecret } from "@/lib/signingSecret";
 import { after } from "next/server";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
@@ -15,7 +16,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const APP = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 function loToken(nonce: string): string {
-  return crypto.createHmac("sha256", (process.env.CRON_SECRET || "fetti") + ":lovoice").update(nonce).digest("hex").slice(0, 24);
+  return crypto.createHmac("sha256", signingSecret() + ":lovoice").update(nonce).digest("hex").slice(0, 24);
 }
 
 async function teamFallback(lead: any, why: string) {

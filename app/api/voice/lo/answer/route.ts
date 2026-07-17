@@ -3,6 +3,7 @@
 // nonce identify the lead. If a machine/voicemail picks up, leave a short human
 // message and text the connect link instead.
 import { NextRequest, NextResponse } from "next/server";
+import { signingSecret } from "@/lib/signingSecret";
 import crypto from "crypto";
 import { getSetting } from "@/lib/settings";
 import { voiceVerb } from "@/lib/voice/say";
@@ -14,7 +15,7 @@ const VOICE = "Polly.Joanna-Neural";
 const twiml = (b: string) => new NextResponse(`<?xml version="1.0" encoding="UTF-8"?><Response>${b}</Response>`, { status: 200, headers: { "Content-Type": "text/xml" } });
 
 function tokenFor(nonce: string): string {
-  return crypto.createHmac("sha256", (process.env.CRON_SECRET || "fetti") + ":lovoice").update(nonce).digest("hex").slice(0, 24);
+  return crypto.createHmac("sha256", signingSecret() + ":lovoice").update(nonce).digest("hex").slice(0, 24);
 }
 
 export async function POST(req: NextRequest) {

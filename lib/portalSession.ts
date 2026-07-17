@@ -1,11 +1,12 @@
 import crypto from "crypto";
+import { signingSecret } from "@/lib/signingSecret";
 
 // Borrower-portal auth primitives. The portal has no Supabase auth session, so we
 // mint our own: verify-otp sets a signed, httpOnly cookie (HMAC of leadId+expiry)
 // that the server validates on every data read — the client can no longer authorize
 // itself by writing a leadId into localStorage. Same trust model / secret as the
 // magic-apply + unsubscribe + file links (CRON_SECRET).
-const SECRET = (process.env.CRON_SECRET || "fetti") + ":portal";
+const SECRET = signingSecret() + ":portal";
 const TTL_MS = 1000 * 60 * 60 * 24 * 14; // 14-day session
 
 export const PORTAL_COOKIE = "fetti_portal";

@@ -12,6 +12,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     .from("preapprovals")
     .select("letter_number, borrower_name, co_borrower, loan_type, purchase_price, loan_amount, down_payment, interest_rate, term, property_address, occupancy, conditions, officer_name, officer_nmls, status, expires_on, created_at")
     .eq("share_token", token).maybeSingle();
-  if (!data) return NextResponse.json({ error: "not found" }, { status: 404 });
+  // Treat void or expired letters as gone (410) — a shared link must not keep
+  // serving a revoked/stale pre-approval that a borrower could present as current.
+  if (!data || data.status === "void" || (data.expires_on && new Date(data.expires_on) < new Date())) {
+    return NextResponse.json({ error: "not found" }, { status: data ? 410 : 404 });
+  }
   return NextResponse.json({ letter: data });
 }

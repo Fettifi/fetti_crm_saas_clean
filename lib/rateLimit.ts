@@ -10,15 +10,23 @@ export function clientIp(req: Request): string {
   return ip || req.headers.get("x-real-ip") || "unknown";
 }
 
-/** Returns true if allowed, false if the limit is exceeded for this window. */
-export async function rateLimit(key: string, limit: number, windowSeconds: number): Promise<boolean> {
+/** Returns true if allowed, false if the limit is exceeded for this window.
+ *  Default is fail-OPEN (a limiter hiccup must never block a real borrower's
+ *  submission). Pass { failClosed: true } for AUTH-security limiters (e.g. OTP
+ *  brute-force throttles) where a limiter error must DENY, not silently disable
+ *  the throttle. */
+export async function rateLimit(
+  key: string, limit: number, windowSeconds: number,
+  opts?: { failClosed?: boolean },
+): Promise<boolean> {
+  const onError = opts?.failClosed ? false : true;
   try {
     const { data, error } = await supabaseAdmin.rpc("rate_limit_hit", {
       p_key: key, p_limit: limit, p_window: windowSeconds,
     });
-    if (error) return true; // fail open
+    if (error) return onError;
     return data === true;
   } catch {
-    return true; // fail open
+    return onError;
   }
 }

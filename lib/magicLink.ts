@@ -5,12 +5,13 @@
 // everything — the #1 reason follow-ups never converted to applications.)
 // HMAC-signed with CRON_SECRET (same trust model as the unsubscribe + file links).
 import "server-only";
+import { signingSecret } from "@/lib/signingSecret";
 import crypto from "crypto";
 
 const APP = (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com").replace(/\/$/, "");
 
 export function appLinkToken(leadId: string): string {
-  return crypto.createHmac("sha256", (process.env.CRON_SECRET || "fetti") + ":apply").update(leadId).digest("hex").slice(0, 16);
+  return crypto.createHmac("sha256", signingSecret() + ":apply").update(leadId).digest("hex").slice(0, 16);
 }
 
 // Map a stored loan_purpose onto the wizard's goal values.

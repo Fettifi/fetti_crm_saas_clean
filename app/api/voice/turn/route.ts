@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { twilioSignatureValid, webhookCandidateUrls } from "@/lib/twilioVerify";
+import { twilioGate, webhookCandidateUrls } from "@/lib/twilioVerify";
 import { getCallState, saveCallState, clearCallState, receptionistTurn, type Turn } from "@/lib/voice/receptionist";
 import { addMessage, alertOwnerSms } from "@/lib/phoneMessages";
 import { voiceVerb } from "@/lib/voice/say";
@@ -66,12 +66,9 @@ export async function POST(req: NextRequest) {
     // can plant fake "phone messages"). Fail-open only if no auth token configured.
     // Sign against the ACTUAL path+query Twilio requested (e.g. ?ended=1 on the Gather-
     // timeout redirect), otherwise the recomputed HMAC won't match and salvage 403s.
-    const token = process.env.TWILIO_AUTH_TOKEN || "";
-    if (token) {
-      const sig = req.headers.get("x-twilio-signature") || "";
-      if (!twilioSignatureValid(token, sig, webhookCandidateUrls(req, req.nextUrl.pathname + req.nextUrl.search), params)) {
-        return new NextResponse("Forbidden", { status: 403 });
-      }
+    {
+      const gate = twilioGate(req, webhookCandidateUrls(req, req.nextUrl.pathname + req.nextUrl.search), params);
+      if (gate) return new NextResponse(gate.status === 503 ? "Service Unavailable" : "Forbidden", { status: gate.status });
     }
     sid = params["CallSid"] || "";
     speech = String(params["SpeechResult"] || "").trim();

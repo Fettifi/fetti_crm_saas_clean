@@ -204,7 +204,26 @@ export async function deepResearch(topic: string): Promise<any> {
     };
 }
 
+// SECURITY (2026-07-16 audit): shell/file-write/SQL/self-deploy are DISABLED by
+// default. A substring denylist is not a security boundary, and these functions
+// have no legitimate server-side caller — they were only reachable through the
+// AI tool loop, which ingests untrusted data (web results, lead fields) and so
+// was a prompt-injection→RCE path (exfiltrate the Supabase service-role key).
+// They now hard-refuse unless an operator explicitly opts in via env for LOCAL
+// dev only. Never set GODMODE_SHELL/GODMODE_WRITE/GODMODE_SQL in production.
+function godmodeEnabled(flag: string): boolean {
+    return process.env[flag] === '1' && !process.env.VERCEL;
+}
+const GODMODE_DISABLED = {
+    status: "DISABLED",
+    message: "This capability is disabled for security (shell/file-write/SQL/deploy). Ask Claude Code to make code or database changes.",
+};
+
 export async function runTerminal(command: string): Promise<any> {
+    if (!godmodeEnabled('GODMODE_SHELL')) {
+        console.warn(`[GodMode] BLOCKED runTerminal (disabled): ${String(command).slice(0, 120)}`);
+        return GODMODE_DISABLED;
+    }
     console.log(`[GodMode] Executing Terminal Command: ${command}`);
 
     // Safety Blacklist
@@ -269,6 +288,17 @@ export async function browseUrl(url: string): Promise<any> {
     }
 }
 
+// Block reads of secret-bearing files and any path that escapes the repo root,
+// so a prompt-injected read can't exfiltrate .env / keys / credentials.
+const SECRET_PATH_RE = /(^|\/)\.env|\.pem$|\.key$|id_rsa|(^|\/)secrets?(\/|\.|$)|credentials|\.p12$|\.pfx$/i;
+function readPathSafe(cwd: string, resolved: string): boolean {
+    if (!resolved.startsWith(cwd)) return false;            // no traversal outside repo
+    const rel = resolved.slice(cwd.length);
+    if (SECRET_PATH_RE.test(rel)) return false;             // no dotenv / keys / creds
+    if (/(^|\/)(node_modules|\.git)(\/|$)/.test(rel)) return false;
+    return true;
+}
+
 export async function manageArtifacts(action: 'read' | 'write', filename: string, content?: string): Promise<any> {
     console.log(`[GodMode] Managing Artifact: ${action} ${filename}`);
 
@@ -278,6 +308,9 @@ export async function manageArtifacts(action: 'read' | 'write', filename: string
         const filePath = path.resolve(process.cwd(), filename);
 
         if (action === 'read') {
+            if (!readPathSafe(process.cwd(), filePath)) {
+                return { status: "BLOCKED", error: "Reading that path is not permitted." };
+            }
             if (fs.existsSync(filePath)) {
                 return { status: "SUCCESS", content: fs.readFileSync(filePath, 'utf8') };
             }
@@ -287,6 +320,7 @@ export async function manageArtifacts(action: 'read' | 'write', filename: string
             }
             return { status: "FAILURE", error: "File not found locally and GITHUB_TOKEN missing." };
         } else {
+            if (!godmodeEnabled('GODMODE_WRITE')) return GODMODE_DISABLED;
             if (!content) return { status: "FAILURE", error: "Content required for write" };
 
             // VERCEL PRODUCTION GUARD: Skip local write, force GitHub PR
@@ -491,7 +525,10 @@ export async function readCodebase(filePath: string) {
     try {
         const fs = await import('fs');
         const path = await import('path');
-        const fullPath = path.join(process.cwd(), filePath);
+        const fullPath = path.resolve(process.cwd(), filePath);
+        if (!readPathSafe(process.cwd(), fullPath)) {
+            return "[BLOCKED] Reading that path is not permitted.";
+        }
         if (fs.existsSync(fullPath)) {
             console.log(`[GodMode] Reading local file: ${fullPath}`);
             return fs.readFileSync(fullPath, 'utf8');
@@ -506,7 +543,10 @@ export async function exploreCodebase(dirPath: string) {
     try {
         const fs = await import('fs');
         const path = await import('path');
-        const fullPath = path.join(process.cwd(), dirPath);
+        const fullPath = path.resolve(process.cwd(), dirPath);
+        if (!readPathSafe(process.cwd(), fullPath) && fullPath !== process.cwd()) {
+            return { error: "Listing that path is not permitted." };
+        }
         if (fs.existsSync(fullPath)) {
             console.log(`[GodMode] Listing local directory: ${fullPath}`);
             const items = fs.readdirSync(fullPath, { withFileTypes: true });
@@ -523,10 +563,12 @@ export async function exploreCodebase(dirPath: string) {
 }
 
 export async function upgradeSystem(filePath: string, content: string, message: string) {
+    if (!godmodeEnabled('GODMODE_WRITE')) return GODMODE_DISABLED;
     return await proposeUpgrade(filePath, content, message);
 }
 
 export async function deploySystem(prNumber: number) {
+    if (!godmodeEnabled('GODMODE_DEPLOY')) return GODMODE_DISABLED;
     return await deployUpgrade(prNumber);
 }
 
@@ -569,6 +611,7 @@ export async function checkSystemHealth(): Promise<any> {
 }
 
 export async function runSQL(query: string): Promise<any> {
+    if (!godmodeEnabled('GODMODE_SQL')) return GODMODE_DISABLED;
     console.log(`[GodMode] Executing SQL: ${query}`);
 
     if (!process.env.DATABASE_URL) {

@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
         }
 
         // Throttle verification attempts (anti brute-force on the 6-digit code).
-        if (!(await rateLimit(`otp-verify:${clientIp(req)}`, 10, 900)) || !(await rateLimit(`otp-verify:${String(email).toLowerCase()}`, 10, 900))) {
+        // failClosed: a limiter error must DENY, never silently remove the throttle.
+        if (!(await rateLimit(`otp-verify:${clientIp(req)}`, 10, 900, { failClosed: true })) || !(await rateLimit(`otp-verify:${String(email).toLowerCase()}`, 10, 900, { failClosed: true }))) {
             return NextResponse.json({ error: 'Too many attempts. Please wait a few minutes.' }, { status: 429 });
         }
 

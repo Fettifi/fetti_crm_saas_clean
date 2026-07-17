@@ -37,7 +37,8 @@ export async function POST(req: NextRequest) {
         if (!email) return NextResponse.json({ error: 'Email is required' }, { status: 400 });
 
         // Throttle OTP requests per IP and per email (anti brute-force/enumeration).
-        if (!(await rateLimit(`otp-send:${clientIp(req)}`, 6, 900)) || !(await rateLimit(`otp-send:${String(email).toLowerCase()}`, 6, 900))) {
+        // failClosed: a limiter error must DENY, so it can't be used to blast codes.
+        if (!(await rateLimit(`otp-send:${clientIp(req)}`, 6, 900, { failClosed: true })) || !(await rateLimit(`otp-send:${String(email).toLowerCase()}`, 6, 900, { failClosed: true }))) {
             return NextResponse.json({ message: 'Too many requests. Please wait a few minutes.' }, { status: 429 });
         }
 

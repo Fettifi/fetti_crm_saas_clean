@@ -17,6 +17,7 @@
 // zero owner pings (digest instead), and — because the Meta CAPI Lead event is
 // deferred until promotion — teaches Meta's optimizer to deliver HUMANS.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { signingSecret } from "@/lib/signingSecret";
 import { cfg, getSetting, setSetting } from "@/lib/settings";
 import { rateLimit } from "@/lib/rateLimit";
 import { logActivity } from "@/lib/activity";
@@ -156,7 +157,7 @@ export function checkPayloadSanity(body: Record<string, any>): ShieldSignal[] {
 
 // ------------------------------------------------------------ form token ---
 
-const fstSecret = () => (process.env.CRON_SECRET || "fetti") + ":fst";
+const fstSecret = () => signingSecret() + ":fst";
 
 /** Server-signed form-timing token: "<ts>.<hmac16>". Client can't forge age. */
 export function mintFormToken(): string {
@@ -501,7 +502,7 @@ export function applyShieldToRow(row: Record<string, unknown>, v: ShieldVerdict,
 }
 
 export function shieldActionToken(leadId: string, action: "promote" | "dismiss"): string {
-  return crypto.createHmac("sha256", (process.env.CRON_SECRET || "fetti") + ":shield").update(`${leadId}:${action}`).digest("hex").slice(0, 32);
+  return crypto.createHmac("sha256", signingSecret() + ":shield").update(`${leadId}:${action}`).digest("hex").slice(0, 32);
 }
 
 export function verifyShieldToken(leadId: string, action: string, t: string): boolean {

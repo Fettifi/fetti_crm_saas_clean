@@ -9,8 +9,12 @@ export const maxDuration = 30;
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  if (!token || token.length < 12) return NextResponse.json({ error: "invalid" }, { status: 400 });
   const { data: l } = await supabaseAdmin.from("preapprovals").select("*").eq("share_token", token).maybeSingle();
-  if (!l) return NextResponse.json({ error: "not found" }, { status: 404 });
+  // Match the JSON route: don't serve a void or expired letter as a PDF.
+  if (!l || l.status === "void" || (l.expires_on && new Date(l.expires_on) < new Date())) {
+    return NextResponse.json({ error: "not found" }, { status: l ? 410 : 404 });
+  }
 
   let extra: any = undefined;
   try { const raw = await getSetting(`PA_TERMS:${l.id}`); if (raw) extra = JSON.parse(raw); } catch { /* terms optional */ }

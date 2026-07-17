@@ -38,16 +38,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { data: blob, error } = await supabaseAdmin.storage.from(BUCKET).download(doc.storage_path);
     if (error || !blob) return NextResponse.json({ error: error?.message || "download failed" }, { status: 500 });
     const buf = Buffer.from(await blob.arrayBuffer());
-    let type = (blob as any).type || "";
-    if (!type || type === "application/octet-stream") type = inferType(doc.file_name || doc.storage_path);
+    // SECURITY (stored-XSS): NEVER trust the stored blob's Content-Type — a borrower
+    // could upload a .html/.svg with type text/html and, served inline on our own
+    // origin, it would execute as staff. Derive the type SOLELY from the validated
+    // extension. inferType only returns viewer-safe types (pdf/images); anything
+    // else becomes application/octet-stream, which we force to DOWNLOAD (attachment)
+    // and never render inline. A sandbox CSP is defense-in-depth for the pdf/image case.
+    const type = inferType(doc.file_name || doc.storage_path);
+    const isViewable = type !== "application/octet-stream";
     const safeName = String(doc.file_name || "document").replace(/[\r\n"]/g, "");
     return new NextResponse(buf, {
       status: 200,
       headers: {
         "Content-Type": type,
-        "Content-Disposition": `inline; filename="${safeName}"`,
+        "Content-Disposition": `${isViewable ? "inline" : "attachment"}; filename="${safeName}"`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'; object-src 'none'",
       },
     });
   }
