@@ -353,10 +353,14 @@ const ACS_VARS = "B19013_001E,B25077_001E,B25064_001E,B25003_001E,B25003_003E"; 
 
 async function acsFetch(vintage: number, zip: string): Promise<number[] | null> {
   try {
+    // Census API requires a (free) key: https://api.census.gov/data/key_signup.html
+    // Stored in app_settings CENSUS_API_KEY or env. Without it we skip census gracefully.
+    const key = ((await getSetting("CENSUS_API_KEY")) || process.env.CENSUS_API_KEY || "").trim();
+    if (!key) return null;
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 7000);
     const r = await fetch(
-      `https://api.census.gov/data/${vintage}/acs/acs5?get=${ACS_VARS}&for=zip%20code%20tabulation%20area:${encodeURIComponent(zip)}`,
+      `https://api.census.gov/data/${vintage}/acs/acs5?get=${ACS_VARS}&for=zip%20code%20tabulation%20area:${encodeURIComponent(zip)}&key=${encodeURIComponent(key)}`,
       { signal: ctl.signal }
     );
     clearTimeout(t);
