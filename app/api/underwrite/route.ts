@@ -347,20 +347,32 @@ async function handleUnderwrite(body: any) {
 }
 
 // ---- MARKET INTEL: Census ACS hard data (by ZIP) + AI area analysis ----------------
-// Census API is free/public (no key at this volume). AI brief rides the existing
-// claudeChat fallback chain and is labeled as a knowledge-based assessment.
+// Census API requires a (free) key — app_settings CENSUS_API_KEY (or env). AI brief
+// rides the existing claudeChat fallback chain and is labeled as a knowledge-based assessment.
 const ACS_VARS = "B19013_001E,B25077_001E,B25064_001E,B25003_001E,B25003_003E"; // income, home value, rent, tenure total, renter-occupied
 
-async function acsFetch(vintage: number, zip: string): Promise<number[] | null> {
+// ACS vintages before 2020 reject bare ZCTA queries ("ambiguous geography") — they
+// must be qualified with the state FIPS via &in=state:NN. 2020+ dropped the hierarchy.
+const STATE_FIPS: Record<string, string> = {
+  AL: "01", AK: "02", AZ: "04", AR: "05", CA: "06", CO: "08", CT: "09", DE: "10", DC: "11",
+  FL: "12", GA: "13", HI: "15", ID: "16", IL: "17", IN: "18", IA: "19", KS: "20", KY: "21",
+  LA: "22", ME: "23", MD: "24", MA: "25", MI: "26", MN: "27", MS: "28", MO: "29", MT: "30",
+  NE: "31", NV: "32", NH: "33", NJ: "34", NM: "35", NY: "36", NC: "37", ND: "38", OH: "39",
+  OK: "40", OR: "41", PA: "42", RI: "44", SC: "45", SD: "46", TN: "47", TX: "48", UT: "49",
+  VT: "50", VA: "51", WA: "53", WV: "54", WI: "55", WY: "56",
+};
+
+async function acsFetch(vintage: number, zip: string, state?: string | null): Promise<number[] | null> {
   try {
-    // Census API requires a (free) key: https://api.census.gov/data/key_signup.html
-    // Stored in app_settings CENSUS_API_KEY or env. Without it we skip census gracefully.
     const key = ((await getSetting("CENSUS_API_KEY")) || process.env.CENSUS_API_KEY || "").trim();
     if (!key) return null;
+    const fips = STATE_FIPS[String(state || "").trim().toUpperCase()] || null;
+    if (vintage < 2020 && !fips) return null; // pre-2020 without a state would 400 anyway
+    const inState = vintage < 2020 && fips ? `&in=state:${fips}` : "";
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 7000);
     const r = await fetch(
-      `https://api.census.gov/data/${vintage}/acs/acs5?get=${ACS_VARS}&for=zip%20code%20tabulation%20area:${encodeURIComponent(zip)}&key=${encodeURIComponent(key)}`,
+      `https://api.census.gov/data/${vintage}/acs/acs5?get=${ACS_VARS}&for=zip%20code%20tabulation%20area:${encodeURIComponent(zip)}${inState}&key=${encodeURIComponent(key)}`,
       { signal: ctl.signal }
     );
     clearTimeout(t);
@@ -384,12 +396,12 @@ async function handleMarket(body: any) {
   if (zip) {
     let nowVals: number[] | null = null, nowVintage = 0;
     for (const v of [2023, 2022, 2021]) {
-      nowVals = await acsFetch(v, zip);
+      nowVals = await acsFetch(v, zip, state);
       if (nowVals) { nowVintage = v; break; }
     }
     if (nowVals) {
       const oldVintage = nowVintage - 5;
-      const oldVals = await acsFetch(oldVintage, zip);
+      const oldVals = await acsFetch(oldVintage, zip, state);
       const pct = (now: number, old: number | undefined) =>
         old && Number.isFinite(old) && old > 0 && Number.isFinite(now) ? Math.round(((now - old) / old) * 1000) / 10 : null;
       const [inc, hv, rent, tenTotal, renters] = nowVals;
