@@ -42,12 +42,14 @@ export function toE164(phone: string): string | null {
 
 export type PageResult = { paged: boolean; reason?: string };
 
-/** Page Ramon's cell about a hot lead. `pitch` is the one-line Penny reads aloud. */
-export async function pageOwnerHotLead(lead: any, pitch: string): Promise<PageResult> {
+/** Page Ramon's cell about a hot lead. `pitch` is the one-line Penny reads aloud.
+ *  opts.force = LO-initiated (a click-to-call button): bypass the auto-page master
+ *  switch and the throttle, since the human explicitly asked to dial this one now. */
+export async function pageOwnerHotLead(lead: any, pitch: string, opts?: { force?: boolean }): Promise<PageResult> {
   const tsid = process.env.TWILIO_ACCOUNT_SID, ttok = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_FROM;
   const owner = ownerCellE164();
   if (!tsid || !ttok || !from || !owner) return { paged: false, reason: "voice_unconfigured" };
-  if ((await getSetting("HOTLEAD_VOICE_PAGE")) !== "on") return { paged: false, reason: "disabled" };
+  if (!opts?.force && (await getSetting("HOTLEAD_VOICE_PAGE")) !== "on") return { paged: false, reason: "disabled" };
 
   const raw = lead?.raw && typeof lead.raw === "object" ? lead.raw : {};
   if (!lead?.phone) return { paged: false, reason: "no_phone" };
@@ -56,11 +58,13 @@ export async function pageOwnerHotLead(lead: any, pitch: string): Promise<PageRe
   const borrower = toE164(lead.phone);
   if (!borrower) return { paged: false, reason: "bad_phone" };
 
-  // One page per lead / 30 min (never double-ring his cell).
-  const tk = `hotpage_last_${lead.id}`;
-  const last = await getSetting(tk);
-  if (last && Date.now() - new Date(last).getTime() < 30 * 60_000) return { paged: false, reason: "throttled" };
-  await setSetting(tk, new Date().toISOString());
+  // One page per lead / 30 min (never double-ring his cell) — skipped when LO-forced.
+  if (!opts?.force) {
+    const tk = `hotpage_last_${lead.id}`;
+    const last = await getSetting(tk);
+    if (last && Date.now() - new Date(last).getTime() < 30 * 60_000) return { paged: false, reason: "throttled" };
+    await setSetting(tk, new Date().toISOString());
+  }
 
   const nonce = "HL" + crypto.randomBytes(12).toString("hex");
   const tok = hotLeadToken(nonce);
