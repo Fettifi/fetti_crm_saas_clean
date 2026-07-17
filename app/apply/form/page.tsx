@@ -161,6 +161,10 @@ const DEFAULT_REBUTTALS: Record<string, string> = {
   dscr_not_rented: "Not rented yet? That's completely fine. DSCR loans qualify on the property's market rent — an appraiser's rent estimate does the job, so you don't need a signed lease or a tenant in place to get started. Let's keep going. 🏠",
   not_62: "Not 62 yet? A HELOC or cash-out refinance can unlock your equity now. Let's look at those instead.",
   high_balance: "Owe a lot relative to the value? There are still options. And improving your equity is a strategy we can plan toward. Let's keep going.",
+  // Refi was the one major goal with NO coaching beat, and wizard_insights flagged
+  // it as the weakest for contact conversion. This encouraging floor keeps refi
+  // starters moving; refiMessage() tailors it by their stated refi goal.
+  refi_start: "Refinancing is worth a real look. Depending on your goal we can target a lower payment, cash for renovations or debt payoff, dropping mortgage insurance, or a shorter term. Let's find the angle that pays off for you. 🔄",
 };
 
 // The "little to nothing down" objection is the buy flow's weakest point (it
@@ -176,8 +180,24 @@ function lowDownMessage(a: Answers): string {
   return "Little to put down? That's one of the easiest things to solve. FHA needs just 3.5%, that down payment can come entirely from a family gift, and assistance programs can cover much of the rest. Let's find the program that fits you. 🙌";
 }
 
+// Refinancers march through four dry questions with no warmth — the same spot
+// where buy gets low_down and invest gets dscr_not_rented. A goal-specific beat
+// right after they state their refi goal keeps them engaged. Honest, non-
+// promissory copy (no rate/APR or guaranteed-savings claims — Reg Z safe); a
+// learned config override still wins over this.
+function refiMessage(a: Answers): string {
+  if (a.refi_goal === "cash")
+    return "Cash-out is one of the most common reasons people refinance — tapping your equity for renovations, debt payoff, or your next investment is very doable. Let's see how much you could put to work. 💵";
+  if (a.refi_goal === "both")
+    return "Lowering your payment and taking cash out can happen in one loan. Let's structure it so it works on both fronts. ✅";
+  // "rate" or anything else → payment/term/mortgage-insurance angles.
+  return "Smart to check. A refinance can be about a lower payment, a shorter term, or dropping mortgage insurance you no longer need — and if today isn't the right moment, we'll tell you straight and map when to strike. Let's see your options. 📉";
+}
+
 // Returns an obstacle key if this answer is a known friction point, else null.
 function detectObstacle(id: string, value: string, a: Answers): string | null {
+  // Every refinancer gets one encouraging beat right after stating their goal.
+  if (id === "refi_goal") return "refi_start";
   if (id === "credit" && value === "600") return "low_credit";
   if (id === "credit" && value === "640") return "building_credit";
   if (id === "down" && value === "lt3") return "low_down";
@@ -455,7 +475,7 @@ export default function ApplyWizard() {
   function maybeCoach(id: string, value: string, next: Answers, phaseName: string, advance: () => void): boolean {
     const key = detectObstacle(id, value, next);
     if (!key) return false;
-    const message = rebuttals[key] || (key === "low_down" ? lowDownMessage(next) : DEFAULT_REBUTTALS[key]);
+    const message = rebuttals[key] || (key === "low_down" ? lowDownMessage(next) : key === "refi_start" ? refiMessage(next) : DEFAULT_REBUTTALS[key]);
     advanceRef.current = advance;
     setCoach({ key, message });
     track("objection", { phase: phaseName, step_id: id, goal: next.goal, occupancy: effectiveOccupancy(next), product: product(next), meta: { obstacle: key } });
