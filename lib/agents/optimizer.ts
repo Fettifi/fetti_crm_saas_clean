@@ -29,6 +29,36 @@ export type OptimizerOutput = {
 // better rebuttal copy for these from real drop-off; keys MUST match the wizard.
 const OBSTACLE_KEYS = ["low_credit", "building_credit", "low_down", "self_employed", "past_bk_fc", "first_flip", "not_62", "high_balance"];
 
+// HONESTY GUARDRAIL for the wizard "tip". The tip renders on the FIRST screen every
+// applicant sees, so it's the highest-visibility copy in the funnel. A mortgage broker
+// must never advertise unverifiable volume/social-proof or superlative claims —
+// "Join thousands…", "#1 lender", "5-star", "trusted by hundreds" — which are a
+// UDAAP / false-advertising risk and violate our brand honesty rule. This deterministic
+// filter runs on BOTH the model-generated tip (below) AND every already-stored tip at
+// serve time (app/api/wizard/event GET), so a banned claim can never reach a real
+// applicant even if the model slips or a bad value was banked by an earlier run.
+const HONEST_FALLBACK_TIP =
+  "Secure & private — no credit pull to start, and a real advisor reviews every file.";
+const TIP_BANNED: RegExp[] = [
+  /\bjoin\s+(thousands|hundreds|millions)\b/i,
+  /\b(thousands|hundreds|millions|dozens)\s+of\s+(happy|satisfied|delighted)?\s*(clients|customers|borrowers|families|homeowners|investors|people)\b/i,
+  /\btrusted by\b/i,
+  /\b\d[\d,]*\+?\s*(happy|satisfied)?\s*(clients|customers|borrowers|families|homeowners|loans|deals|reviews)\b/i,
+  /\b(#\s*1|no\.?\s*1|number one|nation'?s\s+(leading|top|#?\s*1)|top[- ]?rated|highest[- ]?rated|best[- ]?rated|award[- ]?winning|leading)\b/i,
+  /\b\d(\.\d)?\s*[- ]?star\b/i,
+  /\b(the\s+)?(best|#\s*1)\s+(lender|broker|mortgage|rates?)\b/i,
+];
+
+// Returns a compliant tip: undefined if empty, an honest fallback if the input makes an
+// unverifiable volume/social-proof/superlative claim, otherwise the trimmed original.
+export function sanitizeTip(tip?: string | null): string | undefined {
+  if (typeof tip !== "string") return undefined;
+  const t = tip.trim();
+  if (!t) return undefined;
+  if (TIP_BANNED.some((re) => re.test(t))) return HONEST_FALLBACK_TIP;
+  return t.slice(0, 120);
+}
+
 const SYSTEM = `You are the "Application Coach" for Fetti Financial Services — a learning agent that
 optimizes a conversational mortgage application wizard. Goal: maximize completed, high-quality
 applications without hurting trust or compliance.
@@ -67,7 +97,11 @@ one, so never recommend that. If goal_selection_rate is low, treat it as a top-o
 problem and improve the opening copy. LEARN cumulatively: keep prior insights that still hold, drop ones the new data
 contradicts, add new ones. Pay special attention to obstacles with low continue-rates — improve
 those rebuttals. Be specific and data-grounded; if the sample is tiny, say so and stay
-conservative. Never invent rates, approvals, or guarantees.
+conservative. Never invent rates, approvals, guarantees, review counts, rankings, or
+client/volume numbers. A small brokerage cannot claim "thousands" of clients, "#1"/"top-rated"
+status, star ratings, or "trusted by hundreds" — those are false advertising. Reassure with
+what is genuinely true instead (secure & private, quick, no credit pull to start, a real
+advisor reviews every file).
 
 Output ONLY valid JSON:
 {
@@ -76,7 +110,7 @@ Output ONLY valid JSON:
   "recommendations": string[],             // concrete changes for the team (<=6)
   "config": {
     "goal_order": string[],                // the 7 goal values reordered best-converting first (use ONLY the allowed values)
-    "tip": string,                         // <=90 chars reassuring/social-proof line to show under the first question; compliant, no promises
+    "tip": string,                         // <=90 chars, HONEST reassurance under the first question. NO volume/social-proof claims ("thousands","#1","top-rated","5-star","trusted by N"), no promises, no guarantees — ground it in what's true (secure, quick, no credit pull to start, a real advisor reviews it)
     "rebuttals": { [obstacleKey]: string } // improved coaching copy (<=240 chars each) for the obstacle keys above that need it most
   }
 }`;
@@ -139,7 +173,7 @@ Return ONLY the JSON for your schema.`;
   }
   out.config = {
     goal_order,
-    tip: typeof out.config?.tip === "string" ? out.config.tip.slice(0, 120) : undefined,
+    tip: sanitizeTip(out.config?.tip),
     rebuttals,
   };
   out.insights = Array.isArray(out.insights) ? out.insights.slice(0, 8) : [];

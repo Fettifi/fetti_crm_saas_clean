@@ -5,6 +5,7 @@
 //            an optional reassurance tip). This is the feedback half of the loop.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { sanitizeTip } from "@/lib/agents/optimizer";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,14 @@ export async function GET() {
       .limit(1)
       .maybeSingle();
     const config = (data?.config as Record<string, unknown>) || {};
+    // Honesty guardrail at serve time: neutralize any banned volume/social-proof tip
+    // that a prior optimizer run may have banked, so a false claim can never reach a
+    // live applicant even before the next learning run overwrites the stored config.
+    if ("tip" in config) {
+      const safe = sanitizeTip(config.tip as string | null | undefined);
+      if (safe) config.tip = safe;
+      else delete config.tip;
+    }
     return NextResponse.json(
       { config },
       { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } }
