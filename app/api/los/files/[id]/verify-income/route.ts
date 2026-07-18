@@ -41,6 +41,7 @@ PRINCIPLES (use judgment — do not be mechanical):
 - FIXED / BENEFIT (Social Security, pension, disability, child support, alimony, VA): monthly amount; gross up ONLY documented non-taxable income (×1.25 conventional / ×1.15 FHA).
 - RENTAL: net of the property's PITIA; a net loss is a debt, not income.
 - Do NOT double-count: a pay stub and its W-2 describe the SAME wages.
+- FLAGS CARRY A DOLLAR AMOUNT when they gate income: whenever a flag is the REASON some COUNTABLE income is being held OUT of the qualifying total (OT/variable not yet 2-yr-seasoned, an un-averaged bonus, a co-borrower's income you left at 0 pending a doc, gross-up you didn't apply), set that flag's "addBackMonthly" to the monthly $ (and "borrower") that WOULD be counted if the LO overrides the concern — so the LO can OMIT the flag to add exactly that income. Purely advisory flags (verify pay frequency, confirm continuity, re-request a corrupt doc) get addBackMonthly 0.
 
 Compute per borrower, then output ONLY this JSON:
 {"perBorrowerMonthly":{"1":<monthly $>,"2":<monthly $ ONLY if a real second borrower>},
@@ -48,7 +49,7 @@ Compute per borrower, then output ONLY this JSON:
  "breakdown":[{"borrower":1,"label":"<e.g. NVIDIA base salary>","monthly":<$>,"basis":"<how derived, e.g. '$8,433.33 semi-monthly ×24 ÷12'>"}],
  "perDoc":[{"file":"<file>","docType":"<W-2 2025 | Pay stub | 1099 | Bank statement | unreadable | non-income>","source":"<employer/payer>","keyFigures":"<numbers you read>"}],
  "crossChecks":["<reconciliations, e.g. 'stub YTD annualizes ~$202k base vs W-2 box1 $237k incl RSU — consistent'>"],
- "flags":["<ONLY genuine items to resolve: an ACTUAL employment gap with no income (NEVER a normal job change), income declines, RSU/bonus continuance, unverifiable figures>"],
+ "flags":[{"text":"<ONLY genuine items to resolve: an ACTUAL employment gap (NEVER a normal job change), income declines, RSU/bonus/OT continuance, unverifiable figures, held-back income>","addBackMonthly":<monthly $ that omitting this flag should ADD to income if it gates countable income; else 0>,"borrower":<1 or 2>}],
  "confidence":"high|medium|low",
  "notes":"<your underwriting read — call out any job change>"}
 BORROWER: use borrower 2 ONLY for a genuinely DIFFERENT person (a co-borrower/spouse with their own documents); multiple jobs or W-2s for the SAME person are all borrower 1. Every monetary value is MONTHLY dollars. Extract only what you can SEE — never invent. JSON only.`;
@@ -235,10 +236,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     // knows income evidence was skipped and can re-request a clean copy — rather than the
     // read silently omitting them or hard-failing.
     const unreadableFlags = unreadable.map((nm) => `Couldn't read "${nm}" — the file looks truncated or corrupt; income from it was NOT counted. Re-request a clean copy from the borrower.`);
+    // Flags are objects {text, addBackMonthly, borrower}: a flag that gates held-back
+    // income carries the $ that OMITTING it adds to the total. Normalize (accept legacy
+    // string flags too) so the UI can wire Omit → +income.
+    const normFlag = (f: any) => typeof f === "string"
+      ? { text: f.slice(0, 300), addBackMonthly: 0, borrower: 1 }
+      : { text: String(f?.text || "").slice(0, 300), addBackMonthly: Math.max(0, Math.round(n(f?.addBackMonthly) || 0)), borrower: Number(f?.borrower) === 2 ? 2 : 1 };
     const report = {
       perDoc: Array.isArray(parsed.perDoc) ? parsed.perDoc.slice(0, 20) : [],
       crossChecks: Array.isArray(parsed.crossChecks) ? parsed.crossChecks.slice(0, 20) : [],
-      flags: [...unreadableFlags, ...(Array.isArray(parsed.flags) ? parsed.flags : [])].slice(0, 20),
+      flags: [...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 })), ...(Array.isArray(parsed.flags) ? parsed.flags : []).map(normFlag)].slice(0, 20),
       confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "low",
       notes: typeof parsed.notes === "string" ? parsed.notes.slice(0, 600) : "",
     };

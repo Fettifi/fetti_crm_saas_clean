@@ -155,6 +155,15 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
       const byB: Record<number, number> = {};
       let inc = 0;
       for (const l of allLines) { if (!l.included || excluded.has(l.borrower)) continue; inc += l.monthly; byB[l.borrower] = (byB[l.borrower] || 0) + l.monthly; }
+      // Income the read HELD BACK behind a flag (OT not yet seasoned, un-averaged variable,
+      // a co-borrower's pending income): when the LO OMITS that flag (reviewed — it doesn't
+      // hold), ADD its dollar amount, so "omit the flag" actually counts the income it gated.
+      ((verified?.report?.flags || []) as any[]).forEach((f, i) => {
+        if (flagDecisions[i] !== "omitted") return;
+        const amt = f && typeof f === "object" ? Math.max(0, Number(f.addBackMonthly) || 0) : 0;
+        const b = f && typeof f === "object" && Number(f.borrower) === 2 ? 2 : 1;
+        if (amt > 0 && !excluded.has(b)) { inc += amt; byB[b] = (byB[b] || 0) + amt; }
+      });
       return { income: inc, rentalDebt: 0, byB };
     }
     const bb = metrics?.byBorrower || {};
@@ -163,7 +172,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
       return { income: inc, rentalDebt: 0, byB: bb as Record<number, number> };
     }
     return { income: metrics?.monthlyIncome || 0, rentalDebt: 0, byB: {} as Record<number, number> };
-  }, [allLines, excluded, metrics?.byBorrower, metrics?.monthlyIncome]);
+  }, [allLines, excluded, verified, flagDecisions, metrics?.byBorrower, metrics?.monthlyIncome]);
   // Effective qualifying income / rent: the LO's typed override wins; otherwise the
   // computed value (AI breakdown → 1003 per-borrower → 1003 total). This is what makes
   // the whole tool respond — type the real income and the DTI/max-loan recompute live.
@@ -315,11 +324,13 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
       .map((l: any) => ({ label: l.label, basis: l.basis, monthly: l.monthly, flag: l.flag }));
     // The underwriting copy records the LO's flag decisions (accepted → still a
     // condition; omitted → reviewed + why), so the override is documented on the file.
-    const annotatedFlags = ((verified?.report?.flags || []) as string[]).map((f, idx) => {
+    const annotatedFlags = ((verified?.report?.flags || []) as any[]).map((f, idx) => {
+      const ft = f && typeof f === "object" ? String(f.text || "") : String(f);
+      const addBack = f && typeof f === "object" ? Math.max(0, Number(f.addBackMonthly) || 0) : 0;
       const st = flagDecisions[idx];
-      if (st === "omitted") return `OMITTED by LO${flagNotes[idx] ? ` (${flagNotes[idx]})` : ""}: ${f}`;
-      if (st === "accepted") return `ACCEPTED — condition to resolve: ${f}`;
-      return f;
+      if (st === "omitted") return `OMITTED by LO${addBack > 0 ? ` (+${money(addBack)}/mo counted)` : ""}${flagNotes[idx] ? ` — ${flagNotes[idx]}` : ""}: ${ft}`;
+      if (st === "accepted") return `ACCEPTED — condition to resolve${addBack > 0 ? ` (${money(addBack)}/mo held back)` : ""}: ${ft}`;
+      return ft;
     });
     return {
       audience,
@@ -459,25 +470,32 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
                 <div className="mt-2.5">
                   <div className="uppercase text-[10px] text-slate-500 mb-1">Flags — your call: accept or omit</div>
                   <div className="space-y-1">
-                    {verified.report.flags.map((f: string, i: number) => {
+                    {verified.report.flags.map((f: any, i: number) => {
+                      const ft = f && typeof f === "object" ? String(f.text || "") : String(f);
+                      const addBack = f && typeof f === "object" ? Math.max(0, Number(f.addBackMonthly) || 0) : 0;
+                      const fb = f && typeof f === "object" && Number(f.borrower) === 2 ? 2 : 1;
                       const st: FlagState = flagDecisions[i] || "open";
                       return (
                         <div key={i} className={`rounded-lg px-2 py-1.5 ${st === "omitted" ? "bg-slate-800/40" : st === "accepted" ? "bg-emerald-500/5 border border-emerald-700/30" : "bg-amber-500/10"}`}>
                           <div className="flex items-start justify-between gap-2">
-                            <div className={`flex-1 text-[11px] ${st === "omitted" ? "line-through text-slate-500" : "text-amber-200"}`}>{st === "accepted" ? "✓ " : st === "omitted" ? "⦸ " : "⚠ "}{f}</div>
+                            <div className={`flex-1 text-[11px] ${st === "omitted" ? "text-slate-500" : "text-amber-200"}`}>
+                              <span className={st === "omitted" ? "line-through" : ""}>{st === "accepted" ? "✓ " : st === "omitted" ? "⦸ " : "⚠ "}{ft}</span>
+                              {addBack > 0 && <span className="text-emerald-400"> · holds back {money(addBack)}/mo{fb === 2 ? " (B2)" : ""} — Omit to count it</span>}
+                            </div>
                             <div className="flex items-center gap-1 shrink-0">
-                              <button onClick={() => decideFlag(i, st === "accepted" ? "open" : "accepted", f)} className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st === "accepted" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`} title="Keep as a condition to resolve">Accept</button>
-                              <button onClick={() => decideFlag(i, st === "omitted" ? "open" : "omitted", f)} className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st === "omitted" ? "bg-slate-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`} title="You reviewed it — it doesn't hold">Omit</button>
+                              <button onClick={() => decideFlag(i, st === "accepted" ? "open" : "accepted", ft)} className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st === "accepted" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`} title="Keep it held back / as a condition to resolve">Accept</button>
+                              <button onClick={() => decideFlag(i, st === "omitted" ? "open" : "omitted", ft)} className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st === "omitted" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`} title={addBack > 0 ? "You reviewed it — count this income" : "You reviewed it — it doesn't hold"}>Omit</button>
                             </div>
                           </div>
+                          {st === "omitted" && addBack > 0 && <div className="text-[10px] text-emerald-400 mt-0.5">✓ +{money(addBack)}/mo added to the qualifying income</div>}
                           {st === "omitted" && (
-                            <input value={flagNotes[i] || ""} onChange={(e) => setFlagNote(i, e.target.value)} placeholder="Why it doesn't hold (e.g. changed jobs — continuous employment, no gap)" className="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200 focus:border-emerald-500 focus:outline-none" />
+                            <input value={flagNotes[i] || ""} onChange={(e) => setFlagNote(i, e.target.value)} placeholder="Why it doesn't hold (e.g. continuous 2-yr history — OT is stable)" className="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200 focus:border-emerald-500 focus:outline-none" />
                           )}
                         </div>
                       );
                     })}
                   </div>
-                  <div className="text-[10px] text-slate-600 mt-1">Accept = keep it as a condition to resolve. Omit = you reviewed it and it doesn&apos;t hold — documented (with your reason) on the underwriting copy and dropped from the open flags.</div>
+                  <div className="text-[10px] text-slate-600 mt-1">A flag marked &ldquo;holds back $X&rdquo; is income the read left out — <span className="text-emerald-400">Omit it to add that $X to the total</span>. Accept = keep it held back / as a condition. Either way it&apos;s documented (with your reason) on the underwriting copy.</div>
                 </div>
               )}
               {verified.report?.notes && <div className="mt-2 text-[11px] text-slate-500">{verified.report.notes}</div>}
