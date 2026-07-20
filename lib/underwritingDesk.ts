@@ -119,9 +119,14 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
   const dscr = box.usesRental && input.monthlyRent ? dscrExact(Number(input.monthlyRent), pitia) : null;
 
   // Max loan the box supports: LTV cap (on ARV for flip, else as-is value), and — for
-  // rental products — the DSCR-supported loan on the gross rent.
-  const ltvBasis = box.usesARV ? (arv || value) : value;
-  const maxLoanByLTV = round(ltvBasis * (box.maxLTV / 100));
+  // rental products — the DSCR-supported loan on the gross rent. A junior loan (2nd
+  // position / HELOC) is bound by CLTV, not standalone LTV: the max NEW loan is the
+  // combined-LTV ceiling MINUS the senior lien(s) already on title.
+  const isJunior = input.lienPosition === 2 || input.loanType === "second";
+  const capBasis = box.usesARV ? (arv || value) : value;
+  const maxLoanByLTV = isJunior
+    ? Math.max(0, round(capBasis * (box.maxCLTV / 100) - senior))
+    : round(capBasis * (box.maxLTV / 100));
   const escrowMonthly = round(p.taxMonthly + p.insMonthly + (Number(input.hoaMonthly) || 0));
   const maxLoanByDSCR = box.usesRental && input.monthlyRent
     ? maxLoanFromPayment(Number(input.monthlyRent) / targetDscr, escrowMonthly, ratePct, termYears * 12, 20, 0).maxLoan

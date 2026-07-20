@@ -42,11 +42,14 @@ export default function UnderwritingDesk() {
   const [fileBusy, setFileBusy] = useState(false);
 
   const box = LOAN_BOX[f.loanType as DeskLoanType] || LOAN_BOX.dscr;
+  // A "2nd Position / HELOC" loan type IS a junior lien — treat it as 2nd position even if
+  // the lien-position selector wasn't flipped, so the senior-lien field + CLTV appear.
+  const lien2 = f.loanType === "second" || Number(f.lienPosition) === 2;
 
   // Build a DeskInput from the form for the live client-side preview.
   const input: DeskInput = useMemo(() => ({
     address: f.address, city: f.city, state: (f.state || "").toUpperCase(), zip: f.zip, borrower: f.borrower,
-    loanType: f.loanType, lienPosition: Number(f.lienPosition) === 2 ? 2 : 1,
+    loanType: f.loanType, lienPosition: (f.loanType === "second" || Number(f.lienPosition) === 2) ? 2 : 1,
     loanAmount: num(f.loanAmount), asIsValue: num(f.asIsValue), arv: num(f.arv) || undefined,
     existingLiens: num(f.existingLiens) || undefined, rehabBudget: num(f.rehabBudget) || undefined,
     monthlyRent: num(f.monthlyRent) || undefined, propertyType: f.propertyType, occupancy: f.occupancy,
@@ -115,7 +118,7 @@ export default function UnderwritingDesk() {
   type Tile = { label: string; value: string; tone?: "ok" | "warn" | "bad" };
   const coreTiles = (mm: any): Tile[] => {
     const t: Tile[] = [];
-    const hasSenior = input.lienPosition === 2 || !!num(f.existingLiens);
+    const hasSenior = lien2 || !!num(f.existingLiens);
     if (box.usesARV) {
       t.push({ label: "LTARV", value: mm.ltarv != null ? mm.ltarv + "%" : "—", tone: mm.fits?.ltv ? "ok" : "bad" });
       if (hasSenior) t.push({ label: "CLTARV", value: mm.cltarv != null ? mm.cltarv + "%" : "—", tone: mm.fits?.cltv ? "ok" : "bad" });
@@ -155,8 +158,8 @@ export default function UnderwritingDesk() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-          <div><label className={lbl}>Loan type</label><select value={f.loanType} onChange={(e) => set("loanType", e.target.value)} className={inp}>{DESK_LOAN_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
-          <div><label className={lbl}>Lien position</label><select value={f.lienPosition} onChange={(e) => set("lienPosition", Number(e.target.value))} className={inp}><option value={1}>1st position</option><option value={2}>2nd position</option></select></div>
+          <div><label className={lbl}>Loan type</label><select value={f.loanType} onChange={(e) => { const v = e.target.value; setF((p: any) => ({ ...p, loanType: v, ...(v === "second" ? { lienPosition: 2 } : {}) })); }} className={inp}>{DESK_LOAN_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+          <div><label className={lbl}>Lien position</label><select value={lien2 ? 2 : 1} onChange={(e) => set("lienPosition", Number(e.target.value))} disabled={f.loanType === "second"} className={`${inp} ${f.loanType === "second" ? "opacity-70 cursor-not-allowed" : ""}`}><option value={1}>1st position</option><option value={2}>2nd position</option></select></div>
           <div><label className={lbl}>Loan amount</label><CurrencyInput value={f.loanAmount || ""} onChange={(v) => set("loanAmount", v)} className={inp} placeholder="$" /></div>
           <div><label className={lbl}>As-is value / price</label><CurrencyInput value={f.asIsValue || ""} onChange={(v) => set("asIsValue", v)} className={inp} placeholder="$" /></div>
         </div>
@@ -164,8 +167,8 @@ export default function UnderwritingDesk() {
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           {box.usesARV && <div><label className={lbl}>ARV (after repair)</label><CurrencyInput value={f.arv || ""} onChange={(v) => set("arv", v)} className={inp} placeholder="$" /></div>}
           {box.usesARV && <div><label className={lbl}>Rehab budget</label><CurrencyInput value={f.rehabBudget || ""} onChange={(v) => set("rehabBudget", v)} className={inp} placeholder="$" /></div>}
-          {(Number(f.lienPosition) === 2 || f.existingLiens) && <div><label className={lbl}>Senior lien balance{Number(f.lienPosition) === 2 ? " (for CLTV)" : ""}</label><CurrencyInput value={f.existingLiens || ""} onChange={(v) => set("existingLiens", v)} className={inp} placeholder="$" /></div>}
-          {Number(f.lienPosition) !== 2 && !f.existingLiens && <div><label className={lbl}>Existing liens (optional)</label><CurrencyInput value={f.existingLiens || ""} onChange={(v) => set("existingLiens", v)} className={inp} placeholder="$0" /></div>}
+          {(lien2 || f.existingLiens) && <div><label className={lbl}>Senior lien balance{lien2 ? " (for CLTV)" : ""}</label><CurrencyInput value={f.existingLiens || ""} onChange={(v) => set("existingLiens", v)} className={inp} placeholder="$" /></div>}
+          {!lien2 && !f.existingLiens && <div><label className={lbl}>Existing liens (optional)</label><CurrencyInput value={f.existingLiens || ""} onChange={(v) => set("existingLiens", v)} className={inp} placeholder="$0" /></div>}
           {box.usesRental && <div><label className={lbl}>Gross rent / mo</label><CurrencyInput value={f.monthlyRent || ""} onChange={(v) => set("monthlyRent", v)} className={inp} placeholder="$/mo" /></div>}
           {box.usesRental && <div><label className={lbl}>Target DSCR</label><select value={f.targetDscr || box.minDSCR} onChange={(e) => set("targetDscr", e.target.value)} className={inp}><option value={1.25}>1.25</option><option value={1.10}>1.10</option><option value={1.0}>1.00</option><option value={0.75}>0.75 (low-DSCR)</option></select></div>}
           <div><label className={lbl}>Property type</label><select value={f.propertyType} onChange={(e) => set("propertyType", e.target.value)} className={inp}><option>SFR</option><option>2-4 unit</option><option>Condo</option><option>Multifamily 5+</option><option>Commercial</option><option>Land</option></select></div>
