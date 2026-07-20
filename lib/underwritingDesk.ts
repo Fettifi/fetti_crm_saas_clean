@@ -114,6 +114,7 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
   const ltv = value > 0 ? +((loan / value) * 100).toFixed(1) : null;
   const cltv = value > 0 ? +(((loan + senior) / value) * 100).toFixed(1) : null;
   const ltarv = arv && arv > 0 ? +((loan / arv) * 100).toFixed(1) : null;
+  const cltarv = arv && arv > 0 ? +(((loan + senior) / arv) * 100).toFixed(1) : null; // combined LTARV for ARV loans
   const dscr = box.usesRental && input.monthlyRent ? dscrExact(Number(input.monthlyRent), pitia) : null;
 
   // Max loan the box supports: LTV cap (on ARV for flip, else as-is value), and — for
@@ -127,9 +128,11 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
   const maxLoan = maxLoanByDSCR != null ? Math.min(maxLoanByLTV, round(maxLoanByDSCR)) : maxLoanByLTV;
   const cashInDeal = round((box.usesARV ? (value + (Number(input.rehabBudget) || 0)) : value) - loan);
 
+  // For ARV loans (hard money / bridge / flip) the box LTV/CLTV caps measure against ARV
+  // (loan-to-ARV), NOT the as-is LTV — a flip that finances rehab is correctly above as-is.
   const fits = {
-    ltv: ltv == null || ltv <= box.maxLTV,
-    cltv: cltv == null || cltv <= box.maxCLTV,
+    ltv: box.usesARV ? (ltarv == null || ltarv <= box.maxLTV) : (ltv == null || ltv <= box.maxLTV),
+    cltv: box.usesARV ? (cltarv == null || cltarv <= box.maxCLTV) : (cltv == null || cltv <= box.maxCLTV),
     dscr: !box.usesRental || dscr == null || dscr >= box.minDSCR,
     overall: true,
   };
