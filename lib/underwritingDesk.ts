@@ -26,16 +26,19 @@ export const DESK_LOAN_TYPES: { value: DeskLoanType; label: string }[] = [
   { value: "second", label: "2nd Position / HELOC" },
 ];
 
-export type LoanBox = { label: string; maxLTV: number; maxCLTV: number; minDSCR: number; rate: number; usesIncome: boolean; usesRental: boolean; usesARV: boolean };
+export type LoanBox = { label: string; maxLTV: number; maxCLTV: number; minDSCR: number; rate: number; usesIncome: boolean; usesRental: boolean; usesARV: boolean; interestOnly: boolean };
+// Hard money / bridge / fix&flip are short-term, INTEREST-ONLY, and lend against ARV or
+// cost (points + an interest reserve are typical — surfaced by the AI as conditions).
+// maxLTV for those is on the ARV/cost basis; DSCR products amortize over the term.
 export const LOAN_BOX: Record<DeskLoanType, LoanBox> = {
-  dscr:        { label: "DSCR", maxLTV: 80, maxCLTV: 80, minDSCR: 1.0, rate: 7.75, usesIncome: false, usesRental: true, usesARV: false },
-  fixflip:     { label: "Fix & Flip", maxLTV: 90, maxCLTV: 90, minDSCR: 0, rate: 10.5, usesIncome: false, usesRental: false, usesARV: true },
-  bridge:      { label: "Bridge", maxLTV: 75, maxCLTV: 75, minDSCR: 0, rate: 9.75, usesIncome: false, usesRental: false, usesARV: true },
-  hardmoney:   { label: "Hard Money", maxLTV: 70, maxCLTV: 70, minDSCR: 0, rate: 11.0, usesIncome: false, usesRental: false, usesARV: true },
-  commercial:  { label: "Commercial", maxLTV: 75, maxCLTV: 75, minDSCR: 1.25, rate: 7.75, usesIncome: false, usesRental: true, usesARV: false },
-  conventional:{ label: "Conventional", maxLTV: 97, maxCLTV: 97, minDSCR: 0, rate: 7.0, usesIncome: true, usesRental: false, usesARV: false },
-  fha:         { label: "FHA", maxLTV: 96.5, maxCLTV: 96.5, minDSCR: 0, rate: 6.75, usesIncome: true, usesRental: false, usesARV: false },
-  second:      { label: "2nd / HELOC", maxLTV: 85, maxCLTV: 85, minDSCR: 0, rate: 9.5, usesIncome: true, usesRental: false, usesARV: false },
+  dscr:        { label: "DSCR", maxLTV: 80, maxCLTV: 80, minDSCR: 1.0, rate: 7.75, usesIncome: false, usesRental: true, usesARV: false, interestOnly: false },
+  fixflip:     { label: "Fix & Flip", maxLTV: 90, maxCLTV: 90, minDSCR: 0, rate: 10.5, usesIncome: false, usesRental: false, usesARV: true, interestOnly: true },
+  bridge:      { label: "Bridge", maxLTV: 75, maxCLTV: 75, minDSCR: 0, rate: 9.75, usesIncome: false, usesRental: false, usesARV: true, interestOnly: true },
+  hardmoney:   { label: "Hard Money", maxLTV: 70, maxCLTV: 70, minDSCR: 0, rate: 11.0, usesIncome: false, usesRental: false, usesARV: true, interestOnly: true },
+  commercial:  { label: "Commercial", maxLTV: 75, maxCLTV: 75, minDSCR: 1.25, rate: 7.75, usesIncome: false, usesRental: true, usesARV: false, interestOnly: false },
+  conventional:{ label: "Conventional", maxLTV: 97, maxCLTV: 97, minDSCR: 0, rate: 7.0, usesIncome: true, usesRental: false, usesARV: false, interestOnly: false },
+  fha:         { label: "FHA", maxLTV: 96.5, maxCLTV: 96.5, minDSCR: 0, rate: 6.75, usesIncome: true, usesRental: false, usesARV: false, interestOnly: false },
+  second:      { label: "2nd / HELOC", maxLTV: 85, maxCLTV: 85, minDSCR: 0, rate: 9.5, usesIncome: true, usesRental: false, usesARV: false, interestOnly: false },
 };
 
 export type DeskInput = {
@@ -104,7 +107,10 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
     hoaMonthly: Number(input.hoaMonthly) || 0, includePMI: box.usesIncome,
     taxRatePct: Number(input.taxRatePct) || undefined, insRatePct: Number(input.insRatePct) || undefined,
   });
-  const pitia = round(p.total);
+  // Hard money / bridge / fix&flip pay INTEREST-ONLY (loan × rate ÷ 12), not amortized —
+  // so the monthly and PITIA reflect the real short-term carry, not a 30-yr P&I.
+  const pi = box.interestOnly ? round(loan * (ratePct / 100) / 12) : round(p.pi);
+  const pitia = box.interestOnly ? round(p.total - p.pi + pi) : round(p.total);
   const ltv = value > 0 ? +((loan / value) * 100).toFixed(1) : null;
   const cltv = value > 0 ? +(((loan + senior) / value) * 100).toFixed(1) : null;
   const ltarv = arv && arv > 0 ? +((loan / arv) * 100).toFixed(1) : null;
@@ -131,7 +137,7 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
 
   return {
     box, value, arv, ratePct, termYears,
-    pi: round(p.pi), taxMonthly: round(p.taxMonthly), insMonthly: round(p.insMonthly),
+    pi, taxMonthly: round(p.taxMonthly), insMonthly: round(p.insMonthly),
     hoaMonthly: Number(input.hoaMonthly) || 0, pitia,
     ltv, cltv, ltarv, dscr,
     maxLoanByLTV, maxLoanByDSCR: maxLoanByDSCR != null ? round(maxLoanByDSCR) : null,
