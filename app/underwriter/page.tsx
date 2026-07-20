@@ -109,6 +109,33 @@ export default function UnderwritingDesk() {
     </div>
   );
 
+  // Loan-type-aware headline tiles: ARV loans (hard money/bridge/flip) lead with LTARV —
+  // the metric the loan actually underwrites to — and label the as-is number "As-is LTV"
+  // (informational, no pass/fail tone). Rental products lead with LTV + DSCR.
+  type Tile = { label: string; value: string; tone?: "ok" | "warn" | "bad" };
+  const coreTiles = (mm: any): Tile[] => {
+    const t: Tile[] = [];
+    const hasSenior = input.lienPosition === 2 || !!num(f.existingLiens);
+    if (box.usesARV) {
+      t.push({ label: "LTARV", value: mm.ltarv != null ? mm.ltarv + "%" : "—", tone: mm.fits?.ltv ? "ok" : "bad" });
+      if (hasSenior) t.push({ label: "CLTARV", value: mm.cltarv != null ? mm.cltarv + "%" : "—", tone: mm.fits?.cltv ? "ok" : "bad" });
+      t.push({ label: "As-is LTV", value: mm.ltv != null ? mm.ltv + "%" : "—" });
+      t.push({ label: "P&I · IO", value: money(mm.pi) });
+    } else if (box.usesRental) {
+      t.push({ label: "LTV", value: mm.ltv != null ? mm.ltv + "%" : "—", tone: mm.fits?.ltv ? "ok" : "bad" });
+      if (hasSenior) t.push({ label: "CLTV", value: mm.cltv != null ? mm.cltv + "%" : "—", tone: mm.fits?.cltv ? "ok" : "bad" });
+      t.push({ label: "DSCR", value: mm.dscr != null ? mm.dscr.toFixed(2) : "—", tone: mm.fits?.dscr ? "ok" : "warn" });
+    } else {
+      t.push({ label: "LTV", value: mm.ltv != null ? mm.ltv + "%" : "—", tone: mm.fits?.ltv ? "ok" : "bad" });
+      if (hasSenior) t.push({ label: "CLTV", value: mm.cltv != null ? mm.cltv + "%" : "—", tone: mm.fits?.cltv ? "ok" : "bad" });
+      t.push({ label: "P&I", value: money(mm.pi) });
+    }
+    t.push({ label: "PITIA", value: money(mm.pitia) + "/mo" });
+    t.push({ label: "Max loan", value: money(mm.maxLoan) });
+    t.push({ label: "Headroom", value: (mm.headroom >= 0 ? "+" : "") + money(mm.headroom), tone: mm.headroom >= 0 ? "ok" : "bad" });
+    return t;
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between gap-3 mb-1">
@@ -163,12 +190,7 @@ export default function UnderwritingDesk() {
         {/* Live preview */}
         {preview && (input.loanAmount > 0 && input.asIsValue > 0) && (
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            <Metric label="LTV" value={preview.ltv != null ? preview.ltv + "%" : "—"} tone={preview.fits.ltv ? "ok" : "bad"} />
-            <Metric label="CLTV" value={preview.cltv != null ? preview.cltv + "%" : "—"} tone={preview.fits.cltv ? "ok" : "bad"} />
-            {box.usesRental ? <Metric label="DSCR" value={preview.dscr != null ? preview.dscr.toFixed(2) : "—"} tone={preview.fits.dscr ? "ok" : "warn"} /> : <Metric label={box.usesARV ? "LTARV" : "P&I"} value={box.usesARV ? (preview.ltarv != null ? preview.ltarv + "%" : "—") : money(preview.pi)} />}
-            <Metric label="PITIA" value={money(preview.pitia) + "/mo"} />
-            <Metric label="Max loan" value={money(preview.maxLoan)} />
-            <Metric label="Headroom" value={(preview.headroom >= 0 ? "+" : "") + money(preview.headroom)} tone={preview.headroom >= 0 ? "ok" : "bad"} />
+            {coreTiles(preview).map((t, i) => <Metric key={i} label={t.label} value={t.value} tone={t.tone} />)}
           </div>
         )}
 
@@ -205,15 +227,10 @@ export default function UnderwritingDesk() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <Metric label="Loan" value={money(input.loanAmount)} />
               <Metric label="Value" value={money(input.asIsValue)} />
-              <Metric label="LTV" value={m.ltv != null ? m.ltv + "%" : "—"} tone={m.fits?.ltv ? "ok" : "bad"} />
-              <Metric label={input.lienPosition === 2 || input.existingLiens ? "CLTV" : "Rate"} value={input.lienPosition === 2 || input.existingLiens ? (m.cltv != null ? m.cltv + "%" : "—") : (m.ratePct + "%")} tone={input.lienPosition === 2 ? (m.fits?.cltv ? "ok" : "bad") : undefined} />
-              {m.ltarv != null && <Metric label="LTARV" value={m.ltarv + "%"} />}
-              {m.dscr != null && <Metric label="DSCR" value={m.dscr.toFixed(2)} tone={m.fits?.dscr ? "ok" : "warn"} />}
-              <Metric label="PITIA" value={money(m.pitia) + "/mo"} />
-              <Metric label="Max loan" value={money(m.maxLoan)} />
-              <Metric label="Headroom" value={(m.headroom >= 0 ? "+" : "") + money(m.headroom)} tone={m.headroom >= 0 ? "ok" : "bad"} />
+              {m.box?.usesARV && input.arv ? <Metric label="ARV" value={money(input.arv)} /> : <Metric label="Rate" value={m.ratePct + "%"} />}
+              {coreTiles(m).map((t, i) => <Metric key={i} label={t.label} value={t.value} tone={t.tone} />)}
             </div>
-            {m.box && <div className={`mt-3 text-[11px] rounded-lg px-3 py-2 ${m.fits?.overall ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}>Program box ({m.box.label}): ≤ {m.box.maxLTV}% LTV, ≤ {m.box.maxCLTV}% CLTV{m.box.minDSCR ? `, ≥ ${m.box.minDSCR} DSCR` : ""} — {m.fits?.overall ? "fits as structured." : "outside the box — see restructure below."}</div>}
+            {m.box && <div className={`mt-3 text-[11px] rounded-lg px-3 py-2 ${m.fits?.overall ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}>Program box ({m.box.label}): {m.box.usesARV ? `≤ ${m.box.maxLTV}% LTARV (loan-to-ARV)` : `≤ ${m.box.maxLTV}% LTV, ≤ ${m.box.maxCLTV}% CLTV`}{m.box.minDSCR ? `, ≥ ${m.box.minDSCR} DSCR` : ""} — {m.fits?.overall ? "fits as structured." : "outside the box — see restructure below."}</div>}
           </div>
 
           {/* Narrative sections */}

@@ -74,9 +74,10 @@ export type DeskMetrics = {
   insMonthly: number;
   hoaMonthly: number;
   pitia: number;               // full monthly housing cost (no MI on investment)
-  ltv: number | null;          // requested loan / value
+  ltv: number | null;          // requested loan / value (as-is)
   cltv: number | null;         // (loan + senior liens) / value  — binding for 2nd position
-  ltarv: number | null;        // loan / ARV (fix&flip)
+  ltarv: number | null;        // loan / ARV (fix&flip) — the binding LTV for ARV loans
+  cltarv: number | null;       // (loan + senior liens) / ARV
   dscr: number | null;         // rent / PITIA
   maxLoanByLTV: number;        // value × box.maxLTV (or ARV for flip)
   maxLoanByDSCR: number | null;
@@ -142,7 +143,7 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
     box, value, arv, ratePct, termYears,
     pi, taxMonthly: round(p.taxMonthly), insMonthly: round(p.insMonthly),
     hoaMonthly: Number(input.hoaMonthly) || 0, pitia,
-    ltv, cltv, ltarv, dscr,
+    ltv, cltv, ltarv, cltarv, dscr,
     maxLoanByLTV, maxLoanByDSCR: maxLoanByDSCR != null ? round(maxLoanByDSCR) : null,
     maxLoan, headroom: round(maxLoan - loan), cashInDeal, fits,
   };
