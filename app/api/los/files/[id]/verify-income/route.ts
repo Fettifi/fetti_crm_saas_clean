@@ -176,7 +176,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
     if (!blocks.length) return NextResponse.json({ error: "Could not read any of the uploaded income documents — they may be corrupt/truncated or an unsupported format. Re-request clean copies from the borrower.", unreadableDocs: unreadable }, { status: 422 });
 
-    const userText = `Loan applicant(s) named on THIS file's 1003: ${applicants}. IMPORTANT: the 1003 may be INCOMPLETE or list a name twice — a CO-BORROWER is often documented on this file (their OWN W-2 / pay stub / 1099 / tax transcript) without appearing in that named list. Count qualifying monthly income for the named applicant(s) AND for ANY co-borrower who has their OWN income documents here — attribute each document by the NAME printed on it, and put a second person's income under borrower 2. ONLY exclude a spouse/person who appears SOLELY on a joint tax return with NO income document of their own on this file; never use a joint return's combined total. The income documents uploaded on this file are: ${read.join("; ")}. Loan type: ${loanType}. JSON only.`;
+    const userText = `Loan applicant(s) named on THIS file's 1003: ${applicants}. IMPORTANT: the 1003 may be INCOMPLETE or list a name twice — a CO-BORROWER is often documented on this file (their OWN W-2 / pay stub / 1099 / tax transcript) without appearing in that named list. Count qualifying monthly income for the named applicant(s) AND for ANY co-borrower who has their OWN income documents here — attribute each document by the NAME printed on it, and put a second person's income under borrower 2. ONLY exclude a spouse/person who appears SOLELY on a joint tax return with NO income document of their own on this file; never use a joint return's combined total. The income documents uploaded on this file are: ${read.join("; ")}. Loan type: ${loanType}. Keep perDoc, basis, and crossCheck notes TERSE — 15 words max each (big files must not overflow the output). JSON only.`;
     // Resilient call: if Anthropic rejects a specific PDF block as invalid, drop THAT
     // document and retry the rest — one corrupt upload never fails the whole read.
     // NOTE: no `temperature` — Opus 4.8 rejects it; determinism comes from the prompt.
@@ -187,7 +187,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
           headers: { "content-type": "application/json", "x-api-key": key as string, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
             model: process.env.ANTHROPIC_MODEL || "claude-opus-4-8",
-            max_tokens: 4000,
+            // 16k output budget: a 26-doc multi-borrower file's JSON (perDoc +
+            // breakdown + crossChecks) overflowed 4k, and the TRUNCATED response
+            // failed JSON.parse — surfacing as the misleading "try clearer scans"
+            // 422 (2026-07-21, file 745ea431). The terse-notes instruction keeps
+            // typical reads far below this; the cap is the safety margin.
+            max_tokens: 16000,
             system: SYSTEM,
             messages: [{ role: "user", content: [...blocks, { type: "text", text: userText }] }],
           }),
@@ -217,7 +222,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     let txt = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").replace(/```json/gi, "").replace(/```/g, "").trim();
     const m = txt.match(/\{[\s\S]*\}/);
     let parsed: any = {};
-    try { parsed = JSON.parse(m ? m[0] : txt); } catch { return NextResponse.json({ error: "Couldn't read income from the documents — try clearer scans." }, { status: 422 }); }
+    try { parsed = JSON.parse(m ? m[0] : txt); } catch {
+      // Diagnosable, honest failure: log WHY (truncation vs junk) instead of
+      // blaming the borrower's scans for an output-limit problem.
+      console.error("[los/verify-income] unparseable model output", { stop_reason: j?.stop_reason, chars: txt.length, tail: txt.slice(-300) });
+      const truncated = j?.stop_reason === "max_tokens";
+      return NextResponse.json({
+        error: truncated
+          ? "The income read was cut off before it finished (output limit) — run Verify again; if it persists, this file may have too many documents for one pass."
+          : "Couldn't read income from the documents — try clearer scans.",
+      }, { status: 422 });
+    }
 
     // Per-line breakdown (each gets a B1/B2 the LO can re-assign) + per-borrower monthly.
     const breakdown = (Array.isArray(parsed.breakdown) ? parsed.breakdown : [])
