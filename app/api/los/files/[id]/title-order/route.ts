@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { buildTitleOrderPdf, type TitleOrderData } from "@/lib/titleOrderPdf";
+import { assembleUrla } from "@/lib/urla";
 import { logActivity } from "@/lib/activity";
 import { logComms } from "@/lib/comms";
 import { senderFrom } from "@/lib/notify/mailFrom";
@@ -12,18 +13,40 @@ import { senderFrom } from "@/lib/notify/mailFrom";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function transactionFrom(s: string): "Purchase" | "Refinance" | "Cash-out refinance" | null {
+  if (/cash.?out/i.test(s)) return "Cash-out refinance";
+  if (/refi/i.test(s)) return "Refinance";
+  if (/purchase/i.test(s)) return "Purchase";
+  return null;
+}
+
+// Build the order from the SAME structured 1003 (assembleUrla) the LOS/MISMO use — so the
+// transaction type, lien position, value and loan amount match the underwrite exactly,
+// instead of being guessed from the product string (which mislabeled every non-purchase).
 async function dataFor(id: string, overrides: Partial<TitleOrderData>): Promise<{ d: TitleOrderData; lf: any } | null> {
   const { data: lf } = await supabaseAdmin.from("loan_files")
     .select("id, file_number, borrower_name, email, phone, product, property_address, property_value, loan_amount, state, lead_id")
     .eq("id", id).maybeSingle();
   if (!lf) return null;
-  const purpose = String((lf as any).product || "");
+  let lead: any = null;
+  if ((lf as any).lead_id) { const r = await supabaseAdmin.from("leads").select("*").eq("id", (lf as any).lead_id).maybeSingle(); lead = r.data; }
+  const urla = assembleUrla(lead || {
+    property_value: (lf as any).property_value, loan_amount_requested: (lf as any).loan_amount,
+    property_address: (lf as any).property_address, loan_purpose: (lf as any).product, state: (lf as any).state,
+  }, lf);
+  const loan = urla.loan || {}; const prop = urla.property || {};
+  // purpose from the structured 1003 first, then the product label as a fallback.
+  const transaction = transactionFrom(String(loan.purpose || "")) || transactionFrom(String((lf as any).product || "")) || "Purchase";
+  const lienPosition = Number(loan.lienPosition) === 2 ? 2 : 1;
   const d: TitleOrderData = {
-    transaction: /cash.?out/i.test(purpose) ? "Cash-out refinance" : /refi/i.test(purpose) ? "Refinance" : "Purchase",
-    propertyAddress: (lf as any).property_address || "",
-    borrowers: (lf as any).borrower_name || "",
+    transaction,
+    lienPosition,
+    loanProduct: (lf as any).product || loan.productDescription || undefined,
+    interestOnly: !!loan.interestOnly,
+    propertyAddress: (lf as any).property_address || [prop.address?.street, prop.address?.city, prop.address?.state, prop.address?.zip].filter(Boolean).join(", ") || "",
+    borrowers: (lf as any).borrower_name || urla.borrowers?.[0]?.fullName || "",
     borrowerPhone: (lf as any).phone, borrowerEmail: (lf as any).email,
-    purchasePrice: (lf as any).property_value, loanAmount: (lf as any).loan_amount,
+    purchasePrice: prop.presentValue ?? (lf as any).property_value, loanAmount: loan.amount ?? (lf as any).loan_amount,
     fileNumber: (lf as any).file_number,
     ...overrides,
   };

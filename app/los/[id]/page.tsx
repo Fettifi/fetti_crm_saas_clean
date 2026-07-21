@@ -64,8 +64,14 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [reqNote, setReqNote] = useState("");
   const sendDocRef = useRef<HTMLInputElement>(null);
   const [titleCo, setTitleCo] = useState({ company: "", contact: "", email: "", closing: "", lenderLoan: "", clause: "Fetti Financial Services LLC, ISAOA/ATIMA, 5777 W Century Blvd Ste 1435, Los Angeles, CA 90045" });
+  const [titleBook, setTitleBook] = useState<Array<{ company: string; contact?: string; email?: string; phone?: string; clause?: string }>>([]);
+  const [savingCo, setSavingCo] = useState(false);
   const [sendingReq, setSendingReq] = useState(false);
   const [reqMsg, setReqMsg] = useState<{ ok?: boolean; text: string } | null>(null);
+  const loadTitleBook = useCallback(async () => {
+    try { const r = await fetch("/api/los/title-book"); if (r.ok) { const j = await r.json(); setTitleBook(j.companies || []); } } catch {}
+  }, []);
+  useEffect(() => { loadTitleBook(); }, [loadTitleBook]);
   const [mismo, setMismo] = useState<{ completeness: { missing: string[]; present: string[]; pct: number }; metrics: any; urla: any } | null>(null);
   const [uw, setUw] = useState<any>(null);
   const [uwLoading, setUwLoading] = useState(false);
@@ -506,6 +512,13 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                 {/* Title / escrow order-opening sheet — prefilled from THIS file. */}
                 <div className="mt-3 pt-3 border-t border-slate-800">
                   <div className="text-xs uppercase tracking-wide text-slate-500 mb-1.5">Title / escrow order</div>
+                  {titleBook.length > 0 && (
+                    <select value="" onChange={(e) => { const c = titleBook[Number(e.target.value)]; if (c) setTitleCo((t) => ({ ...t, company: c.company || "", contact: c.contact || "", email: c.email || "", ...(c.clause ? { clause: c.clause } : {}) })); }}
+                      className="w-full mb-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none">
+                      <option value="">📇 Pick a saved title company…</option>
+                      {titleBook.map((c, i) => <option key={i} value={i}>{c.company}{c.contact ? ` — ${c.contact}` : ""}{c.email ? ` · ${c.email}` : " · (add email)"}</option>)}
+                    </select>
+                  )}
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     <input value={titleCo.company} onChange={(e) => setTitleCo({ ...titleCo, company: e.target.value })} placeholder="Title/escrow company" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
                     <input value={titleCo.contact} onChange={(e) => setTitleCo({ ...titleCo, contact: e.target.value })} placeholder="Contact name" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
@@ -528,6 +541,13 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                       setSendingReq(false);
                     }} className="text-sm font-semibold bg-amber-600 hover:bg-amber-500 disabled:opacity-40 px-3 py-2 rounded-lg flex items-center gap-1.5">
                       {sendingReq ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>🏛️</span>} Email order to title
+                    </button>
+                    <button disabled={savingCo || !titleCo.company.trim()} title="Save this company + contact to your dropdown for next time" onClick={async () => {
+                      setSavingCo(true);
+                      try { await fetch(`/api/los/title-book`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: titleCo.company, contact: titleCo.contact, email: titleCo.email }) }); await loadTitleBook(); } catch {}
+                      setSavingCo(false);
+                    }} className="text-sm font-semibold bg-slate-800 hover:bg-slate-700 disabled:opacity-40 px-3 py-2 rounded-lg flex items-center gap-1.5">
+                      {savingCo ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>💾</span>} Save to book
                     </button>
                   </div>
                   <p className="text-[11px] text-slate-600 mt-1">Prefilled from this file (borrower, property, price, loan amount) — Fetti-branded PDF with the full open-order checklist; replies route to ramon@fettifi.com.</p>

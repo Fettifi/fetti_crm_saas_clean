@@ -12,10 +12,13 @@ const safe = (s: any) => String(s ?? "").replace(/≈/g, "~").replace(/≤/g, "<
 export type TitleOrderData = {
   toCompany?: string; toContact?: string; toEmail?: string; toPhone?: string;
   transaction?: string;           // Purchase | Refinance | Cash-out refinance
+  lienPosition?: number;          // 1 | 2 — a 2nd/junior lien changes the title/CPL scope
+  loanProduct?: string;           // e.g. "Hard Money 2nd Position Cash-Out Refinance"
+  interestOnly?: boolean;
   propertyAddress?: string; county?: string | null;
   borrowers?: string; borrowerPhone?: string | null; borrowerEmail?: string | null;
   seller?: string;
-  purchasePrice?: number | null; loanAmount?: number | null;
+  purchasePrice?: number | null; loanAmount?: number | null;   // purchasePrice = value on a refi
   estClosing?: string; fileNumber?: string; lenderLoanNumber?: string; mortgageeClause?: string;
   notes?: string;
 };
@@ -55,9 +58,18 @@ export async function buildTitleOrderPdf(d: TitleOrderData): Promise<Uint8Array>
   [["Title / escrow company", d.toCompany || "____________________"], ["Contact", d.toContact || "—"], ["Email / phone", [d.toEmail, d.toPhone].filter(Boolean).join(" · ") || "—"]].forEach(([k, v], i) => row(k, v as string, i));
   y += 8;
   head("TRANSACTION");
-  [["Type", d.transaction || "Purchase"], ["Property address", d.propertyAddress || "____________________"], ["County", d.county || "—"],
-   ["Purchase price", money(d.purchasePrice)], ["Loan amount", money(d.loanAmount)], ["Estimated closing", d.estClosing || "TBD"],
-   ["Fetti file #", d.fileNumber || "—"], ["Lender loan #", d.lenderLoanNumber || "TBD — to follow"]].forEach(([k, v], i) => row(k, v as string, i));
+  const isRefi = /refi|cash/i.test(String(d.transaction || ""));
+  const valueLabel = isRefi ? "Estimated value" : "Purchase price";
+  const junior = Number(d.lienPosition) === 2;
+  const txnRows: (string[] | null)[] = [
+    ["Type", (d.transaction || "Purchase") + (junior ? "  ·  2nd / junior lien" : "")],
+    ["Lien position", junior ? "2nd / junior lien" : "1st lien"],
+    d.loanProduct ? ["Loan program", String(d.loanProduct) + (d.interestOnly ? "  ·  interest-only" : "")] : null,
+    ["Property address", d.propertyAddress || "____________________"], ["County", d.county || "—"],
+    [valueLabel, money(d.purchasePrice)], ["Loan amount", money(d.loanAmount)], ["Estimated closing", d.estClosing || "TBD"],
+    ["Fetti file #", d.fileNumber || "—"], ["Lender loan #", d.lenderLoanNumber || "TBD — to follow"],
+  ];
+  txnRows.filter(Boolean).forEach((r2, i) => row((r2 as string[])[0], (r2 as string[])[1], i));
   y += 8;
   head("PARTIES");
   [["Borrower(s)", d.borrowers || "____________________"], ["Borrower contact", [d.borrowerPhone, d.borrowerEmail].filter(Boolean).join(" · ") || "—"],
@@ -68,6 +80,7 @@ export async function buildTitleOrderPdf(d: TitleOrderData): Promise<Uint8Array>
   for (const item of [
     "Escrow / order number and your wire instructions (call-back verified)",
     "Preliminary title report / title commitment",
+    ...(junior ? ["Senior / 1st-lien payoff or subordination — this loan records in 2ND POSITION; confirm lien priority"] : []),
     "Title fee quote + estimated settlement (escrow) fees for the Loan Estimate",
     "Closing Protection Letter (CPL) and E&O/licensing evidence for the lender",
     "Property tax figures and any HOA / solar / bond items of record",
