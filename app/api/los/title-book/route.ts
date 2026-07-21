@@ -14,7 +14,7 @@ type Co = { company: string; contact?: string; email?: string; phone?: string; c
 // Starter scaffold — company names the LO can complete with the right contact/email once
 // (which then persists). Emails are intentionally BLANK: never invent a contact address.
 const DEFAULTS: Co[] = [
-  { company: "Amour Escrow", contact: "Euan Smith", email: "" },
+  { company: "Amour Escrow", contact: "Euan Smith", email: "euan@amourescrow.com" },
   { company: "First American Title", contact: "", email: "" },
   { company: "Fidelity National Title", contact: "", email: "" },
   { company: "Chicago Title", contact: "", email: "" },
