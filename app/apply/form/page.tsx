@@ -43,7 +43,7 @@ const GOAL: Q = {
   id: "goal",
   kind: "select",
   prompt: "What are you looking to do?",
-  sub: "We'll tailor everything to your goal.",
+  sub: "Tell us your goal and we'll match you to real options — takes about a minute.",
   options: [
     { value: "buy", label: "Buy a home", emoji: "🏠", hint: "A place to live" },
     { value: "refi", label: "Refinance", emoji: "🔄", hint: "Lower my rate or take cash out" },
@@ -871,6 +871,17 @@ export default function ApplyWizard() {
   return (
     <Shell pct={pct} onBack={i > 0 ? back : undefined}>
       <QuestionView q={displayQ} input={input} setInput={setInput} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerFlow(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
+      {/* Goal is the funnel-entry screen — wizard-learn repeatedly flags goal-screen
+          bounces as the top drop-off. An honest trust row (speed + no credit pull +
+          human follow-up) reassures before the borrower commits to a goal, lifting
+          every downstream goal (incl. the weak refi/invest lanes). Copy only. */}
+      {q.id === "goal" && (
+        <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-slate-500">
+          <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> About 60 seconds</span>
+          <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> No credit pull to see options</span>
+          <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> A real specialist follows up</span>
+        </div>
+      )}
       {q.id === "goal" && tip && (
         <p className="mt-4 text-xs text-emerald-700/80 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 shrink-0" /> {tip}</p>
       )}
