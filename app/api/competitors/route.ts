@@ -17,57 +17,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSetting, setSetting, cfg } from "@/lib/settings";
 import { claudeChat } from "@/lib/aiFallback";
 import { markReplyViolates } from "@/lib/markCompliance";
+// Shared core (also used by the daily /api/cron/competitor-watch tracker).
+import { DEFAULT_COMPETITORS, discover, type Competitor, CACHE_KEY, LIST_KEY } from "@/lib/competitorWatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const IG_USER_ID = process.env.META_IG_USER_ID || "17841453773767353"; // Fetti's IG business account
-const CACHE_KEY = "COMPETITOR_WATCH_CACHE";
-const LIST_KEY = "COMPETITOR_WATCH";
-
-// Default tracked set: national retail lenders + the DSCR/investor lenders Fetti
-// actually competes with. Editable via POST (stored in app_settings).
-const DEFAULTS = [
-  { name: "Rocket Mortgage", ig: "rocketmortgage", fbAdLibraryQuery: "Rocket Mortgage" },
-  { name: "UWM", ig: "uwmlending", fbAdLibraryQuery: "United Wholesale Mortgage" },
-  { name: "loanDepot", ig: "loandepot", fbAdLibraryQuery: "loanDepot" },
-  { name: "New American Funding", ig: "newamericanfunding", fbAdLibraryQuery: "New American Funding" },
-  { name: "Rate (Guaranteed Rate)", ig: "rate", fbAdLibraryQuery: "Guaranteed Rate" },
-  { name: "Better", ig: "betterdotcom", fbAdLibraryQuery: "Better Mortgage" },
-  { name: "CrossCountry Mortgage", ig: "crosscountrymtg", fbAdLibraryQuery: "CrossCountry Mortgage" },
-  { name: "Movement Mortgage", ig: "movementmortgage", fbAdLibraryQuery: "Movement Mortgage" },
-  { name: "Kiavi (DSCR)", ig: "kiavifunding", fbAdLibraryQuery: "Kiavi" },
-  { name: "Visio Lending (DSCR)", ig: "visiolending", fbAdLibraryQuery: "Visio Lending" },
-  { name: "Lima One (investor)", ig: "limaonecapital", fbAdLibraryQuery: "Lima One Capital" },
-];
-
-type Competitor = { name: string; ig: string; fbAdLibraryQuery: string };
-
-async function discover(token: string, handle: string) {
-  const fields = `business_discovery.username(${handle}){followers_count,media_count,media.limit(9){caption,like_count,comments_count,timestamp,permalink,media_url}}`;
-  const r = await fetch(`https://graph.facebook.com/v23.0/${IG_USER_ID}?fields=${encodeURIComponent(fields)}&access_token=${token}`);
-  const j = await r.json().catch(() => ({} as any));
-  if (!r.ok || j?.error) {
-    const code = j?.error?.code;
-    return { ok: false as const, error: j?.error?.message || `HTTP ${r.status}`, code };
-  }
-  const bd = j?.business_discovery || {};
-  const media = (bd?.media?.data || []).map((m: any) => ({
-    caption: (m?.caption || "").slice(0, 180),
-    likes: m?.like_count ?? 0,
-    comments: m?.comments_count ?? 0,
-    engagement: (m?.like_count ?? 0) + 3 * (m?.comments_count ?? 0), // comments weigh heavier
-    at: m?.timestamp || null,
-    url: m?.permalink || null,
-  })).sort((a: any, b: any) => b.engagement - a.engagement);
-  return { ok: true as const, followers: bd?.followers_count ?? null, mediaCount: bd?.media_count ?? null, topPosts: media.slice(0, 5) };
-}
-
 export async function GET(req: NextRequest) {
   const refresh = req.nextUrl.searchParams.get("refresh") === "1";
   const listRaw = await getSetting(LIST_KEY);
-  let competitors: Competitor[] = DEFAULTS;
+  let competitors: Competitor[] = DEFAULT_COMPETITORS;
   try { if (listRaw) competitors = JSON.parse(listRaw); } catch { /* fall back to defaults */ }
 
   // 12h cache — business_discovery is rate-limited per IG user and this data

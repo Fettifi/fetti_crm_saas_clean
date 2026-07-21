@@ -1,23 +1,69 @@
 {
-    "name": "fetti-crm-saas-clean-rqgt",
-    "framework": "nextjs",
-    "buildCommand": "npm run build",
-    "outputDirectory": ".next",
-    "ignoreCommand": "bash -c 'if [ \"$VERCEL_ENV\" == \"production\" ]; then exit 1; else exit 0; fi'",
-    "crons": [
-        { "path": "/api/cron/nurture", "schedule": "0 16 * * *" },
-        { "path": "/api/cron/wizard-learn", "schedule": "0 17 * * *" },
-        { "path": "/api/cron/org-learn", "schedule": "0 18 * * *" },
-        { "path": "/api/cron/content", "schedule": "0 16 * * *" },
-        { "path": "/api/cron/doctor", "schedule": "0 */6 * * *" },
-        { "path": "/api/cron/heal", "schedule": "30 * * * *" },
-        { "path": "/api/cron/import-leads", "schedule": "*/15 * * * *" },
-        { "path": "/api/cron/dedupe-leads", "schedule": "*/30 * * * *" },
-        { "path": "/api/cron/ad-factory", "schedule": "0 12 * * *" },
-        { "path": "/api/cron/lead-digest", "schedule": "0 15 * * *" },
-        { "path": "/api/cron/email-poll", "schedule": "*/5 * * * *" },
-        { "path": "/api/cron/publish-due", "schedule": "*/15 * * * *" },
-        { "path": "/api/cron/social-insights", "schedule": "0 14 * * *" },
-        { "path": "/api/cron/tiktok-reminder", "schedule": "0 17 * * *" }
-    ]
+  "name": "fetti-crm-saas-clean-rqgt",
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "ignoreCommand": "bash -c 'if [ \"$VERCEL_ENV\" == \"production\" ]; then exit 1; else exit 0; fi'",
+  "crons": [
+    {
+      "path": "/api/cron/nurture",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/cron/wizard-learn",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/org-learn",
+      "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron/content",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/cron/doctor",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/heal",
+      "schedule": "30 * * * *"
+    },
+    {
+      "path": "/api/cron/import-leads",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/dedupe-leads",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/ad-factory",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/lead-digest",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/email-poll",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/publish-due",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/social-insights",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/tiktok-reminder",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/competitor-watch",
+      "schedule": "30 13 * * *"
+    }
+  ]
 }
