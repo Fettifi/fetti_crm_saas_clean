@@ -340,6 +340,27 @@ function UploadZone({ parsing, onFile }: { parsing: boolean; onFile: (f: File) =
   );
 }
 
+// ZIP entry cell — MODULE SCOPE + LOCAL value state so typing is smooth and never reset by
+// the portfolio re-underwrite the parent runs on every row change (that per-keystroke render
+// race is what made ZIP entry feel broken at portfolio scale — the controlled input's value
+// snapped back mid-type). Commits to the row only at 5 digits or on blur, so the heavy
+// recompute fires once, not on every character.
+function ZipCell({ id, address, city, state, zip, onCommit }: { id: string; address?: string | null; city?: string | null; state?: string | null; zip?: string | null; onCommit: (id: string, v: string) => void }) {
+  const [val, setVal] = useState((zip || "").replace(/\D/g, "").slice(0, 5));
+  useEffect(() => { setVal((zip || "").replace(/\D/g, "").slice(0, 5)); }, [zip]);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-slate-300 truncate flex-1" title={address || ""}>{address || "(no address)"}{city ? ` · ${city}` : ""}{state ? `, ${state}` : ""}</span>
+      <input
+        inputMode="numeric" maxLength={5} placeholder="ZIP" value={val}
+        onChange={(e) => { const z = e.target.value.replace(/\D/g, "").slice(0, 5); setVal(z); if (z.length === 5) onCommit(id, z); }}
+        onBlur={() => onCommit(id, val)}
+        className="w-20 bg-slate-900 border border-amber-500/40 rounded-lg px-2 py-1 text-sm text-white focus:border-amber-400 focus:outline-none"
+      />
+    </div>
+  );
+}
+
 // ============================================================================
 // PAGE
 // ============================================================================
@@ -740,10 +761,7 @@ export default function UnderwritePage() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {missing.map((r) => (
-                  <div key={r.id} className="flex items-center gap-2">
-                    <span className="text-xs text-slate-300 truncate flex-1" title={r.address || ""}>{r.address || "(no address)"}{r.city ? ` · ${r.city}` : ""}{r.state ? `, ${r.state}` : ""}</span>
-                    <input inputMode="numeric" maxLength={5} placeholder="ZIP" value={r.zip || ""} onChange={(e) => setZip(r.id, e.target.value)} className="w-20 bg-slate-900 border border-amber-500/40 rounded-lg px-2 py-1 text-sm text-white focus:border-amber-400 focus:outline-none" />
-                  </div>
+                  <ZipCell key={r.id} id={r.id} address={r.address} city={r.city} state={r.state} zip={r.zip} onCommit={setZip} />
                 ))}
               </div>
             </div>
