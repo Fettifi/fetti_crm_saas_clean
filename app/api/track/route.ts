@@ -28,6 +28,9 @@ export async function POST(req: NextRequest) {
 
     const detail: Record<string, unknown> = {
       path,
+      // Which of our hosts served the page (fettifi.com vs app.fettifi.com) —
+      // needed to diagnose attribution splits across the two domains.
+      host: (req.headers.get("origin") || req.headers.get("referer") || "").replace(/^https?:\/\//, "").split("/")[0].slice(0, 40) || undefined,
       utm_source: search.get("utm_source"),
       utm_medium: search.get("utm_medium"),
       utm_campaign: search.get("utm_campaign"),

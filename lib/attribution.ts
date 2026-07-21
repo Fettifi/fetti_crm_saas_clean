@@ -25,7 +25,13 @@ export function captureAttribution(): void {
   if (readCookie(KEY)) return;            // first-touch wins — don't overwrite the original click
   hit.landing = window.location.pathname;
   hit.ts = new Date().toISOString();
-  document.cookie = `${KEY}=${encodeURIComponent(JSON.stringify(hit))}; path=/; max-age=${60 * 60 * 24 * 90}; SameSite=Lax`;
+  // Scope to the PARENT domain: the ad click can land on fettifi.com while the
+  // wizard runs on app.fettifi.com (both serve this app). A host-only cookie
+  // dies at that hop — which is why 167 google-tagged visits since the 7/14
+  // launch produced ZERO google-attributed leads. One cookie across all
+  // *.fettifi.com hosts closes the gap. (localhost/preview: host-only fallback.)
+  const parent = /(^|\.)fettifi\.com$/.test(window.location.hostname) ? "; domain=.fettifi.com" : "";
+  document.cookie = `${KEY}=${encodeURIComponent(JSON.stringify(hit))}; path=/${parent}; max-age=${60 * 60 * 24 * 90}; SameSite=Lax`;
 }
 
 /** Read the persisted first-touch attribution at submit time. Empty object if none. */
