@@ -18,7 +18,10 @@ async function handle(req: NextRequest) {
   try { ctx = JSON.parse((await getSetting("hotlead_" + n)) || "{}"); } catch { /* */ }
   const name = esc(ctx.name || "a borrower");
   const pitch = esc(ctx.pitch || "a new high-value lead");
-  const action = `/api/voice/hotlead/decision?n=${encodeURIComponent(n)}&t=${encodeURIComponent(t)}`;
+  // esc() is NOT optional here: the raw "&t=" in this URL is what broke every
+  // hot-lead page (Twilio 12100 "Document parse failure" → error message + hangup,
+  // 7/17 + 7/21) — in XML an attribute's & MUST be &amp;.
+  const action = esc(`/api/voice/hotlead/decision?n=${encodeURIComponent(n)}&t=${encodeURIComponent(t)}`);
   return xml(
     `<Gather numDigits="1" action="${action}" method="POST" timeout="8">` +
     `<Say voice="Polly.Joanna">Ramon, hot lead. ${pitch}. Press 1 to connect with ${name} right now, or press 2 to call them later.</Say>` +
