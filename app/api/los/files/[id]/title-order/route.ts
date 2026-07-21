@@ -63,6 +63,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     lenderLoanNumber: q.get("lenderLoan") || undefined, mortgageeClause: q.get("clause") || undefined,
   });
   if (!r) return NextResponse.json({ error: "Loan file not found" }, { status: 404 });
+  // ?report=1 → the resolved order fields as JSON (what the sheet/email will say) — for a
+  // quick "is this right?" check before sending, and for debugging the 1003→order mapping.
+  if (q.get("report") === "1") return NextResponse.json({ order: r.d });
   const pdf = await buildTitleOrderPdf(r.d);
   return new NextResponse(new Uint8Array(pdf), { status: 200, headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="Fetti-Title-Order-${r.d.fileNumber || id.slice(0, 6)}.pdf"` } });
 }
