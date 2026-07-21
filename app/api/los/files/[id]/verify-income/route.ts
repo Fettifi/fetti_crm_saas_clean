@@ -188,8 +188,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     // prefill is NOT supported by Opus 4.8 ("This model does not support assistant
     // message prefill") — forcing a report_income tool call is the sanctioned way
     // to make the reply structurally BE the JSON object.
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     async function callModel(nudge?: string): Promise<any> {
-      for (let attempt = 0; attempt < 4; attempt++) {
+      let transient = 0; // Anthropic 529 overload / 429 rate-limit / 5xx gateway — retry w/ backoff.
+      for (let attempt = 0; attempt < 8; attempt++) {
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "content-type": "application/json", "x-api-key": key as string, "anthropic-version": "2023-06-01" },
@@ -226,9 +228,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
             tool_choice: { type: "tool", name: "report_income" },
           }),
         });
-        const jr = await res.json();
+        const jr = await res.json().catch(() => ({} as any));
         if (res.ok) return jr;
         const emsg = String(jr?.error?.message || "");
+        // Transient Anthropic errors (529 overloaded, 429 rate-limit, 5xx gateway) are the
+        // most common cause of an intermittent "verify failed" — back off and retry the SAME
+        // request rather than surfacing an error the LO can do nothing about.
+        if (([429, 500, 502, 503, 504, 529].includes(res.status) || /overloaded|rate.?limit/i.test(emsg)) && transient++ < 3) {
+          await sleep(Math.min(1000 * Math.pow(2, transient), 5000)); continue;
+        }
         const badPdf = res.status === 400 && emsg.match(/content\.(\d+)\.(?:pdf|document|image)/i);
         if (badPdf) {
           const idx = Number(badPdf[1]);
@@ -242,6 +250,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
             return null;                 // every doc was rejected — signal a clean 422
           }
         }
+        if ([429, 529].includes(res.status) || /overloaded/i.test(emsg)) throw new Error("The document reader is temporarily busy (high AI demand) — wait a few seconds and click Verify again.");
         throw new Error(emsg || `Anthropic ${res.status}`);
       }
       throw new Error("Income read failed after dropping unreadable documents.");
