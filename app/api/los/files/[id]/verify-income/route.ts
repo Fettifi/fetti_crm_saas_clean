@@ -183,7 +183,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     // Resilient call: if Anthropic rejects a specific PDF block as invalid, drop THAT
     // document and retry the rest — one corrupt upload never fails the whole read.
     // NOTE: no `temperature` — Opus 4.8 rejects it; determinism comes from the prompt.
-    async function callModel(): Promise<any> {
+    // ASSISTANT PREFILL "{": the model once answered with prose analysis and NO
+    // JSON at all (stop_reason end_turn, 2026-07-21 second failure on 745ea431) —
+    // prefilling the reply forces the output to BE the JSON object from char one.
+    // Parsers below re-prepend the "{".
+    async function callModel(nudge?: string): Promise<any> {
       for (let attempt = 0; attempt < 4; attempt++) {
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -197,7 +201,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
             // typical reads far below this; the cap is the safety margin.
             max_tokens: 16000,
             system: SYSTEM,
-            messages: [{ role: "user", content: [...blocks, { type: "text", text: userText }] }],
+            messages: [
+              { role: "user", content: [...blocks, { type: "text", text: nudge ? `${userText}\n\n${nudge}` : userText }] },
+              { role: "assistant", content: "{" },
+            ],
           }),
         });
         const jr = await res.json();
@@ -220,21 +227,32 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       }
       throw new Error("Income read failed after dropping unreadable documents.");
     }
-    const j = await callModel();
+    // The reply was prefilled with "{" — re-prepend it before parsing.
+    const modelText = (jr: any) => "{" + (jr.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").replace(/```json/gi, "").replace(/```/g, "").trim();
+    const tryParse = (t: string): any | null => {
+      const mm = t.match(/\{[\s\S]*\}/);
+      try { return JSON.parse(mm ? mm[0] : t); } catch { return null; }
+    };
+    let j = await callModel();
     if (!j) return NextResponse.json({ error: "Could not read any of the uploaded income documents — they were all rejected as corrupt/unreadable. Re-request clean copies from the borrower.", unreadableDocs: unreadable }, { status: 422 });
-    let txt = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").replace(/```json/gi, "").replace(/```/g, "").trim();
-    const m = txt.match(/\{[\s\S]*\}/);
-    let parsed: any = {};
-    try { parsed = JSON.parse(m ? m[0] : txt); } catch {
-      // Diagnosable, honest failure: log WHY (truncation vs junk) instead of
-      // blaming the borrower's scans for an output-limit problem.
-      console.error("[los/verify-income] unparseable model output", { stop_reason: j?.stop_reason, chars: txt.length, tail: txt.slice(-300) });
-      const truncated = j?.stop_reason === "max_tokens";
-      return NextResponse.json({
-        error: truncated
-          ? "The income read was cut off before it finished (output limit) — run Verify again; if it persists, this file may have too many documents for one pass."
-          : "Couldn't read income from the documents — try clearer scans.",
-      }, { status: 422 });
+    let txt = modelText(j);
+    let parsed: any = tryParse(txt);
+    if (!parsed) {
+      // One stern retry before failing — and log WHY (truncation vs junk) so the
+      // failure is diagnosable instead of blaming the borrower's scans.
+      console.error("[los/verify-income] unparseable model output (retrying once)", { stop_reason: j?.stop_reason, chars: txt.length, tail: txt.slice(-300) });
+      j = await callModel("REMINDER: your ENTIRE reply must be the single JSON object — no analysis, no markdown, no text before or after it.");
+      txt = j ? modelText(j) : "";
+      parsed = txt ? tryParse(txt) : null;
+      if (!parsed) {
+        console.error("[los/verify-income] unparseable after retry", { stop_reason: j?.stop_reason, chars: txt.length, tail: txt.slice(-300) });
+        const truncated = j?.stop_reason === "max_tokens";
+        return NextResponse.json({
+          error: truncated
+            ? "The income read was cut off before it finished (output limit) — run Verify again; if it persists, this file may have too many documents for one pass."
+            : "The document reader answered in the wrong format twice — run Verify once more; the raw output was logged for diagnosis.",
+        }, { status: 422 });
+      }
     }
 
     // Per-line breakdown (each gets a B1/B2 the LO can re-assign) + per-borrower monthly.
