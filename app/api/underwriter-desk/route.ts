@@ -37,6 +37,7 @@ function sanitizeInput(b: any): DeskInput {
     address: str(b?.address), city: str(b?.city, 80), state: str(b?.state, 2).toUpperCase(), zip: str(b?.zip, 10).replace(/[^0-9]/g, "").slice(0, 5),
     borrower: str(b?.borrower, 120),
     loanType: (LOAN_BOX[lt] ? lt : "dscr"),
+    loanPurpose: (["Purchase", "Refinance", "CashOutRefinance"].includes(b?.loanPurpose) ? b.loanPurpose : undefined),
     lienPosition: Number(b?.lienPosition) === 2 ? 2 : 1,
     loanAmount: numOr(b?.loanAmount), asIsValue: numOr(b?.asIsValue), arv: numOr(b?.arv) || undefined,
     existingLiens: numOr(b?.existingLiens) || undefined, rehabBudget: numOr(b?.rehabBudget) || undefined,
@@ -45,6 +46,56 @@ function sanitizeInput(b: any): DeskInput {
     fico: numOr(b?.fico) || undefined, ratePct: numOr(b?.ratePct) || undefined, termYears: numOr(b?.termYears) || undefined,
     hoaMonthly: numOr(b?.hoaMonthly) || undefined, taxRatePct: numOr(b?.taxRatePct) || undefined, insRatePct: numOr(b?.insRatePct) || undefined,
     targetDscr: numOr(b?.targetDscr) || undefined,
+  };
+}
+
+// Desk loan type → URLA loanType (MISMO). DSCR / hard money / bridge / flip / commercial /
+// 2nd are all non-agency "Other" (Non-QM); conventional & FHA map straight across.
+const LOANTYPE_URLA: Record<DeskLoanType, string> = {
+  dscr: "Other", fixflip: "Other", bridge: "Other", hardmoney: "Other",
+  commercial: "Other", conventional: "Conventional", fha: "FHA", second: "Other",
+};
+const OCC_URLA: Record<string, string> = { investment: "Investment", owner: "PrimaryResidence", second_home: "SecondHome" };
+
+// Human product label for the LOS file (drives the cockpit product line + the doc-checklist
+// / compliance routing in lib/los). Includes the purpose word so a refi/cash-out isn't
+// asked for a purchase contract, and flags 2nd position.
+function deskProductLabel(input: DeskInput, purpose: string): string {
+  const box = LOAN_BOX[input.loanType];
+  const purposeWord = purpose === "Refinance" ? "Refinance" : purpose === "CashOutRefinance" ? "Cash-Out Refinance" : "Purchase";
+  return `${box.label}${input.lienPosition === 2 ? " 2nd Position" : ""} ${purposeWord}`.replace(/\s+/g, " ").trim();
+}
+
+// Build a COMPLETE structured 1003/URLA seed from the deal so assembleUrla() uses these
+// verbatim (seeded values win over derivation) — the whole underwrite transfers to the LOS
+// faithfully instead of being re-derived into a mislabeled "Purchase, Fixed, 360mo" default.
+function deskUrlaSeed(input: DeskInput, purpose: string) {
+  const box = LOAN_BOX[input.loanType];
+  const termMonths = box.interestOnly ? 12 : (input.termYears && input.termYears > 0 ? input.termYears : 30) * 12;
+  const addr = { street: input.address || undefined, city: input.city || undefined, state: input.state || undefined, zip: input.zip || undefined, country: "US" };
+  const hasAddr = !!(addr.street || addr.city || addr.state || addr.zip);
+  return {
+    borrowers: input.borrower ? [{ fullName: input.borrower }] : [],
+    property: {
+      address: hasAddr ? addr : undefined,
+      propertyType: input.propertyType || undefined,
+      occupancy: OCC_URLA[input.occupancy || "investment"] || "Investment",
+      presentValue: input.asIsValue || undefined,
+      expectedMonthlyRentalIncome: input.monthlyRent || undefined,
+      afterRepairValue: input.arv || undefined,
+      rehabBudget: input.rehabBudget || undefined,
+    },
+    loan: {
+      purpose,
+      amount: input.loanAmount || undefined,
+      loanType: LOANTYPE_URLA[input.loanType] || "Other",
+      amortizationType: "Fixed",
+      termMonths,
+      noteRatePercent: input.ratePct || box.rate,
+      productDescription: `${box.label}${input.lienPosition === 2 ? " — 2nd Position" : ""}`,
+      interestOnly: box.interestOnly || undefined,
+      lienPosition: input.lienPosition,
+    },
   };
 }
 
@@ -117,14 +168,21 @@ export async function POST(req: NextRequest) {
       const input = sanitizeInput(body.input || {});
       const full_name = input.borrower || "Underwriting Desk deal";
       const parts = full_name.split(/\s+/);
+      // A 2nd lien is typically a cash-out against equity, a 1st a purchase — a sane default
+      // the LO can override in the 1003; NEVER silently mislabel it (the old bug).
+      const purpose = input.loanPurpose || (input.lienPosition === 2 ? "CashOutRefinance" : "Purchase");
       const { data: lead, error: le } = await supabaseAdmin.from("leads").insert({
         full_name, first_name: parts[0] || full_name, last_name: parts.slice(1).join(" ") || null,
         property_address: [input.address, input.city, input.state, input.zip].filter(Boolean).join(", ") || null,
         property_value: input.asIsValue || null, loan_amount_requested: input.loanAmount || null,
-        loan_purpose: input.loanType, occupancy: input.occupancy || "investment",
+        // Descriptive product+purpose string (e.g. "Hard Money 2nd Position Cash-Out Refinance")
+        // — drives the LOS product line + the doc-checklist / compliance routing in lib/los.
+        loan_purpose: deskProductLabel(input, purpose), occupancy: input.occupancy || "investment",
         state: input.state || null, city: input.city || null, zip: input.zip || null, property_type: input.propertyType || null,
         stage: "Application", source: "underwriting_desk",
-        raw: { desk_underwrite: body.result || null, created_by: "underwriting_desk" },
+        // Full structured 1003 seed so the whole underwrite (loan type, lien, IO, term, rate,
+        // ARV, rehab, rent, value, occupancy) lands in the LOS intact — not re-derived.
+        raw: { desk_underwrite: body.result || null, urla: deskUrlaSeed(input, purpose), created_by: "underwriting_desk" },
       }).select("*").single();
       if (le || !lead) return NextResponse.json({ error: le?.message || "lead create failed" }, { status: 500 });
       const file = await createLoanFileFromLead(lead);

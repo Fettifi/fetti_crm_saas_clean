@@ -71,20 +71,23 @@ export interface UrlaProperty {
   address?: UrlaAddress; propertyType?: string; occupancy?: string;   // PrimaryResidence | SecondHome | Investment
   presentValue?: number; mixedUse?: YesNo; manufactured?: YesNo;
   expectedMonthlyRentalIncome?: number;
+  afterRepairValue?: number;   // ARV — fix & flip / bridge / hard money
+  rehabBudget?: number;        // renovation budget financed / brought in
   // Monthly escrow components — needed for a real PITIA / DSCR (undefined = unknown, NOT 0).
   monthlyPropertyTax?: number; hazardInsurance?: number; floodInsurance?: number; hoaDues?: number; monthlyMI?: number;
 }
 
 export interface UrlaLoan {
-  purpose?: string;            // Purchase | Refinance | etc.
+  purpose?: string;            // Purchase | Refinance | CashOutRefinance | etc.
   amount?: number;
-  loanType?: string;           // Conventional | FHA | VA | USDA | Other (e.g. DSCR/NonQM)
+  loanType?: string;           // Conventional | FHA | VA | USDA | Other (e.g. DSCR/NonQM/hard money)
   amortizationType?: string;   // Fixed | ARM
   termMonths?: number;
   noteRatePercent?: number;
   productDescription?: string;
-  interestOnly?: boolean;            // qualifying payment is interest-only
+  interestOnly?: boolean;            // qualifying payment is interest-only (hard money / bridge / flip)
   qualifyingRatePercent?: number;    // ARM/stress qualifying rate (≥ note rate)
+  lienPosition?: number;             // 1 = first, 2 = junior (2nd / HELOC); binds CLTV
 }
 
 export interface UrlaOriginator {
@@ -230,18 +233,38 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     occupancy: seeded.property?.occupancy || (lead?.occupancy ? (/(investor|investment)/i.test(lead.occupancy) ? "Investment" : /(second)/i.test(lead.occupancy) ? "SecondHome" : "PrimaryResidence") : undefined),
     presentValue: seeded.property?.presentValue ?? num(lead?.property_value),
     expectedMonthlyRentalIncome: seeded.property?.expectedMonthlyRentalIncome ?? num(n["projected monthly rent"]),
+    afterRepairValue: seeded.property?.afterRepairValue ?? undefined,
+    rehabBudget: seeded.property?.rehabBudget ?? undefined,
     mixedUse: seeded.property?.mixedUse || "",
     manufactured: seeded.property?.manufactured || "",
   };
 
+  // `loan_purpose` in this CRM is a descriptive product/purpose string ("DSCR Purchase",
+  // "Hard Money", "Cash-Out Refinance"). Derive the URLA purpose ONLY when it actually
+  // says purchase/refi/cash-out — a product-only string (hard money, dscr, bridge, 2nd)
+  // is NOT a purchase, so leave purpose blank for the LO to set rather than mislabeling
+  // every business-purpose deal a "Purchase" (the bug the Underwriting Desk hand-off hit).
   const purposeStr = (lead?.loan_purpose || "").toLowerCase();
+  const derivedPurpose =
+    /cash[\s-]?out/.test(purposeStr) ? "CashOutRefinance" :
+    purposeStr.includes("refi") ? "Refinance" :
+    purposeStr.includes("purchase") ? "Purchase" :
+    // fix & flip / ground-up construction are acquisitions — purchase-money by nature.
+    // (Genuinely ambiguous product-only strings — hard money, dscr, bridge, 2nd — stay
+    // blank for the LO to set, rather than being mislabeled "Purchase".)
+    /(fix\s*&?\s*n?\s*flip|\bflip\b|construction)/.test(purposeStr) ? "Purchase" :
+    undefined;
+  const shortTerm = /(hard\s*money|hardmoney|bridge|flip|rehab|construction|fix\s*&?\s*n?\s*flip)/.test(purposeStr);
   const loan: UrlaLoan = {
-    purpose: seeded.loan?.purpose || (purposeStr.includes("refi") ? "Refinance" : purposeStr.includes("purchase") || purposeStr ? "Purchase" : undefined),
+    purpose: seeded.loan?.purpose || derivedPurpose,
     amount: seeded.loan?.amount ?? num(lead?.loan_amount_requested),
-    loanType: seeded.loan?.loanType || (purposeStr.includes("dscr") || purposeStr.includes("hard") || purposeStr.includes("bridge") ? "Other" : "Conventional"),
+    loanType: seeded.loan?.loanType || (/(dscr|hard\s*money|hardmoney|bridge|flip|rehab|non-?qm|heloc|2nd|second)/.test(purposeStr) ? "Other" : purposeStr.includes("fha") ? "FHA" : "Conventional"),
     amortizationType: seeded.loan?.amortizationType || "Fixed",
-    termMonths: seeded.loan?.termMonths || 360,
+    termMonths: seeded.loan?.termMonths || (shortTerm ? 12 : 360),
+    noteRatePercent: seeded.loan?.noteRatePercent ?? undefined,
     productDescription: seeded.loan?.productDescription || lead?.loan_purpose || undefined,
+    interestOnly: seeded.loan?.interestOnly ?? (shortTerm ? true : undefined),
+    lienPosition: seeded.loan?.lienPosition ?? undefined,
   };
 
   const assets: UrlaAsset[] = (seeded.assets && seeded.assets.length)

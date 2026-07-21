@@ -40,11 +40,21 @@ type Doc = { name: string; category: string; required: boolean };
 // personal income docs; business/commercial ask for entity + business docs.
 export function docChecklistFor(product?: string, occupancy?: string): Doc[] {
   const p = (product || "").toLowerCase();
-  const isDscr = p.includes("dscr") || p.includes("airbnb") || p.includes("rental");
-  const isFlip = /(flip|rehab|construction|bridge)/.test(p);
-  const isBiz = /(commercial|sba|business|working capital|equipment)/.test(p);
-  const isInvestor = isDscr || isFlip || /invest|multi-?family/.test(p) || occupancy === "Investor" || occupancy === "Investment/Commercial";
-  const isPurchase = p.includes("purchase") || p.includes("buy") || isFlip;
+  const occ = (occupancy || "").toLowerCase();
+  const investorOcc = /(investor|investment|commercial)/.test(occ);
+  const consumerOcc = /(primary|owner|second)/.test(occ);
+  // Owner-occupied / second-home = CONSUMER (Reg Z / TRID): a bridge or hard-money loan on
+  // a primary still needs full income documentation. A business product keyword must NOT
+  // override this — mirrors complianceFor()'s isBizPurpose gate so the two routers agree.
+  const isConsumer = consumerOcc && !investorOcc;
+  const isDscr = !isConsumer && (p.includes("dscr") || p.includes("airbnb") || p.includes("rental"));
+  const isFlip = !isConsumer && /(flip|rehab|construction|bridge|hard\s*money|hardmoney)/.test(p);
+  const isBiz = !isConsumer && /(commercial|sba|business|working capital|equipment)/.test(p);
+  const isInvestor = isDscr || isFlip || (!isConsumer && /invest|multi-?family/.test(p)) || investorOcc;
+  // A refinance / cash-out / HELOC never has a purchase contract — asking for one as a
+  // REQUIRED doc would permanently block auto-advance to Processing. Only ask on a purchase.
+  const isRefi = /(refinance|refi|cash[\s-]?out|heloc|equity)/.test(p);
+  const isPurchase = !isRefi && (p.includes("purchase") || p.includes("buy") || /(flip|fix)/.test(p));
 
   const base: Doc[] = [
     { name: "Government-issued photo ID", category: "Identity", required: true },
@@ -113,9 +123,15 @@ type Comp = { key: string; label: string; done: boolean };
 // (business-purpose) loans are TRID-exempt and tracked more lightly.
 export function complianceFor(product?: string, occupancy?: string): Comp[] {
   const p = (product || "").toLowerCase();
-  const isBizPurpose =
-    /(dscr|airbnb|rental|flip|rehab|construction|bridge|commercial|sba|business|working capital|equipment|invest|multi-?family)/.test(p) ||
-    occupancy === "Investor" || occupancy === "Investment/Commercial";
+  const occ = (occupancy || "").toLowerCase();
+  const investorOcc = /(investor|investment|commercial)/.test(occ);
+  const consumerOcc = /(primary|owner|second)/.test(occ);
+  const bizProduct = /(dscr|airbnb|rental|flip|rehab|construction|bridge|hard\s*money|hardmoney|commercial|sba|business|working capital|equipment|invest|multi-?family)/.test(p);
+  // Business-purpose (TRID-exempt) requires an investment/business use. An owner-occupied
+  // loan — even a HELOC/2nd or a bridge on a primary — is a CONSUMER loan and keeps its
+  // full TRID milestones (LE/CD timing, rescission). Never let a product keyword alone
+  // strip consumer protections off an owner-occupied file.
+  const isBizPurpose = investorOcc || (bizProduct && !consumerOcc);
   if (isBizPurpose) {
     return [
       { key: "term_sheet", label: "Term sheet issued", done: false },

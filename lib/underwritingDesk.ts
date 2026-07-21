@@ -45,6 +45,7 @@ export type DeskInput = {
   address?: string; city?: string; state?: string; zip?: string;
   borrower?: string;
   loanType: DeskLoanType;
+  loanPurpose?: "Purchase" | "Refinance" | "CashOutRefinance"; // carried into the LOS 1003 (URLA loan.purpose)
   lienPosition: LienPosition;
   loanAmount: number;
   asIsValue: number;           // as-is value / purchase price

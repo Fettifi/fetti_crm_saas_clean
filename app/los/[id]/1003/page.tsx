@@ -272,11 +272,16 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
             <Sel label="Occupancy" path="property.occupancy" opts={[["", "—"], ["PrimaryResidence", "Primary"], ["SecondHome", "Second home"], ["Investment", "Investment"]]} />
             <Txt label="Property value $" path="property.presentValue" money />
             <Txt label="Expected rent $/mo" path="property.expectedMonthlyRentalIncome" money />
+            <Txt label="ARV (after repair) $" path="property.afterRepairValue" money />
+            <Txt label="Rehab budget $" path="property.rehabBudget" money />
             <Sel label="Loan purpose" path="loan.purpose" opts={[["", "—"], "Purchase", "Refinance", ["CashOutRefinance", "Cash-out refi"], "Other"]} />
+            <Sel label="Lien position" path="loan.lienPosition" opts={[["", "—"], ["1", "1st position"], ["2", "2nd position"]]} />
             <Txt label="Loan amount $" path="loan.amount" money />
-            <Sel label="Loan type" path="loan.loanType" opts={[["", "—"], "Conventional", "FHA", "VA", "USDA", ["Other", "Other / Non-QM / DSCR"]]} />
+            <Sel label="Loan type" path="loan.loanType" opts={[["", "—"], "Conventional", "FHA", "VA", "USDA", ["Other", "Other / Non-QM / DSCR / Hard money"]]} />
             <Sel label="Amortization" path="loan.amortizationType" opts={[["Fixed", "Fixed"], ["ARM", "ARM"]]} />
+            <Txt label="Note rate %" path="loan.noteRatePercent" type="number" />
             <Txt label="Term (months)" path="loan.termMonths" type="number" />
+            <div className="flex items-end pb-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-emerald-500" checked={!!getAt(u, "loan.interestOnly")} onChange={(e) => set("loan.interestOnly", e.target.checked)} /> Interest-only</label></div>
           </Card>
 
           {/* Assets */}

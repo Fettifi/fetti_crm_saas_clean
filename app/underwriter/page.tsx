@@ -49,7 +49,8 @@ export default function UnderwritingDesk() {
   // Build a DeskInput from the form for the live client-side preview.
   const input: DeskInput = useMemo(() => ({
     address: f.address, city: f.city, state: (f.state || "").toUpperCase(), zip: f.zip, borrower: f.borrower,
-    loanType: f.loanType, lienPosition: (f.loanType === "second" || Number(f.lienPosition) === 2) ? 2 : 1,
+    loanType: f.loanType, loanPurpose: f.loanPurpose || ((f.loanType === "second" || Number(f.lienPosition) === 2) ? "CashOutRefinance" : "Purchase"),
+    lienPosition: (f.loanType === "second" || Number(f.lienPosition) === 2) ? 2 : 1,
     loanAmount: num(f.loanAmount), asIsValue: num(f.asIsValue), arv: num(f.arv) || undefined,
     existingLiens: num(f.existingLiens) || undefined, rehabBudget: num(f.rehabBudget) || undefined,
     monthlyRent: num(f.monthlyRent) || undefined, propertyType: f.propertyType, occupancy: f.occupancy,
@@ -165,6 +166,7 @@ export default function UnderwritingDesk() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div><label className={lbl}>Loan purpose</label><select value={f.loanPurpose || (lien2 ? "CashOutRefinance" : "Purchase")} onChange={(e) => set("loanPurpose", e.target.value)} className={inp}><option value="Purchase">Purchase</option><option value="Refinance">Rate/term refinance</option><option value="CashOutRefinance">Cash-out refinance</option></select></div>
           {box.usesARV && <div><label className={lbl}>ARV (after repair)</label><CurrencyInput value={f.arv || ""} onChange={(v) => set("arv", v)} className={inp} placeholder="$" /></div>}
           {box.usesARV && <div><label className={lbl}>Rehab budget</label><CurrencyInput value={f.rehabBudget || ""} onChange={(v) => set("rehabBudget", v)} className={inp} placeholder="$" /></div>}
           {(lien2 || f.existingLiens) && <div><label className={lbl}>Senior lien balance{lien2 ? " (for CLTV)" : ""}</label><CurrencyInput value={f.existingLiens || ""} onChange={(v) => set("existingLiens", v)} className={inp} placeholder="$" /></div>}

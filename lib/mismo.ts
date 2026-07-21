@@ -117,7 +117,7 @@ export function buildMismo34(u: Urla): string {
   loan += el("BalloonIndicator", "false", T(8));
   loan += el("BorrowerCount", u.borrowers.length, T(8));
   loan += el("ConstructionLoanIndicator", "false", T(8));
-  loan += el("InterestOnlyIndicator", "false", T(8));
+  loan += el("InterestOnlyIndicator", bool(!!l.interestOnly), T(8));
   loan += el("NegativeAmortizationIndicator", "false", T(8));
   loan += el("PrepaymentPenaltyIndicator", "false", T(8));
   loan += `${T(7)}</LOAN_DETAIL>\n`;
@@ -128,8 +128,12 @@ export function buildMismo34(u: Urla): string {
   }
   loan += `${T(7)}<TERMS_OF_LOAN>\n`;
   loan += el("BaseLoanAmount", money(l.amount), T(8));
-  loan += el("LienPriorityType", "FirstLien", T(8));
-  loan += el("LoanPurposeType", l.purpose, T(8));
+  // Junior liens must export as SecondLien — a 2nd/HELOC delivered to a lender labeled a
+  // first lien is a material misstatement. (1003 Sel writes "2" as a string; coerce.)
+  loan += el("LienPriorityType", Number(l.lienPosition) === 2 ? "SecondLien" : "FirstLien", T(8));
+  // ULAD LoanPurposeType enum = Purchase | Refinance | Other. Cash-out is a Refinance here;
+  // the cash-out detail is carried separately in RefinanceCashOutDeterminationType above.
+  loan += el("LoanPurposeType", /(refinance|refi|cash)/i.test(l.purpose || "") ? "Refinance" : /purchase/i.test(l.purpose || "") ? "Purchase" : (l.purpose ? "Other" : ""), T(8));
   loan += el("MortgageType", l.loanType || "Conventional", T(8));
   loan += el("NoteAmount", money(l.amount), T(8));
   loan += el("NoteRatePercent", l.noteRatePercent, T(8));
