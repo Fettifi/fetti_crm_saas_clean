@@ -183,10 +183,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     // Resilient call: if Anthropic rejects a specific PDF block as invalid, drop THAT
     // document and retry the rest — one corrupt upload never fails the whole read.
     // NOTE: no `temperature` — Opus 4.8 rejects it; determinism comes from the prompt.
-    // ASSISTANT PREFILL "{": the model once answered with prose analysis and NO
-    // JSON at all (stop_reason end_turn, 2026-07-21 second failure on 745ea431) —
-    // prefilling the reply forces the output to BE the JSON object from char one.
-    // Parsers below re-prepend the "{".
+    // FORCED TOOL USE: the model once answered with prose analysis and NO JSON at
+    // all (stop_reason end_turn, 2026-07-21 second failure on 745ea431). Assistant
+    // prefill is NOT supported by Opus 4.8 ("This model does not support assistant
+    // message prefill") — forcing a report_income tool call is the sanctioned way
+    // to make the reply structurally BE the JSON object.
     async function callModel(nudge?: string): Promise<any> {
       for (let attempt = 0; attempt < 4; attempt++) {
         const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -203,8 +204,26 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
             system: SYSTEM,
             messages: [
               { role: "user", content: [...blocks, { type: "text", text: nudge ? `${userText}\n\n${nudge}` : userText }] },
-              { role: "assistant", content: "{" },
             ],
+            tools: [{
+              name: "report_income",
+              description: "Report the verified income read as structured data. Call exactly once with the complete result.",
+              input_schema: {
+                type: "object",
+                properties: {
+                  qualifyingMonthlyIncome: { type: "number" },
+                  perBorrowerMonthly: { type: "object", description: "keys '1'/'2' → monthly $" },
+                  breakdown: { type: "array", items: { type: "object", properties: { borrower: { type: "number" }, label: { type: "string" }, monthly: { type: "number" }, basis: { type: "string" } } } },
+                  perDoc: { type: "array", items: { type: "object" } },
+                  crossChecks: { type: "array", items: { type: "string" } },
+                  flags: { type: "array", items: { type: "object", properties: { text: { type: "string" }, addBackMonthly: { type: "number" }, borrower: { type: "number" } } } },
+                  confidence: { type: "string", enum: ["high", "medium", "low"] },
+                  notes: { type: "string" },
+                },
+                required: ["qualifyingMonthlyIncome", "breakdown", "confidence"],
+              },
+            }],
+            tool_choice: { type: "tool", name: "report_income" },
           }),
         });
         const jr = await res.json();
@@ -227,25 +246,26 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       }
       throw new Error("Income read failed after dropping unreadable documents.");
     }
-    // The reply was prefilled with "{" — re-prepend it before parsing.
-    const modelText = (jr: any) => "{" + (jr.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").replace(/```json/gi, "").replace(/```/g, "").trim();
-    const tryParse = (t: string): any | null => {
+    // Forced tool call: the result is the tool_use block's input — already an
+    // object, no JSON.parse fragility. Text fallback kept for belt-and-suspenders.
+    const extractParsed = (jr: any): any | null => {
+      const tu = (jr?.content || []).find((b: any) => b.type === "tool_use" && b.input && typeof b.input === "object");
+      if (tu) return tu.input;
+      const t = (jr?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").replace(/```json/gi, "").replace(/```/g, "").trim();
       const mm = t.match(/\{[\s\S]*\}/);
       try { return JSON.parse(mm ? mm[0] : t); } catch { return null; }
     };
     let j = await callModel();
     if (!j) return NextResponse.json({ error: "Could not read any of the uploaded income documents — they were all rejected as corrupt/unreadable. Re-request clean copies from the borrower.", unreadableDocs: unreadable }, { status: 422 });
-    let txt = modelText(j);
-    let parsed: any = tryParse(txt);
+    let parsed: any = extractParsed(j);
     if (!parsed) {
       // One stern retry before failing — and log WHY (truncation vs junk) so the
       // failure is diagnosable instead of blaming the borrower's scans.
-      console.error("[los/verify-income] unparseable model output (retrying once)", { stop_reason: j?.stop_reason, chars: txt.length, tail: txt.slice(-300) });
-      j = await callModel("REMINDER: your ENTIRE reply must be the single JSON object — no analysis, no markdown, no text before or after it.");
-      txt = j ? modelText(j) : "";
-      parsed = txt ? tryParse(txt) : null;
+      console.error("[los/verify-income] no tool_use / unparseable output (retrying once)", { stop_reason: j?.stop_reason });
+      j = await callModel("REMINDER: call the report_income tool with the complete result — no prose.");
+      parsed = j ? extractParsed(j) : null;
       if (!parsed) {
-        console.error("[los/verify-income] unparseable after retry", { stop_reason: j?.stop_reason, chars: txt.length, tail: txt.slice(-300) });
+        console.error("[los/verify-income] unparseable after retry", { stop_reason: j?.stop_reason });
         const truncated = j?.stop_reason === "max_tokens";
         return NextResponse.json({
           error: truncated
