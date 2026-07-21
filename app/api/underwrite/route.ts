@@ -139,6 +139,32 @@ async function aiMapping(headers: string[], sampleRows: unknown[][]): Promise<Re
   }
 }
 
+// US state / territory codes — to validate a 2-letter token as a real state when pulling
+// city/state/ZIP out of a combined address string.
+const US_STATES = new Set(["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC", "PR"]);
+
+// Pull ZIP (+ state + city) out of a one-line address like "4210 W 58th St, Los Angeles,
+// CA 90043". Most rent rolls / PDFs give ONE address column, so the ZIP the tax county
+// links + per-property market intel need is buried inside that string. ZIP = the LAST
+// 5-digit group (a 5-digit house number is never last). Used ONLY to fill fields the
+// sheet didn't already provide — an explicit ZIP/State/City column always wins.
+function deriveLoc(address: string): { zip?: string; state?: string; city?: string } {
+  const out: { zip?: string; state?: string; city?: string } = {};
+  const zips = address.match(/\b\d{5}(?:-\d{4})?\b/g);
+  if (zips && zips.length) out.zip = zips[zips.length - 1].slice(0, 5);
+  const st = address.match(/[,\s]([A-Za-z]{2})\.?\s+\d{5}(?:-\d{4})?\b/);
+  if (st && US_STATES.has(st[1].toUpperCase())) out.state = st[1].toUpperCase();
+  const parts = address.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parts.length >= 3) {
+    const cand = parts[parts.length - 2];
+    if (cand && /[a-z]/i.test(cand) && !/^\d/.test(cand)) out.city = cand;
+  } else if (parts.length === 2) {
+    const tail = parts[1].replace(/\b[A-Za-z]{2}\.?\s+\d{5}(?:-\d{4})?\b.*$/, "").trim();
+    if (tail && /[a-z]/i.test(tail) && !/^\d/.test(tail)) out.city = tail;
+  }
+  return out;
+}
+
 // Row mapping happens in CODE — cheap, deterministic, no per-row AI.
 function buildRows(headers: string[], dataRows: unknown[][], mapping: Record<string, string>, sourceSheet?: string, idOffset = 0): PropertyRow[] {
   // header index → canonical field
@@ -157,14 +183,24 @@ function buildRows(headers: string[], dataRows: unknown[][], mapping: Record<str
     const address = toStr(rec.address);
     if (!address) continue; // rows without an address are skipped
 
+    // Fill city / state / ZIP from the address string when the sheet gave no separate
+    // column — the tax county-links + per-property market intel key off the ZIP.
+    let city = toStr(rec.city), state = toStr(rec.state), zip = toStr(rec.zip);
+    if (!zip || !state || !city) {
+      const d = deriveLoc(address);
+      if (!zip && d.zip) zip = d.zip;
+      if (!state && d.state) state = d.state;
+      if (!city && d.city) city = d.city;
+    }
+
     const backTax = toNum(rec.back_tax_amount);
     rows.push({
       id: "p" + (idOffset + rows.length),
       source_sheet: sourceSheet ?? null,
       address,
-      city: toStr(rec.city),
-      state: toStr(rec.state),
-      zip: toStr(rec.zip),
+      city,
+      state,
+      zip,
       county: toStr(rec.county),
       property_type: toStr(rec.property_type),
       units: toNum(rec.units),
