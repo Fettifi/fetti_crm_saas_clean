@@ -20,11 +20,11 @@ export const DEFAULT_COMPETITORS: Competitor[] = [
   { name: "UWM", ig: "uwmlending", fbAdLibraryQuery: "United Wholesale Mortgage" },
   { name: "loanDepot", ig: "loandepot", fbAdLibraryQuery: "loanDepot" },
   { name: "New American Funding", ig: "newamericanfunding", fbAdLibraryQuery: "New American Funding" },
-  { name: "Rate (Guaranteed Rate)", ig: "rate", fbAdLibraryQuery: "Guaranteed Rate" },
+  { name: "Rate (Guaranteed Rate)", ig: "rate.inc", fbAdLibraryQuery: "Guaranteed Rate" },
   { name: "Better", ig: "betterdotcom", fbAdLibraryQuery: "Better Mortgage" },
   { name: "CrossCountry Mortgage", ig: "crosscountrymtg", fbAdLibraryQuery: "CrossCountry Mortgage" },
   { name: "Movement Mortgage", ig: "movementmortgage", fbAdLibraryQuery: "Movement Mortgage" },
-  { name: "Kiavi (DSCR)", ig: "kiavifunding", fbAdLibraryQuery: "Kiavi" },
+  { name: "Kiavi (DSCR)", ig: "kiavi_inc", fbAdLibraryQuery: "Kiavi" },
   { name: "Visio Lending (DSCR)", ig: "visiolending", fbAdLibraryQuery: "Visio Lending" },
   { name: "Lima One (investor)", ig: "limaonecapital", fbAdLibraryQuery: "Lima One Capital" },
 ];
