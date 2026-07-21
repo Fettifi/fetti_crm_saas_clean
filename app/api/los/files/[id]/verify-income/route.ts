@@ -12,7 +12,10 @@ import { assembleUrla, type Urla } from "@/lib/urla";
 import type { LoanType } from "@/lib/income";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+// 300s: the 745ea431-class big file already ran ~60s at a 4k output cap; the
+// 16k cap plus 15 PDF downloads needs real headroom or the fix trades a
+// truncation 422 for a gateway timeout.
+export const maxDuration = 300;
 const BUCKET = "loan-docs";
 const MEDIA = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"]);
 const MAX_DOCS = 8;
