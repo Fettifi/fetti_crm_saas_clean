@@ -726,7 +726,10 @@ export default function UnderwritePage() {
         {/* ZIP required — market intel + county tax links key off ZIP. Auto-derived from the
             address on parse; the LO fills any the address didn't yield. */}
         {rows.length > 0 && (() => {
-          const missing = rows.filter((r) => !r.zip);
+          // Keep a property in the panel until its ZIP is a COMPLETE 5 digits — filtering on
+          // "!r.zip" removed the input the instant you typed the first digit (it was no longer
+          // "missing"), so you could never finish typing. Now it stays until 5 digits are in.
+          const missing = rows.filter((r) => String(r.zip || "").replace(/\D/g, "").length < 5);
           if (!missing.length) return null;
           return (
             <div className="mt-4 bg-amber-500/[0.07] border border-amber-500/30 rounded-xl px-4 py-3">
