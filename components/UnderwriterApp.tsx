@@ -436,6 +436,12 @@ export default function UnderwritePage() {
     const n = parseFloat(v);
     setRows((p) => p.map((r) => (r.id === id ? { ...r, back_tax_amount: Number.isFinite(n) && n >= 0 ? n : null } : r)));
   }, []);
+  // ZIP is REQUIRED (market intel + county tax links key off it). Auto-derived from the
+  // address on parse; anything still missing is filled here by the LO.
+  const setZip = useCallback((id: string, v: string) => {
+    const z = v.replace(/\D/g, "").slice(0, 5);
+    setRows((p) => p.map((r) => (r.id === id ? { ...r, zip: z || null } : r)));
+  }, []);
 
   const onCopy = useCallback((id: string, text: string) => {
     navigator.clipboard?.writeText(text).then(() => {
@@ -716,6 +722,30 @@ export default function UnderwritePage() {
             )}
           </div>
         )}
+
+        {/* ZIP required — market intel + county tax links key off ZIP. Auto-derived from the
+            address on parse; the LO fills any the address didn't yield. */}
+        {rows.length > 0 && (() => {
+          const missing = rows.filter((r) => !r.zip);
+          if (!missing.length) return null;
+          return (
+            <div className="mt-4 bg-amber-500/[0.07] border border-amber-500/30 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-300 mb-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                {missing.length} propert{missing.length === 1 ? "y needs" : "ies need"} a ZIP
+                <span className="text-amber-200/70 font-normal text-xs">— required for market data + county tax links; add {missing.length === 1 ? "it" : "them"} below</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {missing.map((r) => (
+                  <div key={r.id} className="flex items-center gap-2">
+                    <span className="text-xs text-slate-300 truncate flex-1" title={r.address || ""}>{r.address || "(no address)"}{r.city ? ` · ${r.city}` : ""}{r.state ? `, ${r.state}` : ""}</span>
+                    <input inputMode="numeric" maxLength={5} placeholder="ZIP" value={r.zip || ""} onChange={(e) => setZip(r.id, e.target.value)} className="w-20 bg-slate-900 border border-amber-500/40 rounded-lg px-2 py-1 text-sm text-white focus:border-amber-400 focus:outline-none" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Assumptions bar */}
         {rows.length > 0 && (
