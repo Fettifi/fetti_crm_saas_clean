@@ -302,6 +302,12 @@ function appSteps(a: Answers): Q[] {
   steps.push({ id: "dependents", kind: "select", prompt: "Anyone depend on you financially?", options: [
     { value: "0", label: "Just me" }, { value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3+" },
   ] });
+  // Co-borrower (URLA supports multiple borrowers; the public form used to hard-cap
+  // at one, so spouses/partners/co-investors had no way onto their own application).
+  steps.push({ id: "has_coborrower", kind: "select", prompt: "Is anyone applying with you?", sub: "A spouse, partner or co-investor on the loan with you.", options: [
+    { value: "no", label: "Just me", emoji: "🙂" },
+    { value: "yes", label: "Yes — add a co-borrower", emoji: "👥", hint: "Their income can strengthen the application" },
+  ] });
   // Current residence (URLA §1b)
   steps.push({ id: "own_or_rent", kind: "select", prompt: "Right now, do you own or rent?", options: [
     { value: "Own", label: "I own", emoji: "🏠" }, { value: "Rent", label: "I rent", emoji: "🔑" }, { value: "Rent-free", label: "Neither / live rent-free" },
@@ -347,6 +353,33 @@ function appSteps(a: Answers): Q[] {
   steps.push({ id: "bk_fc", kind: "select", prompt: "In the last 7 years, any bankruptcy or foreclosure?", sub: "Totally fine either way. It just shapes your options.", options: [
     { value: "no", label: "Nope, all good", emoji: "✅" }, { value: "yes", label: "Yes, within 7 years" },
   ] });
+  // Co-borrower details (URLA borrower #2). Only when they said yes above. The
+  // prompts personalize once the name is captured (appSteps rebuilds per answer).
+  if (a.has_coborrower === "yes") {
+    const coFirst = (a.co_full_name || "").trim().split(/\s+/)[0] || "your co-borrower";
+    steps.push({ id: "co_full_name", kind: "text", prompt: "What's your co-borrower's full name?", sub: "As it appears on their ID.", placeholder: "Co-borrower full name" });
+    steps.push({ id: "co_email", kind: "text", prompt: `Best email for ${coFirst}?`, sub: "So they're on the application too. We won't spam them.", placeholder: "Co-borrower email", optional: true });
+    steps.push({ id: "co_phone", kind: "text", prompt: `And ${coFirst}'s phone number?`, placeholder: "Co-borrower phone", optional: true });
+    steps.push({ id: "co_dob", kind: "date", prompt: `When's ${coFirst}'s birthday? 🎂`, sub: "Required on the final application — skip for now if you're not sure.", optional: true });
+    steps.push({ id: "co_ssn", kind: "text", prompt: `${coFirst}'s Social Security number`, sub: "🔒 Encrypted, same as yours. You can skip it for now.", placeholder: "XXX-XX-XXXX", optional: true });
+    steps.push({ id: "co_citizenship", kind: "select", prompt: `${coFirst}'s citizenship status?`, options: [
+      { value: "US Citizen", label: "U.S. citizen", emoji: "🇺🇸" },
+      { value: "Permanent Resident", label: "Permanent resident (green card)" },
+      { value: "Non-Permanent Resident", label: "Visa / other" },
+    ] });
+    steps.push({ id: "co_lives_together", kind: "select", prompt: `Does ${coFirst} live with you?`, options: [
+      { value: "yes", label: "Yes, same address", emoji: "🏠" }, { value: "no", label: "No, different address" },
+    ] });
+    if (!dscr) {
+      // DSCR qualifies on the property's rent — no personal income for either borrower.
+      steps.push({ id: "co_employment_status", kind: "select", prompt: `How does ${coFirst} earn income?`, options: [
+        { value: "Employed", label: "Employed (W-2)", emoji: "💼" }, { value: "Self-Employed", label: "Self-employed / business owner", emoji: "🧑‍💻" },
+        { value: "Retired", label: "Retired", emoji: "🌅" }, { value: "Other", label: "Other" },
+      ] });
+      steps.push({ id: "co_employer", kind: "text", prompt: `Who does ${coFirst} work for?`, placeholder: "Their employer / business", optional: true });
+      steps.push({ id: "co_monthly_income", kind: "number", prompt: `About what's ${coFirst}'s monthly income, before taxes?`, sub: "Best estimate. Their income counts toward qualifying.", placeholder: "Their gross monthly income ($)", optional: true });
+    }
+  }
   // Property (URLA §4)
   steps.push({ id: "property_address", kind: "address", prompt: "What's the property address?", sub: purchase ? "Already have one? We'll verify it. Still shopping? Just skip." : "The address we're financing. We'll verify it.", placeholder: "Property address", optional: true });
   return steps;
@@ -556,6 +589,9 @@ export default function ApplyWizard() {
     add("Down pmt source", a.down_payment_source); add("Down payment assistance", a.dpa === "yes" ? "INTERESTED" : undefined); add("Owns other RE", a.own_other_property);
     add("BK/Foreclosure 7yr", a.bk_fc); add("Property address", a.property_address);
     add("VA/Military", a.military); add("First-time buyer", a.firsttime); add("Rental type", a.rental_type); add("Experience", a.experience);
+    // Co-borrower summary for the notes blob — name + income only, never SSN/DOB.
+    const withCo = a.has_coborrower === "yes" && !!a.co_full_name;
+    if (withCo) lines.push(`Co-borrower: ${a.co_full_name}${a.co_monthly_income ? ` ($${a.co_monthly_income}/mo income)` : ""}`);
     const attr = getAttribution();
     const av = (k: string) => (attr as Record<string, string>)[k] || qs.get(k) || undefined;
     return {
@@ -583,6 +619,22 @@ export default function ApplyWizard() {
       job_title: a.job_title || undefined,
       years_employed: a.years_employed || undefined,
       own_or_rent: a.own_or_rent || undefined,
+      // Co-borrower (URLA borrower #2) — discrete fields, gated on the explicit
+      // "yes" so a Back-and-switch to "just me" never sends stale co_* answers.
+      // co_ssn is encrypted server-side exactly like the primary's; never in notes.
+      has_coborrower: a.has_coborrower || undefined,
+      ...(withCo ? {
+        co_full_name: a.co_full_name || undefined,
+        co_email: a.co_email || undefined,
+        co_phone: a.co_phone || undefined,
+        co_dob: a.co_dob || undefined,
+        co_ssn: a.co_ssn || undefined,
+        co_citizenship: a.co_citizenship || undefined,
+        co_lives_together: a.co_lives_together || undefined,
+        co_employment_status: a.co_employment_status || undefined,
+        co_employer: a.co_employer || undefined,
+        co_monthly_income: a.co_monthly_income ? Number(a.co_monthly_income) : undefined,
+      } : {}),
       // Portfolio flag — structural, not just a notes string: scoreLead awards
       // tier points for it and it lands in raw for downstream agents.
       own_other_property: a.own_other_property || undefined,

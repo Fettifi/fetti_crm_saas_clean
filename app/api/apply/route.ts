@@ -53,6 +53,19 @@ type Body = {
   fbclid?: string;  // Meta click id
   referrer?: string; // referral partner code (?ref=)
   hp?: string; // honeypot — must stay empty (bots fill it)
+  // Co-borrower (URLA borrower #2) from the public wizard's "add a co-borrower"
+  // arc. Flows into raw and is assembled into borrowers[1] by assembleUrla.
+  has_coborrower?: string;
+  co_full_name?: string;
+  co_email?: string;
+  co_phone?: string;
+  co_dob?: string;
+  co_ssn?: string;
+  co_citizenship?: string;
+  co_lives_together?: string;
+  co_employment_status?: string;
+  co_employer?: string;
+  co_monthly_income?: number;
 };
 
 // scoreLead lives in @/lib/leadScore (shared with the Meta Lead Center importer)
@@ -118,6 +131,8 @@ export async function POST(req: NextRequest) {
     // missing/malformed, so `?? null` drops the SSN entirely — plaintext PII is never written.
     const rawBody: Record<string, unknown> = { ...(body as Record<string, unknown>) };
     if (rawBody.ssn) rawBody.ssn = encryptField(String(rawBody.ssn).replace(/[^0-9]/g, "")) ?? null;
+    // Co-borrower SSN gets the identical treatment — encrypted at rest or dropped.
+    if (rawBody.co_ssn) rawBody.co_ssn = encryptField(String(rawBody.co_ssn).replace(/[^0-9]/g, "")) ?? null;
     if (trackingOptedOut) rawBody.tracking_opt_out = true;
     // ALWAYS-ON phone quality stamp (independent of Lead Shield's mode) — surfaces
     // bad numbers even when Shield is in shadow. See phoneStatus for the label rules

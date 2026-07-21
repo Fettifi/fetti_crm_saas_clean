@@ -221,6 +221,29 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     ssn: decryptField(cb?.ssn),
   }));
 
+  // Wizard co-borrower (raw.co_*): the public application's "add a co-borrower"
+  // answers become borrower #2 — but only when the structured 1003 hasn't already
+  // captured one (the LOS editor / a MISMO import stays authoritative).
+  if (!coBorrowers.length && raw.has_coborrower === "yes" && raw.co_full_name) {
+    const coFull = String(raw.co_full_name).trim();
+    coBorrowers.push({
+      fullName: coFull,
+      firstName: coFull.split(/\s+/)[0] || undefined,
+      lastName: coFull.split(/\s+/).slice(1).join(" ") || undefined,
+      ssn: decryptField(raw.co_ssn) || undefined,
+      dob: raw.co_dob || undefined,
+      citizenship: raw.co_citizenship || undefined,
+      email: raw.co_email || undefined,
+      cellPhone: raw.co_phone || undefined,
+      // "Lives with you" = the primary's current address once the LO fills it in.
+      currentAddress: undefined,
+      employment: (raw.co_employer || raw.co_employment_status)
+        ? { employerName: raw.co_employer || undefined, selfEmployed: /self/i.test(String(raw.co_employment_status || "")) || undefined }
+        : undefined,
+      income: num(raw.co_monthly_income) ? { total: num(raw.co_monthly_income) } : undefined,
+    });
+  }
+
   // Property location: prefer an explicit property address, but fall back to the
   // lead's state/ZIP so escrow (taxes + insurance) can still be ZIP-estimated when
   // only the borrower's state/zip is on file (most leads have no property_address).
