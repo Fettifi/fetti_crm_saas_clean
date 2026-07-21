@@ -16,7 +16,7 @@ import { claudeChat } from "@/lib/aiFallback";
 import { getSetting, setSetting } from "@/lib/settings";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120; // headroom for the PDF document-reader vision call
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4MB decoded
 const MAX_ROWS = 1000;
@@ -208,6 +208,48 @@ async function writeIndex(arr: IndexEntry[]): Promise<void> {
 }
 
 // ---------------------------------------------------------------- actions
+// Read a PDF property list / rent roll into the SAME 2D grid a spreadsheet yields (row 0 =
+// headers, each following row = one property), via the Anthropic document reader with a
+// FORCED tool call so the reply structurally IS the grid. Feeds the identical column-map +
+// underwrite pipeline below — no separate PDF code path downstream.
+async function extractGridsFromPdf(buf: Buffer, filename: string): Promise<{ sheets?: { name: string; grid: unknown[][] }[]; error?: string }> {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return { error: "Reading a PDF needs the AI document reader — or upload the portfolio as an .xlsx / .csv." };
+  const SYSTEM = "You extract a U.S. real-estate rent-roll / property-portfolio table from a PDF into a clean 2D grid. Return ONLY the tool call.";
+  const userText = 'This PDF is a property portfolio / rent roll. Extract EVERY property into a 2D array "grid": grid[0] is the column HEADER names exactly as printed (e.g. "Address","Units","Gross Monthly Rent","Market Value","Annual Taxes","Loan Balance","Rate"), and each following array is ONE property\'s cells in the SAME column order. Every property must include its street address. Read ALL pages. Use null for blanks and plain numbers (strip $ and commas). Do not invent columns or rows.';
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: process.env.ANTHROPIC_MODEL || "claude-opus-4-8",
+        max_tokens: 16000,
+        system: SYSTEM,
+        messages: [{ role: "user", content: [
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: buf.toString("base64") } },
+          { type: "text", text: userText },
+        ] }],
+        tools: [{ name: "report_grid", description: "Return the extracted property table as a 2D array (row 0 = headers).", input_schema: { type: "object", properties: { grid: { type: "array", items: { type: "array" } } }, required: ["grid"] } }],
+        tool_choice: { type: "tool", name: "report_grid" },
+      }),
+      signal: AbortSignal.timeout(100000),
+    });
+    const jr: any = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const em = String(jr?.error?.message || res.status);
+      if (/overloaded|rate.?limit|429|529/i.test(em)) return { error: "The document reader is busy right now — try again in a few seconds, or upload an .xlsx / .csv." };
+      return { error: `Couldn't read that PDF (${em}). Try a clearer PDF, or upload the portfolio as an .xlsx / .csv.` };
+    }
+    const tu = (jr?.content || []).find((b: any) => b?.type === "tool_use" && Array.isArray(b?.input?.grid));
+    const grid: unknown[][] | undefined = tu?.input?.grid;
+    if (!Array.isArray(grid) || grid.length < 2) return { error: `Couldn't find a property table in "${filename}" — make sure it lists properties in rows with an address column, or upload an .xlsx / .csv.` };
+    const norm = grid.filter((r) => Array.isArray(r)).map((r: any) => (r as any[]).map((c) => (c == null ? null : typeof c === "object" ? JSON.stringify(c) : c)));
+    return { sheets: [{ name: (filename.replace(/\.pdf$/i, "").trim() || "PDF"), grid: norm }] };
+  } catch (e: any) {
+    return { error: `Couldn't read that PDF (${e?.message || "timed out"}). Try again, or upload an .xlsx / .csv.` };
+  }
+}
+
 async function handleParse(body: any) {
   const filename = toStr(body?.filename) || "upload";
   const fileB64 = typeof body?.file_b64 === "string" ? body.file_b64 : "";
@@ -226,12 +268,26 @@ async function handleParse(body: any) {
   if (!buf.length) return jsonError("Decoded file is empty");
   if (buf.length > MAX_FILE_BYTES) return jsonError("File too large — max 4MB. Trim the sheet and re-upload.", 413);
 
-  let wb: XLSX.WorkBook;
-  try {
-    wb = XLSX.read(buf, { type: "buffer" });
-  } catch {
-    return jsonError(`Could not read "${filename}" — upload an .xlsx, .xls, or .csv spreadsheet.`);
+  // A property list can arrive as a spreadsheet OR a PDF (rent roll / portfolio printout).
+  // Spreadsheets parse locally; a PDF is read by the AI document reader into the SAME grid
+  // shape, so everything below (header detect, column map, underwrite) is identical.
+  type ParsedSheet = { name: string; grid: unknown[][] };
+  const isPdf = /\.pdf$/i.test(filename) || buf.subarray(0, 5).toString("latin1") === "%PDF-";
+  let sheets: ParsedSheet[];
+  if (isPdf) {
+    const ext = await extractGridsFromPdf(buf, filename);
+    if (ext.error) return jsonError(ext.error, 422);
+    sheets = ext.sheets || [];
+  } else {
+    let wb: XLSX.WorkBook;
+    try {
+      wb = XLSX.read(buf, { type: "buffer" });
+    } catch {
+      return jsonError(`Could not read "${filename}" — upload an .xlsx, .xls, .csv, or a PDF rent roll / property list.`);
+    }
+    sheets = wb.SheetNames.map((n) => ({ name: n, grid: (wb.Sheets[n] ? XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: null, raw: true, blankrows: false }) : []) as unknown[][] }));
   }
+  const sheetNames = sheets.map((s) => s.name);
   // Portfolio workbooks spread properties across MULTIPLE tabs (per city / pool /
   // category), often with cover pages and title rows. So: for EVERY sheet, detect its
   // own header row (synonym hits weigh heaviest), map its own columns (headers differ
@@ -273,12 +329,9 @@ async function handleParse(body: any) {
   const mappingCache = new Map<string, Record<string, string>>(); // same headers across tabs → one AI call
   let aiCalls = 0;
 
-  for (const sheetName of wb.SheetNames) {
+  for (const { name: sheetName, grid } of sheets) {
     if (allRows.length >= MAX_ROWS) break;
-    const ws = wb.Sheets[sheetName];
-    if (!ws) { sheetsSkipped.push(sheetName); continue; }
-    const grid: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, blankrows: false });
-    if (grid.length < 2) { sheetsSkipped.push(sheetName); continue; }
+    if (!grid || grid.length < 2) { sheetsSkipped.push(sheetName); continue; }
     const det = detectHeader(grid);
     if (!det) { sheetsSkipped.push(sheetName); continue; }
     const headers = det.headers;
@@ -303,7 +356,7 @@ async function handleParse(body: any) {
 
   if (!allRows.length) {
     return jsonError(
-      `No usable rows on any tab. Tabs seen: ${wb.SheetNames.join(", ") || "none"}. None had a column readable as a property address — rename the property column to "Address" and re-upload.`,
+      `No usable rows found. Sections seen: ${sheetNames.join(", ") || "none"}. None had a column readable as a property address — make sure each property has an address column (rename it "Address" if needed) and re-upload.`,
       422
     );
   }

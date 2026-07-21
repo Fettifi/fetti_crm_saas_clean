@@ -322,7 +322,7 @@ function UploadZone({ parsing, onFile }: { parsing: boolean; onFile: (f: File) =
       }`}
     >
       <input
-        ref={inputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+        ref={inputRef} type="file" accept=".xlsx,.xls,.csv,.pdf,application/pdf" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }}
       />
       {parsing ? (
@@ -332,8 +332,8 @@ function UploadZone({ parsing, onFile }: { parsing: boolean; onFile: (f: File) =
       ) : (
         <>
           <Upload className="w-7 h-7 text-slate-500 mx-auto" />
-          <div className="text-sm text-slate-300 mt-2 font-medium">Drop a property spreadsheet here, or click to browse</div>
-          <div className="text-xs text-slate-500 mt-1">.xlsx / .xls / .csv — AI maps your columns, every property gets sized instantly</div>
+          <div className="text-sm text-slate-300 mt-2 font-medium">Drop a property spreadsheet or PDF rent roll here, or click to browse</div>
+          <div className="text-xs text-slate-500 mt-1">.xlsx / .xls / .csv / .pdf — AI maps your columns, every property gets sized instantly</div>
         </>
       )}
     </div>
