@@ -18,7 +18,7 @@ export async function GET() {
     const MARGIN = marginPct / 100;
     const [{ data: leads }, { data: files }] = await Promise.all([
       supabaseAdmin.from("leads")
-        .select("id, full_name, loan_purpose, loan_amount_requested, property_value, tier, stage, created_at")
+        .select("id, full_name, loan_purpose, loan_amount_requested, property_value, tier, stage, created_at, app_completed:raw->app_completed, app_completed_at:raw->>app_completed_at")
         .order("created_at", { ascending: false }).limit(5000),
       supabaseAdmin.from("loan_files")
         .select("id, borrower_name, loan_amount, property_value, stage, status, created_at")
@@ -71,6 +71,31 @@ export async function GET() {
       leadRequested: leadRequested * MARGIN,
     };
 
+    // Completed 1003s that haven't sent a document yet. The doc-upload LOS gate
+    // (473293d) rightly stopped phantom loan files, but it left finished
+    // applications with NO surface on the dashboard — a Tier-1 who completes the
+    // wizard at 9 PM Sunday was invisible until someone dug through /leads
+    // (the Magali gap, 2026-07-21). These are the hottest follow-ups in the
+    // building, so they get their own list: stage still pre-Application (the
+    // upload route advances them out of here automatically on the first doc).
+    // Recency gate: app_completed_at is stamped at completion (backfilled for the
+    // 7/20-21 pair). ~28 historical Engaged leads carry app_completed=true from
+    // months back — without the stamp+window they'd bury the fresh completion
+    // this band exists to surface.
+    const appsAwaitingDocs = L.filter((l) =>
+      (l as any).app_completed === true &&
+      (l as any).app_completed_at &&
+      now - new Date((l as any).app_completed_at).getTime() < 30 * DAY &&
+      ["new lead", "contacted", "engaged", "review"].includes(stageL(l.stage))
+    ).sort((a, b) => new Date((b as any).app_completed_at).getTime() - new Date((a as any).app_completed_at).getTime())
+    .slice(0, 12).map((l) => ({
+      id: l.id, name: l.full_name || "Lead", purpose: l.loan_purpose || "—",
+      tier: l.tier || null, stage: l.stage || "New Lead", amount: loanOfLead(l),
+      // Age on WHEN the 1003 was finished, not lead creation (a returning lead's
+      // created_at can be weeks old — Timothy completed 10 days after creation).
+      created_at: (l as any).app_completed_at || l.created_at,
+    }));
+
     const recentLeads = L.slice(0, 8).map((l) => ({
       id: l.id, name: l.full_name || "Lead", purpose: l.loan_purpose || "—",
       tier: l.tier || null, stage: l.stage || "New Lead", amount: loanOfLead(l), created_at: l.created_at,
@@ -79,7 +104,7 @@ export async function GET() {
       id: f.id, borrower: f.borrower_name || "Borrower", stage: f.stage || "Application", amount: loanOfFile(f), created_at: f.created_at,
     }));
 
-    return NextResponse.json({ marginPct, leads: leadStats, files: fileStats, volume, earnings, recentLeads, recentFiles });
+    return NextResponse.json({ marginPct, leads: leadStats, files: fileStats, volume, earnings, appsAwaitingDocs, recentLeads, recentFiles });
   } catch (e: any) {
     console.error("[api/dashboard]", e);
     return NextResponse.json({ error: e?.message || "failed" }, { status: 500 });

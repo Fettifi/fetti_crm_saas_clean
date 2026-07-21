@@ -57,6 +57,11 @@ export async function GET(req: NextRequest) {
         appLink: magicApplyLink(lead as any),
         fileLink: (lf as any)?.share_token ? `${process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com"}/file/${(lf as any).share_token}` : null,
         missingDocs,
+        // Completed-1003 state + existing file, so the workspace can offer
+        // "Convert to Application" (start doc requests) instead of a dead end.
+        appCompleted: raw.app_completed === true,
+        appCompletedAt: raw.app_completed_at || null,
+        loanFileId: (lf as any)?.id || null,
       },
       messages,
     });

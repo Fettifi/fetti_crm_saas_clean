@@ -138,6 +138,9 @@ export async function POST(req: NextRequest) {
     // bad numbers even when Shield is in shadow. See phoneStatus for the label rules
     // ("invalid" junk is separated from "non_us" foreign, not lumped together).
     rawBody.phone_status = phoneStatus(body.phone);
+    // Stamp WHEN the 1003 was completed — the dashboard's "awaiting documents"
+    // list sorts/ages on this (created_at misleads for merged returning leads).
+    if ((body as any).app_completed === true) rawBody.app_completed_at = new Date().toISOString();
 
     const row: Record<string, unknown> = {
       full_name,
@@ -318,6 +321,29 @@ export async function POST(req: NextRequest) {
     // "nobody should be in the applications area unless they've uploaded a document."
     if ((body as any).app_completed && data?.id && !quarantined) {
       after(async () => { try { await advanceLeadStage(data.id, "Engaged", { actor: "borrower", reason: "completed application form (awaiting documents)" }); } catch { /* */ } });
+      // FULL-1003 ALERT (owner ask 2026-07-21, the Magali gap): a completed
+      // application is the loudest signal in the funnel — page the team
+      // distinctly with the convert-to-file link. First completion only; a
+      // resubmitted 1003 must not re-page.
+      const firstCompletion = !existingRaw || (existingRaw as any).app_completed !== true;
+      if (firstCompletion) {
+        after(async () => {
+          try {
+            const { notifyTeam } = await import("@/lib/notify/leadAlert");
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+            const who = full_name || email || phone || "A borrower";
+            await notifyTeam(
+              `📋 FULL APPLICATION COMPLETED — ${who}${tier ? ` (${tier})` : ""}`,
+              `${who} just completed the FULL loan application (1003).\n\n` +
+              `Product: ${body.loan_purpose || "—"}\n` +
+              `State: ${body.state || "—"}\n` +
+              `Tier: ${tier || "—"} (score ${score ?? "—"})\n\n` +
+              `They have NOT uploaded documents yet. Fastest close: convert the lead to a loan file and request documents while it's hot.\n\n` +
+              `Open the lead (Convert to Application button is on the thread):\n${appUrl}/leads?leadId=${data.id}`
+            );
+          } catch (e) { console.warn("[/api/apply] app-completed alert failed:", e); }
+        });
+      }
       // WHITE-GLOVE CONNECT (2026-07-12): finishing the application is a commitment
       // moment — reach out warmly and offer the three ways to reach a real person
       // (video / phone / talk now). De-duped 6h inside offerConnection.
@@ -420,9 +446,12 @@ export async function POST(req: NextRequest) {
           } catch (e) { console.warn("[/api/apply] instant-call trigger failed:", e); }
         });
       }
-    } else if (!quarantined && !promoteScheduled) {
+    } else if (!quarantined && !promoteScheduled && !(body as any).app_completed) {
       // A KNOWN lead came back — strong signal. Alert the team AND text/email them a
       // warm check-in (throttled 1/24h — never a duplicate barrage).
+      // (Skipped when this resubmission IS a completed 1003: the FULL APPLICATION
+      // alert above already pages the team, and the white-glove connect handles
+      // the borrower touch — "saw you stopped by" right after finishing reads wrong.)
       // A different NAME on the same contact details gets flagged as a likely
       // duplicate/junk form fill so Ramon can spot fake leads (and dispute ad charges).
       // THROTTLED to one alert per lead per 24h: webhook redeliveries / double-submits

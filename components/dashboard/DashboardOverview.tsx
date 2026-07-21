@@ -16,6 +16,8 @@ type Stats = {
   volume: { pipeline: number; funded: number; leadRequested: number; total: number };
   recentLeads: { id: string; name: string; purpose: string; tier: string | null; stage: string; amount: number; created_at: string }[];
   recentFiles: { id: string; borrower: string; stage: string; amount: number; created_at: string }[];
+  // Completed 1003s with no documents yet (optional: older API payloads lack it).
+  appsAwaitingDocs?: { id: string; name: string; purpose: string; tier: string | null; stage: string; amount: number; created_at: string }[];
 };
 
 const money = (n: number) => "$" + Math.round(n || 0).toLocaleString();
@@ -68,8 +70,43 @@ export default function DashboardOverview() {
     </div>
   );
 
+  const ago = (iso: string) => {
+    const h = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 3600000));
+    if (h < 1) return "just now";
+    if (h < 24) return `${h}h ago`;
+    const d = Math.round(h / 24);
+    return d === 1 ? "yesterday" : `${d}d ago`;
+  };
+  const apps = s.appsAwaitingDocs || [];
+
   return (
     <div className="space-y-4">
+      {/* Completed applications with no docs yet — the hottest follow-ups in the
+          building. Loud and first: a finished 1003 must never be invisible just
+          because the borrower hasn't uploaded a document yet. */}
+      {apps.length > 0 && (
+        <div className="bg-gradient-to-br from-amber-950/40 to-slate-900/50 border border-amber-700/50 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs uppercase tracking-wide text-amber-400">📋 Completed applications — awaiting documents ({apps.length})</div>
+            <Link href="/leads" className="text-[11px] text-amber-400 hover:underline">All leads →</Link>
+          </div>
+          <div className="space-y-2">
+            {apps.map((l) => (
+              <Link key={l.id} href={`/leads?leadId=${l.id}`} className="flex items-center justify-between gap-2 border-b border-amber-900/30 pb-2 text-sm hover:bg-slate-900/40 rounded px-1">
+                <div className="min-w-0">
+                  <div className="font-medium truncate text-white">{l.name} {l.tier === "Tier 1" && <span className="text-[10px] font-bold text-amber-300 bg-amber-500/15 rounded-full px-1.5 py-0.5 align-middle">🔥 TIER 1</span>}</div>
+                  <div className="text-[11px] text-slate-400 truncate">{l.purpose} · application done, no docs yet · {ago(l.created_at)}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-xs text-slate-300">{l.amount ? compact(l.amount) : "—"}</div>
+                  <div className="text-[10px] text-amber-400">Follow up →</div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card icon={<Users className="w-4 h-4" />} label="Leads">
