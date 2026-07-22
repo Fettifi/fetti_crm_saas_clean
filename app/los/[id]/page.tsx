@@ -41,6 +41,14 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [docBusy, setDocBusy] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<{ id: string; name: string } | null>(null);
   const [rejectNote, setRejectNote] = useState("");
+  // Combine PDFs: pick several uploaded docs (e.g. a bond that came in as separate scans)
+  // and merge them, in click order, into one PDF saved on the file.
+  const [combineMode, setCombineMode] = useState(false);
+  const [combineSel, setCombineSel] = useState<string[]>([]); // ordered selection = page order
+  const [combining, setCombining] = useState(false);
+  const [combineName, setCombineName] = useState("");
+  const [combineRemove, setCombineRemove] = useState(false);
+  const [combineMsg, setCombineMsg] = useState<string | null>(null);
   const uploadTargetRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -153,6 +161,27 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   async function patchDoc(doc_id: string, status: string, notes?: string) {
     await fetch(`/api/los/files/${id}/docs`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ doc_id, status, ...(notes !== undefined ? { notes } : {}) }) });
     await load();
+  }
+  // Combine helpers — only uploaded PDF/JPG/PNG can be merged; click order = page order.
+  const isCombinable = (d: Doc) => (d.status === "received" || d.status === "accepted") && !!d.storage_path && /\.(pdf|jpe?g|png)$/i.test(d.file_name || d.storage_path || "");
+  const toggleCombine = (docId: string) => setCombineSel((s) => (s.includes(docId) ? s.filter((x) => x !== docId) : [...s, docId]));
+  function exitCombine() { setCombineMode(false); setCombineSel([]); setCombineName(""); setCombineRemove(false); }
+  async function combineDocs() {
+    if (combineSel.length < 2) return;
+    setCombining(true); setCombineMsg(null);
+    try {
+      const r = await fetch(`/api/los/files/${id}/combine-docs`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docIds: combineSel, name: combineName.trim() || undefined, removeOriginals: combineRemove }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setCombineMsg(j.error || "Couldn't combine those documents."); }
+      else {
+        await load();
+        exitCombine();
+        setCombineMsg(`✓ Combined ${(j.merged || []).length} into “${j.document?.name}” (${j.pages} page${j.pages === 1 ? "" : "s"})${(j.skipped || []).length ? ` · skipped ${(j.skipped).length} (${j.skipped.join("; ")})` : ""}${j.removedOriginals ? ` · removed ${j.removedOriginals} originals` : ""}`);
+      }
+    } catch (e: any) { setCombineMsg(e?.message || "Couldn't combine those documents."); } finally { setCombining(false); }
   }
   // Reject WITH a reason — sets the doc to "rejected" + the note, which re-adds it to
   // the borrower's missing items and shows them WHY on their portal + in the reminder.
@@ -362,8 +391,13 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
           <div className="lg:col-span-2 bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="text-xs uppercase tracking-wide text-slate-500">Documents & conditions</div>
-              <a href={`/esign?file=${id}`} className="text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1">✍️ Send for signature</a>
+              <div className="flex items-center gap-3">
+                <button onClick={() => (combineMode ? exitCombine() : (setCombineMode(true), setCombineMsg(null)))} className={`text-xs font-semibold flex items-center gap-1 ${combineMode ? "text-amber-400 hover:text-amber-300" : "text-emerald-400 hover:text-emerald-300"}`}>{combineMode ? "✕ Cancel combine" : "🔗 Combine PDFs"}</button>
+                <a href={`/esign?file=${id}`} className="text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1">✍️ Send for signature</a>
+              </div>
             </div>
+            {combineMode && <div className="text-[11px] text-amber-300/90 bg-amber-950/20 border border-amber-800/40 rounded-lg px-3 py-2 mb-2">Tick the files to merge (a bond that came in as separate scans, etc.) — they combine into one PDF in the order you tick them.</div>}
+            {combineMsg && !combineMode && <div className="text-[11px] text-emerald-300 bg-emerald-950/20 border border-emerald-800/40 rounded-lg px-3 py-2 mb-2">{combineMsg}</div>}
             {borrowers.length > 1 && (
               <div className="flex items-center gap-1.5 flex-wrap mb-3">
                 <span className="text-[11px] text-slate-500">Outstanding for:</span>
@@ -382,11 +416,19 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                 // NOT provided (re-upload needed) and stays in the missing queue.
                 const provided = d.status === "received" || d.status === "accepted";
                 return (
-                  <div key={d.id} className={`flex items-center justify-between gap-2 border-b border-slate-800/50 pb-2 ${rejected ? "bg-red-950/20 -mx-2 px-2 rounded" : ""}`}>
-                    <div className="min-w-0">
+                  <div key={d.id} className={`flex items-center justify-between gap-2 border-b border-slate-800/50 pb-2 ${rejected ? "bg-red-950/20 -mx-2 px-2 rounded" : ""} ${combineMode && combineSel.includes(d.id) ? "bg-emerald-950/20 -mx-2 px-2 rounded" : ""}`}>
+                    <div className="min-w-0 flex items-center gap-2">
+                      {combineMode && (isCombinable(d)
+                        ? <label className="shrink-0 flex items-center gap-1 cursor-pointer" title="Include in the combined PDF">
+                            <input type="checkbox" checked={combineSel.includes(d.id)} onChange={() => toggleCombine(d.id)} className="accent-emerald-500 w-4 h-4" />
+                            {combineSel.includes(d.id) && <span className="text-[10px] text-emerald-400 font-bold w-3 text-center">{combineSel.indexOf(d.id) + 1}</span>}
+                          </label>
+                        : <span className="shrink-0 w-4 text-center text-slate-700" title="Only uploaded PDF / JPG / PNG can be combined">·</span>)}
+                      <div className="min-w-0">
                       <div className="font-medium truncate">{d.name} {d.required && !provided && <span className="text-[10px] text-amber-400/70">required</span>}{borrowers.length > 1 && (d.borrowerName || primaryName) && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 align-middle">{(d.borrowerName || primaryName)!.split(" ")[0]}</span>}</div>
                       <div className={`text-xs ${badge(d.status)}`}>{rejected ? "rejected · not provided — awaiting new upload" : `${d.status}${d.file_name ? ` · ${d.file_name}` : ""}`}</div>
                       {rejected && d.notes && <div className="text-[11px] text-red-300/90 mt-0.5">↩︎ Sent back: {d.notes}</div>}
+                      </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {d.storage_path && <button onClick={() => viewDoc(d.id, d.name)} title={rejected ? "View the rejected copy" : "View"} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">View</button>}
@@ -399,6 +441,23 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                 );
               })}
             </div>
+            {/* Combine selected docs into one PDF (order = tick order). */}
+            {combineMode && (
+              <div className="mt-3 bg-slate-900/60 border border-emerald-800/40 rounded-xl p-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input value={combineName} onChange={(e) => setCombineName(e.target.value)} placeholder="Combined file name (optional)" className="flex-1 min-w-[160px] bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none" />
+                  <button onClick={combineDocs} disabled={combining || combineSel.length < 2} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold px-4 py-2 rounded-lg text-sm">
+                    {combining ? "Combining…" : `🔗 Combine ${combineSel.length || ""} into one PDF`}
+                  </button>
+                </div>
+                <label className="flex items-center gap-1.5 mt-2 text-[11px] text-slate-400 cursor-pointer">
+                  <input type="checkbox" checked={combineRemove} onChange={(e) => setCombineRemove(e.target.checked)} className="accent-red-500" />
+                  Remove the original files after combining (they&apos;re replaced by the merged PDF)
+                </label>
+                {combineMsg && <div className="text-[11px] text-red-300 mt-2">{combineMsg}</div>}
+              </div>
+            )}
+
             {/* LO can drop a file straight in (e.g. one the borrower emailed) — as a new
                 checklist item; or use the per-row Upload to satisfy an existing item. */}
             <div className="mt-3">
