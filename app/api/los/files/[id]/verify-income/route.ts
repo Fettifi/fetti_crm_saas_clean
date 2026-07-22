@@ -11,6 +11,8 @@ import { logActivity } from "@/lib/activity";
 import { getSetting, setSetting } from "@/lib/settings";
 import { assembleUrla, type Urla } from "@/lib/urla";
 import type { LoanType } from "@/lib/income";
+import sharp from "sharp";
+import { compressPdfIfNeeded } from "@/lib/pdfCompress";
 
 export const runtime = "nodejs";
 // 300s: the 745ea431-class big file already ran ~60s at a 4k output cap; the
@@ -23,7 +25,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-22-variable-omit-addback-code";
+const LOGIC_VERSION = "2026-07-22-read-all-docs-no-cap";
 const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {
@@ -188,21 +190,47 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const tagName = new Map<string, string>(); // tag -> display name (for flags on drop)
     const read: string[] = [];
     const unreadable: string[] = [];
+    const overflow: string[] = [];             // docs that didn't fit the single request's size budget
     const seenHash = new Set<string>();
     let docSeq = 0;
+    // NO fixed document cap (Ramon: "no limit on income documents"). We read EVERY unique
+    // income doc on the file. The only bound is the Anthropic request size (~32MB), so we
+    // SHRINK big scans first — sharp downsizes photo images, pdfCompress shrinks scanned
+    // PDFs — keeping them OCR-legible while cutting bytes, so in practice everything fits.
+    // A doc that STILL won't fit is held back and FLAGGED (never silently dropped), and
+    // HARD_MAX is only a runaway guard.
+    const HARD_MAX = 40;
+    const MAX_PAYLOAD_B64 = 26 * 1024 * 1024;  // headroom under the 32MB request limit
+    const b64size = (n: number) => Math.ceil(n / 3) * 4;
+    let payloadB64 = 0;
     for (const d of candidates) {
-      if (read.length >= MAX_DOCS) break;
+      if (read.length >= HARD_MAX) { overflow.push(d.name || d.file_name || "document"); continue; }
       const name = d.name || d.file_name || "document";
       const { data: blob, error } = await supabaseAdmin.storage.from(BUCKET).download(d.storage_path as string);
       if (error || !blob) { unreadable.push(name); continue; }
       let mt = (blob as any).type || mediaTypeFor(d.file_name || d.storage_path || "");
       if (!MEDIA.has(mt)) mt = mediaTypeFor(d.file_name || "");
       if (!MEDIA.has(mt)) { unreadable.push(name); continue; }
-      const buf = Buffer.from(await blob.arrayBuffer());
+      let buf = Buffer.from(await blob.arrayBuffer());
       const hash = crypto.createHash("sha1").update(buf).digest("hex");
       if (seenHash.has(hash)) continue; // exact same file already included (multi-slot dup) — silently skip
       seenHash.add(hash);
       if (mt === "application/pdf" && !pdfLooksValid(buf)) { unreadable.push(name); continue; } // truncated/corrupt
+      // Shrink large files so ALL of them fit one read (kept legible for the AI's OCR).
+      try {
+        if (mt === "application/pdf" && buf.length > 1_800_000) {
+          const c = await compressPdfIfNeeded(buf, { targetBytes: 1_400_000 });
+          if (c?.buf && c.buf.length && c.buf.length < buf.length) buf = Buffer.from(c.buf);
+        } else if (mt !== "application/pdf" && buf.length > 600_000) {
+          const img = await sharp(buf).rotate().resize({ width: 2200, height: 2200, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
+          if (img.length && img.length < buf.length) { buf = img; mt = "image/jpeg"; }
+        }
+      } catch { /* keep the original on any compression error */ }
+      // Payload budget: hold a doc back (and flag it) only if it would push the request
+      // past the API's size limit — but always keep at least one so a read never no-ops.
+      const sz = b64size(buf.length);
+      if (read.length >= 1 && payloadB64 + sz > MAX_PAYLOAD_B64) { overflow.push(name); continue; }
+      payloadB64 += sz;
       const tag = `d${docSeq++}`; tagName.set(tag, name);
       blocks.push({ type: "text", text: `--- Document: ${name} ---` }); blockTag.push(tag);
       blocks.push(mt === "application/pdf"
@@ -335,6 +363,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // knows income evidence was skipped and can re-request a clean copy — rather than the
     // read silently omitting them or hard-failing.
     const unreadableFlags = unreadable.map((nm) => `Couldn't read "${nm}" — the file looks truncated or corrupt; income from it was NOT counted. Re-request a clean copy from the borrower.`);
+    // If any income doc was too large to fit one read, say so loudly — never silent.
+    const overflowFlags = overflow.length ? [`${overflow.length} income document(s) were too large to fit in a single read and were NOT counted this pass: ${overflow.slice(0, 8).join(", ")}. Combine or compress them (use “Combine PDFs”) and re-verify so their income is included.`] : [];
     // Flags are objects {text, addBackMonthly, borrower}: a flag that gates held-back
     // income carries the $ that OMITTING it adds to the total. Normalize (accept legacy
     // string flags too) so the UI can wire Omit → +income.
@@ -344,7 +374,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const report = {
       perDoc: Array.isArray(parsed.perDoc) ? parsed.perDoc.slice(0, 20) : [],
       crossChecks: Array.isArray(parsed.crossChecks) ? parsed.crossChecks.slice(0, 20) : [],
-      flags: [...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 })), ...(Array.isArray(parsed.flags) ? parsed.flags : []).map(normFlag)].slice(0, 20),
+      flags: [...overflowFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 })), ...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 })), ...(Array.isArray(parsed.flags) ? parsed.flags : []).map(normFlag)].slice(0, 20),
       confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "low",
       notes: typeof parsed.notes === "string" ? parsed.notes.slice(0, 600) : "",
     };
@@ -370,11 +400,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // result-shaped object so the worksheet PDF (which renders result.lines) keeps working.
     const result = { monthlyTotal: qualifyingMonthlyIncome, annualTotal: qualifyingMonthlyIncome * 12, lines: breakdown.map((l: any) => ({ label: l.label, basis: l.basis, monthly: l.monthly })), warnings: [] as string[], derivedDebts: 0 };
 
-    await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, actor: "ai:underwriter", action: "income.verified", detail: { docsRead: read.length, monthlyIncome: qualifyingMonthlyIncome, confidence: report.confidence, flags: report.flags.length, unreadable: unreadable.length, force } }).catch(() => {});
+    await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, actor: "ai:underwriter", action: "income.verified", detail: { docsRead: read.length, monthlyIncome: qualifyingMonthlyIncome, confidence: report.confidence, flags: report.flags.length, unreadable: unreadable.length, overflow: overflow.length, force } }).catch(() => {});
 
     // Freeze this read against the doc-set fingerprint so the SAME file returns the SAME
     // number until its documents change (or the LO forces a re-read).
-    const payload = { perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, loanType };
+    const payload = { perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType };
     const verifiedAt = new Date().toISOString();
     await setSetting(CACHE_KEY, JSON.stringify({ fingerprint, verifiedAt, payload })).catch(() => {});
     return NextResponse.json({ ...payload, cached: false, verifiedAt });
