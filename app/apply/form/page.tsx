@@ -611,7 +611,7 @@ export default function ApplyWizard() {
       income_is_monthly: true, // scorer hint: wizard income is genuinely monthly (Meta forms may be annual)
       // Discrete identity / URLA fields so the 1003 captures them structurally
       // (not just in the notes summary). SSN is encrypted server-side; never in notes.
-      dob: a.dob || undefined,
+      dob: dobISO(a.dob),
       ssn: a.ssn || undefined,
       citizenship: a.citizenship || undefined,
       marital_status: a.marital || undefined,
@@ -629,7 +629,7 @@ export default function ApplyWizard() {
         co_full_name: a.co_full_name || undefined,
         co_email: a.co_email || undefined,
         co_phone: a.co_phone || undefined,
-        co_dob: a.co_dob || undefined,
+        co_dob: dobISO(a.co_dob),
         co_ssn: a.co_ssn || undefined,
         co_citizenship: a.co_citizenship || undefined,
         co_lives_together: a.co_lives_together || undefined,
@@ -893,6 +893,33 @@ export default function ApplyWizard() {
   );
 }
 
+// DOB entry: a native <input type="date"> opens the picker on the CURRENT month,
+// so a borrower born decades ago has to scroll back 40+ years — the #1 friction
+// point here. Instead we use a plain numeric text field and auto-insert the
+// slashes as they type (8 keystrokes; numeric keypad on mobile). Display is
+// MM/DD/YYYY; we normalize to ISO (YYYY-MM-DD) only at submit so the MISMO/credit
+// exports (which require CCYY-MM-DD) are unchanged.
+function fmtDob(v: string): string {
+  const t = (v || "").trim();
+  // A prefilled ISO date (magic-link) arrives as YYYY-MM-DD — show it as MM/DD/YYYY.
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
+  const d = t.replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
+function dobISO(v?: string): string | undefined {
+  if (!v) return undefined;
+  const t = v.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t; // already ISO (prefill)
+  const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return undefined; // incomplete → omit (dob is optional)
+  const mm = +m[1], dd = +m[2], yyyy = +m[3];
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31 || yyyy < 1900 || yyyy > 2020) return undefined;
+  return `${m[3]}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+}
+
 function QuestionView({ q, input, setInput, onAnswer, onSkip }: {
   q: Q; input: string; setInput: (v: string) => void; onAnswer: (v: string) => void; onSkip?: () => void;
 }) {
@@ -930,10 +957,23 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip }: {
               className={field}
               onKeyDown={(e) => { if (e.key === "Enter" && input) onAnswer(input); }}
             />
+          ) : q.kind === "date" ? (
+            <input
+              autoFocus
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={fmtDob(input)}
+              onChange={(e) => setInput(fmtDob(e.target.value))}
+              placeholder="MM/DD/YYYY"
+              maxLength={10}
+              className={field}
+              onKeyDown={(e) => { if (e.key === "Enter" && dobISO(input)) onAnswer(input); }}
+            />
           ) : (
             <input
               autoFocus
-              type={q.kind === "date" ? "date" : "text"}
+              type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={q.placeholder}
@@ -941,7 +981,7 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip }: {
               onKeyDown={(e) => { if (e.key === "Enter" && input) onAnswer(input); }}
             />
           )}
-          <button disabled={!input} onClick={() => onAnswer(input)}
+          <button disabled={q.kind === "date" ? !dobISO(input) : !input} onClick={() => onAnswer(input)}
             className="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold py-3 rounded-full">Continue →</button>
           {onSkip && (
             <button onClick={onSkip} className="w-full mt-2 text-slate-400 hover:text-slate-600 text-sm">Skip for now</button>
