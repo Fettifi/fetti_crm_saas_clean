@@ -25,7 +25,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-22-read-all-docs-no-cap";
+const LOGIC_VERSION = "2026-07-22-distinct-income-streams";
 const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {
@@ -51,6 +51,7 @@ PRINCIPLES (use judgment — do not be mechanical):
 - FIXED / BENEFIT (Social Security, pension, disability, child support, alimony, VA): monthly amount; gross up ONLY documented non-taxable income (×1.25 conventional / ×1.15 FHA).
 - RENTAL: net of the property's PITIA; a net loss is a debt, not income.
 - Do NOT double-count: a pay stub and its W-2 describe the SAME wages.
+- DISTINCT INCOME STREAMS vs the SAME stream counted twice (CRITICAL — READ THE DETAILS ON EACH DOCUMENT, don't guess): identify each income stream by its DISTINGUISHING identifiers printed on the documents — the EMPLOYER/PAYER name, the EIN, and any case / recipient / account / provider number. Two documents that share the SAME payer (+ EIN / case number) are the SAME job → count it ONCE; a stream's 2-YEAR AVERAGE and that SAME stream's CURRENT pay stub are the same income, so output ONE line for it, NEVER an average line PLUS a current-stub line for the same job. Two documents with DIFFERENT payer / EIN / case numbers are SEPARATE jobs → count each. **IHSS specifically (In-Home Supportive Services):** one provider can serve MULTIPLE recipients, each a SEPARATE case with its own recipient name + case number on the stub. Two IHSS stubs are two countable jobs ONLY IF the RECIPIENT / CASE numbers DIFFER; if both stubs show the SAME recipient/case, it is ONE job (do NOT add its 2-yr average and its current stub together). ALWAYS cite the distinguishing identifier in each breakdown line's "basis" (e.g. "IHSS recipient #A1234 (Alameda Co.)" vs "IHSS recipient #B5678" — or, if merged, "same IHSS case #A1234 — current stub used, not added to the 2-yr avg") so WHY two lines are separate, or merged into one, is visible on the worksheet.
 - FLAGS CARRY A DOLLAR AMOUNT when they gate income: whenever a flag is the REASON some COUNTABLE income is being held OUT of the qualifying total (OT/variable not yet 2-yr-seasoned, an un-averaged bonus, a co-borrower's income you left at 0 pending a doc, gross-up you didn't apply), set that flag's "addBackMonthly" to the monthly $ (and "borrower") that WOULD be counted if the LO overrides the concern — so the LO can OMIT the flag to add exactly that income. Purely advisory flags (verify pay frequency, confirm continuity, re-request a corrupt doc) get addBackMonthly 0.
 
 Compute per borrower, then output ONLY this JSON:
