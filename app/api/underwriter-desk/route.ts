@@ -17,8 +17,9 @@ import { resolveLocation } from "@/lib/propertyData";
 import { getLenders } from "@/lib/pricing/lenders";
 import { taxLookupFor } from "@/lib/underwrite/taxLinks";
 import { createLoanFileFromLead } from "@/lib/los";
-import { computeDeskMetrics, LOAN_BOX, TITLE_SYSTEM, UNDERWRITE_SYSTEM, type DeskInput, type DeskLoanType } from "@/lib/underwritingDesk";
+import { computeDeskMetrics, LOAN_BOX, TITLE_SYSTEM, UNDERWRITE_SYSTEM, PROPERTY_WEB_SYSTEM, type DeskInput, type DeskLoanType, type WebPropertyPull } from "@/lib/underwritingDesk";
 import { buildUnderwritingDeskPdf } from "@/lib/underwritingDeskPdf";
+import { searchWeb } from "@/lib/integrations/search";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -120,6 +121,36 @@ async function acsMarket(zip?: string) {
   return null;
 }
 
+// Auto-pull the subject property's own facts from the public web (Serper/Google). Two
+// targeted searches (value+size+rent, then tax/assessor/sale), deduped and capped, then
+// an AI extraction of ONLY what the snippets state. Best-effort, timeout-bounded, non-fatal.
+async function searchPropertyWeb(addr: string): Promise<{ title: string; url: string; content: string }[]> {
+  const a = addr.trim();
+  if (a.length < 6) return [];
+  const queries = [
+    `${a} home value Zestimate Redfin estimate beds baths sqft rent`,
+    `${a} county assessor property tax assessed value last sold price`,
+  ];
+  const batches = await Promise.all(queries.map((q) => searchWeb(q).catch(() => [] as any[])));
+  const seen = new Set<string>();
+  const out: { title: string; url: string; content: string }[] = [];
+  for (const b of batches) for (const r of (b || [])) {
+    const key = String(r?.url || r?.title || "").toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ title: str(r.title, 160), url: str(r.url, 300), content: str(r.content, 600) });
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
+async function extractPropertyFacts(results: { title: string; url: string; content: string }[], addr: string): Promise<WebPropertyPull | null> {
+  if (!results.length) return null;
+  const content = [{ type: "text", text: `SUBJECT ADDRESS: ${addr}\n\nWEB RESULTS:\n${JSON.stringify(results)}\n\nExtract the subject property's facts. JSON only.` }];
+  try { return (await callClaude(PROPERTY_WEB_SYSTEM, content, 1500)) as WebPropertyPull; }
+  catch { return null; }
+}
+
 function docBlocks(docs: any): any[] {
   const blocks: any[] = [];
   for (const d of (Array.isArray(docs) ? docs : []).slice(0, 6)) {
@@ -207,30 +238,50 @@ export async function POST(req: NextRequest) {
   // ── UNDERWRITE (default) ─────────────────────────────────────────────────────
   try {
     const input = sanitizeInput(body.input || body);
-    if (!input.loanAmount || !input.asIsValue) return NextResponse.json({ error: "Enter at least a loan amount and an as-is value / purchase price." }, { status: 422 });
+    // The loan amount is the ask and is always required. The property VALUE can be
+    // auto-pulled from the web below, so we don't hard-gate on it up front anymore.
+    if (!input.loanAmount) return NextResponse.json({ error: "Enter a loan amount to underwrite." }, { status: 422 });
 
-    // 1) Geocode (free Census/OSM) — best-effort.
+    const one = [input.address, input.city, input.state, input.zip].filter(Boolean).join(", ");
+
+    // 1) Geocode (free Census/OSM) — best-effort; also backfills ZIP/state.
     let geo: any = null;
-    try { const one = [input.address, input.city, input.state, input.zip].filter(Boolean).join(", "); if (one) geo = await verifyAddress(one); } catch { /* non-fatal */ }
+    try { if (one) geo = await verifyAddress(one); } catch { /* non-fatal */ }
     const zip = input.zip || geo?.zip || "";
     const state = input.state || geo?.state || "";
-
-    // 2) ZIP tax/insurance rates + county + 3) Census market + 4) county-treasurer tax link.
     const loc = zip ? resolveLocation(zip) : null;
-    const market = await acsMarket(zip);
+
+    // 2) Census market + 3) (NEW) public-web property search — run in parallel.
+    const [market, webResults] = await Promise.all([
+      acsMarket(zip),
+      one ? searchPropertyWeb(one) : Promise.resolve([] as { title: string; url: string; content: string }[]),
+    ]);
+    // 4) county-treasurer tax link.
     let taxLink: any = null;
     try { taxLink = taxLookupFor({ id: "desk", address: input.address || geo?.standardized || "", city: input.city || "", state, zip, county: loc?.countyName || "" } as any); } catch { /* non-fatal */ }
 
-    // 5) AI-read the uploaded TitlePro / assessor profile (if any).
-    let titleRead: any = null;
+    // 5) Two AI reads in parallel: the uploaded title/assessor doc (if any) AND the subject
+    //    property's own facts extracted from the web-search snippets (value/rent/size/tax).
     const blocks = docBlocks(body.docs);
-    if (blocks.length) {
-      try { titleRead = await callClaude(TITLE_SYSTEM, [...blocks, { type: "text", text: "Extract the property / title / tax facts. JSON only." }], 2500); }
-      catch (e: any) { titleRead = { error: e?.message || "Couldn't read the uploaded document." }; }
-    }
+    const [titleRead, webPullRaw] = await Promise.all([
+      blocks.length
+        ? callClaude(TITLE_SYSTEM, [...blocks, { type: "text", text: "Extract the property / title / tax facts. JSON only." }], 2500).catch((e: any) => ({ error: e?.message || "Couldn't read the uploaded document." }))
+        : Promise.resolve(null as any),
+      extractPropertyFacts(webResults, one),
+    ]);
+    // Only trust the web pull when it actually matched the SUBJECT address.
+    const webPull = (webPullRaw && !(webPullRaw as any).error && webPullRaw.matchedAddress) ? webPullRaw : null;
 
-    // 6) Deterministic metrics (fill tax/ins from the ZIP resolver if not overridden).
-    const metrics = computeDeskMetrics({ ...input, state, taxRatePct: input.taxRatePct || loc?.taxRatePct, insRatePct: input.insRatePct || loc?.insRatePct });
+    // Backfill the deal's value / rent from the web pull when the LO left them blank, so an
+    // address alone still underwrites. The LO's typed numbers ALWAYS win when present.
+    const effAsIs = input.asIsValue || Number(webPull?.estimatedValue) || Number(webPull?.lastSalePrice) || 0;
+    const valueSource = input.asIsValue ? "entered" : (webPull?.estimatedValue ? `web:${webPull.valueBasis || "estimate"}` : webPull?.lastSalePrice ? "web:recent sale" : "none");
+    const effRent = input.monthlyRent || Number(webPull?.estimatedRent) || undefined;
+    const rentSource = input.monthlyRent ? "entered" : (webPull?.estimatedRent ? "web:Rent Zestimate" : "none");
+    if (!effAsIs) return NextResponse.json({ error: "Couldn't find a value for this address online — enter an as-is value / purchase price.", webPull }, { status: 422 });
+
+    // 6) Deterministic metrics (value/rent may be web-backfilled; tax/ins from ZIP resolver).
+    const metrics = computeDeskMetrics({ ...input, asIsValue: effAsIs, monthlyRent: effRent, state, taxRatePct: input.taxRatePct || loc?.taxRatePct, insRatePct: input.insRatePct || loc?.insRatePct });
 
     // 7) Approved wholesale lenders for matching.
     let lenders: any[] = [];
@@ -239,11 +290,14 @@ export async function POST(req: NextRequest) {
     // 8) AI underwriting synthesis.
     const box = LOAN_BOX[input.loanType];
     const brief = {
-      deal: { borrower: input.borrower, address: [input.address, input.city, input.state, input.zip].filter(Boolean).join(", "), loanType: box.label, lienPosition: input.lienPosition, loanAmount: input.loanAmount, asIsValue: input.asIsValue, arv: input.arv, existingSeniorLiens: input.existingLiens, rehabBudget: input.rehabBudget, monthlyRent: input.monthlyRent, propertyType: input.propertyType, occupancy: input.occupancy, fico: input.fico },
+      deal: { borrower: input.borrower, address: one, loanType: box.label, lienPosition: input.lienPosition, loanAmount: input.loanAmount, asIsValue: effAsIs, asIsValueSource: valueSource, arv: input.arv, existingSeniorLiens: input.existingLiens, rehabBudget: input.rehabBudget, monthlyRent: effRent, monthlyRentSource: rentSource, propertyType: input.propertyType, occupancy: input.occupancy, fico: input.fico },
       programBox: box,
       metrics,
       titleRead: titleRead && !titleRead.error ? titleRead : null,
       titleReadError: titleRead?.error || null,
+      // NEW: auto-pulled subject-property facts from public web (Zillow/Redfin/assessor).
+      // These are AVM ESTIMATES, not appraised value — reconcile, don't rely on.
+      webPropertyData: webPull,
       market, taxLinkKnown: !!taxLink,
       approvedLenders: lenders,
     };
@@ -251,13 +305,14 @@ export async function POST(req: NextRequest) {
     try { underwrite = await callClaude(UNDERWRITE_SYSTEM, [{ type: "text", text: "Underwrite this deal:\n" + JSON.stringify(brief) }], 3000); }
     catch (e: any) { underwrite = { error: e?.message || "Underwriting synthesis failed — metrics still shown." }; }
 
-    await logActivity({ entity_type: "underwriting_desk", entity_id: (zip || "deal").slice(0, 40), actor: "ai:underwriter", action: "desk.underwrite", detail: { loanType: input.loanType, verdict: underwrite?.verdict, ltv: metrics.ltv, dscr: metrics.dscr } }).catch(() => {});
+    await logActivity({ entity_type: "underwriting_desk", entity_id: (zip || "deal").slice(0, 40), actor: "ai:underwriter", action: "desk.underwrite", detail: { loanType: input.loanType, verdict: underwrite?.verdict, ltv: metrics.ltv, dscr: metrics.dscr, webPull: !!webPull } }).catch(() => {});
 
     return NextResponse.json({
-      input,
+      input: { ...input, asIsValue: effAsIs, monthlyRent: effRent },
+      valueSource, rentSource,
       geo: geo ? { standardized: geo.standardized, lat: geo.lat, lng: geo.lng, mapsUrl: geo.mapsUrl } : null,
       location: loc ? { countyName: loc.countyName, state: loc.state, taxRatePct: loc.taxRatePct, insRatePct: loc.insRatePct } : null,
-      market, taxLink, titleRead, metrics, underwrite,
+      market, taxLink, titleRead, webPull, metrics, underwrite,
     });
   } catch (e: any) {
     console.error("[underwriter-desk]", e);

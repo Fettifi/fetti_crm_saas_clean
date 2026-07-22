@@ -179,7 +179,7 @@ export const UNDERWRITE_SYSTEM = `You are a senior real-estate loan underwriter 
  "verdict": "<Fundable | Fundable with conditions | Thin — restructure | Pass>",
  "dealScore": <0-100>,
  "summary": "<2-4 sentence underwriting read: is this fundable as structured, and why>",
- "valueOpinion": "<reconcile the entered value vs assessed value vs Census area medians; state a supportable value + confidence and whether an appraisal/BPO is needed>",
+ "valueOpinion": "<reconcile the entered/used value vs the auto-pulled web AVM estimate(s) (Zillow/Redfin — estimates, NOT appraisals) vs assessed value vs Census area medians; if the value was auto-pulled from the web (deal.asIsValueSource starts with 'web'), say so plainly and that an appraisal/BPO is required to confirm it; state a supportable value + confidence>",
  "ltvRead": "<assess LTV and CLTV vs the program box; for a 2nd-position loan, CLTV and the senior lien are the binding items>",
  "cashflowRead": "<DSCR read for rentals (vs the target), or the income/DTI note for consumer loans; if rental, is it self-supporting>",
  "titleLienRead": "<what the title/assessor docs show — vesting, senior lien(s), any clouds; what the prelim must clear. If no title doc was provided, say a property profile / prelim is required and what to confirm>",
@@ -192,7 +192,7 @@ export const UNDERWRITE_SYSTEM = `You are a senior real-estate loan underwriter 
  "bestLenders": [{"lenderName":"<from the approved list ONLY>","fit":"<Strong|Possible|Pass>","reason":"<why this wholesaler fits this loan type/scenario>"}],
  "nextSteps": ["<the immediate actions: pull the prelim, open title/escrow, order the appraisal, request payoffs, etc.>"]
 }
-Be specific and numeric. Never invent lenders — use ONLY the approved list provided (empty array if none fit). Anchor value claims to the assessed value + Census medians you were given. If a required input is missing, say so in conditions rather than guessing.`;
+Be specific and numeric. Never invent lenders — use ONLY the approved list provided (empty array if none fit). Anchor value claims to the web AVM estimate(s) + assessed value + Census medians you were given — but treat web AVMs as preliminary and always require an appraisal/BPO to confirm. If a required input is missing, say so in conditions rather than guessing.`;
 
 export type TitleRead = {
   ownerNames?: string[]; vesting?: string | null; legalDescription?: string | null; apn?: string | null;
@@ -202,4 +202,41 @@ export type TitleRead = {
   openLiens?: { lienType?: string; holder?: string; originalAmount?: number | null; estimatedBalance?: number | null; position?: number | null; recordedDate?: string | null }[];
   taxStatus?: { status?: string; amountOwed?: number | null; throughYear?: number | null; annualTaxes?: number | null };
   flags?: string[]; notes?: string;
+};
+
+// ── AI: auto-pull the SUBJECT property's facts from public-web search snippets ─────────
+// When no TitlePro/assessor doc is uploaded, the Desk still needs the property's own
+// numbers (value, rent, size, taxes). We Google the address (Zillow/Redfin/Realtor +
+// the county assessor) and have the model extract ONLY what the snippets state — a
+// preliminary read to seed the underwrite, always flagged "verify before funding".
+export const PROPERTY_WEB_SYSTEM = `You extract facts about ONE subject property from web-search result snippets (Zillow, Redfin, Realtor.com, county assessor / treasurer, listing sites). You are given the subject address and a list of {title,url,content} results. Pull only facts that CLEARLY refer to the subject address — ignore results for a different address, a neighborhood average, or an unrelated listing. Never invent or estimate a number that isn't stated in a snippet. Return ONLY valid JSON, no prose:
+{
+ "matchedAddress": "<the address the snippets describe, or null if none clearly match the subject>",
+ "estimatedValue": <best single value estimate $ | null>,
+ "valueBasis": "<'Zillow Zestimate' | 'Redfin Estimate' | 'Realtor.com estimate' | 'list price' | 'recent sale' | null>",
+ "valueLow": <low end of an estimate range $ | null>, "valueHigh": <high end $ | null>,
+ "estimatedRent": <monthly rent estimate $ | null>, "rentBasis": "<'Zillow Rent Zestimate' | 'listing rent' | 'rentometer' | null>",
+ "beds": <number|null>, "baths": <number|null>, "sqft": <building sqft number|null>, "yearBuilt": <number|null>, "lotSizeSqft": <number|null>,
+ "propertyType": "<SFR | condo | townhouse | 2-4 unit | multifamily | land | null>",
+ "lastSalePrice": <$|null>, "lastSaleDate": "<YYYY-MM|null>",
+ "assessedValue": <$|null>, "assessedYear": <number|null>, "annualPropertyTax": <$|null>,
+ "hoaMonthly": <$|null>, "listingStatus": "<for sale | pending | off market | sold | null>",
+ "sources": [{"label":"<Zillow | Redfin | Realtor.com | County Assessor | ...>","url":"<result url>"}],
+ "confidence": "<high | medium | low>",
+ "notes": "<one line: what an underwriter must still verify (appraisal/BPO, prelim, actual tax bill)>"
+}
+RULES: Estimates from Zillow/Redfin are AVMs, NOT appraisals — extract them but never treat them as confirmed value. If nothing clearly matches the subject address, set matchedAddress=null and all facts null with confidence "low". Cite each fact's site in sources. Return SSNs/DOBs? NO.`;
+
+export type WebPropertyPull = {
+  matchedAddress?: string | null;
+  estimatedValue?: number | null; valueBasis?: string | null; valueLow?: number | null; valueHigh?: number | null;
+  estimatedRent?: number | null; rentBasis?: string | null;
+  beds?: number | null; baths?: number | null; sqft?: number | null; yearBuilt?: number | null; lotSizeSqft?: number | null;
+  propertyType?: string | null;
+  lastSalePrice?: number | null; lastSaleDate?: string | null;
+  assessedValue?: number | null; assessedYear?: number | null; annualPropertyTax?: number | null;
+  hoaMonthly?: number | null; listingStatus?: string | null;
+  sources?: { label?: string; url?: string }[];
+  confidence?: "high" | "medium" | "low";
+  notes?: string;
 };

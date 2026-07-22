@@ -70,12 +70,24 @@ export default function UnderwritingDesk() {
   }
 
   async function runUnderwrite() {
-    if (!input.loanAmount || !input.asIsValue) { setErr("Enter at least a loan amount and an as-is value / purchase price."); return; }
+    // Value is optional now — the Desk auto-pulls it from the address when left blank.
+    if (!input.loanAmount) { setErr("Enter a loan amount to underwrite (value auto-pulls from the address)."); return; }
     setRunning(true); setErr(""); setResult(null);
     try {
       const r = await fetch("/api/underwriter-desk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "underwrite", input, docs }) });
       const j = await r.json();
-      if (!r.ok) { setErr(j?.error || "Underwrite failed."); } else { setResult(j); setTimeout(() => document.getElementById("uw-result")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60); }
+      if (!r.ok) { setErr(j?.error || "Underwrite failed."); }
+      else {
+        // Backfill the form with any value/rent the Desk pulled from the web, so the LO sees
+        // them, can override, and they carry into create-file / PDF. Typed values are kept.
+        setF((p: any) => ({
+          ...p,
+          ...(String(j?.valueSource || "").startsWith("web") && !num(p.asIsValue) && j?.input?.asIsValue ? { asIsValue: String(j.input.asIsValue) } : {}),
+          ...(String(j?.rentSource || "").startsWith("web") && !num(p.monthlyRent) && j?.input?.monthlyRent ? { monthlyRent: String(j.input.monthlyRent) } : {}),
+        }));
+        setResult(j);
+        setTimeout(() => document.getElementById("uw-result")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+      }
     } catch (e: any) { setErr(e?.message || "Underwrite failed."); } finally { setRunning(false); }
   }
 
@@ -105,6 +117,7 @@ export default function UnderwritingDesk() {
   const uw = result?.underwrite || {};
   const m = result?.metrics || preview;
   const tr = result?.titleRead;
+  const wp = result?.webPull;
 
   const Metric = ({ label, value, tone }: { label: string; value: any; tone?: "ok" | "warn" | "bad" }) => (
     <div className="bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2 text-center">
@@ -237,6 +250,36 @@ export default function UnderwritingDesk() {
             </div>
             {m.box && <div className={`mt-3 text-[11px] rounded-lg px-3 py-2 ${m.fits?.overall ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}>Program box ({m.box.label}): {m.box.usesARV ? `≤ ${m.box.maxLTV}% LTARV (loan-to-ARV)` : `≤ ${m.box.maxLTV}% LTV, ≤ ${m.box.maxCLTV}% CLTV`}{m.box.minDSCR ? `, ≥ ${m.box.minDSCR} DSCR` : ""} — {m.fits?.overall ? "fits as structured." : "outside the box — see restructure below."}</div>}
           </div>
+
+          {/* Auto-pulled property data (public web — Zillow/Redfin/assessor) */}
+          {wp && (wp.estimatedValue != null || wp.estimatedRent != null || wp.beds != null || wp.sqft != null || wp.assessedValue != null || wp.lastSalePrice != null || wp.annualPropertyTax != null) && (
+            <div className="bg-emerald-950/20 border border-emerald-800/40 rounded-2xl p-4">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="text-xs uppercase tracking-wide text-emerald-300">Auto-pulled property data{wp.matchedAddress ? ` · ${wp.matchedAddress}` : ""}</div>
+                <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">public web · {wp.confidence || "est."}</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm text-slate-300">
+                {wp.estimatedValue != null && <div>Est. value <span className="text-slate-100 font-semibold">{money(wp.estimatedValue)}</span>{wp.valueBasis ? <span className="text-[11px] text-slate-500"> ({wp.valueBasis})</span> : ""}</div>}
+                {wp.valueLow != null && wp.valueHigh != null && <div>Range <span className="text-slate-200">{money(wp.valueLow)}–{money(wp.valueHigh)}</span></div>}
+                {wp.estimatedRent != null && <div>Est. rent <span className="text-slate-100 font-semibold">{money(wp.estimatedRent)}/mo</span></div>}
+                {wp.beds != null && <div>Beds <span className="text-slate-200">{wp.beds}</span></div>}
+                {wp.baths != null && <div>Baths <span className="text-slate-200">{wp.baths}</span></div>}
+                {wp.sqft != null && <div>Sqft <span className="text-slate-200">{Number(wp.sqft).toLocaleString()}</span></div>}
+                {wp.yearBuilt != null && <div>Built <span className="text-slate-200">{wp.yearBuilt}</span></div>}
+                {wp.propertyType && <div>Type <span className="text-slate-200">{wp.propertyType}</span></div>}
+                {wp.lastSalePrice != null && <div>Last sale <span className="text-slate-200">{money(wp.lastSalePrice)}{wp.lastSaleDate ? ` · ${wp.lastSaleDate}` : ""}</span></div>}
+                {wp.assessedValue != null && <div>Assessed <span className="text-slate-200">{money(wp.assessedValue)}{wp.assessedYear ? ` (${wp.assessedYear})` : ""}</span></div>}
+                {wp.annualPropertyTax != null && <div>Prop. tax <span className="text-slate-200">{money(wp.annualPropertyTax)}/yr</span></div>}
+                {wp.hoaMonthly != null && <div>HOA <span className="text-slate-200">{money(wp.hoaMonthly)}/mo</span></div>}
+              </div>
+              {(wp.sources || []).length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+                  {wp.sources.map((s: any, i: number) => s?.url ? <a key={i} href={s.url} target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">{s.label || "source"}</a> : <span key={i} className="text-slate-500">{s?.label}</span>)}
+                </div>
+              )}
+              <p className="text-[10px] text-slate-500 mt-2">Preliminary estimates from public listings/records (Zillow/Redfin/assessor) — not an appraisal. Confirm value with an appraisal/BPO and taxes/liens with a preliminary title report before funding.{String(result.valueSource || "").startsWith("web") ? " The value above was auto-filled into the deal — override it if you have a better number." : ""}</p>
+            </div>
+          )}
 
           {/* Narrative sections */}
           {[["Value opinion", uw.valueOpinion], ["LTV / CLTV read", uw.ltvRead], [box.usesRental ? "Cash-flow read" : "Income / DTI read", uw.cashflowRead], ["Title, liens & vesting", uw.titleLienRead], ["Property tax status", uw.taxRead], ["Program fit", uw.programFit], ["Max loan read", uw.maxLoanRead], ["Exit (flip / bridge)", uw.exit]].map(([t, v]) => v ? (
