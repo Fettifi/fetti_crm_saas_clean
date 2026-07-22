@@ -22,6 +22,10 @@ export default function LosBoard() {
   const [leadOpts, setLeadOpts] = useState<{ id: string; label: string }[]>([]);
   const [picked, setPicked] = useState("");
   const [creating, setCreating] = useState(false);
+  // "New file" — start a fresh file for a borrower who isn't a lead yet.
+  const [newForm, setNewForm] = useState(false);
+  const [nf, setNf] = useState({ borrower: "", email: "", phone: "", product: "" });
+  const [creatingNew, setCreatingNew] = useState(false);
   // "New file from MISMO 1003 XML".
   const xmlRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState<string | null>(null);
@@ -81,6 +85,18 @@ export default function LosBoard() {
       else alert(j.error || "Could not create loan file.");
     } finally { setCreating(false); }
   }
+  // Start a brand-new file for a borrower who isn't a lead yet, then open it.
+  async function createNew() {
+    if (!nf.borrower.trim()) return;
+    setCreatingNew(true);
+    try {
+      const r = await fetch("/api/los/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ borrower: nf.borrower, email: nf.email, phone: nf.phone, product: nf.product }) });
+      const j = await r.json();
+      if (r.ok && j.file) { window.location.href = `/los/${j.file.id}`; }
+      else alert(j.error || "Could not create the loan file.");
+    } catch { alert("Connection error."); }
+    finally { setCreatingNew(false); }
+  }
 
   // Per-file reminder — fire it for ONE specific loan file from the queue.
   async function remindOne(fileId: string) {
@@ -138,8 +154,11 @@ export default function LosBoard() {
             <p className="text-slate-400 text-sm mt-1">{active.length} active · {funded} funded · every file has a borrower document link.</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={openPicker} className="flex items-center gap-2 text-sm bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-semibold px-4 py-2 rounded-lg">
-              <Plus className="w-4 h-4" /> New file from lead
+            <button onClick={() => { setNewForm((v) => !v); setPicker(false); }} className="flex items-center gap-2 text-sm bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-semibold px-4 py-2 rounded-lg">
+              <Plus className="w-4 h-4" /> New file
+            </button>
+            <button onClick={() => { openPicker(); setNewForm(false); }} className="flex items-center gap-2 text-sm bg-slate-800 hover:bg-slate-700 font-semibold px-4 py-2 rounded-lg" title="Open a loan file from an existing lead">
+              <Plus className="w-4 h-4" /> From lead
             </button>
             <input ref={xmlRef} type="file" accept=".xml,text/xml,application/xml" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importMismoNew(f); e.currentTarget.value = ""; }} />
             <button onClick={() => xmlRef.current?.click()} className="flex items-center gap-2 text-sm bg-sky-600 hover:bg-sky-500 text-white font-semibold px-4 py-2 rounded-lg" title="Create a loan file from a MISMO 3.4 / Calyx Point 1003 XML export">
@@ -159,6 +178,22 @@ export default function LosBoard() {
         {importing && (
           <div className="mt-4 bg-sky-950/40 border border-sky-800/40 rounded-xl px-4 py-3 text-sm text-sky-200 flex items-center gap-2">
             {importing.startsWith("✓") ? null : importing.startsWith("⚠️") ? null : <Loader2 className="w-4 h-4 animate-spin" />} {importing}
+          </div>
+        )}
+
+        {newForm && (
+          <div className="mt-4 bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+            <div className="text-sm text-slate-300 mb-2">Start a new loan file — just the borrower to begin (email / phone / loan type optional; fill the rest inside the file):</div>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+              <input value={nf.borrower} onChange={(e) => setNf({ ...nf, borrower: e.target.value })} placeholder="Borrower / entity name *" className="sm:col-span-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none" />
+              <input value={nf.email} onChange={(e) => setNf({ ...nf, email: e.target.value })} placeholder="Email (optional)" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none" />
+              <input value={nf.phone} onChange={(e) => setNf({ ...nf, phone: e.target.value })} placeholder="Phone (optional)" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none" />
+              <input value={nf.product} onChange={(e) => setNf({ ...nf, product: e.target.value })} placeholder="Loan type — DSCR, Hard Money, FHA… (optional)" className="sm:col-span-3 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none" />
+              <button onClick={createNew} disabled={!nf.borrower.trim() || creatingNew} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
+                {creatingNew ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create &amp; open
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">Creates the borrower + a fresh loan file and opens it — request docs, complete the 1003, price, and order title from there.</p>
           </div>
         )}
 
