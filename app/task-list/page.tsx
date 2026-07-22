@@ -4,8 +4,8 @@ import QuestBoard from "@/components/QuestBoard";
 export default function TaskListPage() {
   return (
     <AppLayout
-      title="🎮 Quest Log"
-      description="Clear quests, earn XP, level up, and keep your streak alive."
+      title="✅ Tasks"
+      description="Your to-do list — add a task, check it off."
     >
       <QuestBoard />
     </AppLayout>
