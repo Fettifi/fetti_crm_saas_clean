@@ -30,6 +30,7 @@ const navSections = [
     { href: "/income", label: "Income Calc", icon: "💵" },
     { href: "/pricing", label: "Pricing Comparison", icon: "💲" },
     { href: "/scenarios", label: "Scenario Desk", icon: "📑" }, // Loan Comparison now a tab here
+    { href: "/deal-analyzer", label: "Deal Analyzer", icon: "🎯" },
     { href: "/underwriter", label: "Underwriting Desk", icon: "🧾" },
     { href: "/underwrite", label: "Portfolio Underwriter", icon: "🏘️" },
     { href: "/scout", label: "Deal Scout", icon: "🏠" },
