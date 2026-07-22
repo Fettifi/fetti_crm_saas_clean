@@ -23,7 +23,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-22-variable-omit-addback";
+const LOGIC_VERSION = "2026-07-22-variable-omit-addback-code";
 const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {
@@ -348,6 +348,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "low",
       notes: typeof parsed.notes === "string" ? parsed.notes.slice(0, 600) : "",
     };
+    // "Omit → add income" for a variable/gig earner, COMPUTED IN CODE (the model reliably
+    // STATES the most-recent-year figure in the flag but is unreliable at setting
+    // addBackMonthly itself on these messy files — Ramon: "Omit is not adding to income").
+    // We parse the stated "most-recent … $Y" and set the add-back to (Y − what we already
+    // counted for that borrower), so omitting the flag bumps them from the conservative
+    // 2-yr average up to their most-recent documented year. Guarded so a mis-parse can't
+    // inject a wild number; only fills in when the read left addBack at 0.
+    for (const f of report.flags as any[]) {
+      if (!f || (Number(f.addBackMonthly) || 0) > 0) continue;
+      if (!/variable|gig|2-?yr avg|2-?year avg|most[- ]recent/i.test(f.text || "")) continue;
+      const m = String(f.text).match(/most[- ]recent[^$]*\$\s*([\d,]+)/i);
+      if (!m) continue;
+      const recent = Number(m[1].replace(/,/g, ""));
+      const b = Number(f.borrower) === 2 ? 2 : 1;
+      const counted = perBorrowerMonthly[b] || 0;
+      const delta = Math.round(recent - counted);
+      if (isFinite(recent) && delta > 0 && delta < 20000) { f.addBackMonthly = delta; f.borrower = b; }
+    }
+
     // result-shaped object so the worksheet PDF (which renders result.lines) keeps working.
     const result = { monthlyTotal: qualifyingMonthlyIncome, annualTotal: qualifyingMonthlyIncome * 12, lines: breakdown.map((l: any) => ({ label: l.label, basis: l.basis, monthly: l.monthly })), warnings: [] as string[], derivedDebts: 0 };
 
