@@ -243,15 +243,20 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     ? { mode: "DSCR", label: "Max PITIA (DSCR)", ratioLabel: "DSCR (on PITIA)", ratioValue: dscr != null ? String(floor2(dscr)) : "incomplete", maxPITIA: num(targetDscr) > 0 ? rental / num(targetDscr) : 0, maxPI: mlDscr.maxPI, maxLoan: mlDscr.maxLoan, maxPrice: mlDscr.maxPrice, verdict: dscrVerdict.text }
     : undefined;
 
-  async function verifyIncome() {
+  // A normal verify returns the STABLE saved result for the current document set (so the
+  // same file always shows the same income). `force` re-reads the documents from scratch —
+  // only when the LO deliberately wants a fresh read (and it may change the number).
+  async function verifyIncome(force = false) {
     if (!fileId) return;
+    if (force && !window.confirm("Re-read the documents from scratch? The AI reads the files again, so the number may change from the saved one. Only needed if the documents changed.")) return;
     setVerifying(true); setVerifyErr("");
     try {
-      const r = await fetch(`/api/los/files/${fileId}/verify-income`, { method: "POST" });
+      const r = await fetch(`/api/los/files/${fileId}/verify-income`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force }) });
       const j = await r.json();
       if (!r.ok) { setVerifyErr(j?.error || "Verification failed."); setVerified(null); } else { setVerified(j); setLineBorrower({}); setLineIncluded({}); setExcluded(new Set()); setFlagDecisions({}); setFlagNotes({}); incomeEditedRef.current = false; setIncomeInput(""); }
     } catch (e: any) { setVerifyErr(e?.message || "Verification failed."); } finally { setVerifying(false); }
   }
+  const fmtWhen = (iso?: string) => { if (!iso) return ""; try { return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); } catch { return ""; } };
 
   // ── Flag accept/omit + add-income helpers (the LO's discretion) ─────────────
   function decideFlag(i: number, next: FlagState, flagText: string) {
@@ -415,7 +420,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
       {fileId && (
         <div className="mb-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={verifyIncome} disabled={verifying} className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg">{verifying ? "Reading documents…" : "🪄 AI-verify income from documents"}</button>
+            <button onClick={() => verifyIncome(false)} disabled={verifying} className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg">{verifying ? "Reading documents…" : verified ? "🪄 Verify income" : "🪄 AI-verify income from documents"}</button>
             <span className="text-[11px] text-slate-500">optional — reads the W-2s / stubs on file. PDF download is below ↓</span>
           </div>
           {verifyErr && <div className="text-[11px] text-red-300 mt-1.5">{verifyErr}</div>}
@@ -424,6 +429,13 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm text-emerald-300 font-semibold">AI-verified income: {money(verified.qualifyingMonthlyIncome || 0)}/mo{borrowersNote ? ` · using ${money(income)}/mo` : ""}</div>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">{verified.docsRead?.length || 0} doc{(verified.docsRead?.length || 0) === 1 ? "" : "s"} · confidence {verified.report?.confidence}</span>
+              </div>
+              {/* Stability: this number is FROZEN to the document set — re-verifying an
+                  unchanged file returns the same figure. It only changes if the documents
+                  change or the LO deliberately re-reads. */}
+              <div className="mt-1 text-[10px] text-slate-500 flex items-center gap-2 flex-wrap">
+                <span>🔒 Locked to the documents on file{verified.verifiedAt ? ` · verified ${fmtWhen(verified.verifiedAt)}` : ""} — stays the same unless the docs change.</span>
+                <button onClick={() => verifyIncome(true)} disabled={verifying} className="text-emerald-400 hover:underline disabled:opacity-50">↻ re-read documents</button>
               </div>
               <div className="mt-1 text-[10px] text-slate-500">Uncheck a line to drop it, set B1/B2 for a couple, or <span className="text-emerald-400">+ Add income</span> below to count income the read held back. The total is the sum of the checked lines — your call.</div>
               <div className="mt-1.5 space-y-1">

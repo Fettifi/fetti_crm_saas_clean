@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
+import { getSetting, setSetting } from "@/lib/settings";
 import { assembleUrla, type Urla } from "@/lib/urla";
 import type { LoanType } from "@/lib/income";
 
@@ -59,10 +60,14 @@ BORROWER: use borrower 2 ONLY for a genuinely DIFFERENT person (a co-borrower/sp
 
 const n = (v: any) => (typeof v === "number" && isFinite(v) ? v : (v != null && isFinite(Number(v)) ? Number(v) : undefined));
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ error: "Reading documents needs ANTHROPIC_API_KEY." }, { status: 503 });
   const { id } = await params;
+  // A deliberate "re-read the documents" from the LO sends { force: true }; a normal
+  // Verify sends no body and gets the STABLE cached result (see the fingerprint cache).
+  let force = false;
+  try { const b = await req.json(); force = !!b?.force; } catch { /* no body — normal verify */ }
   try {
     const { data: loanFile } = await supabaseAdmin.from("loan_files").select("*").eq("id", id).maybeSingle();
     if (!loanFile) return NextResponse.json({ error: "Loan file not found." }, { status: 404 });
@@ -85,7 +90,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     let applicants = applicantNames.length ? applicantNames.join(" and ") : (loanFile.borrower_name || "the borrower");
 
     const { data: docs } = await supabaseAdmin.from("loan_documents")
-      .select("id, name, category, file_name, storage_path, status")
+      .select("id, name, category, file_name, storage_path, status, size_bytes")
       .eq("loan_file_id", id).not("storage_path", "is", null);
     // DETERMINISTIC co-borrower detection — a co-borrower is routinely missing from the
     // 1003 but unmistakably documented: their name LEADS several checklist labels ("Paul
@@ -131,6 +136,31 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     // stub, never on W-2 Box 1.
     const firstStub = candidates.findIndex(isStub);
     if (firstStub >= MAX_DOCS) { const [s] = candidates.splice(firstStub, 1); candidates.splice(MAX_DOCS - 1, 0, s); }
+
+    // ── STABILITY CACHE ───────────────────────────────────────────────────────────
+    // Fix (Ramon 2026-07-22: "income I verified last week is completely different this
+    // week on the same file"): the AI read is non-deterministic AND the qualifying logic
+    // shipped changes this month, so RE-verifying an unchanged file returned a different
+    // number every time. We now fingerprint the exact income doc-set (+ who's on the loan
+    // + program) and, unless the LO explicitly forces a re-read, return the SAME saved
+    // result for the same set — so a file whose documents haven't changed always shows the
+    // same income. Adding/replacing/removing a document changes the fingerprint and re-reads.
+    const CACHE_KEY = `los_income_verify:${id}`;
+    const fingerprint = crypto.createHash("sha1").update(
+      applicants + " " + loanType + " " +
+      candidates.map((d: any) => `${d.id}|${d.storage_path || ""}|${d.size_bytes ?? ""}|${d.status || ""}`).sort().join("\n")
+    ).digest("hex");
+    if (!force) {
+      const cachedRaw = await getSetting(CACHE_KEY);
+      if (cachedRaw) {
+        try {
+          const cached = JSON.parse(cachedRaw);
+          if (cached?.fingerprint === fingerprint && cached?.payload) {
+            return NextResponse.json({ ...cached.payload, cached: true, verifiedAt: cached.verifiedAt || null });
+          }
+        } catch { /* corrupt cache — fall through to a fresh read */ }
+      }
+    }
 
     const pdfLooksValid = (buf: Buffer): boolean => {
       if (buf.length < 5 || buf.subarray(0, 5).toString("latin1") !== "%PDF-") return false;
@@ -317,9 +347,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     // result-shaped object so the worksheet PDF (which renders result.lines) keeps working.
     const result = { monthlyTotal: qualifyingMonthlyIncome, annualTotal: qualifyingMonthlyIncome * 12, lines: breakdown.map((l: any) => ({ label: l.label, basis: l.basis, monthly: l.monthly })), warnings: [] as string[], derivedDebts: 0 };
 
-    await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, actor: "ai:underwriter", action: "income.verified", detail: { docsRead: read.length, monthlyIncome: qualifyingMonthlyIncome, confidence: report.confidence, flags: report.flags.length, unreadable: unreadable.length } }).catch(() => {});
+    await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, actor: "ai:underwriter", action: "income.verified", detail: { docsRead: read.length, monthlyIncome: qualifyingMonthlyIncome, confidence: report.confidence, flags: report.flags.length, unreadable: unreadable.length, force } }).catch(() => {});
 
-    return NextResponse.json({ perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, loanType });
+    // Freeze this read against the doc-set fingerprint so the SAME file returns the SAME
+    // number until its documents change (or the LO forces a re-read).
+    const payload = { perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, loanType };
+    const verifiedAt = new Date().toISOString();
+    await setSetting(CACHE_KEY, JSON.stringify({ fingerprint, verifiedAt, payload })).catch(() => {});
+    return NextResponse.json({ ...payload, cached: false, verifiedAt });
   } catch (e: any) {
     console.error("[los/verify-income]", e);
     return NextResponse.json({ error: e?.message || "Income verification failed." }, { status: 500 });
