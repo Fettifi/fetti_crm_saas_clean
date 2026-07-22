@@ -165,6 +165,13 @@ const DEFAULT_REBUTTALS: Record<string, string> = {
   // it as the weakest for contact conversion. This encouraging floor keeps refi
   // starters moving; refiMessage() tailors it by their stated refi goal.
   refi_start: "Refinancing is worth a real look. Depending on your goal we can target a lower payment, cash for renovations or debt payoff, dropping mortgage insurance, or a shorter term. Let's find the angle that pays off for you. 🔄",
+  // Invest/DSCR — Fetti's biggest paid segment — was the one major goal with NO
+  // encouraging opening beat (buy gets low_down, refi gets refi_start, flip gets
+  // first_flip). wizard_insights flagged investor goals for low engagement. This
+  // floor fires the moment they state their investor action; investMessage()
+  // tailors it. The DSCR "qualifies on the property's rent, not your income" fact
+  // is the single most reassuring thing a new investor can hear here.
+  invest_start: "Great move. The big unlock with investment loans is that DSCR programs qualify on the property's own rental income — not your tax returns or W-2s. That's what makes building a rental portfolio realistic. Let's find the right structure for you. 📈",
 };
 
 // The "little to nothing down" objection is the buy flow's weakest point (it
@@ -194,10 +201,26 @@ function refiMessage(a: Answers): string {
   return "Smart to check. A refinance can be about a lower payment, a shorter term, or dropping mortgage insurance you no longer need — and if today isn't the right moment, we'll tell you straight and map when to strike. Let's see your options. 📉";
 }
 
+// Every investor gets one encouraging beat right after stating what they're
+// doing — buying, refinancing, or cashing out a rental. Honest, non-promissory
+// (no rate/APR or guaranteed-return claims — Reg Z safe); a learned config
+// override still wins. This is the highest-value beat: invest is Fetti's biggest
+// paid segment and the one that under-converts on engagement.
+function investMessage(a: Answers): string {
+  if (a.invest_action === "cashout")
+    return "Pulling cash out of a rental is one of the best ways to fund your next deal — DSCR cash-out qualifies on the property's income, not your personal returns, so your portfolio can keep growing. Let's see how much you could put to work. 💵";
+  if (a.invest_action === "refi")
+    return "Refinancing a rental you already own can free up cash or improve your terms — and DSCR loans look at the property's rent, not your personal income. Let's see what your equity can do. 🔄";
+  // "purchase" or anything else.
+  return "Buying a rental is one of the smartest moves you can make — and DSCR loans qualify on the property's own rental income, not your tax returns or W-2s. That's what makes building a portfolio realistic. Let's find the right structure. 📈";
+}
+
 // Returns an obstacle key if this answer is a known friction point, else null.
 function detectObstacle(id: string, value: string, a: Answers): string | null {
   // Every refinancer gets one encouraging beat right after stating their goal.
   if (id === "refi_goal") return "refi_start";
+  // Every investor gets one encouraging beat right after stating their action.
+  if (id === "invest_action") return "invest_start";
   if (id === "credit" && value === "600") return "low_credit";
   if (id === "credit" && value === "640") return "building_credit";
   if (id === "down" && value === "lt3") return "low_down";
@@ -510,7 +533,7 @@ export default function ApplyWizard() {
   function maybeCoach(id: string, value: string, next: Answers, phaseName: string, advance: () => void): boolean {
     const key = detectObstacle(id, value, next);
     if (!key) return false;
-    const message = rebuttals[key] || (key === "low_down" ? lowDownMessage(next) : key === "refi_start" ? refiMessage(next) : DEFAULT_REBUTTALS[key]);
+    const message = rebuttals[key] || (key === "low_down" ? lowDownMessage(next) : key === "refi_start" ? refiMessage(next) : key === "invest_start" ? investMessage(next) : DEFAULT_REBUTTALS[key]);
     advanceRef.current = advance;
     setCoach({ key, message });
     track("objection", { phase: phaseName, step_id: id, goal: next.goal, occupancy: effectiveOccupancy(next), product: product(next), meta: { obstacle: key } });
