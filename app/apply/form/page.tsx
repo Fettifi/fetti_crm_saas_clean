@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, ArrowLeft, ShieldCheck, Lightbulb } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
+import { zipToState } from "@/lib/pricer";
 import { trackLead, trackApplication } from "@/lib/track";
 import { armFormShield, shieldFields, shouldTrack } from "@/lib/formShield";
 import { getAttribution } from "@/lib/attribution";
@@ -29,7 +30,6 @@ type Q =
 
 type Answers = Record<string, string>;
 
-const STATES = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC"];
 const CREDIT: Opt[] = [
   { value: "760", label: "Excellent (740+)" },
   { value: "720", label: "Good (700-739)" },
@@ -407,6 +407,8 @@ export default function ApplyWizard() {
   // Magic-link prefill (?lead=&t=): the lead's known contact info, so a nurtured
   // borrower lands with everything already typed — one confirm click, zero friction.
   const [prefill, setPrefill] = useState<{ full_name: string; first_name: string; email: string; phone: string; state: string } | null>(null);
+  // State is DERIVED from the ZIP (no more dropdown to pick) — a valid 5-digit ZIP resolves it.
+  const [zipState, setZipState] = useState("");
 
   // ---- Learning loop: telemetry + learned config -----------------------------
   const sid = useRef<string>("");
@@ -810,14 +812,16 @@ export default function ApplyWizard() {
               {phoneHint && <p className="text-[11px] text-amber-600 mt-1">{phoneHint}</p>}
             </div>
           </div>
-          <div className="flex gap-3">
-            <select name="state" required defaultValue={prefill?.state && STATES.includes(prefill.state) ? prefill.state : ""} className={`${field} flex-1`}>
-              <option value="" disabled>Property state</option>
-              {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <input name="zip" inputMode="numeric" pattern="[0-9]{5}" maxLength={5} placeholder="ZIP"
-              onChange={(e) => { e.currentTarget.value = e.currentTarget.value.replace(/\D/g, "").slice(0, 5); }}
-              className={`${field} w-28`} />
+          <div>
+            <div className="flex items-center gap-2">
+              <input name="zip" inputMode="numeric" pattern="[0-9]{5}" maxLength={5} required placeholder="Property ZIP code"
+                onChange={(e) => { const z = e.currentTarget.value.replace(/\D/g, "").slice(0, 5); e.currentTarget.value = z; setZipState(z.length === 5 ? (zipToState(z) || "") : ""); }}
+                className={`${field} flex-1`} />
+              {zipState && <span className="shrink-0 text-sm font-bold text-emerald-600 px-2" aria-label={`State: ${zipState}`}>{zipState}</span>}
+            </div>
+            {/* State is derived from the ZIP (no dropdown) — carried in a hidden field so the
+                submit still records it; falls back to a magic-link prefill state until a ZIP is typed. */}
+            <input type="hidden" name="state" value={zipState || prefill?.state || ""} />
           </div>
           {isConsumer(answers) ? (
             <p className="text-[11px] text-amber-700">Owner-occupied home loans are offered in FL, MI &amp; CA. Other states: we'll connect you with the right option.</p>
