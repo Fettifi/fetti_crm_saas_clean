@@ -13,6 +13,7 @@ import { assembleUrla, type Urla } from "@/lib/urla";
 import type { LoanType } from "@/lib/income";
 import sharp from "sharp";
 import { compressPdfIfNeeded } from "@/lib/pdfCompress";
+import { EXTRACT_SYSTEM, computeQualifyingIncome, type DocFact } from "@/lib/income/docFacts";
 
 export const runtime = "nodejs";
 // 300s: the 745ea431-class big file already ran ~60s at a 4k output cap; the
@@ -25,7 +26,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-22-distinct-income-streams";
+const LOGIC_VERSION = "2026-07-22-two-stage-deterministic-engine";
 const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {
@@ -266,29 +267,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             // 422 (2026-07-21, file 745ea431). The terse-notes instruction keeps
             // typical reads far below this; the cap is the safety margin.
             max_tokens: 16000,
-            system: SYSTEM,
+            system: EXTRACT_SYSTEM,
             messages: [
               { role: "user", content: [...blocks, { type: "text", text: nudge ? `${userText}\n\n${nudge}` : userText }] },
             ],
+            // Stage 1 — EXTRACT facts only. The deterministic engine (computeQualifyingIncome)
+            // does all the math, so the model never averages/qualifies here.
             tools: [{
-              name: "report_income",
-              description: "Report the verified income read as structured data. Call exactly once with the complete result.",
+              name: "extract_income_facts",
+              description: "Return one DocFact per income document — the facts printed on it, no math. Call exactly once.",
               input_schema: {
                 type: "object",
-                properties: {
-                  qualifyingMonthlyIncome: { type: "number" },
-                  perBorrowerMonthly: { type: "object", description: "keys '1'/'2' → monthly $" },
-                  breakdown: { type: "array", items: { type: "object", properties: { borrower: { type: "number" }, label: { type: "string" }, monthly: { type: "number" }, basis: { type: "string" } } } },
-                  perDoc: { type: "array", items: { type: "object" } },
-                  crossChecks: { type: "array", items: { type: "string" } },
-                  flags: { type: "array", items: { type: "object", properties: { text: { type: "string" }, addBackMonthly: { type: "number" }, borrower: { type: "number" } } } },
-                  confidence: { type: "string", enum: ["high", "medium", "low"] },
-                  notes: { type: "string" },
-                },
-                required: ["qualifyingMonthlyIncome", "breakdown", "confidence"],
+                properties: { docFacts: { type: "array", items: { type: "object" } } },
+                required: ["docFacts"],
               },
             }],
-            tool_choice: { type: "tool", name: "report_income" },
+            tool_choice: { type: "tool", name: "extract_income_facts" },
           }),
         });
         const jr = await res.json().catch(() => ({} as any));
@@ -347,18 +341,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
     }
 
-    // Per-line breakdown (each gets a B1/B2 the LO can re-assign) + per-borrower monthly.
-    const breakdown = (Array.isArray(parsed.breakdown) ? parsed.breakdown : [])
-      .map((l: any) => ({ borrower: Number(l?.borrower) === 2 ? 2 : 1, label: String(l?.label || "Income").slice(0, 80), monthly: Math.round(n(l?.monthly) || 0), basis: String(l?.basis || "").slice(0, 160) }))
-      .filter((l: any) => l.monthly !== 0 || (l.label && l.label !== "Income"));
-
-    const perBorrowerMonthly: Record<number, number> = {};
-    const pbm = parsed.perBorrowerMonthly && typeof parsed.perBorrowerMonthly === "object" ? parsed.perBorrowerMonthly : {};
-    for (const k of Object.keys(pbm)) { const b = Number(k); const v = n(pbm[k]); if ((b === 1 || b === 2) && v != null) perBorrowerMonthly[b] = Math.round(v); }
-    if (!Object.keys(perBorrowerMonthly).length && breakdown.length) {
-      for (const l of breakdown) perBorrowerMonthly[l.borrower] = (perBorrowerMonthly[l.borrower] || 0) + l.monthly;
+    // Stage 2 — DETERMINISTIC compute from the extracted facts. Same facts ⇒ same numbers.
+    const rawFacts: any[] = Array.isArray(parsed.docFacts) ? parsed.docFacts : [];
+    const docFacts: DocFact[] = rawFacts
+      .map((f: any) => ({ ...f, borrower: Number(f?.borrower) === 2 ? 2 : 1, file: String(f?.file || f?.docType || "document").slice(0, 120) }))
+      .filter((f: DocFact) => f && (f.borrower === 1 || f.borrower === 2));
+    if (!docFacts.length) {
+      return NextResponse.json({ error: "Couldn't extract income facts from the uploaded documents — re-check they're legible income docs (W-2, pay stubs, 1099, tax returns).", unreadableDocs: unreadable }, { status: 422 });
     }
-    const qualifyingMonthlyIncome = Math.round(n(parsed.qualifyingMonthlyIncome) || Object.values(perBorrowerMonthly).reduce((s, v) => s + v, 0));
+    const computed = computeQualifyingIncome(docFacts, { loanType });
+    const breakdown = computed.breakdown.map((l) => ({ borrower: l.borrower, label: String(l.label).slice(0, 80), monthly: Math.round(l.monthly), basis: String(l.basis || "").slice(0, 160) }));
+    const perBorrowerMonthly = computed.perBorrowerMonthly;
+    const qualifyingMonthlyIncome = Math.round(computed.qualifyingMonthlyIncome);
 
     // Documents we couldn't read (truncated/corrupt uploads) become flags so the LO
     // knows income evidence was skipped and can re-request a clean copy — rather than the
@@ -372,12 +366,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const normFlag = (f: any) => typeof f === "string"
       ? { text: f.slice(0, 300), addBackMonthly: 0, borrower: 1 }
       : { text: String(f?.text || "").slice(0, 300), addBackMonthly: Math.max(0, Math.round(n(f?.addBackMonthly) || 0)), borrower: Number(f?.borrower) === 2 ? 2 : 1 };
+    // perDoc = what the extractor read off each document (the audit trail behind the math).
+    const perDoc = docFacts.slice(0, 30).map((f) => ({
+      file: f.file, docType: f.docType, source: f.employerOrPayer || f.streamId || f.personName || "",
+      keyFigures: [
+        f.grossPerPeriod != null ? `gross/pd $${f.grossPerPeriod}` : (f.regularPerPeriod != null ? `reg/pd $${f.regularPerPeriod}` : ""),
+        f.ytdGross != null ? `YTD $${f.ytdGross}` : "", f.w2Box5 != null ? `box5 $${f.w2Box5}` : (f.w2Box1 != null ? `box1 $${f.w2Box1}` : ""),
+        f.selfEmploymentNet != null ? `SE net $${f.selfEmploymentNet}` : "", f.monthlyBenefit != null ? `$${f.monthlyBenefit}/mo` : "",
+      ].filter(Boolean).join("; "),
+    }));
     const report = {
-      perDoc: Array.isArray(parsed.perDoc) ? parsed.perDoc.slice(0, 20) : [],
-      crossChecks: Array.isArray(parsed.crossChecks) ? parsed.crossChecks.slice(0, 20) : [],
-      flags: [...overflowFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 })), ...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 })), ...(Array.isArray(parsed.flags) ? parsed.flags : []).map(normFlag)].slice(0, 20),
-      confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "low",
-      notes: typeof parsed.notes === "string" ? parsed.notes.slice(0, 600) : "",
+      perDoc,
+      crossChecks: [] as string[],
+      flags: [...overflowFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 })), ...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 })), ...computed.flags.map(normFlag)].slice(0, 24),
+      confidence: computed.breakdown.length ? "high" : "low",
+      notes: `Deterministic income engine · ${docFacts.length} document facts read.`,
     };
     // "Omit → add income" for a variable/gig earner, COMPUTED IN CODE (the model reliably
     // STATES the most-recent-year figure in the flag but is unreliable at setting
