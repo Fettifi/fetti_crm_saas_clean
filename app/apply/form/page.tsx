@@ -172,6 +172,12 @@ const DEFAULT_REBUTTALS: Record<string, string> = {
   // tailors it. The DSCR "qualifies on the property's rent, not your income" fact
   // is the single most reassuring thing a new investor can hear here.
   invest_start: "Great move. The big unlock with investment loans is that DSCR programs qualify on the property's own rental income — not your tax returns or W-2s. That's what makes building a rental portfolio realistic. Let's find the right structure for you. 📈",
+  // The refinancer's CURRENT loan type was a dry, warmth-free question — yet it
+  // unlocks the single most concrete refi motivator (FHA lifetime MIP → drop it by
+  // going conventional; VA → the IRRRL streamline). wizard_insights flags refi as
+  // the weakest for contact conversion; this beat gives FHA/VA refinancers a real
+  // reason to keep going. currentLoanMessage() tailors it; this is the safety floor.
+  refi_loantype: "Your current loan type opens up specific refinance angles — from dropping mortgage insurance you may no longer need to a streamlined lower-rate option. Let's find the one that pays off for you. 📉",
 };
 
 // The "little to nothing down" objection is the buy flow's weakest point (it
@@ -215,12 +221,32 @@ function investMessage(a: Answers): string {
   return "Buying a rental is one of the smartest moves you can make — and DSCR loans qualify on the property's own rental income, not your tax returns or W-2s. That's what makes building a portfolio realistic. Let's find the right structure. 📈";
 }
 
+// A refinancer's CURRENT loan type is the sharpest, most-motivating refi hook — and
+// it was a dead, warmth-free question in the middle of the refi flow. FHA loans carry
+// mortgage insurance for the LIFE of the loan; refinancing to conventional once there's
+// enough equity removes it permanently — often the biggest single piece of a lower
+// payment. VA borrowers have the IRRRL streamline (built to lower the rate with minimal
+// paperwork, frequently no new appraisal). Only FHA/VA fire this beat (each is a real,
+// concrete win); Conventional/"unsure" get no extra interstitial so we don't over-coach
+// an already high-completion flow. Honest, non-promissory copy (no rate/APR or
+// guaranteed-savings claims — Reg Z safe); a learned config override still wins.
+function currentLoanMessage(a: Answers): string {
+  if (a.current_loan === "FHA")
+    return "Here's a big one with FHA loans: they carry mortgage insurance for the life of the loan. Once you've built enough equity, refinancing into a conventional loan can drop that insurance entirely — often the largest single piece of a lower payment. Let's see if you're there. 📉";
+  if (a.current_loan === "VA")
+    return "Since you have a VA loan, you may qualify for a VA streamline (IRRRL) — it's built to lower your rate with minimal paperwork and often no new appraisal. One of the smoothest refinances there is. Let's check it. 🎖️";
+  return DEFAULT_REBUTTALS.refi_loantype;
+}
+
 // Returns an obstacle key if this answer is a known friction point, else null.
 function detectObstacle(id: string, value: string, a: Answers): string | null {
   // Every refinancer gets one encouraging beat right after stating their goal.
   if (id === "refi_goal") return "refi_start";
   // Every investor gets one encouraging beat right after stating their action.
   if (id === "invest_action") return "invest_start";
+  // FHA/VA refinancers get a concrete, high-motivation loan-type beat (FHA MIP
+  // removal / VA IRRRL streamline). Conventional/unsure skip it — no over-coaching.
+  if (id === "current_loan" && (value === "FHA" || value === "VA")) return "refi_loantype";
   if (id === "credit" && value === "600") return "low_credit";
   if (id === "credit" && value === "640") return "building_credit";
   if (id === "down" && value === "lt3") return "low_down";
@@ -533,7 +559,7 @@ export default function ApplyWizard() {
   function maybeCoach(id: string, value: string, next: Answers, phaseName: string, advance: () => void): boolean {
     const key = detectObstacle(id, value, next);
     if (!key) return false;
-    const message = rebuttals[key] || (key === "low_down" ? lowDownMessage(next) : key === "refi_start" ? refiMessage(next) : key === "invest_start" ? investMessage(next) : DEFAULT_REBUTTALS[key]);
+    const message = rebuttals[key] || (key === "low_down" ? lowDownMessage(next) : key === "refi_start" ? refiMessage(next) : key === "invest_start" ? investMessage(next) : key === "refi_loantype" ? currentLoanMessage(next) : DEFAULT_REBUTTALS[key]);
     advanceRef.current = advance;
     setCoach({ key, message });
     track("objection", { phase: phaseName, step_id: id, goal: next.goal, occupancy: effectiveOccupancy(next), product: product(next), meta: { obstacle: key } });
