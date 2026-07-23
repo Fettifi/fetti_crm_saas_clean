@@ -24,6 +24,7 @@ const navSections = [
     { href: "/leads", label: "Leads & Conversations", icon: "📋" },
     { href: "/funnel", label: "Funnel Analytics", icon: "📉" },
     { href: "/los", label: "Loan Files (LOS)", icon: "📁" },
+    { href: "/lookup", label: "Caller ID Lookup", icon: "📞" },
   ] },
   { section: "Loan Tools", items: [
     { href: "/pricer", label: "Quick Pricer", icon: "🧮" },
