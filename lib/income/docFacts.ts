@@ -166,6 +166,13 @@ function elapsedMonths(iso?: string | null): number {
   const mo = +m[2], day = +m[3]; const dim = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1] || 30;
   return (mo - 1) + day / dim;
 }
+// Absolute months between two ISO dates (deterministic, no wall clock). Used to tell a
+// CURRENT employer (recent pay stub) from a FORMER one (old/no stub).
+function monthsBetweenISO(a?: string | null, b?: string | null): number {
+  const pa = String(a || "").match(/^(\d{4})-(\d{2})-(\d{2})/), pb = String(b || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!pa || !pb) return 999;
+  return Math.abs((+pa[1] - +pb[1]) * 12 + (+pa[2] - +pb[2]) + (+pa[3] - +pb[3]) / 30);
+}
 
 const WAGE_DOCS = new Set<DocType>(["paystub", "w2", "wage_income_transcript", "voe"]);
 const SE_DOCS = new Set<DocType>(["schedule_c", "1099nec", "1099misc"]);
@@ -192,6 +199,13 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
     breakdown.push({ borrower: b, label, monthly: m, basis, streamId: sid });
   };
 
+  // Latest pay-stub date within a stream (its most recent evidence of receipt), or null.
+  const streamLatestStub = (sf: DocFact[]): string | null => {
+    const ds = sf.filter((f) => f.docType === "paystub" && f.ytdThroughDate).map((f) => f.ytdThroughDate as string).sort();
+    return ds.length ? ds[ds.length - 1] : null;
+  };
+  const streamMaxYear = (sf: DocFact[]): number => Math.max(0, ...sf.filter((f) => f.taxYear != null).map((f) => f.taxYear as number));
+
   for (const b of [1, 2] as const) {
     if (!included.has(b)) continue;
     const bf = clean.filter((f) => f.borrower === b);
@@ -203,6 +217,46 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
     for (const f of bf) if (WAGE_DOCS.has(f.docType)) {
       const k = streamKey(f); if (!wageStreams.has(k)) wageStreams.set(k, []); wageStreams.get(k)!.push(f);
     }
+    // ── CURRENT-EMPLOYMENT CLASSIFICATION (per borrower). Two windows: a stream is
+    //    CURRENT/concurrent (summed) only with a pay stub within ~3 months of THIS borrower's
+    //    own latest pay date, or a VOE; 3–5 months stale = HELD (flag, Omit-to-add); anything
+    //    older or stub-less = PRIOR employer (work history). This is what stops the engine
+    //    summing four sequential corrections/staffing jobs as if held at once. "as of" is
+    //    per-borrower so a co-borrower's own current job isn't judged against the primary's.
+    const CONCURRENCY_MO = 3, CURRENCY_MO = 5;
+    const bStubDates = bf.filter((f) => f.docType === "paystub" && f.ytdThroughDate).map((f) => f.ytdThroughDate as string).sort();
+    const bAsOf = bStubDates.length ? bStubDates[bStubDates.length - 1] : null;
+    const bMaxYear = Math.max(0, ...bf.filter((f) => f.taxYear != null && WAGE_DOCS.has(f.docType)).map((f) => f.taxYear as number));
+    type Cls = "current" | "stale" | "prior";
+    const classify = (sf: DocFact[]): Cls => {
+      if (sf.some((f) => f.docType === "voe")) return "current";          // a VOE proves current employment
+      const latest = streamLatestStub(sf);
+      if (latest && bAsOf) {
+        const gap = monthsBetweenISO(latest, bAsOf);
+        return gap <= CONCURRENCY_MO ? "current" : gap <= CURRENCY_MO ? "stale" : "prior";
+      }
+      // No stub in this stream. BLOCKER FIX: if the borrower has NO stub ANYWHERE, don't sum
+      // sequential W-2 employers — only the most-recent filing year's employer(s) count.
+      if (!bAsOf) return streamMaxYear(sf) > 0 && streamMaxYear(sf) === bMaxYear ? "current" : "prior";
+      return "prior";                                                     // currently employed elsewhere; this stub-less stream is history
+    };
+    const clsMap = new Map<string, Cls>();
+    for (const [k, sf] of wageStreams) clsMap.set(k, classify(sf));
+    // Never zero a borrower with wage docs: if nothing is current, promote the freshest stream.
+    if (wageStreams.size && ![...clsMap.values()].includes("current")) {
+      let bestK: string | null = null, bestKey = "";
+      for (const [k, sf] of wageStreams) { const key = (streamLatestStub(sf) || "") + String(streamMaxYear(sf)).padStart(6, "0"); if (key > bestKey) { bestKey = key; bestK = k; } }
+      if (bestK) clsMap.set(bestK, "current");
+    }
+    // Identity tokens of the streams we WILL count — to catch a stray W-2 that DUPLICATES an
+    // already-counted current stream (same IHSS recipient etc.) so Omit can't re-add a double.
+    const idTokens = (sf: DocFact[]): string[] => {
+      const s = sf.map((f) => `${f.employerOrPayer || ""} ${f.streamId || ""} ${f.notes || ""}`).join(" ").toLowerCase();
+      return [...new Set(s.replace(/[^a-z0-9#]/g, " ").split(/\s+/).filter((t) => t.length >= 4 || /#\d/.test(t)))];
+    };
+    const countedIdentity = new Set<string>();
+    for (const [k, sf] of wageStreams) if (clsMap.get(k) === "current") for (const t of idTokens(sf)) countedIdentity.add(t);
+
     for (const sid of [...wageStreams.keys()].sort()) {
       const sf = wageStreams.get(sid)!;
       const stubs = sf.filter((f) => f.docType === "paystub" && num(f.regularPerPeriod) != null && f.payFrequency && FREQ[f.payFrequency]);
@@ -212,14 +266,37 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
       const employer = sf.find((f) => f.employerOrPayer)?.employerOrPayer || "employer";
       const wageOf = (f: DocFact) => (num(f.w2Box5) ?? num(f.w2Box1))!;
 
+      // GATE: only CURRENT streams are summed as concurrent income. Stale/prior streams are
+      // held out with a flag carrying the $ they WOULD add (Omit-to-add), and a stream that
+      // duplicates a counted one is marked non-additive so Omit can't double-count.
+      const cls = clsMap.get(sid)!;
+      if (cls !== "current") {
+        const wouldBe = w2s.length ? wageOf(w2s[0]) / 12
+          : (stubs[0]?.payFrequency ? num(stubs[0].regularPerPeriod ?? stubs[0].grossPerPeriod)! * FREQ[stubs[0].payFrequency] / 12 : 0);
+        const dup = idTokens(sf).some((t) => countedIdentity.has(t));
+        if (dup) {
+          flags.push({ text: `${employer}: appears to be the SAME job as a current pay-stub stream already counted — excluded as a probable DUPLICATE, not added again. Verify before overriding.`, addBackMonthly: 0, borrower: b });
+        } else if (cls === "stale") {
+          flags.push({ text: `${employer}: most recent pay stub is a few months old — held out of income until current employment is confirmed. Omit to count it.`, addBackMonthly: rd(wouldBe), borrower: b });
+        } else {
+          flags.push({ text: `${employer}: prior/former employer — no current pay stub on file, so counted as work history (a job change), not current income. Omit to count it as concurrent income.`, addBackMonthly: rd(wouldBe), borrower: b });
+        }
+        continue;
+      }
+
       // GIG / IHSS / fluctuating hourly — the whole check is variable, so qualify the
       // AVERAGE of documented totals (2-yr W-2 avg, else 1-yr, else YTD run-rate), blended
       // down conservatively when both a history and a current YTD exist. No base/OT split.
       if (sf.some((f) => f.incomeCategory === "wage_variable")) {
+        // Variable/gig/IHSS stubs frequently carry only a GROSS or YTD figure (no separate
+        // "regular" rate), so use a broader stub set here than the salaried `stubs` filter —
+        // else a legit current IHSS case with only gross+YTD would silently drop to $0.
+        const vStubs = sf.filter((f) => f.docType === "paystub" && (num(f.ytdGross) != null || num(f.grossPerPeriod) != null || num(f.regularPerPeriod) != null));
+        vStubs.sort((a, z) => String(z.ytdThroughDate || "").localeCompare(String(a.ytdThroughDate || "")));
         let historyMonthly: number | null = null, priorTotals = 0, priorMonths = 0;
         if (w2s.length >= 2) { priorTotals = wageOf(w2s[0]) + wageOf(w2s[1]); priorMonths = 24; historyMonthly = priorTotals / 24; }
         else if (w2s.length === 1) { priorTotals = wageOf(w2s[0]); priorMonths = 12; historyMonthly = priorTotals / 12; }
-        const ytdStub = stubs.find((s) => num(s.ytdGross) != null && s.ytdThroughDate);
+        const ytdStub = vStubs.find((s) => num(s.ytdGross) != null && s.ytdThroughDate);
         const em = ytdStub ? elapsedMonths(ytdStub.ytdThroughDate) : 0;
         const ytdMonthly = ytdStub && em > 0 ? num(ytdStub.ytdGross)! / em : null;
         let qual = 0, basis = "";
@@ -230,7 +307,7 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
           if (ytdMonthly < historyMonthly) flags.push({ text: `${employer}: current run-rate below the prior average — using the lower blended figure. Omit to use the history average.`, addBackMonthly: r2(historyMonthly - qual), borrower: b });
         } else if (historyMonthly != null) { qual = historyMonthly; basis = `${w2s.length}-yr W-2 average ÷12`; }
         else if (ytdMonthly != null) { qual = ytdMonthly; basis = `YTD ÷ ${em.toFixed(1)} mo`; }
-        else if (stubs[0]) { const s = stubs[0]; qual = num(s.grossPerPeriod ?? s.regularPerPeriod)! * FREQ[s.payFrequency!] / 12; basis = "current stub annualized"; flags.push({ text: `${employer}: variable income from one stub only — no YTD/W-2 to average; verify with a 2-yr history.`, addBackMonthly: 0, borrower: b }); }
+        else if (vStubs[0] && vStubs[0].payFrequency && FREQ[vStubs[0].payFrequency]) { const s = vStubs[0]; qual = num(s.grossPerPeriod ?? s.regularPerPeriod)! * FREQ[s.payFrequency!] / 12; basis = "current stub annualized"; flags.push({ text: `${employer}: variable income from one stub only — no YTD/W-2 to average; verify with a 2-yr history.`, addBackMonthly: 0, borrower: b }); }
         else continue;
         add(b, qual, `${employer} — variable/gig wages`, basis, sid);
         continue;
