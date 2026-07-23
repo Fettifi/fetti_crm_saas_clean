@@ -13,7 +13,7 @@ import { assembleUrla, type Urla } from "@/lib/urla";
 import type { LoanType } from "@/lib/income";
 import sharp from "sharp";
 import { compressPdfIfNeeded } from "@/lib/pdfCompress";
-import { EXTRACT_SYSTEM, computeQualifyingIncome, type DocFact } from "@/lib/income/docFacts";
+import { EXTRACT_SYSTEM, computeQualifyingIncome, assignBorrowers, type DocFact } from "@/lib/income/docFacts";
 
 export const runtime = "nodejs";
 // 300s: the 745ea431-class big file already ran ~60s at a 4k output cap; the
@@ -26,7 +26,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-22-two-stage-deterministic-engine";
+const LOGIC_VERSION = "2026-07-23-deterministic-borrower-assignment";
 const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {

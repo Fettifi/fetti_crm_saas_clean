@@ -87,6 +87,70 @@ BORROWER ASSIGNMENT: you are given the named applicant(s). Assign each document 
 STREAM IDs: give the SAME streamId to every document for the same job (a stub, its W2, its transcript all share it). Give DIFFERENT streamIds to genuinely different jobs — including one IHSS provider's different recipients (each recipient's case number makes a distinct streamId).
 RULES: numbers EXACTLY as printed (never rounded/derived). Never assign a joint 1040's combined wages to one person — capture it as a joint-return fact. Extract only what you can SEE; null otherwise. JSON only.`;
 
+// ── DETERMINISTIC BORROWER ASSIGNMENT ────────────────────────────────────────────────
+// The model reads a printed NAME reliably, but its per-doc `borrower` NUMBER flip-flops
+// run-to-run on multi-earner files (e.g. the same IHSS/Amergis stream landed on borrower 1
+// one read and borrower 2 the next → the total swung ~9% on a forced re-read). So we IGNORE
+// the model's borrower field and assign the number ourselves, in code, from the earner name
+// on each doc matched against the file's applicant roster. Same names ⇒ same assignment,
+// always. This is the last determinism gap after the math was made pure.
+const nameTokens = (s?: string | null): string[] =>
+  String(s || "").toLowerCase().normalize("NFKD").replace(/[^a-z\s]/g, " ").split(/\s+/)
+    .filter((t) => t.length >= 3 && !NAME_STOP.has(t));
+const NAME_STOP = new Set(["and", "the", "jr", "sr", "iii", "mrs", "for", "aka", "dba", "llc", "inc"]);
+// Score a name against a list by shared tokens; the higher-scoring roster slot wins, and a
+// tie favors the primary (borrower 1). Shared-surname spouses resolve correctly because the
+// matching first name breaks the tie (e.g. "Jane Smith" scores 2 vs "John Smith" for co).
+function rosterScore(name: string, names: string[]): number {
+  const t = new Set(nameTokens(name)); if (!t.size) return 0;
+  let best = 0;
+  for (const rn of names) { let s = 0; for (const x of nameTokens(rn)) if (t.has(x)) s++; if (s > best) best = s; }
+  return best;
+}
+
+// Returns a NEW facts array with borrower reassigned deterministically. `roster.primary` =
+// the named applicant(s) (borrower 1), `roster.co` = detected co-borrower name(s) (borrower 2).
+export function assignBorrowers(facts: DocFact[], roster: { primary: string[]; co: string[] }): DocFact[] {
+  const list = (facts || []).filter(Boolean);
+  if (!list.length) return list;
+  // 1) Resolve each DISTINCT earner name → borrower via the roster. Names that match neither
+  //    roster slot are held for the deterministic fallback below.
+  const byName = new Map<string, { display: string; b: 0 | 1 | 2 }>();
+  for (const f of list) {
+    const nm = String(f.personName || "").trim(); if (!nm) continue;
+    const key = nameTokens(nm).sort().join(" "); if (!key) continue;
+    if (byName.has(key)) continue;
+    const p = rosterScore(nm, roster.primary), c = rosterScore(nm, roster.co);
+    byName.set(key, { display: nm, b: (p === 0 && c === 0) ? 0 : (p >= c ? 1 : 2) });
+  }
+  // 2) Fallback for names that matched no roster slot: fill borrower 1 first (the docs may
+  //    simply not match a broken 1003), everyone else borrower 2. Alphabetical → stable.
+  let primaryClaimed = [...byName.values()].some((v) => v.b === 1);
+  for (const key of [...byName.keys()].filter((k) => byName.get(k)!.b === 0).sort()) {
+    if (!primaryClaimed) { byName.get(key)!.b = 1; primaryClaimed = true; } else byName.get(key)!.b = 2;
+  }
+  const borrowerOfName = (nm?: string | null): 1 | 2 | 0 => {
+    const key = nameTokens(nm).sort().join(" "); const hit = key ? byName.get(key) : null;
+    return hit && hit.b !== 0 ? hit.b : 0;
+  };
+  // 3) Per-fact borrower: by earner name; nameless facts inherit later via stream coherence.
+  const out = list.map((f) => ({ ...f, borrower: (borrowerOfName(f.personName) || f.borrower || 1) as 1 | 2 }));
+  // 4) STREAM COHERENCE: every doc of one job (stub + its W-2 + transcript share a streamId,
+  //    and no two people share a streamId) must sit with ONE borrower — majority vote, ties
+  //    to the lower number. This also pulls nameless docs onto their named siblings.
+  const streamVotes = new Map<string, Record<number, number>>();
+  for (const f of out) {
+    const sk = streamKey(f); if (!sk || sk === "?|") continue;
+    const v = streamVotes.get(sk) || {}; v[f.borrower] = (v[f.borrower] || 0) + 1; streamVotes.set(sk, v);
+  }
+  for (const f of out) {
+    const v = streamVotes.get(streamKey(f)); if (!v) continue;
+    const win = (Number(v[1] || 0) >= Number(v[2] || 0)) ? 1 : 2;
+    f.borrower = win;
+  }
+  return out;
+}
+
 // ── Stage 2: the deterministic engine. Pure function — SAME facts ⇒ SAME output. Rules
 // synthesized from the 8-underwriter design spec (Fannie B3-3.1 / Freddie 5303 / FHA 4000.1).
 const FREQ: Record<string, number> = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12 };
