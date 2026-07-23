@@ -343,12 +343,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Stage 2 — DETERMINISTIC compute from the extracted facts. Same facts ⇒ same numbers.
     const rawFacts: any[] = Array.isArray(parsed.docFacts) ? parsed.docFacts : [];
-    const docFacts: DocFact[] = rawFacts
+    const rawDocFacts: DocFact[] = rawFacts
       .map((f: any) => ({ ...f, borrower: Number(f?.borrower) === 2 ? 2 : 1, file: String(f?.file || f?.docType || "document").slice(0, 120) }))
       .filter((f: DocFact) => f && (f.borrower === 1 || f.borrower === 2));
-    if (!docFacts.length) {
+    if (!rawDocFacts.length) {
       return NextResponse.json({ error: "Couldn't extract income facts from the uploaded documents — re-check they're legible income docs (W-2, pay stubs, 1099, tax returns).", unreadableDocs: unreadable }, { status: 422 });
     }
+    // DETERMINISTIC borrower assignment (override the model's flip-floppy per-doc borrower
+    // NUMBER with a code-derived one, matched from the earner NAME to the applicant roster).
+    // primary = the named applicant(s); co = the co-borrower(s) detected from the doc labels.
+    const docFacts: DocFact[] = assignBorrowers(rawDocFacts, { primary: applicantNames, co: coBorrowers });
     const computed = computeQualifyingIncome(docFacts, { loanType });
     const breakdown = computed.breakdown.map((l) => ({ borrower: l.borrower, label: String(l.label).slice(0, 80), monthly: Math.round(l.monthly), basis: String(l.basis || "").slice(0, 160) }));
     const perBorrowerMonthly = computed.perBorrowerMonthly;
