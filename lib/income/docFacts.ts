@@ -248,11 +248,20 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
       for (const [k, sf] of wageStreams) { const key = (streamLatestStub(sf) || "") + String(streamMaxYear(sf)).padStart(6, "0"); if (key > bestKey) { bestKey = key; bestK = k; } }
       if (bestK) clsMap.set(bestK, "current");
     }
-    // Identity tokens of the streams we WILL count — to catch a stray W-2 that DUPLICATES an
-    // already-counted current stream (same IHSS recipient etc.) so Omit can't re-add a double.
+    // DUPLICATE identity = only DISTINCTIVE identifiers (an IHSS/case number, or a named
+    // recipient) — NEVER generic employer words like "services"/"healthcare"/"corporation",
+    // which would false-match unrelated employers (e.g. a real prior employer wrongly tagged a
+    // duplicate, losing its Omit-to-add lever). Used ONLY to catch a stray W-2 that repeats a
+    // recipient/case already counted via a current stub.
     const idTokens = (sf: DocFact[]): string[] => {
-      const s = sf.map((f) => `${f.employerOrPayer || ""} ${f.streamId || ""} ${f.notes || ""}`).join(" ").toLowerCase();
-      return [...new Set(s.replace(/[^a-z0-9#]/g, " ").split(/\s+/).filter((t) => t.length >= 4 || /#\d/.test(t)))];
+      const out: string[] = [];
+      for (const f of sf) {
+        const blob = `${f.streamId || ""} ${f.notes || ""}`;
+        for (const m of blob.matchAll(/#\s*(\d{3,})/g)) out.push("case#" + m[1]);
+        const rec = String(f.notes || "").match(/recipient[:\s]+([a-z][a-z.\s]{2,})/i);
+        if (rec) out.push("rec:" + rec[1].toLowerCase().replace(/[^a-z]/g, "").slice(0, 14));
+      }
+      return [...new Set(out)];
     };
     const countedIdentity = new Set<string>();
     for (const [k, sf] of wageStreams) if (clsMap.get(k) === "current") for (const t of idTokens(sf)) countedIdentity.add(t);
