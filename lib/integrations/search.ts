@@ -153,3 +153,50 @@ async function searchDuckDuckGo(query: string): Promise<SearchResult[]> {
         return [{ title: "Search unavailable", url: "", content: "Live web search is temporarily unavailable." }];
     }
 }
+
+// ---------------------------------------------------------------- Places ---
+
+export interface PlaceResult {
+    name: string;
+    address: string;
+    phone: string | null;
+    website: string | null;
+    category: string | null;
+    rating: number | null;
+}
+
+// Google Maps/Places reverse lookup via Serper. Businesses are indexed by phone
+// number on Maps, so querying the number itself is the single highest-precision
+// "who owns this number" source there is — a hit gives name + street address.
+// Serper-only (no fallback provider does places); returns [] without a key.
+export async function searchPlaces(query: string): Promise<PlaceResult[]> {
+    if (!process.env.SERPER_API_KEY) return [];
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+        const res = await fetch("https://google.serper.dev/places", {
+            method: "POST",
+            headers: {
+                "X-API-KEY": process.env.SERPER_API_KEY as string,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ q: query, num: 5 }),
+            signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (!res.ok) throw new Error(`Serper places error: ${res.status}`);
+        const data = await res.json();
+        return (data.places || []).slice(0, 5).map((p: any) => ({
+            name: String(p.title || ""),
+            address: String(p.address || ""),
+            phone: p.phoneNumber ? String(p.phoneNumber) : null,
+            website: p.website ? String(p.website) : null,
+            category: p.category ? String(p.category) : null,
+            rating: typeof p.rating === "number" ? p.rating : null,
+        })).filter((p: PlaceResult) => p.name);
+    } catch (e) {
+        clearTimeout(timeoutId);
+        console.error("Serper places failed:", e);
+        return [];
+    }
+}
