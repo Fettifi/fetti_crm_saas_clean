@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { assembleUrla } from "@/lib/urla";
-import { encryptUrlaSsns } from "@/lib/crypto";
+import { encryptUrlaSsns, decryptField } from "@/lib/crypto";
 
 // Document → 1003 auto-fill. Claude (vision) extracts the URLA-relevant fields and
 // merges them into the lead's structured 1003 (leads.raw.urla). Three input modes:
@@ -82,8 +82,18 @@ function nameScore(a: string, b: string): number {
   const ta = new Set(nmTokens(a)); if (!ta.size) return 0;
   let s = 0; for (const t of nmTokens(b)) if (ta.has(t)) s++; return s;
 }
+// SSN normalized to 9 digits (decrypts a stored/encrypted SSN; passes plaintext through). The
+// SSN is the true identity key — it catches the SAME person whose NAME was OCR'd differently on
+// two documents (which would otherwise fork a phantom borrower).
+const normSsn = (v?: string): string => (decryptField(v || "") || "").replace(/\D/g, "");
 // Which existing borrower slot does this person belong to? -1 = unrecognized (a new person).
 function slotForPerson(person: any, borrowers: any[]): number {
+  // 1) SSN match wins outright — same SSN = same person, regardless of a misread name.
+  const pssn = normSsn(person?.ssn);
+  if (pssn.length === 9) {
+    for (let i = 0; i < borrowers.length; i++) if (normSsn(borrowers[i]?.ssn) === pssn) return i;
+  }
+  // 2) Else name token overlap.
   const nm = personName(person); if (!nm) return -1;
   let best = -1, bestScore = 0;
   for (let i = 0; i < borrowers.length; i++) {
@@ -136,22 +146,43 @@ function dedupeBy(arr: any[], keyFn: (x: any) => string): any[] {
   return out;
 }
 
+// Collapse borrower slots that share an SSN into one (same person read under two name
+// spellings across documents → one borrower, not a phantom). Order-preserving so the primary
+// (slot 0) stays first. Runs after all documents are merged; also cleans a prior phantom.
+function dedupeBorrowersBySsn(borrowers: any[]): any[] {
+  const out: any[] = [];
+  const bySsn = new Map<string, number>();
+  for (const b of (borrowers || [])) {
+    const ssn = normSsn(b?.ssn);
+    if (ssn.length === 9 && bySsn.has(ssn)) {
+      const idx = bySsn.get(ssn)!;
+      out[idx] = deepMerge(out[idx], b);          // same SSN → same person, merge in
+    } else {
+      if (ssn.length === 9) bySsn.set(ssn, out.length);
+      out.push(b);
+    }
+  }
+  return out;
+}
+
 function mergeIntoUrla(cur: any, ex: any): any {
   cur.borrowers = (cur.borrowers && cur.borrowers.length) ? cur.borrowers : [{}];
   // File each extracted person under the roster slot whose NAME matches — the model may
   // label a co-borrower's solo doc as "borrower", so we never trust the label blindly.
   const people = [ex?.borrower, ex?.coBorrower].filter((p) => p && Object.keys(p).length);
   for (const person of people) {
-    const nm = personName(person);
-    let slot: number;
-    if (nm) {
-      slot = slotForPerson(person, cur.borrowers);
-      if (slot < 0) {                                   // a named person not yet on the roster
-        const emptyIdx = cur.borrowers.findIndex((bb: any) => !personName(bb));
-        slot = emptyIdx >= 0 ? emptyIdx : cur.borrowers.length;   // reuse an empty slot, else append
-      }
-    } else {
-      slot = 0;                                          // nameless doc (assets etc.) → primary
+    let slot = slotForPerson(person, cur.borrowers);     // SSN match, then name match
+    if (slot < 0) {                                       // unrecognized on this file
+      const nm = personName(person);
+      if (nm && (person?.ssn || person?.dob)) {
+        // A genuinely new, identity-bearing person (own SSN/DOB) → their own borrower slot.
+        const emptyIdx = cur.borrowers.findIndex((bb: any) => !personName(bb) && !bb?.ssn);
+        slot = emptyIdx >= 0 ? emptyIdx : cur.borrowers.length;
+      } else if (!nm) {
+        slot = 0;                                         // nameless doc (assets etc.) → primary
+      } else {
+        continue;                                         // named but NO identity (a misread on an
+      }                                                   // income doc) — don't fork a phantom borrower
     }
     if (!cur.borrowers[slot]) cur.borrowers[slot] = {};
     cur.borrowers[slot] = deepMerge(cur.borrowers[slot], person);
@@ -252,6 +283,9 @@ export async function POST(req: NextRequest) {
         read.push({ name: s.label, docType: ex.docType || "document" });
       } else failed.push(s.label);
     }
+    // Collapse any borrower slots that resolved to the SAME SSN (one person read under two
+    // name spellings across docs → one borrower). Also cleans a phantom from a prior run.
+    if (Array.isArray(cur.borrowers)) cur.borrowers = dedupeBorrowersBySsn(cur.borrowers);
     // encryptUrlaSsns is idempotent on already-encrypted SSNs, so merging our deltas onto a
     // fresh urla that may already carry encrypted SSNs re-encrypts safely (no double-encrypt).
     freshRaw.urla = encryptUrlaSsns(cur); // SSN encrypted at rest (app-layer)
