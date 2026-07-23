@@ -66,12 +66,43 @@ function deepMerge(target: any, src: any): any {
   return src;
 }
 
-// One document → parsed URLA fields (or null if unreadable).
-async function extractOne(key: string, buf: Buffer, mediaType: string): Promise<any | null> {
+// ── BORROWER vs CO-BORROWER assignment by NAME (not by the model's per-doc guess). A
+// co-borrower's solo document (their driver's license, W-2, paystub) reads to the model as
+// the lone "borrower" on that page — filing it blindly into borrowers[0] OVERWRITES the
+// primary's DOB/SSN/address. We instead match the extracted person's NAME to the existing
+// borrower roster and merge into THAT slot; an unrecognized named person becomes a new
+// co-borrower. Mirrors the income engine's deterministic borrower assignment.
+const NM_STOP = new Set(["and", "the", "jr", "sr", "ii", "iii", "mrs", "mr", "ms", "for", "aka", "dba", "llc", "inc", "trust"]);
+const nmTokens = (s: string): string[] =>
+  String(s || "").toLowerCase().normalize("NFKD").replace(/[^a-z\s]/g, " ").split(/\s+/).filter((t) => t.length >= 3 && !NM_STOP.has(t));
+function personName(p: any): string {
+  return `${p?.firstName || ""} ${p?.lastName || ""} ${p?.fullName || ""}`.trim();
+}
+function nameScore(a: string, b: string): number {
+  const ta = new Set(nmTokens(a)); if (!ta.size) return 0;
+  let s = 0; for (const t of nmTokens(b)) if (ta.has(t)) s++; return s;
+}
+// Which existing borrower slot does this person belong to? -1 = unrecognized (a new person).
+function slotForPerson(person: any, borrowers: any[]): number {
+  const nm = personName(person); if (!nm) return -1;
+  let best = -1, bestScore = 0;
+  for (let i = 0; i < borrowers.length; i++) {
+    const sc = nameScore(nm, personName(borrowers[i]));
+    if (sc > bestScore) { bestScore = sc; best = i; }
+  }
+  return bestScore >= 1 ? best : -1;
+}
+
+// One document → parsed URLA fields (or null if unreadable). `rosterHint` names the known
+// applicants so the model files a co-borrower's solo document as coBorrower, not borrower.
+async function extractOne(key: string, buf: Buffer, mediaType: string, rosterHint: string): Promise<any | null> {
   const b64 = buf.toString("base64");
   const block = mediaType === "application/pdf"
     ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }
     : { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } };
+  const hint = rosterHint
+    ? `KNOWN APPLICANTS on this loan — attribute the person on this document to the matching one BY NAME: ${rosterHint}. Put the PRIMARY borrower's fields under "borrower" and a DIFFERENT applicant's fields under "coBorrower". If the person on this document is the co-borrower, return their fields under "coBorrower" (leave "borrower" empty). `
+    : "";
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
@@ -79,7 +110,7 @@ async function extractOne(key: string, buf: Buffer, mediaType: string): Promise<
       model: process.env.ANTHROPIC_MODEL || "claude-opus-4-8",
       max_tokens: 4000,
       system: SYSTEM,
-      messages: [{ role: "user", content: [block, { type: "text", text: "Extract the URLA fields you can read. JSON only." }] }],
+      messages: [{ role: "user", content: [block, { type: "text", text: `${hint}Extract the URLA fields you can read. Always include the person's name on the object you return so it can be filed under the right borrower. JSON only.` }] }],
     }),
     signal: AbortSignal.timeout(60000),
   });
@@ -106,13 +137,24 @@ function dedupeBy(arr: any[], keyFn: (x: any) => string): any[] {
 }
 
 function mergeIntoUrla(cur: any, ex: any): any {
-  if (ex?.borrower) {
-    cur.borrowers = cur.borrowers && cur.borrowers.length ? cur.borrowers : [{}];
-    cur.borrowers[0] = deepMerge(cur.borrowers[0], ex.borrower);
-  }
-  if (ex?.coBorrower && Object.keys(ex.coBorrower).length) {
-    cur.borrowers = cur.borrowers && cur.borrowers.length ? cur.borrowers : [{}];
-    cur.borrowers[1] = deepMerge(cur.borrowers[1] || {}, ex.coBorrower);
+  cur.borrowers = (cur.borrowers && cur.borrowers.length) ? cur.borrowers : [{}];
+  // File each extracted person under the roster slot whose NAME matches — the model may
+  // label a co-borrower's solo doc as "borrower", so we never trust the label blindly.
+  const people = [ex?.borrower, ex?.coBorrower].filter((p) => p && Object.keys(p).length);
+  for (const person of people) {
+    const nm = personName(person);
+    let slot: number;
+    if (nm) {
+      slot = slotForPerson(person, cur.borrowers);
+      if (slot < 0) {                                   // a named person not yet on the roster
+        const emptyIdx = cur.borrowers.findIndex((bb: any) => !personName(bb));
+        slot = emptyIdx >= 0 ? emptyIdx : cur.borrowers.length;   // reuse an empty slot, else append
+      }
+    } else {
+      slot = 0;                                          // nameless doc (assets etc.) → primary
+    }
+    if (!cur.borrowers[slot]) cur.borrowers[slot] = {};
+    cur.borrowers[slot] = deepMerge(cur.borrowers[slot], person);
   }
   if (Array.isArray(ex?.assets) && ex.assets.length)
     cur.assets = dedupeBy([...(cur.assets || []), ...ex.assets], (a) => `${a.institution || ""}|${a.type || ""}|${a.accountNumber || a.balance || ""}`);
@@ -174,13 +216,19 @@ export async function POST(req: NextRequest) {
 
     // ---- Extract each (parallel), then merge onto the FRESHEST urla ----------
     const raw = lead.raw && typeof lead.raw === "object" ? lead.raw : {};
+    // Roster hint from what we already know (lead name seeds borrower[0]; any co-borrowers
+    // from a prior 1003/MISMO) so each doc is attributed to the right person by name.
+    const preUrla: any = (raw.urla && typeof raw.urla === "object") ? raw.urla : assembleUrla(lead, loanFile);
+    const rosterHint = ((preUrla.borrowers || []) as any[])
+      .map((bb, i) => { const nm = personName(bb); return nm ? `${i === 0 ? "Primary borrower" : "Co-borrower"} = ${nm}` : null; })
+      .filter(Boolean).join("; ");
     const read: { name: string; docType: string }[] = [];
     const failed: string[] = [];
     // Read every document IN PARALLEL — a file with many docs read sequentially blows
     // past the function timeout before it can save (15 docs was ~8s parallel vs 5min+
     // sequential). Merge in source order afterward so the result is deterministic.
     const outcomes = await Promise.all(sources.map(async (s) => {
-      try { return { s, ex: await extractOne(key, s.buf, s.mediaType) }; }
+      try { return { s, ex: await extractOne(key, s.buf, s.mediaType, rosterHint) }; }
       catch (e) { console.warn("[los/extract]", s.label, e); return { s, ex: null as any }; }
     }));
 
@@ -195,8 +243,11 @@ export async function POST(req: NextRequest) {
       ? (freshLead as any).raw
       : (raw && typeof raw === "object" ? raw : {})) as any;
     let cur = (freshRaw.urla && typeof freshRaw.urla === "object") ? freshRaw.urla : assembleUrla(lead, loanFile);
+    const hasData = (ex: any) => ex && [ex.borrower, ex.coBorrower].some((p) => p && Object.keys(p).length)
+      || (ex && [ex.assets, ex.liabilities, ex.reo].some((a) => Array.isArray(a) && a.length))
+      || (ex && [ex.property, ex.loan, ex.declarations].some((o) => o && Object.keys(o).length));
     for (const { s, ex } of outcomes) {
-      if (ex && (ex.borrower || ex.assets)) {
+      if (hasData(ex)) {
         cur = mergeIntoUrla(cur, ex);
         read.push({ name: s.label, docType: ex.docType || "document" });
       } else failed.push(s.label);
