@@ -19,6 +19,7 @@ export default function CardAuthPanel({ fileId }: { fileId: string }) {
   const [copied, setCopied] = useState<number | null>(null);
   const [revealed, setRevealed] = useState<Record<number, { pan: string; exp: string; cardholder: string; cvv?: string }>>({});
   const [sendMsg, setSendMsg] = useState<Record<number, string>>({});
+  const [alsoEmail, setAlsoEmail] = useState<Record<number, string>>({});
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
@@ -46,7 +47,8 @@ export default function CardAuthPanel({ fileId }: { fileId: string }) {
     setBusy(i); setErr(""); setSendMsg((m) => ({ ...m, [i]: "" }));
     try {
       const amt = Number(String(amount[i] ?? "").replace(/[^0-9.]/g, "")) || 0;
-      const r = await fetch(`/api/los/files/${fileId}/card-auth`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ borrowerIndex: i, amount: amt, action: "send" }) });
+      const cc = String(alsoEmail[i] ?? "").trim();
+      const r = await fetch(`/api/los/files/${fileId}/card-auth`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ borrowerIndex: i, amount: amt, action: "send", ...(cc ? { also_email: cc } : {}) }) });
       const j = await r.json();
       if (j.link) setLink((m) => ({ ...m, [i]: j.link }));
       setSendMsg((m) => ({ ...m, [i]: (!r.ok ? "⚠ " : (j.sent?.length ? "✓ " : "⚠ ")) + (j.message || j.error || "") }));
@@ -129,8 +131,12 @@ export default function CardAuthPanel({ fileId }: { fileId: string }) {
                       <label className="text-[10px] text-slate-500 mb-1 block">Blanket amount (max for this loan)</label>
                       <input value={amount[row.index] ?? (a?.amount ? String(a.amount) : "")} onChange={(e) => setAmount((m) => ({ ...m, [row.index]: e.target.value }))} placeholder="$ e.g. 150" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 focus:outline-none w-40" />
                     </div>
-                    <button onClick={() => sendToBorrower(row.index)} disabled={busy === row.index} title="Email + text the borrower their secure authorization link" className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                      {busy === row.index ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send to borrower
+                    <div>
+                      <label className="text-[10px] text-slate-500 mb-1 block">Also email a copy to (optional)</label>
+                      <input type="email" value={alsoEmail[row.index] ?? ""} onChange={(e) => setAlsoEmail((m) => ({ ...m, [row.index]: e.target.value }))} placeholder="spouse / partner email" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 focus:outline-none w-56" />
+                    </div>
+                    <button onClick={() => sendToBorrower(row.index)} disabled={busy === row.index} title="Email + text the borrower their secure authorization link (and a copy to the extra email, if set)" className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                      {busy === row.index ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send{alsoEmail[row.index]?.trim() ? " to both" : " to borrower"}
                     </button>
                     <button onClick={() => sendRequest(row.index)} disabled={busy === row.index} className="text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-3 py-1.5 rounded-lg text-slate-200">Get link to copy</button>
                     {link[row.index] && (

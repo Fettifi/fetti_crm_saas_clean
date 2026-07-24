@@ -130,14 +130,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
       const link = `${appUrl}/card-auth/${loanFile.share_token}?b=${i}&s=${cardAuthSig(loanFile.share_token, i)}`;
       const { email, phone } = borrowerContact(lead, loanFile, i);
-      if (!email && !phone) {
-        return NextResponse.json({ error: "No email or phone on file for this borrower — add their contact on the lead / 1003, or copy the link to send it yourself.", link }, { status: 422 });
+      // The LO may also email the SAME authorization link to a second recipient (a spouse,
+      // partner, business co-owner — whoever actually completes the card details). Email only,
+      // LO-directed. Validate before we require a borrower channel, so a copy-only send works.
+      const alsoEmail = String(body?.also_email || "").trim();
+      if (alsoEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(alsoEmail)) {
+        return NextResponse.json({ error: `"${alsoEmail}" doesn't look like a valid email address — check it and try again.` }, { status: 422 });
       }
-      const { sent } = await sendSignRequest({ to_name: names[i], to_email: email, to_phone: phone, link, title: "Credit Card Authorization" });
+      if (!email && !phone && !alsoEmail) {
+        return NextResponse.json({ error: "No email or phone on file for this borrower — add their contact on the lead / 1003, enter an email to also send to, or copy the link to send it yourself.", link }, { status: 422 });
+      }
+      const { sent } = (email || phone)
+        ? await sendSignRequest({ to_name: names[i], to_email: email, to_phone: phone, link, title: "Credit Card Authorization", leadId: lead.id, loanFileId: id })
+        : { sent: [] as string[] };
       await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: lead.id, actor: "lo", action: "card_auth.sent", detail: { borrowerIndex: i, channels: sent, amount: amt } }).catch(() => {});
+
+      let alsoSentTo: string | null = null;
+      if (alsoEmail) {
+        const alsoName = String(body?.also_name || "").trim() || null;
+        const r2 = await sendSignRequest({ to_name: alsoName, to_email: alsoEmail, to_phone: null, link, title: "Credit Card Authorization", leadId: lead.id, loanFileId: id });
+        if (r2.sent.length) alsoSentTo = alsoEmail;
+        await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: lead.id, actor: "lo", action: "card_auth.sent_copy", detail: { borrowerIndex: i, to: alsoEmail, channels: r2.sent, amount: amt } }).catch(() => {});
+      }
+
+      const parts: string[] = [];
+      if (sent.length) parts.push(`via ${sent.join(" + ")} to ${email || phone}`);
+      if (alsoSentTo) parts.push(`by email to ${alsoSentTo}`);
       return NextResponse.json({
-        ok: true, sent, link, to: email || phone,
-        message: sent.length ? `Sent via ${sent.join(" + ")} to ${email || phone}.` : "Couldn't deliver (email/SMS not configured) — copy the link to send it manually.",
+        ok: true, sent, alsoSentTo, link, to: email || phone,
+        message: parts.length ? `Sent ${parts.join(" and ")}.` : "Couldn't deliver (email/SMS not configured) — copy the link to send it manually.",
       });
     }
 
