@@ -34,6 +34,8 @@ export type BankStatementResult = {
   flags: IncomeFlag[];
   accountsUsed: number;
   monthsDocumented: number;        // max months documented on any account
+  // PROOF of coverage, per account — the LO must be able to SEE the months, not trust a count.
+  coverage: { account: string; holder: string | null; type: string; window: number; months: string[]; missing: string[] }[];
 };
 
 const rd = (n: number) => Math.round(n + Number.EPSILON);
@@ -107,6 +109,7 @@ export function computeBankStatementIncome(
   const breakdown: IncomeLine[] = [];
   const perBorrowerMonthly: Record<number, number> = {};
   const accounts = collectAccounts(reads);
+  const coverage: BankStatementResult["coverage"] = [];
   let monthsDocumented = 0, accountsUsed = 0;
 
   const add = (b: 1 | 2, monthly: number, label: string, basis: string) => {
@@ -138,6 +141,7 @@ export function computeBankStatementIncome(
       while (diff > 1 && gaps.length < 12) { diff--; const d = new Date(Date.UTC(py, pm - 1 + diff, 1)); gaps.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`); }
     }
     if (gaps.length) flags.push({ text: `${acct.label}: missing statement month${gaps.length > 1 ? "s" : ""} inside the window (${gaps.slice(0, 6).join(", ")}) — missing months count as $0 in the ${W}-month average until collected.`, addBackMonthly: 0, borrower: b });
+    coverage.push({ account: acct.label, holder: acct.holder, type: acct.type, window: W, months: windowed.map((m) => m.monthKey), missing: gaps });
 
     const eligibleTotal = windowed.reduce((s, m) => s + m.eligible, 0);
     const avgEligible = eligibleTotal / W;   // divisor is ALWAYS the program window
@@ -182,5 +186,5 @@ export function computeBankStatementIncome(
   }
 
   const qualifyingMonthlyIncome = Object.values(perBorrowerMonthly).reduce((s, v) => s + v, 0);
-  return { perBorrowerMonthly, qualifyingMonthlyIncome: rd(qualifyingMonthlyIncome), breakdown, flags, accountsUsed, monthsDocumented };
+  return { perBorrowerMonthly, qualifyingMonthlyIncome: rd(qualifyingMonthlyIncome), breakdown, flags, accountsUsed, monthsDocumented, coverage };
 }
