@@ -54,6 +54,24 @@ export type DocRead = {
   isJointReturn?: boolean;
   yearsAtCurrentEmployer?: number | null;
   bankMonthlyDeposits?: number | null;  // avg monthly deposits off a bank statement (reality-check only)
+  // ── BANK STATEMENT detail (bank-statement qualifying programs — 12/24-mo deposit income).
+  //    One entry per statement MONTH contained in this document (a PDF may hold several).
+  bankStatement?: {
+    institution?: string | null;
+    accountLast4?: string | null;
+    accountHolder?: string | null;       // exactly as printed (person or business entity)
+    accountType?: "personal" | "business" | null;  // business = entity name / "business checking" / DBA
+    months?: {
+      periodStart?: string | null;       // YYYY-MM-DD
+      periodEnd?: string | null;         // YYYY-MM-DD
+      totalDeposits?: number | null;     // total deposits/credits for the period, as printed
+      transfersIn?: number | null;       // portion of deposits that are transfers from another account
+      excludedDeposits?: number | null;  // loan proceeds / refunds / other clearly non-income credits
+      largeDeposits?: { amount: number; description?: string | null }[];  // unusually large single credits
+      endingBalance?: number | null;
+      nsfCount?: number | null;          // NSF / overdraft / returned-item incidents in the period
+    }[];
+  } | null;
   notes?: string;                       // one terse underwriter-relevant line
 };
 
@@ -66,7 +84,7 @@ WORK THROUGH IT IN THIS ORDER:
 2) WHOSE document is it: read the EARNER / employee / provider / account-holder name EXACTLY as printed into personName (for an IHSS stub this is the PROVIDER, not the recipient). Read the last 4 of the SSN (if shown) into ssnLast4 — last 4 ONLY, never the full number. Read the person's city into addressCity if shown.
 3) EMPLOYER / STREAM: employerOrPayer (exact), ein (if shown). caseOrRecipient = any recipient name or case/account number that distinguishes this income source (IHSS recipient + case #, or a bank account last-4). streamId = a stable key combining employer + EIN + case/recipient (e.g. "CoreCivic|EIN62-..." or "IHSS|case#1837869"). incomeCategory — classify by whether there is a STABLE BASE, not by whether any variable pay exists: wage_salaried = ANY W-2 job with a steady salary OR a regular hourly rate (a corrections officer, nurse, warehouse worker, etc. is wage_salaried EVEN IF the stub shows overtime, shift differential, holiday or bonus on top — a stable base rate makes it salaried). wage_variable = ONLY a job with NO stable base: gig / IHSS in-home care / tips-only / piece-rate / commission-only / day-labor where every check fluctuates with no underlying salary or fixed rate. self_employment = 1099 / Schedule C. fixed_benefit = SSA / pension / disability / annuity. When unsure between salaried and variable for a W-2 job that prints a regular rate, choose wage_salaried.
 4) PERIOD & CURRENCY (critical — this tells the engine if the income is ONGOING or a job the borrower LEFT): for a pay stub read payPeriodStart, payPeriodEnd, payDate (the check date), and ytdThroughDate — all YYYY-MM-DD, exactly as printed. Set isFinalCheck=true only if it says final/last/termination/severance. Read hireDate if printed. For a W-2/1099/return set taxYear.
-5) FIGURES, EXACTLY AS PRINTED (never rounded, never derived): payFrequency (infer from the pay-period dates: two dates in one month=semimonthly; ~14 days apart=biweekly; ~7=weekly; one/month=monthly). regularPerPeriod (regular pay this period, EXCLUDING overtime), otPerPeriod (overtime/other variable this period), grossPerPeriod (total gross this period), ytdRegular, ytdGross. W-2: w2Box1 (taxable wages), w2Box5 (medicare wages). Self-employment: selfEmploymentNet (net after expenses for the year, from Sch C line 31 or the 1099 amount). Benefit: monthlyBenefit, benefitType, continuanceMonthsRemaining (null if lifetime), monthsReceived (support/alimony), nonTaxable (true if the benefit is non-taxable). 1040: isJointReturn=true if Married-Filing-Jointly. Bank statement: bankMonthlyDeposits = the AVERAGE monthly deposits you can see (for a reality-check only).
+5) FIGURES, EXACTLY AS PRINTED (never rounded, never derived): payFrequency (infer from the pay-period dates: two dates in one month=semimonthly; ~14 days apart=biweekly; ~7=weekly; one/month=monthly). regularPerPeriod (regular pay this period, EXCLUDING overtime), otPerPeriod (overtime/other variable this period), grossPerPeriod (total gross this period), ytdRegular, ytdGross. W-2: w2Box1 (taxable wages), w2Box5 (medicare wages). Self-employment: selfEmploymentNet (net after expenses for the year, from Sch C line 31 or the 1099 amount). Benefit: monthlyBenefit, benefitType, continuanceMonthsRemaining (null if lifetime), monthsReceived (support/alimony), nonTaxable (true if the benefit is non-taxable). 1040: isJointReturn=true if Married-Filing-Jointly. BANK STATEMENT — read it FULLY into the bankStatement object (these documents can QUALIFY income on bank-statement loan programs, so precision matters): institution, accountLast4 (last 4 of the account number), accountHolder EXACTLY as printed (a business/entity name means accountType "business"; a person's name on a consumer account means "personal"), and ONE months[] entry PER STATEMENT MONTH contained in this document (a PDF may hold 2+ monthly statements — emit each month separately): periodStart, periodEnd (YYYY-MM-DD), totalDeposits (the statement's printed total deposits/credits for that period), transfersIn (the portion of deposits that are TRANSFERS from another account — look for "transfer from", "online transfer", "xfer"), excludedDeposits (credits that are clearly NOT income: loan/advance proceeds, tax refunds, returned/reversed items, merchant refunds), largeDeposits (each unusually large single credit with its printed description), endingBalance, nsfCount (NSF / insufficient-funds / overdraft-item incidents). Also set bankMonthlyDeposits = the average monthly deposits as a cross-check.
 6) notes: ONE terse line an underwriter needs (e.g. "IHSS recipient Ophelia H, case #1470414", "final check — employment ended", "declining vs prior year").
 
 RULES: transcribe numbers EXACTLY as printed — never round, never derive, never sum. Include ONLY what you can actually SEE; use null for anything not on this document. Never assign a joint 1040's combined wages to one person. Return the DocRead via the tool. One document = one DocRead.`;

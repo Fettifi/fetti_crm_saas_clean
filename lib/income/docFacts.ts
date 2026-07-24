@@ -109,6 +109,17 @@ function rosterScore(name: string, names: string[]): number {
   return best;
 }
 
+// A standalone name→borrower resolver over the same roster logic — used by the bank-statement
+// method to attribute an ACCOUNT HOLDER to a borrower exactly the way documents are attributed.
+// Ties/unknown default to borrower 1 (the primary).
+export function makeBorrowerResolver(roster: { primary: string[]; co: string[] }): (name?: string | null) => 1 | 2 {
+  return (name?: string | null): 1 | 2 => {
+    const p = rosterScore(String(name || ""), roster.primary);
+    const c = rosterScore(String(name || ""), roster.co);
+    return c > p ? 2 : 1;
+  };
+}
+
 // Returns a NEW facts array with borrower reassigned deterministically. `roster.primary` =
 // the named applicant(s) (borrower 1), `roster.co` = detected co-borrower name(s) (borrower 2).
 export function assignBorrowers(facts: DocFact[], roster: { primary: string[]; co: string[] }): DocFact[] {

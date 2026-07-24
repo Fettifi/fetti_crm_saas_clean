@@ -13,7 +13,8 @@ import { assembleUrla, type Urla } from "@/lib/urla";
 import type { LoanType } from "@/lib/income";
 import sharp from "sharp";
 import { compressPdfIfNeeded } from "@/lib/pdfCompress";
-import { computeQualifyingIncome, assignBorrowers, type DocFact } from "@/lib/income/docFacts";
+import { computeQualifyingIncome, assignBorrowers, makeBorrowerResolver, type DocFact } from "@/lib/income/docFacts";
+import { computeBankStatementIncome } from "@/lib/income/bankStatement";
 import { readDocumentsPooled, toDocFact, type DocRead } from "@/lib/income/readDocument";
 import { verifyWorksheet, type VerifyFinding } from "@/lib/income/verifyWorksheet";
 
@@ -28,7 +29,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-23-per-document-read-v3-roster";
+const LOGIC_VERSION = "2026-07-23-bank-statement-method-v1";
 const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {
@@ -76,8 +77,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   // A deliberate "re-read the documents" from the LO sends { force: true }; a normal
   // Verify sends no body and gets the STABLE cached result (see the fingerprint cache).
+  // method: "auto" (default) | "standard" | "bank_statement" — bank_statement qualifies on
+  // 12/24-mo deposits (non-QM). expenseFactor optionally overrides the business 50% default.
   let force = false;
-  try { const b = await req.json(); force = !!b?.force; } catch { /* no body — normal verify */ }
+  let method: "auto" | "standard" | "bank_statement" = "auto";
+  let expenseFactor: number | null = null;
+  try {
+    const b = await req.json();
+    force = !!b?.force;
+    if (b?.method === "standard" || b?.method === "bank_statement") method = b.method;
+    const ef = Number(b?.expenseFactor);
+    if (isFinite(ef) && ef >= 0.1 && ef <= 1) expenseFactor = ef;
+  } catch { /* no body — normal verify */ }
   try {
     const { data: loanFile } = await supabaseAdmin.from("loan_files").select("*").eq("id", id).maybeSingle();
     if (!loanFile) return NextResponse.json({ error: "Loan file not found." }, { status: 404 });
@@ -164,7 +175,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // same income. Adding/replacing/removing a document changes the fingerprint and re-reads.
     const CACHE_KEY = `los_income_verify:${id}`;
     const fingerprint = crypto.createHash("sha1").update(
-      LOGIC_VERSION + " " + applicants + " " + loanType + " " +
+      LOGIC_VERSION + " " + applicants + " " + loanType + " " + method + " " + (expenseFactor ?? "") + " " +
       candidates.map((d: any) => `${d.id}|${d.storage_path || ""}|${d.size_bytes ?? ""}|${d.status || ""}`).sort().join("\n")
     ).digest("hex");
     if (!force) {
@@ -242,7 +253,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     //    borrower). A doc that can't be read returns null and is flagged — never fails the batch.
     //    See lib/income/readDocument.ts. No `temperature` (Opus 4.8 rejects it); forced tool use.
     const rosterHint = applicants;
-    const pooled = await readDocumentsPooled(key as string, docBufs, rosterHint, 6);
+    // Bigger files read at higher concurrency so a 24-month bank-statement set (25-40 docs)
+    // completes well inside the function's time budget; readOneDocument backs off on 429s.
+    const pooled = await readDocumentsPooled(key as string, docBufs, rosterHint, docBufs.length > 20 ? 10 : 6);
     const perDocResults = docBufs.map((d, i) => ({ d, r: pooled[i] }));
     for (const { d, r } of perDocResults) { if (r && r.legible !== false) read.push(d.name); else unreadable.push(d.name); }
     const docReads: DocRead[] = perDocResults.map((x) => x.r).filter((r): r is DocRead => !!r && r.legible !== false);
@@ -256,9 +269,59 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // DETERMINISTIC borrower assignment (override the model's flip-floppy per-doc borrower
     // NUMBER with a code-derived one, matched from the earner NAME to the applicant roster).
     // primary = the named applicant(s); co = the co-borrower(s) detected from the doc labels.
-    const docFacts: DocFact[] = assignBorrowers(rawDocFacts, { primary: primaryNames, co: coRosterNames });
-    const computed = computeQualifyingIncome(docFacts, { loanType });
-    const breakdown = computed.breakdown.map((l) => ({ borrower: l.borrower, label: String(l.label).slice(0, 80), monthly: Math.round(l.monthly), basis: String(l.basis || "").slice(0, 160) }));
+    const roster = { primary: primaryNames, co: coRosterNames };
+    const docFacts: DocFact[] = assignBorrowers(rawDocFacts, roster);
+    const standard = computeQualifyingIncome(docFacts, { loanType });
+
+    // ── METHOD SELECTION: bank-statement (12/24-mo deposit) programs qualify on deposits, not
+    //    tax docs. Auto-detect when the file is clearly a bank-statement package (≥8 distinct
+    //    statement-months read); the LO can force either way via body.method.
+    const bankReads = docReads.filter((r) => r.bankStatement && Array.isArray(r.bankStatement.months) && r.bankStatement.months.length);
+    const bankMonthCount = bankReads.reduce((s, r) => s + (r.bankStatement!.months!.length || 0), 0);
+    const effectiveMethod: "standard" | "bank_statement" =
+      method === "bank_statement" ? "bank_statement"
+      : method === "standard" ? "standard"
+      : bankMonthCount >= 8 ? "bank_statement" : "standard";
+
+    let computed = standard;
+    if (effectiveMethod === "bank_statement") {
+      const bank = computeBankStatementIncome(bankReads, makeBorrowerResolver(roster), { loanType, expenseFactor });
+      // COMBINE per borrower: a borrower who qualifies on deposits uses their BANK income; their
+      // documented wage/self-employment income is NOT added on top (those earnings usually flow
+      // through the very deposits being counted — adding both double-counts). Each held stream
+      // becomes an Omit-to-add flag so the LO can consciously combine (e.g. a true W-2 second
+      // job paid into a different account). Fixed benefits (SSA/pension) stay additive. A
+      // borrower with NO bank income (e.g. a W-2 co-borrower) keeps their standard income.
+      const perBorrowerMonthly: Record<number, number> = { ...bank.perBorrowerMonthly };
+      const breakdown = [...bank.breakdown];
+      const flags = [...bank.flags];
+      for (const b of [1, 2] as const) {
+        const bankMonthly = bank.perBorrowerMonthly[b] || 0;
+        const lines = standard.breakdown.filter((l) => l.borrower === b);
+        if (bankMonthly > 0) {
+          for (const l of lines) {
+            if (/benefit$/i.test(l.label)) {   // fixed benefits are additive alongside deposit income
+              perBorrowerMonthly[b] = Math.round((perBorrowerMonthly[b] || 0) + l.monthly);
+              breakdown.push(l);
+            } else {
+              flags.push({ text: `${l.label} (${"$" + Math.round(l.monthly).toLocaleString()}/mo documented): NOT added — this file qualifies on bank-statement deposits and these earnings likely flow through the counted deposits (adding both would double-count). Omit to add it if it's a separate income paid into a different account.`, addBackMonthly: Math.round(l.monthly), borrower: b });
+            }
+          }
+        } else if (lines.length) {
+          for (const l of lines) { perBorrowerMonthly[b] = Math.round((perBorrowerMonthly[b] || 0) + l.monthly); breakdown.push(l); }
+        }
+      }
+      // Standard-engine flags still apply (unreadables, held streams for non-bank borrowers…).
+      computed = {
+        perBorrowerMonthly,
+        qualifyingMonthlyIncome: Object.values(perBorrowerMonthly).reduce((s, v) => s + v, 0),
+        breakdown,
+        flags: [...flags, ...standard.flags],
+      };
+      if (!bank.accountsUsed) computed = { ...standard, flags: [...standard.flags, { text: "Bank-statement method selected but no statement months could be read — verify the statements are legible; fell back to the standard calculation.", addBackMonthly: 0, borrower: 1 }] };
+    }
+
+    const breakdown = computed.breakdown.map((l) => ({ borrower: l.borrower, label: String(l.label).slice(0, 90), monthly: Math.round(l.monthly), basis: String((l as any).basis || "").slice(0, 180) }));
     const perBorrowerMonthly = computed.perBorrowerMonthly;
     const qualifyingMonthlyIncome = Math.round(computed.qualifyingMonthlyIncome);
 
@@ -298,7 +361,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       crossChecks: [] as string[],
       flags: [...qcFlags, ...overflowFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...computed.flags.map(normFlag)].slice(0, 30),
       confidence: qc.confidence || (computed.breakdown.length ? "high" : "low"),
-      notes: `Read ${incomeReads.length} document${incomeReads.length === 1 ? "" : "s"} individually · ${docFacts.length} income facts · QC ${qc.findings.length} finding${qc.findings.length === 1 ? "" : "s"}.`,
+      notes: `${effectiveMethod === "bank_statement" ? `BANK-STATEMENT method (${bankMonthCount} statement-months read)` : "Standard method"} · read ${incomeReads.length} document${incomeReads.length === 1 ? "" : "s"} individually · QC ${qc.findings.length} finding${qc.findings.length === 1 ? "" : "s"}.`,
     };
     // "Omit → add income" for a variable/gig earner, COMPUTED IN CODE (the model reliably
     // STATES the most-recent-year figure in the flag but is unreliable at setting
@@ -326,7 +389,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Freeze this read against the doc-set fingerprint so the SAME file returns the SAME
     // number until its documents change (or the LO forces a re-read).
-    const payload = { perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType };
+    const payload = { perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType, method: effectiveMethod };
     const verifiedAt = new Date().toISOString();
     await setSetting(CACHE_KEY, JSON.stringify({ fingerprint, verifiedAt, payload })).catch(() => {});
     return NextResponse.json({ ...payload, cached: false, verifiedAt });
