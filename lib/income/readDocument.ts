@@ -105,8 +105,12 @@ export async function readOneDocument(
     : { type: "image", source: { type: "base64", media_type: doc.mediaType, data: doc.buf.toString("base64") } };
   const userText = `This document was uploaded under the label "${doc.name}".${rosterHint ? ` Known applicants on this loan (attribute this document to the person by NAME/SSN): ${rosterHint}.` : ""} Read THIS ONE document and return its DocRead. Facts only — no math.`;
 
+  // Patient transient retries: a 24-month file fires ~40 heavy vision calls, which can trip
+  // the per-minute rate limit — the window REFILLS within ~60s, so a read must back off long
+  // enough to ride it out (5 retries, up to ~30s apart ≈ 90s of patience) rather than giving
+  // up in seconds and dropping the document (Ramon: never drop docs on big files).
   let transient = 0;
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     let res: Response;
     try {
       res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -127,7 +131,7 @@ export async function readOneDocument(
         signal: AbortSignal.timeout(90000),
       });
     } catch (e) {
-      if (transient++ < 3) { await sleep(Math.min(1000 * 2 ** transient, 5000)); continue; }
+      if (transient++ < 5) { await sleep(Math.min(2000 * 2 ** transient, 30000)); continue; }
       return null;
     }
     const jr: any = await res.json().catch(() => ({}));
@@ -138,8 +142,8 @@ export async function readOneDocument(
       return null;
     }
     const emsg = String(jr?.error?.message || "");
-    if (([429, 500, 502, 503, 504, 529].includes(res.status) || /overloaded|rate.?limit/i.test(emsg)) && transient++ < 3) {
-      await sleep(Math.min(1000 * 2 ** transient, 5000)); continue;
+    if (([429, 500, 502, 503, 504, 529].includes(res.status) || /overloaded|rate.?limit/i.test(emsg)) && transient++ < 5) {
+      await sleep(Math.min(2000 * 2 ** transient, 30000)); continue;
     }
     // A doc-level 400 (corrupt/unsupported PDF) — this one document is unreadable; drop it.
     return null;
