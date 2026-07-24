@@ -96,6 +96,32 @@ export async function GET() {
       created_at: (l as any).app_completed_at || l.created_at,
     }));
 
+    // High-value leads going cold — the Enterprise Brain's standing #1 bottleneck:
+    // Tier-1/Tier-2 leads that were contacted but never advanced to Application sit
+    // invisible until someone digs through /leads, and 0 loans fund. This band
+    // surfaces them straight on the dashboard so the LO chases the best deals first.
+    // Guardrails: only Tier 1/2, still pre-Application (no docs / not app-completed),
+    // aged 3+ days so a fresh lead isn't nagged, capped at 45 days so ancient dead
+    // weight doesn't crowd out live ones. Coldest first (oldest at top), T1 above T2.
+    const STALLED_STAGES = ["new lead", "contacted", "engaged"];
+    const tierRank = (t: any) => (t === "Tier 1" ? 0 : t === "Tier 2" ? 1 : 2);
+    const stalledHighValue = L.filter((l) => {
+      if (!["Tier 1", "Tier 2"].includes(l.tier)) return false;
+      if ((l as any).app_completed === true) return false;   // already in appsAwaitingDocs
+      if (!STALLED_STAGES.includes(stageL(l.stage))) return false;
+      if (DEAD.includes(stageL(l.stage))) return false;
+      if (!l.created_at) return false;
+      const age = now - new Date(l.created_at).getTime();
+      return age >= 3 * DAY && age <= 45 * DAY;
+    }).sort((a, b) => {
+      const tr = tierRank(a.tier) - tierRank(b.tier);
+      if (tr !== 0) return tr;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); // coldest first
+    }).slice(0, 10).map((l) => ({
+      id: l.id, name: l.full_name || "Lead", purpose: l.loan_purpose || "—",
+      tier: l.tier || null, stage: l.stage || "New Lead", amount: loanOfLead(l), created_at: l.created_at,
+    }));
+
     const recentLeads = L.slice(0, 8).map((l) => ({
       id: l.id, name: l.full_name || "Lead", purpose: l.loan_purpose || "—",
       tier: l.tier || null, stage: l.stage || "New Lead", amount: loanOfLead(l), created_at: l.created_at,
@@ -104,7 +130,7 @@ export async function GET() {
       id: f.id, borrower: f.borrower_name || "Borrower", stage: f.stage || "Application", amount: loanOfFile(f), created_at: f.created_at,
     }));
 
-    return NextResponse.json({ marginPct, leads: leadStats, files: fileStats, volume, earnings, appsAwaitingDocs, recentLeads, recentFiles });
+    return NextResponse.json({ marginPct, leads: leadStats, files: fileStats, volume, earnings, appsAwaitingDocs, stalledHighValue, recentLeads, recentFiles });
   } catch (e: any) {
     console.error("[api/dashboard]", e);
     return NextResponse.json({ error: e?.message || "failed" }, { status: 500 });

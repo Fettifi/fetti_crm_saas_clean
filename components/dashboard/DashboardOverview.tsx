@@ -18,6 +18,8 @@ type Stats = {
   recentFiles: { id: string; borrower: string; stage: string; amount: number; created_at: string }[];
   // Completed 1003s with no documents yet (optional: older API payloads lack it).
   appsAwaitingDocs?: { id: string; name: string; purpose: string; tier: string | null; stage: string; amount: number; created_at: string }[];
+  // Tier-1/2 leads contacted but stalled pre-Application (optional on older payloads).
+  stalledHighValue?: { id: string; name: string; purpose: string; tier: string | null; stage: string; amount: number; created_at: string }[];
 };
 
 const money = (n: number) => "$" + Math.round(n || 0).toLocaleString();
@@ -78,6 +80,7 @@ export default function DashboardOverview() {
     return d === 1 ? "yesterday" : `${d}d ago`;
   };
   const apps = s.appsAwaitingDocs || [];
+  const stalled = s.stalledHighValue || [];
 
   return (
     <div className="space-y-4">
@@ -100,6 +103,34 @@ export default function DashboardOverview() {
                 <div className="text-right shrink-0">
                   <div className="text-xs text-slate-300">{l.amount ? compact(l.amount) : "—"}</div>
                   <div className="text-[10px] text-amber-400">Follow up →</div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* High-value leads going cold — Tier-1/2 that were contacted but never
+          reached Application. The Enterprise Brain's standing #1 bottleneck:
+          the best deals stall unseen while 0 loans fund. Work these first. */}
+      {stalled.length > 0 && (
+        <div className="bg-gradient-to-br from-sky-950/40 to-slate-900/50 border border-sky-700/50 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs uppercase tracking-wide text-sky-400">❄️ High-value leads going cold ({stalled.length})</div>
+            <Link href="/leads" className="text-[11px] text-sky-400 hover:underline">All leads →</Link>
+          </div>
+          <div className="space-y-2">
+            {stalled.map((l) => (
+              <Link key={l.id} href={`/leads?leadId=${l.id}`} className="flex items-center justify-between gap-2 border-b border-sky-900/30 pb-2 text-sm hover:bg-slate-900/40 rounded px-1">
+                <div className="min-w-0">
+                  <div className="font-medium truncate text-white">{l.name} {l.tier === "Tier 1"
+                    ? <span className="text-[10px] font-bold text-amber-300 bg-amber-500/15 rounded-full px-1.5 py-0.5 align-middle">🔥 TIER 1</span>
+                    : <span className="text-[10px] font-bold text-sky-300 bg-sky-500/15 rounded-full px-1.5 py-0.5 align-middle">TIER 2</span>}</div>
+                  <div className="text-[11px] text-slate-400 truncate">{l.purpose} · {l.stage.toLowerCase()} · no app yet · {ago(l.created_at)}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-xs text-slate-300">{l.amount ? compact(l.amount) : "—"}</div>
+                  <div className="text-[10px] text-sky-400">Follow up →</div>
                 </div>
               </Link>
             ))}
