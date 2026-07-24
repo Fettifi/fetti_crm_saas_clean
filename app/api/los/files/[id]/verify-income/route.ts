@@ -253,6 +253,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     //    borrower). A doc that can't be read returns null and is flagged — never fails the batch.
     //    See lib/income/readDocument.ts. No `temperature` (Opus 4.8 rejects it); forced tool use.
     const rosterHint = applicants;
+    // PROBE the AI upstream first with one tiny call: a NON-retryable failure (revoked key,
+    // exhausted credits, model error) would otherwise instantly null EVERY per-doc read and
+    // masquerade as "all 26 documents unreadable" — surface the REAL error honestly instead.
+    try {
+      const probe = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": key as string, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || "claude-opus-4-8", max_tokens: 8, messages: [{ role: "user", content: "ping" }] }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!probe.ok && ![429, 500, 502, 503, 504, 529].includes(probe.status)) {
+        const pj: any = await probe.json().catch(() => ({}));
+        const msg = pj?.error?.message || `HTTP ${probe.status}`;
+        console.error("[los/verify-income] AI upstream rejected the probe:", probe.status, msg);
+        return NextResponse.json({ error: `The AI document reader is unavailable right now — the provider rejected the request: "${msg}". This is an account/service issue (not the borrower's documents); resolve it and run Verify again.` }, { status: 503 });
+      }
+    } catch { /* network blip — let the per-doc reads retry normally */ }
     // Bigger files read at higher concurrency so a 24-month bank-statement set (25-40 docs)
     // completes well inside the function's time budget; readOneDocument backs off on 429s.
     const pooled = await readDocumentsPooled(key as string, docBufs, rosterHint, docBufs.length > 20 ? 10 : 6);
