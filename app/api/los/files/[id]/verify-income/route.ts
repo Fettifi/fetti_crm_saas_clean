@@ -28,7 +28,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-23-per-document-read-v2";
+const LOGIC_VERSION = "2026-07-23-per-document-read-v3-roster";
 const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {
@@ -125,6 +125,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const coBorrowers = [...leadName.values()].filter((v) => v.count >= 2 && v.income).map((v) => v.display);
     if (coBorrowers.length) applicants += ` and ${coBorrowers.join(" and ")} (co-borrower${coBorrowers.length > 1 ? "s" : ""} — documented on this file with their own income docs even if not in the 1003; count their income under borrower 2)`;
+    // ROSTER for borrower assignment: borrower 1 = the PRIMARY applicant ONLY (URLA borrowers[0]);
+    // borrower 2 = every OTHER URLA borrower (co-applicants on the 1003) PLUS any co-borrower
+    // detected from the doc labels. This split is CRITICAL — if every applicant name is treated as
+    // "primary" (which happens once the 1003 holds 2–3 borrowers), every person's documents match
+    // "primary" and collapse onto borrower 1 (Rasja/Ashay income wrongly landed on Brijanae).
+    const primaryNames = applicantNames.slice(0, 1);
+    const coRosterNames = [...new Set([...applicantNames.slice(1), ...coBorrowers].map((s) => s.trim()).filter(Boolean))];
     // Rank income docs so the MAX_DOCS budget spends on what actually SETS income — W-2s
     // (base + 2-yr job history) and pay stubs (current base) first, bank statements last.
     const isStub = (d: any) => /pay.?stub|check.?stub|paystub|earnings/i.test(`${d.name || ""} ${d.file_name || ""}`);
@@ -249,7 +256,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // DETERMINISTIC borrower assignment (override the model's flip-floppy per-doc borrower
     // NUMBER with a code-derived one, matched from the earner NAME to the applicant roster).
     // primary = the named applicant(s); co = the co-borrower(s) detected from the doc labels.
-    const docFacts: DocFact[] = assignBorrowers(rawDocFacts, { primary: applicantNames, co: coBorrowers });
+    const docFacts: DocFact[] = assignBorrowers(rawDocFacts, { primary: primaryNames, co: coRosterNames });
     const computed = computeQualifyingIncome(docFacts, { loanType });
     const breakdown = computed.breakdown.map((l) => ({ borrower: l.borrower, label: String(l.label).slice(0, 80), monthly: Math.round(l.monthly), basis: String(l.basis || "").slice(0, 160) }));
     const perBorrowerMonthly = computed.perBorrowerMonthly;
