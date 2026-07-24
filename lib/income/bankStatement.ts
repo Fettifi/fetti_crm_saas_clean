@@ -61,7 +61,13 @@ export function collectAccounts(reads: DocRead[]): Map<string, { label: string; 
   const accounts = new Map<string, { label: string; holder: string | null; type: "personal" | "business"; months: Map<string, MonthRow> }>();
   for (const r of reads) {
     const bs = r.bankStatement; if (!bs || !Array.isArray(bs.months) || !bs.months.length) continue;
-    const key = `${(bs.institution || "bank").toLowerCase().trim()}|${(bs.accountLast4 || "?").trim()}`;
+    // Account key: the LAST-4 is the identity; the institution enters only as a short STEM,
+    // because the reader legitimately prints the same bank two ways across statements
+    // ("U.S. Bank" vs "U.S. Bank National Association") — a full-name key split ONE account
+    // into two, and the fragment's months got divided by the window as a second account.
+    const instStem = (bs.institution || "bank").toLowerCase().replace(/[^a-z]/g, "").slice(0, 4) || "bank";
+    const last4 = (bs.accountLast4 || "").replace(/\D/g, "").slice(-4);
+    const key = last4 ? `${instStem}|${last4}` : `${(bs.institution || "bank").toLowerCase().trim()}|?`;
     if (!accounts.has(key)) accounts.set(key, {
       label: [bs.institution || "Bank", bs.accountLast4 ? `…${bs.accountLast4}` : ""].filter(Boolean).join(" "),
       holder: bs.accountHolder || r.personName || null,
