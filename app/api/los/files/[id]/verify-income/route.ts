@@ -28,7 +28,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-23-per-document-read-engine";
+const LOGIC_VERSION = "2026-07-23-per-document-read-v2";
 const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {
@@ -198,7 +198,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const unreadable: string[] = [];
     const overflow: string[] = [];             // only the HARD_MAX runaway guard now
     const seenHash = new Set<string>();
-    const HARD_MAX = 40;                        // runaway guard only (no per-doc income cap)
+    // Sized so a 24-MONTH bank-statement file (24 statements + W-2s/stubs/IDs) never drops a
+    // doc; anything beyond is FLAGGED (overflow), never silently dropped. Reads run pooled
+    // (bounded concurrency) so a big file doesn't overload the API or the function timeout.
+    const HARD_MAX = 60;                        // runaway guard only (no real per-doc income cap)
     for (const d of candidates) {
       if (docBufs.length >= HARD_MAX) { overflow.push(d.name || d.file_name || "document"); continue; }
       const name = d.name || d.file_name || "document";

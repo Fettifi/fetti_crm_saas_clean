@@ -149,17 +149,21 @@ export function assignBorrowers(facts: DocFact[], roster: { primary: string[]; c
     const win = (Number(v[1] || 0) >= Number(v[2] || 0)) ? 1 : 2;
     f.borrower = win;
   }
-  // 5) SSN COHERENCE (identity key wins): every doc bearing the SAME last-4 SSN is the SAME
-  //    person → one borrower. Overrides ONLY on a clear majority (a tie leaves the name/stream
-  //    assignment untouched) so it can't flip a correctly-placed co-borrower. This catches the
-  //    person whose NAME was OCR'd two ways across their own documents (Rasja vs "Ashay").
+  // 5) SSN COHERENCE — used ONLY to place docs the NAME couldn't match to the roster (a
+  //    fallback doc) alongside its same-SSN siblings; it must NEVER override a confident roster
+  //    name match, or one borrower's many docs pull the co-borrower's docs onto them (which
+  //    collapsed a real 2-borrower file onto borrower 1). Same-SSN + name-unmatched → follow the
+  //    borrower of a same-SSN doc that DID match a name.
   const ssn4 = (f: DocFact) => String(f.ssnLast4 || "").replace(/\D/g, "").slice(-4);
-  const ssnVotes = new Map<string, Record<number, number>>();
-  for (const f of out) { const s = ssn4(f); if (s.length !== 4) continue; const v = ssnVotes.get(s) || {}; v[f.borrower] = (v[f.borrower] || 0) + 1; ssnVotes.set(s, v); }
+  const anchoredBySsn = new Map<string, 1 | 2>();   // ssn → borrower of a NAME-matched doc
   for (const f of out) {
     const s = ssn4(f); if (s.length !== 4) continue;
-    const v = ssnVotes.get(s)!; const a = Number(v[1] || 0), b = Number(v[2] || 0);
-    if (a > b) f.borrower = 1; else if (b > a) f.borrower = 2;
+    if (borrowerOfName(f.personName) !== 0) anchoredBySsn.set(s, f.borrower);  // this doc's borrower is name-confident
+  }
+  for (const f of out) {
+    const s = ssn4(f); if (s.length !== 4) continue;
+    if (borrowerOfName(f.personName) !== 0) continue;                          // don't override a confident name match
+    const anchor = anchoredBySsn.get(s); if (anchor) f.borrower = anchor;      // a fallback doc joins its named same-SSN sibling
   }
   return out;
 }
