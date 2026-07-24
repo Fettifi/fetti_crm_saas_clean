@@ -45,6 +45,7 @@ export type DocFact = {
   nonTaxable?: boolean;
   isJointReturn?: boolean;
   yearsAtCurrentEmployer?: number | null;
+  ssnLast4?: string | null;        // last 4 of SSN (identity key for clustering); null if not shown
   notes?: string;
 };
 
@@ -147,6 +148,18 @@ export function assignBorrowers(facts: DocFact[], roster: { primary: string[]; c
     const v = streamVotes.get(streamKey(f)); if (!v) continue;
     const win = (Number(v[1] || 0) >= Number(v[2] || 0)) ? 1 : 2;
     f.borrower = win;
+  }
+  // 5) SSN COHERENCE (identity key wins): every doc bearing the SAME last-4 SSN is the SAME
+  //    person → one borrower. Overrides ONLY on a clear majority (a tie leaves the name/stream
+  //    assignment untouched) so it can't flip a correctly-placed co-borrower. This catches the
+  //    person whose NAME was OCR'd two ways across their own documents (Rasja vs "Ashay").
+  const ssn4 = (f: DocFact) => String(f.ssnLast4 || "").replace(/\D/g, "").slice(-4);
+  const ssnVotes = new Map<string, Record<number, number>>();
+  for (const f of out) { const s = ssn4(f); if (s.length !== 4) continue; const v = ssnVotes.get(s) || {}; v[f.borrower] = (v[f.borrower] || 0) + 1; ssnVotes.set(s, v); }
+  for (const f of out) {
+    const s = ssn4(f); if (s.length !== 4) continue;
+    const v = ssnVotes.get(s)!; const a = Number(v[1] || 0), b = Number(v[2] || 0);
+    if (a > b) f.borrower = 1; else if (b > a) f.borrower = 2;
   }
   return out;
 }

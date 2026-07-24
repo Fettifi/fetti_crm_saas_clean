@@ -13,7 +13,9 @@ import { assembleUrla, type Urla } from "@/lib/urla";
 import type { LoanType } from "@/lib/income";
 import sharp from "sharp";
 import { compressPdfIfNeeded } from "@/lib/pdfCompress";
-import { EXTRACT_SYSTEM, computeQualifyingIncome, assignBorrowers, type DocFact } from "@/lib/income/docFacts";
+import { computeQualifyingIncome, assignBorrowers, type DocFact } from "@/lib/income/docFacts";
+import { readDocumentsPooled, toDocFact, type DocRead } from "@/lib/income/readDocument";
+import { verifyWorksheet, type VerifyFinding } from "@/lib/income/verifyWorksheet";
 
 export const runtime = "nodejs";
 // 300s: the 745ea431-class big file already ran ~60s at a 4k output cap; the
@@ -26,7 +28,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-23-current-employment-gate-2";
+const LOGIC_VERSION = "2026-07-23-per-document-read-engine";
 const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {
@@ -187,26 +189,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // them. Each doc's header + media block share a unique tag so dropping a rejected doc
     // removes BOTH (a header left behind would keep the request non-empty and let a
     // doc-less call through with $0 income).
-    const blocks: any[] = [];
-    const blockTag: (string | null)[] = [];   // parallel to blocks: per-doc tag, null for none
-    const tagName = new Map<string, string>(); // tag -> display name (for flags on drop)
+    // Download every UNIQUE income doc (content-hash dedupe so the same file in several
+    // checklist slots counts once). Each becomes its OWN focused vision read below — so there
+    // is no cross-document request-size limit; we only shrink a big scan so its own call stays
+    // fast and legible. `read`/`unreadable` are populated AFTER the per-doc reads.
+    const docBufs: { name: string; buf: Buffer; mediaType: string }[] = [];
     const read: string[] = [];
     const unreadable: string[] = [];
-    const overflow: string[] = [];             // docs that didn't fit the single request's size budget
+    const overflow: string[] = [];             // only the HARD_MAX runaway guard now
     const seenHash = new Set<string>();
-    let docSeq = 0;
-    // NO fixed document cap (Ramon: "no limit on income documents"). We read EVERY unique
-    // income doc on the file. The only bound is the Anthropic request size (~32MB), so we
-    // SHRINK big scans first — sharp downsizes photo images, pdfCompress shrinks scanned
-    // PDFs — keeping them OCR-legible while cutting bytes, so in practice everything fits.
-    // A doc that STILL won't fit is held back and FLAGGED (never silently dropped), and
-    // HARD_MAX is only a runaway guard.
-    const HARD_MAX = 40;
-    const MAX_PAYLOAD_B64 = 26 * 1024 * 1024;  // headroom under the 32MB request limit
-    const b64size = (n: number) => Math.ceil(n / 3) * 4;
-    let payloadB64 = 0;
+    const HARD_MAX = 40;                        // runaway guard only (no per-doc income cap)
     for (const d of candidates) {
-      if (read.length >= HARD_MAX) { overflow.push(d.name || d.file_name || "document"); continue; }
+      if (docBufs.length >= HARD_MAX) { overflow.push(d.name || d.file_name || "document"); continue; }
       const name = d.name || d.file_name || "document";
       const { data: blob, error } = await supabaseAdmin.storage.from(BUCKET).download(d.storage_path as string);
       if (error || !blob) { unreadable.push(name); continue; }
@@ -218,7 +212,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (seenHash.has(hash)) continue; // exact same file already included (multi-slot dup) — silently skip
       seenHash.add(hash);
       if (mt === "application/pdf" && !pdfLooksValid(buf)) { unreadable.push(name); continue; } // truncated/corrupt
-      // Shrink large files so ALL of them fit one read (kept legible for the AI's OCR).
+      // Shrink a large scan so its own read call stays fast/legible (kept OCR-legible).
       try {
         if (mt === "application/pdf" && buf.length > 1_800_000) {
           const c = await compressPdfIfNeeded(buf, { targetBytes: 1_400_000 });
@@ -228,126 +222,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           if (img.length && img.length < buf.length) { buf = img; mt = "image/jpeg"; }
         }
       } catch { /* keep the original on any compression error */ }
-      // Payload budget: hold a doc back (and flag it) only if it would push the request
-      // past the API's size limit — but always keep at least one so a read never no-ops.
-      const sz = b64size(buf.length);
-      if (read.length >= 1 && payloadB64 + sz > MAX_PAYLOAD_B64) { overflow.push(name); continue; }
-      payloadB64 += sz;
-      const tag = `d${docSeq++}`; tagName.set(tag, name);
-      blocks.push({ type: "text", text: `--- Document: ${name} ---` }); blockTag.push(tag);
-      blocks.push(mt === "application/pdf"
-        ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: buf.toString("base64") } }
-        : { type: "image", source: { type: "base64", media_type: mt, data: buf.toString("base64") } });
-      blockTag.push(tag);
-      read.push(name);
+      docBufs.push({ name, buf, mediaType: mt });
     }
-    if (!blocks.length) return NextResponse.json({ error: "Could not read any of the uploaded income documents — they may be corrupt/truncated or an unsupported format. Re-request clean copies from the borrower.", unreadableDocs: unreadable }, { status: 422 });
+    if (!docBufs.length) return NextResponse.json({ error: "Could not read any of the uploaded income documents — they may be corrupt/truncated or an unsupported format. Re-request clean copies from the borrower.", unreadableDocs: unreadable }, { status: 422 });
 
-    const userText = `Loan applicant(s) named on THIS file's 1003: ${applicants}. IMPORTANT: the 1003 may be INCOMPLETE or list a name twice — a CO-BORROWER is often documented on this file (their OWN W-2 / pay stub / 1099 / tax transcript) without appearing in that named list. Count qualifying monthly income for the named applicant(s) AND for ANY co-borrower who has their OWN income documents here — attribute each document by the NAME printed on it, and put a second person's income under borrower 2. ONLY exclude a spouse/person who appears SOLELY on a joint tax return with NO income document of their own on this file; never use a joint return's combined total. The income documents uploaded on this file are: ${read.join("; ")}. Loan type: ${loanType}. Keep perDoc, basis, and crossCheck notes TERSE — 15 words max each (big files must not overflow the output). JSON only.`;
-    // Resilient call: if Anthropic rejects a specific PDF block as invalid, drop THAT
-    // document and retry the rest — one corrupt upload never fails the whole read.
-    // NOTE: no `temperature` — Opus 4.8 rejects it; determinism comes from the prompt.
-    // FORCED TOOL USE: the model once answered with prose analysis and NO JSON at
-    // all (stop_reason end_turn, 2026-07-21 second failure on 745ea431). Assistant
-    // prefill is NOT supported by Opus 4.8 ("This model does not support assistant
-    // message prefill") — forcing a report_income tool call is the sanctioned way
-    // to make the reply structurally BE the JSON object.
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    async function callModel(nudge?: string): Promise<any> {
-      let transient = 0; // Anthropic 529 overload / 429 rate-limit / 5xx gateway — retry w/ backoff.
-      for (let attempt = 0; attempt < 8; attempt++) {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-api-key": key as string, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({
-            model: process.env.ANTHROPIC_MODEL || "claude-opus-4-8",
-            // 16k output budget: a 26-doc multi-borrower file's JSON (perDoc +
-            // breakdown + crossChecks) overflowed 4k, and the TRUNCATED response
-            // failed JSON.parse — surfacing as the misleading "try clearer scans"
-            // 422 (2026-07-21, file 745ea431). The terse-notes instruction keeps
-            // typical reads far below this; the cap is the safety margin.
-            max_tokens: 16000,
-            system: EXTRACT_SYSTEM,
-            messages: [
-              { role: "user", content: [...blocks, { type: "text", text: nudge ? `${userText}\n\n${nudge}` : userText }] },
-            ],
-            // Stage 1 — EXTRACT facts only. The deterministic engine (computeQualifyingIncome)
-            // does all the math, so the model never averages/qualifies here.
-            tools: [{
-              name: "extract_income_facts",
-              description: "Return one DocFact per income document — the facts printed on it, no math. Call exactly once.",
-              input_schema: {
-                type: "object",
-                properties: { docFacts: { type: "array", items: { type: "object" } } },
-                required: ["docFacts"],
-              },
-            }],
-            tool_choice: { type: "tool", name: "extract_income_facts" },
-          }),
-        });
-        const jr = await res.json().catch(() => ({} as any));
-        if (res.ok) return jr;
-        const emsg = String(jr?.error?.message || "");
-        // Transient Anthropic errors (529 overloaded, 429 rate-limit, 5xx gateway) are the
-        // most common cause of an intermittent "verify failed" — back off and retry the SAME
-        // request rather than surfacing an error the LO can do nothing about.
-        if (([429, 500, 502, 503, 504, 529].includes(res.status) || /overloaded|rate.?limit/i.test(emsg)) && transient++ < 3) {
-          await sleep(Math.min(1000 * Math.pow(2, transient), 5000)); continue;
-        }
-        const badPdf = res.status === 400 && emsg.match(/content\.(\d+)\.(?:pdf|document|image)/i);
-        if (badPdf) {
-          const idx = Number(badPdf[1]);
-          const tag = idx < blockTag.length ? blockTag[idx] : null;
-          if (tag != null) {
-            const nm = tagName.get(tag) || "a document";
-            for (let k = blocks.length - 1; k >= 0; k--) { if (blockTag[k] === tag) { blocks.splice(k, 1); blockTag.splice(k, 1); } }
-            const ri = read.indexOf(nm); if (ri >= 0) read.splice(ri, 1);
-            if (!unreadable.includes(nm)) unreadable.push(nm);
-            if (blocks.length) continue; // retry the read without the rejected file
-            return null;                 // every doc was rejected — signal a clean 422
-          }
-        }
-        if ([429, 529].includes(res.status) || /overloaded/i.test(emsg)) throw new Error("The document reader is temporarily busy (high AI demand) — wait a few seconds and click Verify again.");
-        throw new Error(emsg || `Anthropic ${res.status}`);
-      }
-      throw new Error("Income read failed after dropping unreadable documents.");
-    }
-    // Forced tool call: the result is the tool_use block's input — already an
-    // object, no JSON.parse fragility. Text fallback kept for belt-and-suspenders.
-    const extractParsed = (jr: any): any | null => {
-      const tu = (jr?.content || []).find((b: any) => b.type === "tool_use" && b.input && typeof b.input === "object");
-      if (tu) return tu.input;
-      const t = (jr?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").replace(/```json/gi, "").replace(/```/g, "").trim();
-      const mm = t.match(/\{[\s\S]*\}/);
-      try { return JSON.parse(mm ? mm[0] : t); } catch { return null; }
-    };
-    let j = await callModel();
-    if (!j) return NextResponse.json({ error: "Could not read any of the uploaded income documents — they were all rejected as corrupt/unreadable. Re-request clean copies from the borrower.", unreadableDocs: unreadable }, { status: 422 });
-    let parsed: any = extractParsed(j);
-    if (!parsed) {
-      // One stern retry before failing — and log WHY (truncation vs junk) so the
-      // failure is diagnosable instead of blaming the borrower's scans.
-      console.error("[los/verify-income] no tool_use / unparseable output (retrying once)", { stop_reason: j?.stop_reason });
-      j = await callModel("REMINDER: call the report_income tool with the complete result — no prose.");
-      parsed = j ? extractParsed(j) : null;
-      if (!parsed) {
-        console.error("[los/verify-income] unparseable after retry", { stop_reason: j?.stop_reason });
-        const truncated = j?.stop_reason === "max_tokens";
-        return NextResponse.json({
-          error: truncated
-            ? "The income read was cut off before it finished (output limit) — run Verify again; if it persists, this file may have too many documents for one pass."
-            : "The document reader answered in the wrong format twice — run Verify once more; the raw output was logged for diagnosis.",
-        }, { status: 422 });
-      }
-    }
-
-    // Stage 2 — DETERMINISTIC compute from the extracted facts. Same facts ⇒ same numbers.
-    const rawFacts: any[] = Array.isArray(parsed.docFacts) ? parsed.docFacts : [];
-    const rawDocFacts: DocFact[] = rawFacts
-      .map((f: any) => ({ ...f, borrower: Number(f?.borrower) === 2 ? 2 : 1, file: String(f?.file || f?.docType || "document").slice(0, 120) }))
-      .filter((f: DocFact) => f && (f.borrower === 1 || f.borrower === 2));
+    // ── STAGE 1: read EACH document on its OWN focused vision call (in parallel). One document
+    //    per call = accurate identification + whose-is-it (name + SSN last-4) + figures, instead
+    //    of the old 16-docs-in-one-pass that drifted (names read 3 ways, income on the wrong
+    //    borrower). A doc that can't be read returns null and is flagged — never fails the batch.
+    //    See lib/income/readDocument.ts. No `temperature` (Opus 4.8 rejects it); forced tool use.
+    const rosterHint = applicants;
+    const pooled = await readDocumentsPooled(key as string, docBufs, rosterHint, 6);
+    const perDocResults = docBufs.map((d, i) => ({ d, r: pooled[i] }));
+    for (const { d, r } of perDocResults) { if (r && r.legible !== false) read.push(d.name); else unreadable.push(d.name); }
+    const docReads: DocRead[] = perDocResults.map((x) => x.r).filter((r): r is DocRead => !!r && r.legible !== false);
+    // Only actual INCOME documents feed the math (a lone ID / voided check establishes identity
+    // but creates no income). Map each DocRead → the DocFact the deterministic engine consumes.
+    const incomeReads = docReads.filter((r) => r.isIncomeDoc !== false);
+    const rawDocFacts: DocFact[] = incomeReads.map(toDocFact).filter((f) => f && !!f.docType);
     if (!rawDocFacts.length) {
-      return NextResponse.json({ error: "Couldn't extract income facts from the uploaded documents — re-check they're legible income docs (W-2, pay stubs, 1099, tax returns).", unreadableDocs: unreadable }, { status: 422 });
+      return NextResponse.json({ error: "Couldn't read income facts from the uploaded documents — re-check they're legible income docs (W-2, pay stubs, 1099, tax returns).", unreadableDocs: unreadable }, { status: 422 });
     }
     // DETERMINISTIC borrower assignment (override the model's flip-floppy per-doc borrower
     // NUMBER with a code-derived one, matched from the earner NAME to the applicant roster).
@@ -358,33 +252,43 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const perBorrowerMonthly = computed.perBorrowerMonthly;
     const qualifyingMonthlyIncome = Math.round(computed.qualifyingMonthlyIncome);
 
-    // Documents we couldn't read (truncated/corrupt uploads) become flags so the LO
-    // knows income evidence was skipped and can re-request a clean copy — rather than the
-    // read silently omitting them or hard-failing.
+    // ── STAGE 3: INDEPENDENT VERIFICATION — a SEPARATE underwriter reviews the worksheet against
+    //    the per-document facts and flags real problems (income on the wrong borrower, a prior
+    //    employer summed as current, a double-count, missed income, a guideline/math error).
+    //    Advisory only — it never silently changes the number. Best-effort (never fails a verify).
+    let qc: { findings: VerifyFinding[]; confidence: "high" | "medium" | "low" } = { findings: [], confidence: "medium" };
+    try { qc = await verifyWorksheet(key as string, incomeReads, computed, { loanType, applicants }); } catch { /* QC best-effort */ }
+    const qcFlags = qc.findings.map((f) => ({ text: `QC${f.severity === "high" ? " ⚠️" : ""}: ${f.issue}`, addBackMonthly: 0, borrower: (f.borrower === 2 ? 2 : 1) as 1 | 2 }));
+
+    // Documents we couldn't read (truncated/corrupt uploads) become flags so the LO knows income
+    // evidence was skipped and can re-request a clean copy — never silently omitted.
     const unreadableFlags = unreadable.map((nm) => `Couldn't read "${nm}" — the file looks truncated or corrupt; income from it was NOT counted. Re-request a clean copy from the borrower.`);
-    // If any income doc was too large to fit one read, say so loudly — never silent.
-    const overflowFlags = overflow.length ? [`${overflow.length} income document(s) were too large to fit in a single read and were NOT counted this pass: ${overflow.slice(0, 8).join(", ")}. Combine or compress them (use “Combine PDFs”) and re-verify so their income is included.`] : [];
-    // Flags are objects {text, addBackMonthly, borrower}: a flag that gates held-back
-    // income carries the $ that OMITTING it adds to the total. Normalize (accept legacy
-    // string flags too) so the UI can wire Omit → +income.
+    const overflowFlags = overflow.length ? [`${overflow.length} income document(s) exceeded the ${HARD_MAX}-document read cap and were NOT counted this pass: ${overflow.slice(0, 8).join(", ")}.`] : [];
+    // Flags are objects {text, addBackMonthly, borrower}: a flag that gates held-back income carries
+    // the $ that OMITTING it adds. Normalize (accept legacy string flags too) so the UI wires Omit→+.
     const normFlag = (f: any) => typeof f === "string"
       ? { text: f.slice(0, 300), addBackMonthly: 0, borrower: 1 }
       : { text: String(f?.text || "").slice(0, 300), addBackMonthly: Math.max(0, Math.round(n(f?.addBackMonthly) || 0)), borrower: Number(f?.borrower) === 2 ? 2 : 1 };
-    // perDoc = what the extractor read off each document (the audit trail behind the math).
-    const perDoc = docFacts.slice(0, 30).map((f) => ({
-      file: f.file, docType: f.docType, source: f.employerOrPayer || f.streamId || f.personName || "",
+    // perDoc = the AUDIT TRAIL: what each document was read AS, WHOSE it is (name + borrower slot),
+    // and its key figures — so the LO can see each document was identified and attributed, not
+    // just "numbers added together". Sourced from the deterministic docFacts (post-assignment).
+    const perDoc = docFacts.slice(0, 40).map((f) => ({
+      file: f.file, docType: f.docType,
+      source: [f.personName || "", f.borrower === 2 ? "co-borrower" : "borrower", f.employerOrPayer || f.streamId || ""].filter(Boolean).join(" · "),
       keyFigures: [
         f.grossPerPeriod != null ? `gross/pd $${f.grossPerPeriod}` : (f.regularPerPeriod != null ? `reg/pd $${f.regularPerPeriod}` : ""),
-        f.ytdGross != null ? `YTD $${f.ytdGross}` : "", f.w2Box5 != null ? `box5 $${f.w2Box5}` : (f.w2Box1 != null ? `box1 $${f.w2Box1}` : ""),
+        f.ytdGross != null ? `YTD $${f.ytdGross}${f.ytdThroughDate ? ` thru ${f.ytdThroughDate}` : ""}` : "",
+        f.w2Box5 != null ? `W2 box5 $${f.w2Box5}` : (f.w2Box1 != null ? `W2 box1 $${f.w2Box1}` : ""),
         f.selfEmploymentNet != null ? `SE net $${f.selfEmploymentNet}` : "", f.monthlyBenefit != null ? `$${f.monthlyBenefit}/mo` : "",
+        f.taxYear ? `TY${f.taxYear}` : "",
       ].filter(Boolean).join("; "),
     }));
     const report = {
       perDoc,
       crossChecks: [] as string[],
-      flags: [...overflowFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 })), ...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 })), ...computed.flags.map(normFlag)].slice(0, 24),
-      confidence: computed.breakdown.length ? "high" : "low",
-      notes: `Deterministic income engine · ${docFacts.length} document facts read.`,
+      flags: [...qcFlags, ...overflowFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...computed.flags.map(normFlag)].slice(0, 30),
+      confidence: qc.confidence || (computed.breakdown.length ? "high" : "low"),
+      notes: `Read ${incomeReads.length} document${incomeReads.length === 1 ? "" : "s"} individually · ${docFacts.length} income facts · QC ${qc.findings.length} finding${qc.findings.length === 1 ? "" : "s"}.`,
     };
     // "Omit → add income" for a variable/gig earner, COMPUTED IN CODE (the model reliably
     // STATES the most-recent-year figure in the flag but is unreliable at setting
