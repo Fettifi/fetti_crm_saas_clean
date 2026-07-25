@@ -51,7 +51,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       }
     } catch { /* best-effort signal */ }
 
-    const preview = docChecklistFor(lead.loan_purpose, lead.occupancy).map((d) => ({
+    const praw: any = (lead.raw && typeof lead.raw === "object" ? lead.raw : {}) as any;
+    const preview = docChecklistFor(lead.loan_purpose, lead.occupancy, {
+      borrower: praw.employment_status ?? praw.answers?.employment_status ?? null,
+      co: praw.co_employment_status ?? praw.answers?.co_employment_status ?? null,
+    }).map((d) => ({
       id: `needed:${d.name}`, name: d.name, category: d.category, required: d.required, status: "needed",
     }));
     const borrower_name = lead.full_name || [lead.first_name, lead.last_name].filter(Boolean).join(" ") || "";

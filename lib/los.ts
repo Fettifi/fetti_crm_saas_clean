@@ -38,7 +38,12 @@ type Doc = { name: string; category: string; required: boolean };
 
 // Document checklist tailored to the product. Investment/DSCR never ask for
 // personal income docs; business/commercial ask for entity + business docs.
-export function docChecklistFor(product?: string, occupancy?: string): Doc[] {
+// `employment` (optional, from the wizard's employment_status answers) tailors the CONSUMER
+// income docs to the borrower's actual documentation path — a self-employed borrower is
+// offered bank statements in lieu of tax returns/W-2s (Ramon HARD 7/24: bank-statement
+// programs serve any earner; never force the W-2 full-doc list on someone without W-2s).
+// Omitted/unknown employment keeps the existing behavior exactly (backward compatible).
+export function docChecklistFor(product?: string, occupancy?: string, employment?: { borrower?: string | null; co?: string | null }): Doc[] {
   const p = (product || "").toLowerCase();
   const occ = (occupancy || "").toLowerCase();
   const investorOcc = /(investor|investment|commercial)/.test(occ);
@@ -105,12 +110,55 @@ export function docChecklistFor(product?: string, occupancy?: string): Doc[] {
       { name: "Mortgage statement (if refinance)", category: "Property", required: false },
     ];
   }
-  // Consumer (owner-occupied) — full income/asset documentation.
+  // Consumer (owner-occupied) — income docs tailored to HOW each borrower earns.
+  const emp = (s?: string | null) => (s || "").toLowerCase();
+  const b = emp(employment?.borrower), c = emp(employment?.co);
+  const anySelfEmp = /self/.test(b) || /self/.test(c);
+  // W-2 earner = "employed"/"w-2" WITHOUT "self" ("Self-Employed" contains "employed" —
+  // a bare substring match wrongly kept W-2 demands on sole self-employed borrowers).
+  const isW2 = (s: string) => /emp|w-?2/.test(s) && !/self/.test(s);
+  const anyW2 = isW2(b) || isW2(c) || (!b && !c);  // unknown → W-2 default (today's behavior)
+  const allRetired = !!b && /retired/.test(b) && (!c || /retired/.test(c));
+
+  const income: Doc[] = [];
+  if (allRetired) {
+    // Retired: fixed-benefit documentation — never pay stubs/W-2s.
+    income.push(
+      { name: "Social Security / pension award letter", category: "Income", required: true },
+      { name: "Most recent retirement / benefit statement", category: "Income", required: false },
+      { name: "Tax returns — last 2 years (if applicable)", category: "Income", required: false },
+    );
+  } else {
+    if (anyW2) {
+      income.push(
+        { name: "Pay stubs — last 30 days", category: "Income", required: true },
+        { name: "W-2s — last 2 years", category: "Income", required: true },
+      );
+    }
+    if (anySelfEmp) {
+      // Self-employed: bank statements can QUALIFY in lieu of returns/W-2s (bank-statement
+      // programs) — collect the statements as the primary path; returns stay OPTIONAL and
+      // clearly labeled so a bank-statement election is never contaminated by "just in case"
+      // tax docs (most alt-doc guides require using returns once they're in the file).
+      income.push(
+        { name: "Personal bank statements — last 12 months (bank-statement qualifying)", category: "Income", required: true },
+        { name: "Business bank statements — last 12 months (if business accounts)", category: "Income", required: false },
+        { name: "Tax returns — last 2 years (ONLY if qualifying full-doc — ask your loan officer first)", category: "Income", required: false },
+        { name: "CPA / tax-preparer letter or P&L (if available)", category: "Income", required: false },
+      );
+    }
+    if (!anyW2 && !anySelfEmp) {
+      // "Other"/unclassified earners: keep the flexible superset, nothing hard-required
+      // beyond statements so the LO routes the method.
+      income.push(
+        { name: "Income documentation (pay stubs, award letters, or 12 months bank statements)", category: "Income", required: true },
+        { name: "Tax returns — last 2 years (if applicable)", category: "Income", required: false },
+      );
+    }
+  }
   return [
     ...base,
-    { name: "Pay stubs — last 30 days", category: "Income", required: true },
-    { name: "W-2s — last 2 years", category: "Income", required: true },
-    { name: "Tax returns — last 2 years", category: "Income", required: false },
+    ...income,
     { name: "Homeowners insurance quote", category: "Property", required: true },
     { name: "Gift letter (if using gift funds)", category: "Assets", required: false },
     { name: "Down payment assistance approval (if applicable)", category: "Assets", required: false },
@@ -183,7 +231,12 @@ export async function createLoanFileFromLead(lead: LoanFile): Promise<LoanFile |
     console.warn("[los] create loan file failed:", error?.message);
     return null;
   }
-  const docs = docChecklistFor(product, lead.occupancy).map((d) => ({
+  // Employment answers from the wizard live on lead.raw (flat body) — tailor the income docs
+  // to how each borrower actually earns (self-employed → bank-statement path, retired → award
+  // letters). Defensive read: leads from other sources (Meta/SMS) may lack these fields.
+  const lraw: any = (lead as any).raw || {};
+  const employment = { borrower: lraw.employment_status ?? lraw.answers?.employment_status ?? null, co: lraw.co_employment_status ?? lraw.answers?.co_employment_status ?? null };
+  const docs = docChecklistFor(product, lead.occupancy, employment).map((d) => ({
     loan_file_id: file.id, name: d.name, category: d.category, required: d.required, status: "needed", uploaded_by: "system",
   }));
   if (docs.length) await supabaseAdmin.from("loan_documents").insert(docs);
