@@ -30,6 +30,8 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   const isInvestment = !!metrics?.isInvestment;
   const [verified, setVerified] = useState<any>(null);   // AI document-verified income result
   const [qualMethod, setQualMethod] = useState<string>("auto");   // qualifying-method override sent to verify-income
+  const [factorPct, setFactorPct] = useState<string>("");         // % of deposits/1099 comp COUNTED (bank_statement + 1099_only)
+  const [depDivisor, setDepDivisor] = useState<string>("");       // asset-depletion divisor in months
   const [verifying, setVerifying] = useState(false);
   const [verifyErr, setVerifyErr] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -252,7 +254,17 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     if (force && !window.confirm("Re-read the documents from scratch? The AI reads the files again, so the number may change from the saved one. Only needed if the documents changed.")) return;
     setVerifying(true); setVerifyErr("");
     try {
-      const r = await fetch(`/api/los/files/${fileId}/verify-income`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force, method: qualMethod === "auto" ? undefined : qualMethod }) });
+      const pct = parseFloat(factorPct);
+      const dv = parseInt(depDivisor, 10);
+      const r = await fetch(`/api/los/files/${fileId}/verify-income`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          force,
+          method: qualMethod === "auto" ? undefined : qualMethod,
+          expenseFactor: (qualMethod === "bank_statement" || qualMethod === "1099_only") && isFinite(pct) && pct >= 10 && pct <= 100 ? pct / 100 : undefined,
+          divisor: qualMethod === "asset_depletion" && isFinite(dv) && dv >= 60 && dv <= 360 ? dv : undefined,
+        }),
+      });
       const j = await r.json();
       if (!r.ok) { setVerifyErr(j?.error || "Verification failed."); setVerified(null); } else { setVerified(j); setLineBorrower({}); setLineIncluded({}); setExcluded(new Set()); setFlagDecisions({}); setFlagNotes({}); incomeEditedRef.current = false; setIncomeInput(""); }
     } catch (e: any) { setVerifyErr(e?.message || "Verification failed."); } finally { setVerifying(false); }
@@ -430,6 +442,23 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
               <option value="pnl_only">P&amp;L-only</option>
               <option value="asset_depletion">Asset depletion</option>
             </select>
+            {(qualMethod === "bank_statement" || qualMethod === "1099_only") && (
+              <label className="text-[11px] text-slate-400 flex items-center gap-1">
+                % counted
+                <input type="text" inputMode="decimal" value={factorPct} onChange={(e) => setFactorPct(e.target.value.replace(/[^0-9.]/g, ""))}
+                  placeholder={qualMethod === "bank_statement" ? "biz 50 / pers 100" : "90"}
+                  title={qualMethod === "bank_statement" ? "Portion of eligible deposits counted as income — business default 50%, personal 100%." : "Portion of gross 1099 compensation counted — default 90% (a 10% expense factor)."}
+                  className="w-24 text-[11px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200" />
+              </label>
+            )}
+            {qualMethod === "asset_depletion" && (
+              <label className="text-[11px] text-slate-400 flex items-center gap-1">
+                ÷ months
+                <input type="text" inputMode="numeric" value={depDivisor} onChange={(e) => setDepDivisor(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="120" title="Depletion divisor — the program's amortization months (commonly 60, 84, or 120; default 120)."
+                  className="w-16 text-[11px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200" />
+              </label>
+            )}
             <span className="text-[11px] text-slate-500">optional — reads the docs on file per the method. PDF download is below ↓</span>
           </div>
           {verifyErr && <div className="text-[11px] text-red-300 mt-1.5">{verifyErr}</div>}
