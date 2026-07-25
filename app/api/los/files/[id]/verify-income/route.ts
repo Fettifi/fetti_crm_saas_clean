@@ -30,8 +30,11 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-25-alt-doc-methods";
-const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
+const LOGIC_VERSION = "2026-07-25-employer-stream-merge";
+// Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
+// "Chase_Statement"). "statement" is deliberately GENERIC — a Chase/Wells file is rarely named
+// "bank statement"; the per-doc reader classifies, and a non-income statement is harmless.
+const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {
   const ext = (name || "").toLowerCase().split(".").pop() || "";
@@ -119,9 +122,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     let applicants = applicantNames.length ? applicantNames.join(" and ") : (loanFile.borrower_name || "the borrower");
 
+    // Rejected docs are excluded — an LO who rejected an upload (wrong person's stub, junk
+    // image) must not have it feed the income math anyway.
     const { data: docs } = await supabaseAdmin.from("loan_documents")
       .select("id, name, category, file_name, storage_path, status, size_bytes")
-      .eq("loan_file_id", id).not("storage_path", "is", null);
+      .eq("loan_file_id", id).not("storage_path", "is", null).neq("status", "rejected");
     // DETERMINISTIC co-borrower detection — a co-borrower is routinely missing from the
     // 1003 but unmistakably documented: their name LEADS several checklist labels ("Paul
     // 2025 w2", "Paul ID", "Paul DD214"…). Find a proper-name token that starts ≥2 doc
@@ -161,7 +166,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (/1099|k-?1/.test(s)) return 1;
       if (/pay.?stub|check.?stub|paystub|earnings/.test(s)) return 2; // current base — the qualifying foundation
       if (/1040|tax.?return|schedule/.test(s)) return 3;
-      if (/bank.?statement/.test(s)) return 5;                        // weak income evidence, large — last
+      if (/statement/.test(s)) return 5;                              // statements: weak income evidence, large — last
       return 4;
     };
     const candidates = ((docs || []) as any[])
@@ -413,8 +418,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Flags are objects {text, addBackMonthly, borrower}: a flag that gates held-back income carries
     // the $ that OMITTING it adds. Normalize (accept legacy string flags too) so the UI wires Omit→+.
     const normFlag = (f: any) => typeof f === "string"
-      ? { text: f.slice(0, 300), addBackMonthly: 0, borrower: 1 }
-      : { text: String(f?.text || "").slice(0, 300), addBackMonthly: Math.max(0, Math.round(n(f?.addBackMonthly) || 0)), borrower: Number(f?.borrower) === 2 ? 2 : 1 };
+      ? { text: f.slice(0, 450), addBackMonthly: 0, borrower: 1 }
+      : { text: String(f?.text || "").slice(0, 450), addBackMonthly: Math.max(0, Math.round(n(f?.addBackMonthly) || 0)), borrower: Number(f?.borrower) === 2 ? 2 : 1 };
     // perDoc = the AUDIT TRAIL: what each document was read AS, WHOSE it is (name + borrower slot),
     // and its key figures — so the LO can see each document was identified and attributed, not
     // just "numbers added together". Sourced from the deterministic docFacts (post-assignment).

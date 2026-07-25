@@ -245,6 +245,33 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
     for (const f of bf) if (WAGE_DOCS.has(f.docType)) {
       const k = streamKey(f); if (!wageStreams.has(k)) wageStreams.set(k, []); wageStreams.get(k)!.push(f);
     }
+    // EMPLOYER CONSOLIDATION: the reader assigns per-doc streamIds, and a W-2 routinely lands
+    // in a DIFFERENT stream than its own employer's current pay stub ("NVIDIA|W2|2025" vs
+    // "NVIDIA|semimonthly"). A stub-less W-2/transcript stream whose employer matches a stream
+    // that HAS current evidence (stub/VOE) is the SAME job's history — merge it in so the W-2
+    // seasons the variable-income average instead of spawning a phantom "prior employer" flag
+    // that invites double-counting (Glover: NVIDIA counted current AND flagged prior twice).
+    // Case-number streams (IHSS) keep their distinct identity and never merge; streams that
+    // EACH have current evidence stay separate (genuinely concurrent same-name jobs survive).
+    const empStem = (s?: string | null): string => {
+      const raw = String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const stripped = raw.replace(/\b(incorporated|inc|corporation|corp|company|co|llc|llp|lp|ltd|the|of|and|group|holdings|enterprises|executive|services|service|staffing|solutions|payroll|dba|na|usa)\b/g, " ").replace(/\s+/g, " ").trim();
+      return (stripped || raw).replace(/ /g, "");
+    };
+    const hasCaseId = (k: string, sf: DocFact[]) => /case#\d/i.test(k) || sf.some((f) => /case\s*#?\s*\d{3,}/i.test(`${f.streamId || ""} ${f.notes || ""}`));
+    const hasCurrentEvidence = (sf: DocFact[]) => sf.some((f) => f.docType === "paystub" || f.docType === "voe");
+    const anchorStems: { k: string; stem: string }[] = [];
+    for (const [k, sf] of wageStreams) if (hasCurrentEvidence(sf) && !hasCaseId(k, sf)) {
+      const stem = empStem(sf.find((f) => f.employerOrPayer)?.employerOrPayer);
+      if (stem.length >= 4) anchorStems.push({ k, stem });
+    }
+    for (const [k, sf] of [...wageStreams]) {
+      if (hasCurrentEvidence(sf) || hasCaseId(k, sf)) continue;   // only stub-less HISTORY merges
+      const stem = empStem(sf.find((f) => f.employerOrPayer)?.employerOrPayer);
+      if (stem.length < 4) continue;
+      const hit = anchorStems.find((a) => a.stem === stem || a.stem.startsWith(stem) || stem.startsWith(a.stem));
+      if (hit && hit.k !== k) { wageStreams.get(hit.k)!.push(...sf); wageStreams.delete(k); }
+    }
     // ── CURRENT-EMPLOYMENT CLASSIFICATION (per borrower). Two windows: a stream is
     //    CURRENT/concurrent (summed) only with a pay stub within ~3 months of THIS borrower's
     //    own latest pay date, or a VOE; 3–5 months stale = HELD (flag, Omit-to-add); anything
