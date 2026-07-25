@@ -349,7 +349,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     //    employer summed as current, a double-count, missed income, a guideline/math error).
     //    Advisory only — it never silently changes the number. Best-effort (never fails a verify).
     let qc: { findings: VerifyFinding[]; confidence: "high" | "medium" | "low" } = { findings: [], confidence: "medium" };
-    try { qc = await verifyWorksheet(key as string, incomeReads, computed, { loanType, applicants }); } catch { /* QC best-effort */ }
+    const methodIds = effectiveMethod === "bank_statement"
+      ? [...new Set(bankReads.map((r) => r.bankStatement?.accountType === "business" ? "BANK_STMT_BUSINESS" : "BANK_STMT_PERSONAL"))]
+      : ["W2_BASE", "W2_VARIABLE", "SE_SCHEDULE_C", "OTHER_FIXED_BENEFIT"];
+    try { qc = await verifyWorksheet(key as string, incomeReads, computed, { loanType, applicants, methodIds }); } catch { /* QC best-effort */ }
     const qcFlags = qc.findings.map((f) => ({ text: `QC${f.severity === "high" ? " ⚠️" : ""}: ${f.issue}`, addBackMonthly: 0, borrower: (f.borrower === 2 ? 2 : 1) as 1 | 2 }));
 
     // Documents we couldn't read (truncated/corrupt uploads) become flags so the LO knows income

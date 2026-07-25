@@ -7,6 +7,7 @@
 //   deposits. It NEVER silently changes the number — findings become flags the LO acts on.
 import type { DocRead } from "@/lib/income/readDocument";
 import type { QualifyResult } from "@/lib/income/docFacts";
+import { qcDoctrineFor } from "@/lib/income/programs";
 
 export type VerifyFinding = { severity: "high" | "medium" | "low"; issue: string; borrower?: 1 | 2 };
 
@@ -32,7 +33,7 @@ export async function verifyWorksheet(
   key: string,
   reads: DocRead[],
   result: QualifyResult,
-  ctx: { loanType: "conventional" | "fha"; applicants: string },
+  ctx: { loanType: "conventional" | "fha"; applicants: string; methodIds?: string[] },
 ): Promise<{ findings: VerifyFinding[]; confidence: "high" | "medium" | "low" }> {
   const model = process.env.ANTHROPIC_MODEL || "claude-opus-4-8";
   // Compact the DocReads to what the reviewer needs (drop nulls) so the payload stays small.
@@ -47,7 +48,10 @@ export async function verifyWorksheet(
     breakdown: result.breakdown.map((l) => ({ borrower: l.borrower, label: l.label, monthly: l.monthly, basis: l.basis })),
     flags: result.flags.map((f) => f.text),
   };
-  const userText = `Applicant(s): ${ctx.applicants}. Loan type: ${ctx.loanType}.\n\nPER-DOCUMENT FACTS (one per uploaded document):\n${JSON.stringify(compactReads, null, 1)}\n\nCOMPUTED WORKSHEET:\n${JSON.stringify(worksheet, null, 1)}\n\nQC this worksheet against the documents and report real problems.`;
+  // Method-specific doctrine from the program matrix (lib/income/programs.ts) — the QC judges
+  // this file by ITS method's rules, with that method's explicit never-demand list.
+  const doctrine = ctx.methodIds?.length ? `\n\nPROGRAM DOCTRINE FOR THIS FILE:\n${qcDoctrineFor(ctx.methodIds)}\n` : "";
+  const userText = `Applicant(s): ${ctx.applicants}. Loan type: ${ctx.loanType}.${doctrine}\nPER-DOCUMENT FACTS (one per uploaded document):\n${JSON.stringify(compactReads, null, 1)}\n\nCOMPUTED WORKSHEET:\n${JSON.stringify(worksheet, null, 1)}\n\nQC this worksheet against the documents and report real problems.`;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
