@@ -15,6 +15,7 @@ import sharp from "sharp";
 import { compressPdfIfNeeded } from "@/lib/pdfCompress";
 import { computeQualifyingIncome, assignBorrowers, makeBorrowerResolver, type DocFact } from "@/lib/income/docFacts";
 import { computeBankStatementIncome } from "@/lib/income/bankStatement";
+import { compute1099Income, computePnlIncome, computeAssetDepletion, type AltDocResult } from "@/lib/income/altDoc";
 import { readDocumentsPooled, toDocFact, type DocRead } from "@/lib/income/readDocument";
 import { verifyWorksheet, type VerifyFinding } from "@/lib/income/verifyWorksheet";
 
@@ -29,7 +30,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-24-program-aware-qc";
+const LOGIC_VERSION = "2026-07-25-alt-doc-methods";
 const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|1099|bank.?statement|income|ssa|social.?security|pension|award|annuity|voe|verification of employment|tax return|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
 
 function mediaTypeFor(name: string): string {
@@ -77,17 +78,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   // A deliberate "re-read the documents" from the LO sends { force: true }; a normal
   // Verify sends no body and gets the STABLE cached result (see the fingerprint cache).
-  // method: "auto" (default) | "standard" | "bank_statement" — bank_statement qualifies on
-  // 12/24-mo deposits (non-QM). expenseFactor optionally overrides the business 50% default.
+  // method: "auto" (default) | "standard" | "bank_statement" | "1099_only" | "pnl_only" |
+  // "asset_depletion". bank_statement qualifies on 12/24-mo deposits; 1099_only on gross 1099
+  // comp × (1−factor); pnl_only on a licensed-preparer P&L; asset_depletion on assets ÷ divisor
+  // (LO-selected ONLY — never auto). expenseFactor overrides the method's default factor;
+  // divisor overrides the 120-month depletion default.
+  const METHOD_VALUES = ["standard", "bank_statement", "1099_only", "pnl_only", "asset_depletion"] as const;
+  type MethodChoice = "auto" | (typeof METHOD_VALUES)[number];
   let force = false;
-  let method: "auto" | "standard" | "bank_statement" = "auto";
+  let method: MethodChoice = "auto";
   let expenseFactor: number | null = null;
+  let depletionDivisor: number | null = null;
   try {
     const b = await req.json();
     force = !!b?.force;
-    if (b?.method === "standard" || b?.method === "bank_statement") method = b.method;
+    if (METHOD_VALUES.includes(b?.method)) method = b.method;
     const ef = Number(b?.expenseFactor);
     if (isFinite(ef) && ef >= 0.1 && ef <= 1) expenseFactor = ef;
+    const dv = Number(b?.divisor);
+    if (isFinite(dv) && dv >= 60 && dv <= 360) depletionDivisor = dv;
   } catch { /* no body — normal verify */ }
   try {
     const { data: loanFile } = await supabaseAdmin.from("loan_files").select("*").eq("id", id).maybeSingle();
@@ -175,7 +184,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // same income. Adding/replacing/removing a document changes the fingerprint and re-reads.
     const CACHE_KEY = `los_income_verify:${id}`;
     const fingerprint = crypto.createHash("sha1").update(
-      LOGIC_VERSION + " " + applicants + " " + loanType + " " + method + " " + (expenseFactor ?? "") + " " +
+      LOGIC_VERSION + " " + applicants + " " + loanType + " " + method + " " + (expenseFactor ?? "") + " " + (depletionDivisor ?? "") + " " +
       candidates.map((d: any) => `${d.id}|${d.storage_path || ""}|${d.size_bytes ?? ""}|${d.status || ""}`).sort().join("\n")
     ).digest("hex");
     if (!force) {
@@ -290,15 +299,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const docFacts: DocFact[] = assignBorrowers(rawDocFacts, roster);
     const standard = computeQualifyingIncome(docFacts, { loanType });
 
-    // ── METHOD SELECTION: bank-statement (12/24-mo deposit) programs qualify on deposits, not
-    //    tax docs. Auto-detect when the file is clearly a bank-statement package (≥8 distinct
-    //    statement-months read); the LO can force either way via body.method.
+    // ── METHOD SELECTION: alt-doc programs qualify on their OWN documents, not tax docs.
+    //    Auto-detect: a clear bank-statement package (≥8 statement-months) → bank_statement;
+    //    1099s present with NO 1040 and NO paystubs (the matrix's IRS_1099_ONLY signature) →
+    //    1099_only. pnl_only and asset_depletion are LO-SELECTED only (never auto — a P&L or
+    //    asset statement on a full-doc file is corroboration, not the qualifying method).
+    //    The LO can force any method via body.method.
     const bankReads = docReads.filter((r) => r.bankStatement && Array.isArray(r.bankStatement.months) && r.bankStatement.months.length);
     const bankMonthCount = bankReads.reduce((s, r) => s + (r.bankStatement!.months!.length || 0), 0);
-    const effectiveMethod: "standard" | "bank_statement" =
-      method === "bank_statement" ? "bank_statement"
-      : method === "standard" ? "standard"
-      : bankMonthCount >= 8 ? "bank_statement" : "standard";
+    const has1099s = incomeReads.some((r) => r.docType === "1099nec" || r.docType === "1099misc");
+    const has1040 = incomeReads.some((r) => r.docType === "tax_return_1040" || r.docType === "schedule_c" || r.docType === "wage_income_transcript");
+    const hasPaystubs = incomeReads.some((r) => r.docType === "paystub");
+    const effectiveMethod: (typeof METHOD_VALUES)[number] =
+      method !== "auto" ? method
+      : bankMonthCount >= 8 ? "bank_statement"
+      : has1099s && !has1040 && !hasPaystubs ? "1099_only"
+      : "standard";
 
     let computed = standard;
     let bankCoverage: any[] = [];   // per-account month-by-month PROOF of coverage (12/24-mo programs)
@@ -338,6 +354,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         flags: [...flags, ...standard.flags],
       };
       if (!bank.accountsUsed) computed = { ...standard, flags: [...standard.flags, { text: "Bank-statement method selected but no statement months could be read — verify the statements are legible; fell back to the standard calculation.", addBackMonthly: 0, borrower: 1 }] };
+    } else if (effectiveMethod === "1099_only" || effectiveMethod === "pnl_only" || effectiveMethod === "asset_depletion") {
+      const alt: AltDocResult =
+        effectiveMethod === "1099_only" ? compute1099Income(incomeReads, makeBorrowerResolver(roster), { countedFactor: expenseFactor })
+        : effectiveMethod === "pnl_only" ? computePnlIncome(incomeReads, makeBorrowerResolver(roster))
+        : computeAssetDepletion(docReads, makeBorrowerResolver(roster), { divisor: depletionDivisor });
+      // COMBINE per borrower. 1099-only / P&L-only REPLACE the standard self-employment lines
+      // (they qualify the SAME business earnings — adding both double-counts); W-2 wage and
+      // benefit lines are genuinely separate payors and stay additive. Asset depletion is a
+      // conversion of ASSETS, not earnings — it supplements ALL standard income additively.
+      const perBorrowerMonthly: Record<number, number> = { ...alt.perBorrowerMonthly };
+      const breakdown = [...alt.breakdown];
+      const flags = [...alt.flags];
+      const replacesSe = effectiveMethod !== "asset_depletion";
+      for (const b of [1, 2] as const) {
+        const altMonthly = alt.perBorrowerMonthly[b] || 0;
+        for (const l of standard.breakdown.filter((x) => x.borrower === b)) {
+          const isSe = /^self-employment/i.test(l.label);
+          if (replacesSe && altMonthly > 0 && isSe) {
+            flags.push({ text: `${l.label} (${"$" + Math.round(l.monthly).toLocaleString()}/mo from tax docs): NOT added — this file qualifies on the ${effectiveMethod === "1099_only" ? "1099-only" : "P&L-only"} calculation, which covers the same business earnings (adding both would double-count). Omit to add it if it is truly a DIFFERENT business.`, addBackMonthly: Math.round(l.monthly), borrower: b });
+          } else {
+            perBorrowerMonthly[b] = Math.round((perBorrowerMonthly[b] || 0) + l.monthly);
+            breakdown.push(l);
+          }
+        }
+      }
+      computed = {
+        perBorrowerMonthly,
+        qualifyingMonthlyIncome: Object.values(perBorrowerMonthly).reduce((s, v) => s + v, 0),
+        breakdown,
+        flags: [...flags, ...standard.flags],
+      };
+      if (!alt.breakdown.length) computed = { ...standard, flags: [...standard.flags, ...alt.flags, { text: `${effectiveMethod === "1099_only" ? "1099-only" : effectiveMethod === "pnl_only" ? "P&L-only" : "Asset-depletion"} method selected but its qualifying documents produced no income — fell back to the standard calculation.`, addBackMonthly: 0, borrower: 1 }] };
     }
 
     const breakdown = computed.breakdown.map((l) => ({ borrower: l.borrower, label: String(l.label).slice(0, 90), monthly: Math.round(l.monthly), basis: String((l as any).basis || "").slice(0, 180) }));
@@ -349,8 +397,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     //    employer summed as current, a double-count, missed income, a guideline/math error).
     //    Advisory only — it never silently changes the number. Best-effort (never fails a verify).
     let qc: { findings: VerifyFinding[]; confidence: "high" | "medium" | "low" } = { findings: [], confidence: "medium" };
-    const methodIds = effectiveMethod === "bank_statement"
-      ? [...new Set(bankReads.map((r) => r.bankStatement?.accountType === "business" ? "BANK_STMT_BUSINESS" : "BANK_STMT_PERSONAL"))]
+    const methodIds =
+      effectiveMethod === "bank_statement" ? [...new Set(bankReads.map((r) => r.bankStatement?.accountType === "business" ? "BANK_STMT_BUSINESS" : "BANK_STMT_PERSONAL"))]
+      : effectiveMethod === "1099_only" ? ["IRS_1099_ONLY"]
+      : effectiveMethod === "pnl_only" ? ["PNL_ONLY"]
+      : effectiveMethod === "asset_depletion" ? ["ASSET_DEPLETION_NONQM", "W2_BASE", "OTHER_FIXED_BENEFIT"]
       : ["W2_BASE", "W2_VARIABLE", "SE_SCHEDULE_C", "OTHER_FIXED_BENEFIT"];
     try { qc = await verifyWorksheet(key as string, incomeReads, computed, { loanType, applicants, methodIds }); } catch { /* QC best-effort */ }
     const qcFlags = qc.findings.map((f) => ({ text: `QC${f.severity === "high" ? " ⚠️" : ""}: ${f.issue}`, addBackMonthly: 0, borrower: (f.borrower === 2 ? 2 : 1) as 1 | 2 }));
@@ -383,7 +434,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       crossChecks: [] as string[],
       flags: [...qcFlags, ...overflowFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...computed.flags.map(normFlag)].slice(0, 30),
       confidence: qc.confidence || (computed.breakdown.length ? "high" : "low"),
-      notes: `${effectiveMethod === "bank_statement" ? `BANK-STATEMENT method (${bankMonthCount} statement-months read)` : "Standard method"} · read ${incomeReads.length} document${incomeReads.length === 1 ? "" : "s"} individually · QC ${qc.findings.length} finding${qc.findings.length === 1 ? "" : "s"}.`,
+      notes: `${effectiveMethod === "bank_statement" ? `BANK-STATEMENT method (${bankMonthCount} statement-months read)` : effectiveMethod === "1099_only" ? "1099-ONLY method (gross 1099 comp × counted factor)" : effectiveMethod === "pnl_only" ? "P&L-ONLY method (licensed-preparer P&L net)" : effectiveMethod === "asset_depletion" ? "ASSET-DEPLETION method (assets ÷ divisor)" : "Standard method"} · read ${incomeReads.length} document${incomeReads.length === 1 ? "" : "s"} individually · QC ${qc.findings.length} finding${qc.findings.length === 1 ? "" : "s"}.`,
     };
     // "Omit → add income" for a variable/gig earner, COMPUTED IN CODE (the model reliably
     // STATES the most-recent-year figure in the flag but is unreliable at setting

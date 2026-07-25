@@ -29,6 +29,7 @@ type Quote = { program: "conventional" | "fha"; label: string; maxPITIA: number;
 export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }: { metrics?: Metrics; loan?: { noteRatePercent?: number; termMonths?: number }; fileId?: string; borrowerEmail?: string }) {
   const isInvestment = !!metrics?.isInvestment;
   const [verified, setVerified] = useState<any>(null);   // AI document-verified income result
+  const [qualMethod, setQualMethod] = useState<string>("auto");   // qualifying-method override sent to verify-income
   const [verifying, setVerifying] = useState(false);
   const [verifyErr, setVerifyErr] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -251,7 +252,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     if (force && !window.confirm("Re-read the documents from scratch? The AI reads the files again, so the number may change from the saved one. Only needed if the documents changed.")) return;
     setVerifying(true); setVerifyErr("");
     try {
-      const r = await fetch(`/api/los/files/${fileId}/verify-income`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force }) });
+      const r = await fetch(`/api/los/files/${fileId}/verify-income`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force, method: qualMethod === "auto" ? undefined : qualMethod }) });
       const j = await r.json();
       if (!r.ok) { setVerifyErr(j?.error || "Verification failed."); setVerified(null); } else { setVerified(j); setLineBorrower({}); setLineIncluded({}); setExcluded(new Set()); setFlagDecisions({}); setFlagNotes({}); incomeEditedRef.current = false; setIncomeInput(""); }
     } catch (e: any) { setVerifyErr(e?.message || "Verification failed."); } finally { setVerifying(false); }
@@ -421,14 +422,22 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         <div className="mb-3">
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => verifyIncome(false)} disabled={verifying} className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg">{verifying ? "Reading documents…" : verified ? "🪄 Verify income" : "🪄 AI-verify income from documents"}</button>
-            <span className="text-[11px] text-slate-500">optional — reads the W-2s / stubs on file. PDF download is below ↓</span>
+            <select value={qualMethod} onChange={(e) => setQualMethod(e.target.value)} disabled={verifying} title="Qualifying method — Auto detects from the documents; pick one to force the program's calculation." className="text-[11px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-300">
+              <option value="auto">Method: Auto-detect</option>
+              <option value="standard">Standard full-doc</option>
+              <option value="bank_statement">Bank statements (12/24-mo)</option>
+              <option value="1099_only">1099-only</option>
+              <option value="pnl_only">P&amp;L-only</option>
+              <option value="asset_depletion">Asset depletion</option>
+            </select>
+            <span className="text-[11px] text-slate-500">optional — reads the docs on file per the method. PDF download is below ↓</span>
           </div>
           {verifyErr && <div className="text-[11px] text-red-300 mt-1.5">{verifyErr}</div>}
           {verified && (
             <div className="mt-2 bg-slate-900/60 border border-emerald-700/40 rounded-xl p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm text-emerald-300 font-semibold">AI-verified income: {money(verified.qualifyingMonthlyIncome || 0)}/mo{borrowersNote ? ` · using ${money(income)}/mo` : ""}</div>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">{verified.docsRead?.length || 0} doc{(verified.docsRead?.length || 0) === 1 ? "" : "s"} · confidence {verified.report?.confidence}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">{verified.method && verified.method !== "standard" ? `${String(verified.method).replace(/_/g, " ")} · ` : ""}{verified.docsRead?.length || 0} doc{(verified.docsRead?.length || 0) === 1 ? "" : "s"} · confidence {verified.report?.confidence}</span>
               </div>
               {/* Stability: this number is FROZEN to the document set — re-verifying an
                   unchanged file returns the same figure. It only changes if the documents

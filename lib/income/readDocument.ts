@@ -54,6 +54,14 @@ export type DocRead = {
   isJointReturn?: boolean;
   yearsAtCurrentEmployer?: number | null;
   bankMonthlyDeposits?: number | null;  // avg monthly deposits off a bank statement (reality-check only)
+  // ── P&L (profit-and-loss statement — the P&L-only non-QM method) ──
+  pnl?: {
+    netIncome?: number | null;          // NET income for the period, as printed
+    grossRevenue?: number | null;
+    months?: number | null;             // months the P&L covers (e.g. 12)
+    preparer?: string | null;           // CPA/EA/preparer name, or "self-prepared"
+    preparerSigned?: boolean;           // third-party-prepared/signed (borrower-prepared = false)
+  } | null;
   // ── BANK STATEMENT detail (bank-statement qualifying programs — 12/24-mo deposit income).
   //    One entry per statement MONTH contained in this document (a PDF may hold several).
   bankStatement?: {
@@ -80,11 +88,11 @@ export type DocRead = {
 export const READ_ONE_SYSTEM = `You are a senior U.S. mortgage underwriter's document examiner. You are shown ONE income-related document (it may be several pages of the SAME document). Read it CAREFULLY and completely, then return the facts printed on it as a single DocRead JSON object. You do NOT compute qualifying income, average anything, or decide what counts — a separate deterministic engine does all math. Your job is to IDENTIFY this document and TRANSCRIBE its facts accurately.
 
 WORK THROUGH IT IN THIS ORDER:
-1) IDENTIFY the document: what is it? (paystub | w2 | 1099nec | 1099misc | schedule_c | tax_return_1040 | wage_income_transcript | bank_statement | ssa_award | pension | disability | voe | other). Set docConfidence and, if it is not an income document (a bare ID, a voided check, a blank page), isIncomeDoc=false. If it is too blurry or cut off to read reliably, set legible=false and fill only what you are sure of.
+1) IDENTIFY the document: what is it? (paystub | w2 | 1099nec | 1099misc | schedule_c | tax_return_1040 | wage_income_transcript | bank_statement | ssa_award | pension | disability | voe | pnl | other). A "pnl" is a PROFIT & LOSS statement (income statement) for a business — revenue, expenses, net income for a period; note WHO prepared it. Set docConfidence and, if it is not an income document (a bare ID, a voided check, a blank page), isIncomeDoc=false. If it is too blurry or cut off to read reliably, set legible=false and fill only what you are sure of.
 2) WHOSE document is it: read the EARNER / employee / provider / account-holder name EXACTLY as printed into personName (for an IHSS stub this is the PROVIDER, not the recipient). Read the last 4 of the SSN (if shown) into ssnLast4 — last 4 ONLY, never the full number. Read the person's city into addressCity if shown.
-3) EMPLOYER / STREAM: employerOrPayer (exact), ein (if shown). caseOrRecipient = any recipient name or case/account number that distinguishes this income source (IHSS recipient + case #, or a bank account last-4). streamId = a stable key combining employer + EIN + case/recipient (e.g. "CoreCivic|EIN62-..." or "IHSS|case#1837869"). incomeCategory — classify by whether there is a STABLE BASE, not by whether any variable pay exists: wage_salaried = ANY W-2 job with a steady salary OR a regular hourly rate (a corrections officer, nurse, warehouse worker, etc. is wage_salaried EVEN IF the stub shows overtime, shift differential, holiday or bonus on top — a stable base rate makes it salaried). wage_variable = ONLY a job with NO stable base: gig / IHSS in-home care / tips-only / piece-rate / commission-only / day-labor where every check fluctuates with no underlying salary or fixed rate. self_employment = 1099 / Schedule C. fixed_benefit = SSA / pension / disability / annuity. When unsure between salaried and variable for a W-2 job that prints a regular rate, choose wage_salaried.
+3) EMPLOYER / STREAM: employerOrPayer (exact), ein (if shown). caseOrRecipient = any recipient name or case/account number that distinguishes this income source (IHSS recipient + case #, or a bank account last-4). streamId = a stable key combining employer + EIN + case/recipient. IHSS RULE (hard): the streamId for an IHSS document is ALWAYS "IHSS|case#<the printed case number>" — key on the CASE NUMBER, never the recipient's name (name spellings vary between documents; the case number never does). Put the recipient's name in caseOrRecipient and notes. incomeCategory — classify by whether there is a STABLE BASE, not by whether any variable pay exists: wage_salaried = ANY W-2 job with a steady salary OR a regular hourly rate (a corrections officer, nurse, warehouse worker, etc. is wage_salaried EVEN IF the stub shows overtime, shift differential, holiday or bonus on top — a stable base rate makes it salaried). wage_variable = ONLY a job with NO stable base: gig / IHSS in-home care / tips-only / piece-rate / commission-only / day-labor where every check fluctuates with no underlying salary or fixed rate. self_employment = 1099 / Schedule C. fixed_benefit = SSA / pension / disability / annuity. When unsure between salaried and variable for a W-2 job that prints a regular rate, choose wage_salaried.
 4) PERIOD & CURRENCY (critical — this tells the engine if the income is ONGOING or a job the borrower LEFT): for a pay stub read payPeriodStart, payPeriodEnd, payDate (the check date), and ytdThroughDate — all YYYY-MM-DD, exactly as printed. Set isFinalCheck=true only if it says final/last/termination/severance. Read hireDate if printed. For a W-2/1099/return set taxYear.
-5) FIGURES, EXACTLY AS PRINTED (never rounded, never derived): payFrequency (infer from the pay-period dates: two dates in one month=semimonthly; ~14 days apart=biweekly; ~7=weekly; one/month=monthly). regularPerPeriod (regular pay this period, EXCLUDING overtime), otPerPeriod (overtime/other variable this period), grossPerPeriod (total gross this period), ytdRegular, ytdGross. W-2: w2Box1 (taxable wages), w2Box5 (medicare wages). Self-employment: selfEmploymentNet (net after expenses for the year, from Sch C line 31 or the 1099 amount). Benefit: monthlyBenefit, benefitType, continuanceMonthsRemaining (null if lifetime), monthsReceived (support/alimony), nonTaxable (true if the benefit is non-taxable). 1040: isJointReturn=true if Married-Filing-Jointly. BANK STATEMENT — read it FULLY into the bankStatement object (these documents can QUALIFY income on bank-statement loan programs, so precision matters): institution, accountLast4 (last 4 of the account number), accountHolder EXACTLY as printed (a business/entity name means accountType "business"; a person's name on a consumer account means "personal"), and ONE months[] entry PER STATEMENT MONTH contained in this document (a PDF may hold 2+ monthly statements — emit each month separately): periodStart, periodEnd (YYYY-MM-DD), totalDeposits (the statement's printed total deposits/credits for that period), transfersIn (the portion of deposits that are TRANSFERS from another account — look for "transfer from", "online transfer", "xfer"), excludedDeposits (credits that are clearly NOT income: loan/advance proceeds, tax refunds, returned/reversed items, merchant refunds), largeDeposits (each unusually large single credit with its printed description), endingBalance, nsfCount (NSF / insufficient-funds / overdraft-item incidents). Also set bankMonthlyDeposits = the average monthly deposits as a cross-check.
+5) FIGURES, EXACTLY AS PRINTED (never rounded, never derived): payFrequency (infer from the pay-period dates: two dates in one month=semimonthly; ~14 days apart=biweekly; ~7=weekly; one/month=monthly). regularPerPeriod (regular pay this period, EXCLUDING overtime), otPerPeriod (overtime/other variable this period), grossPerPeriod (total gross this period), ytdRegular, ytdGross. W-2: w2Box1 (taxable wages), w2Box5 (medicare wages). Self-employment: selfEmploymentNet (net after expenses for the year, from Sch C line 31 or the 1099 amount). Benefit: monthlyBenefit, benefitType, continuanceMonthsRemaining (null if lifetime), monthsReceived (support/alimony), nonTaxable (true if the benefit is non-taxable). 1040: isJointReturn=true if Married-Filing-Jointly. BANK STATEMENT — read it FULLY into the bankStatement object (these documents can QUALIFY income on bank-statement loan programs, so precision matters): institution, accountLast4 (last 4 of the account number), accountHolder EXACTLY as printed (a business/entity name means accountType "business"; a person's name on a consumer account means "personal"), and ONE months[] entry PER STATEMENT MONTH contained in this document (a PDF may hold 2+ monthly statements — emit each month separately): periodStart, periodEnd (YYYY-MM-DD), totalDeposits (the statement's printed total deposits/credits for that period), transfersIn (the portion of deposits that are TRANSFERS from another account — look for "transfer from", "online transfer", "xfer"), excludedDeposits (credits that are clearly NOT income: loan/advance proceeds, tax refunds, returned/reversed items, merchant refunds), largeDeposits (each unusually large single credit with its printed description), endingBalance, nsfCount (NSF / insufficient-funds / overdraft-item incidents). Also set bankMonthlyDeposits = the average monthly deposits as a cross-check. P&L STATEMENT — read into pnl: netIncome (the NET/bottom line for the period, exactly as printed), grossRevenue, months the statement covers (e.g. a Jan–Dec P&L = 12), preparer (the CPA/EA/tax-preparer name if shown; "self-prepared" if it's the borrower's own), preparerSigned (true ONLY if a third-party preparer signed/issued it).
 6) notes: ONE terse line an underwriter needs (e.g. "IHSS recipient Ophelia H, case #1470414", "final check — employment ended", "declining vs prior year").
 
 RULES: transcribe numbers EXACTLY as printed — never round, never derive, never sum. Include ONLY what you can actually SEE; use null for anything not on this document. Never assign a joint 1040's combined wages to one person. Return the DocRead via the tool. One document = one DocRead.`;
@@ -172,6 +180,20 @@ export async function readDocumentsPooled(
   return out;
 }
 
+// Deterministic stream identity: when ANY identifying field carries a case/account number,
+// the streamId is normalized to it in CODE — so "IHSS recipient Ophelia H" and "Ophelia K
+// Howard IHSS" (the same case, two OCR spellings) always merge into one stream, and forced
+// re-reads can never shuffle stream identity again.
+export function normalizeStreamId(r: DocRead): string | null {
+  const blob = `${r.streamId || ""} ${r.caseOrRecipient || ""} ${r.notes || ""}`;
+  const m = blob.match(/(?:case|#)\s*#?\s*(\d{4,})/i);
+  if (m) {
+    const isIhss = /ihss|in.?home|supportive/i.test(`${r.employerOrPayer || ""} ${blob}`);
+    return `${isIhss ? "ihss" : (r.employerOrPayer || "payer").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12)}|case#${m[1]}`;
+  }
+  return r.streamId ?? (r.caseOrRecipient ? `${r.employerOrPayer || "?"}|${r.caseOrRecipient}` : null);
+}
+
 // Map a DocRead to the DocFact the deterministic engine consumes. Borrower defaults to 1;
 // assignBorrowers reassigns it from name/SSN against the applicant roster.
 export function toDocFact(r: DocRead): DocFact {
@@ -183,7 +205,7 @@ export function toDocFact(r: DocRead): DocFact {
     incomeCategory: r.incomeCategory ?? null,
     employerOrPayer: r.employerOrPayer ?? null,
     ein: r.ein ?? null,
-    streamId: r.streamId ?? (r.caseOrRecipient ? `${r.employerOrPayer || "?"}|${r.caseOrRecipient}` : null),
+    streamId: normalizeStreamId(r),
     taxYear: r.taxYear ?? null,
     payFrequency: r.payFrequency ?? null,
     regularPerPeriod: r.regularPerPeriod ?? null,

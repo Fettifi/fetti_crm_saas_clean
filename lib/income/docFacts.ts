@@ -9,7 +9,7 @@
 
 export type DocType =
   | "paystub" | "w2" | "1099nec" | "1099misc" | "schedule_c" | "tax_return_1040"
-  | "wage_income_transcript" | "bank_statement" | "ssa_award" | "pension" | "disability" | "voe" | "other";
+  | "wage_income_transcript" | "bank_statement" | "ssa_award" | "pension" | "disability" | "voe" | "pnl" | "other";
 
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly";
 
@@ -293,6 +293,10 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
     };
     const countedIdentity = new Set<string>();
     for (const [k, sf] of wageStreams) if (clsMap.get(k) === "current") for (const t of idTokens(sf)) countedIdentity.add(t);
+    // Track counted CURRENT wage streams to raise the secondary-employment seasoning note
+    // (Fannie B3-3.1-02 / FHA: a SECOND job wants a ~2-yr uninterrupted history). Advisory
+    // only — income is never removed for it (Ramon: never silently under-count).
+    const countedWage: { employer: string; monthly: number; w2Years: number }[] = [];
 
     for (const sid of [...wageStreams.keys()].sort()) {
       const sf = wageStreams.get(sid)!;
@@ -347,6 +351,7 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
         else if (vStubs[0] && vStubs[0].payFrequency && FREQ[vStubs[0].payFrequency]) { const s = vStubs[0]; qual = num(s.grossPerPeriod ?? s.regularPerPeriod)! * FREQ[s.payFrequency!] / 12; basis = "current stub annualized"; flags.push({ text: `${employer}: variable income from one stub only — no YTD/W-2 to average; verify with a 2-yr history.`, addBackMonthly: 0, borrower: b }); }
         else continue;
         add(b, qual, `${employer} — variable/gig wages`, basis, sid);
+        countedWage.push({ employer, monthly: qual, w2Years: w2s.length });
         continue;
       }
 
@@ -394,6 +399,16 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
         varBasis = `variable 2-yr avg`;
       }
       add(b, baseMonthly + variableMonthly, `${employer} — wages`, [baseBasis, varBasis].filter(Boolean).join(" + "), sid);
+      countedWage.push({ employer, monthly: baseMonthly + variableMonthly, w2Years: w2s.length });
+    }
+    // SECONDARY-EMPLOYMENT seasoning note: when 2+ current jobs are summed, any job beyond
+    // the primary (largest) without a 2-yr W-2 history gets an advisory verify flag.
+    if (countedWage.length > 1) {
+      const primary = countedWage.reduce((a, z) => (z.monthly > a.monthly ? z : a), countedWage[0]);
+      for (const s of countedWage) {
+        if (s === primary || s.w2Years >= 2) continue;
+        flags.push({ text: `${s.employer}: counted as a SECOND concurrent job with under 2 years of W-2 history at this employer — most programs want a ~2-year uninterrupted second-job history; verify per the program (income is counted; this is a verification note).`, addBackMonthly: 0, borrower: b });
+      }
     }
 
     // ── SELF-EMPLOYMENT: 2-yr average of NET from filed returns / Schedule C (grouped by
