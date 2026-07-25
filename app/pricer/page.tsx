@@ -274,7 +274,9 @@ export default function PricerPage() {
               <div><label className={lbl}>Actual annual taxes {taxOver && <span className="text-emerald-400">· in use</span>}</label><CurrencyInput value={taxOverride} onChange={setTaxOverride} className={inp} placeholder="auto from ZIP" /></div>
               <div><label className={lbl}>Actual annual insurance {insOver && <span className="text-emerald-400">· in use</span>}</label><CurrencyInput value={insOverride} onChange={setInsOverride} className={inp} placeholder="auto from ZIP" /></div>
             </div>
-            <p className="text-[11px] text-slate-600 -mt-1">Know the real numbers (tax bill, MLS listing, insurance quote)? Enter the annual amount and it overrides the estimate — exact figures for the borrower.</p>
+            <p className="text-[11px] text-slate-600 -mt-1">{isRefi
+              ? "On a refi you usually HAVE these — pull the annual tax and insurance from the current mortgage statement / escrow analysis and enter them here; they override the ZIP estimate for an exact payment."
+              : "Know the real numbers (tax bill, MLS listing, insurance quote)? Enter the annual amount and it overrides the estimate — exact figures for the borrower."}</p>
             <label className="flex items-center gap-2 text-sm text-slate-300 pt-1"><input type="checkbox" checked={includePMI} onChange={(e) => setIncludePMI(e.target.checked)} className="accent-emerald-500" /> Include PMI estimate if LTV &gt; 80%</label>
             <div className="pt-1"><label className={lbl}>Borrower name <span className="text-slate-600">(for the PDF)</span></label><input value={borrowerName} onChange={(e) => setBorrowerName(e.target.value)} className={inp} placeholder="Jane Smith" /></div>
           </div>
@@ -365,7 +367,14 @@ export default function PricerPage() {
                       <div>
                         <label className={lbl}>Origination fee</label>
                         <div className="relative">
-                          <input type="number" step="0.125" min="0" max="5" value={origPct} onChange={(e) => setOrigPct(e.target.value)} className={inp} placeholder="1.0" inputMode="decimal" />
+                          {/* No native number spinners — they collide with the "% of loan" suffix
+                              ("% of lo⇅") and the typed value runs under it. Text input + decimal
+                              filter + right padding keeps the field clean. */}
+                          <input
+                            type="text" inputMode="decimal" value={origPct}
+                            onChange={(e) => { const v = e.target.value.replace(/[^0-9.]/g, ""); if ((v.match(/\./g) || []).length <= 1) setOrigPct(v); }}
+                            className={`${inp} pr-20`} placeholder="1.0"
+                          />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm pointer-events-none">% of loan</span>
                         </div>
                       </div>
