@@ -182,7 +182,11 @@ export function computeBankStatementIncome(
     flags.push({ text: "Business-statement path: verify the borrower's ownership % (programs require ≥25–50%; the calc assumes 100% — reduce proportionally if less) and collect a CPA/P&L letter if using an expense factor below the 50% default.", addBackMonthly: 0, borrower: 1 });
   }
   if (types.has("personal")) {
-    flags.push({ text: "Personal-statement path (100% of eligible deposits): requires evidence the business exists and pays its expenses from a SEPARATE business account (CPA letter / business license + 2 months of business-account statements). If business revenue lands directly in this personal account, it's co-mingled — underwrite as business with an expense factor instead.", addBackMonthly: 0, borrower: 1 });
+    // Ramon (2026-07-24, HARD): bank-statement loans are NOT always business-purpose — on the
+    // personal path the deposits qualify AS income in lieu of tax returns/W-2s. Any business-
+    // documentation overlay is program-specific, so this is a check-the-program note, never a
+    // demand for business evidence.
+    flags.push({ text: "Personal-statement path: 100% of eligible deposits qualify in lieu of tax returns / W-2s. Some programs add a business-documentation overlay for self-employed borrowers — confirm against the specific program's guidelines.", addBackMonthly: 0, borrower: 1 });
   }
 
   const qualifyingMonthlyIncome = Object.values(perBorrowerMonthly).reduce((s, v) => s + v, 0);
