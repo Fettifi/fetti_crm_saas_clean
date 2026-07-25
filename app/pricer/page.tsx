@@ -394,7 +394,7 @@ export default function PricerPage() {
               </div>
             )}
 
-            <button onClick={downloadPdf} disabled={pdfBusy || !num(price)} className="w-full mt-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2">
+            <button onClick={downloadPdf} disabled={pdfBusy || (isRefi ? (!num(value) || !num(refiLoan)) : !num(price))} className="w-full mt-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2">
               {pdfBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Download borrower PDF
             </button>
             <p className="text-[11px] text-slate-600 mt-3">Estimate only. The rate is estimated from the borrower profile and is not a locked rate, quote, or commitment to lend — it's subject to credit, program, market, and final approval until locked. Property taxes use the ZIP&apos;s county/ZCTA effective rate (U.S. Census ACS) — except California, which uses the Prop 13 purchase rate (~1% + local), since a purchase is reassessed to its price. Homeowner&apos;s insurance is an estimate scaled from the state average and ZIP catastrophe risk — not an insurance quote. Actual figures are set by the tax authority, a real insurance quote, and final underwriting. The PDF is a branded, borrower-ready payment summary.</p>
