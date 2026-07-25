@@ -58,6 +58,10 @@ export default function PricerPage() {
   const [creditVal, setCreditVal] = useState("760");
   const [occupancy, setOccupancy] = useState("primary");
   const [purpose, setPurpose] = useState("purchase");
+  // Refinance: there is no purchase price or down payment — the deal is the property VALUE
+  // and the NEW LOAN AMOUNT (payoff, plus cash-out on a cash-out refi). LTV = loan ÷ value.
+  const [refiLoan, setRefiLoan] = useState("");
+  const isRefi = purpose !== "purchase";
 
   // Rate: auto-estimated, with an advisor override.
   const [rateOverride, setRateOverride] = useState(false);
@@ -102,11 +106,18 @@ export default function PricerPage() {
 
   // LTV is independent of rate, so compute it first (rate=0), estimate the rate,
   // then run the full PITIA with the chosen rate.
-  const base = useMemo(() => ({
-    price: num(price), value: num(value) || undefined, down: num(down),
-    termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI,
-    taxRatePct: taxRatePctEff, insRatePct: insRatePctEff,
-  }), [price, value, down, term, state, hoa, includePMI, taxRatePctEff, insRatePctEff]);
+  const base = useMemo(() => (isRefi
+    ? {
+        // Refinance: value is the deal basis (tax/ins/LTV) and the loan amount is direct.
+        price: num(value), value: num(value) || undefined, loanAmount: num(refiLoan),
+        termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI,
+        taxRatePct: taxRatePctEff, insRatePct: insRatePctEff,
+      }
+    : {
+        price: num(price), value: num(value) || undefined, down: num(down),
+        termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI,
+        taxRatePct: taxRatePctEff, insRatePct: insRatePctEff,
+      }), [isRefi, refiLoan, price, value, down, term, state, hoa, includePMI, taxRatePctEff, insRatePctEff]);
 
   const pre = useMemo(() => estimatePITIA({ ...base, ratePct: 0 }), [base]);
   const credit = creditValueToFico(creditVal);
@@ -125,14 +136,15 @@ export default function PricerPage() {
   const [origPct, setOrigPct] = useState("1"); // Fetti's origination fee (% of loan) — adjustable per deal
   const [cc, setCc] = useState<any>(null);
   const [ccOpen, setCcOpen] = useState(true);
+  const dealBasis = isRefi ? num(value) : num(price);   // the $ the deal is priced against
   useEffect(() => {
-    if (!num(price) || !r.loan || !state) { setCc(null); return; }
+    if (!dealBasis || !r.loan || !state) { setCc(null); return; }
     const ctl = new AbortController();
     const t = setTimeout(() => {
       fetch("/api/pricer/closing-costs", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: ctl.signal,
         body: JSON.stringify({
-          zip, state, price: num(price), loanAmount: r.loan, loanType, purpose,
+          zip, state, price: dealBasis, loanAmount: r.loan, loanType, purpose,
           ratePct: effRate, taxRatePct: taxRatePctEff, insAnnual: r.insMonthly * 12,
           sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
           originationPct: origPct === "" ? undefined : num(origPct),
@@ -140,16 +152,21 @@ export default function PricerPage() {
       }).then((res) => (res.ok ? res.json() : null)).then((j) => setCc(j?.ok ? j : null)).catch(() => setCc(null));
     }, 350);
     return () => { clearTimeout(t); ctl.abort(); };
-  }, [price, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct]);
+  }, [dealBasis, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct]);
 
   async function downloadPdf() {
-    if (!num(price)) { alert("Enter a purchase price first."); return; }
+    if (isRefi ? (!num(value) || !num(refiLoan)) : !num(price)) {
+      alert(isRefi ? "Enter the property value and the new loan amount first." : "Enter a purchase price first.");
+      return;
+    }
     setPdfBusy(true);
     try {
       const res = await fetch("/api/pricer/pdf", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          borrowerName, address, state, zip, price: num(price), value: num(value) || undefined, down: num(down),
+          borrowerName, address, state, zip,
+          price: isRefi ? num(value) : num(price), value: num(value) || undefined,
+          down: isRefi ? 0 : num(down), loanAmount: isRefi ? num(refiLoan) : undefined,
           taxAnnualOverride: num(taxOverride) || undefined, insAnnualOverride: num(insOverride) || undefined,
           loanType, creditVal, occupancy: effOccupancy, purpose,
           ratePct: effRate, rateIsOverride: rateOverride, termMonths: term, hoaMonthly: num(hoa), includePMI,
@@ -203,12 +220,28 @@ export default function PricerPage() {
           {/* Inputs */}
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 space-y-3">
             <div className="text-xs uppercase tracking-wide text-slate-500">The deal</div>
-            <div><label className={lbl}>Purchase / sales price</label><CurrencyInput value={price} onChange={setPrice} className={inp} placeholder="$0" /></div>
-            <div><label className={lbl}>Appraised value <span className="text-slate-600">(optional — defaults to price)</span></label><CurrencyInput value={value} onChange={setValue} className={inp} placeholder="defaults to price" /></div>
-            <div>
-              <label className={lbl}>Down payment {downPct > 0 && <span className="text-emerald-400">· {downPct.toFixed(1)}% down</span>}</label>
-              <CurrencyInput value={down} onChange={setDown} className={inp} placeholder="$0" />
-            </div>
+            {isRefi ? (
+              <>
+                {/* Refinance: value + new loan amount — there is no purchase price or down payment. */}
+                <div><label className={lbl}>Estimated property value</label><CurrencyInput value={value} onChange={setValue} className={inp} placeholder="$0" /></div>
+                <div>
+                  <label className={lbl}>{purpose === "cashOut" ? "New loan amount (payoff + cash out)" : "New loan amount (payoff)"}{num(refiLoan) > 0 && num(value) > 0 && <span className="text-emerald-400"> · {((num(refiLoan) / num(value)) * 100).toFixed(1)}% LTV</span>}</label>
+                  <CurrencyInput value={refiLoan} onChange={setRefiLoan} className={inp} placeholder="$0" />
+                </div>
+                {purpose === "cashOut" && num(refiLoan) > 0 && (
+                  <div className="text-[11px] text-slate-500">Cash-out = new loan − current payoff − closing costs. Enter the full new loan amount above.</div>
+                )}
+              </>
+            ) : (
+              <>
+                <div><label className={lbl}>Purchase / sales price</label><CurrencyInput value={price} onChange={setPrice} className={inp} placeholder="$0" /></div>
+                <div><label className={lbl}>Appraised value <span className="text-slate-600">(optional — defaults to price)</span></label><CurrencyInput value={value} onChange={setValue} className={inp} placeholder="defaults to price" /></div>
+                <div>
+                  <label className={lbl}>Down payment {downPct > 0 && <span className="text-emerald-400">· {downPct.toFixed(1)}% down</span>}</label>
+                  <CurrencyInput value={down} onChange={setDown} className={inp} placeholder="$0" />
+                </div>
+              </>
+            )}
 
             <div className="text-xs uppercase tracking-wide text-slate-500 pt-2">Borrower profile</div>
             <div className="grid grid-cols-2 gap-3">
@@ -299,10 +332,12 @@ export default function PricerPage() {
                   <span className="text-sm text-slate-300">Total closing costs</span>
                   <span className="text-xl font-bold text-white">{money(cc.totalClosingCosts)}</span>
                 </div>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-slate-300">+ Down payment</span>
-                  <span className="text-sm font-semibold text-slate-200">{money(cc.downPayment)}</span>
-                </div>
+                {!isRefi && (
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm text-slate-300">+ Down payment</span>
+                    <span className="text-sm font-semibold text-slate-200">{money(cc.downPayment)}</span>
+                  </div>
+                )}
                 {cc.credits > 0 && (
                   <div className="flex items-baseline justify-between">
                     <span className="text-sm text-slate-300">− Credits</span>
