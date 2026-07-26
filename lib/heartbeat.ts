@@ -4,6 +4,7 @@
 // switch — if Vercel crons ever stop entirely, the external monitor alerts you,
 // because the internal checks would be dead too.
 import { getSetting, setSetting } from "@/lib/settings";
+import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 
 const KEY = "cron_heartbeats";
 // Invocations, recorded separately from SUCCESSES. A heartbeat means "this job did its
@@ -38,33 +39,60 @@ export const CRON_EXPECTED: Record<string, number> = {
   "competitor-watch": 26 * 3600, // daily
 };
 
-export async function recordHeartbeat(name: string): Promise<void> {
+// Per-job rows: each cron stamps ONLY its own key, so there is no shared cell to
+// contend on and nothing to clobber.
+//
+// This replaced a read-modify-write over one shared JSON blob. Every cron wrote that
+// blob, and the high-frequency ones (email-poll /5m, import-leads + publish-due /15m,
+// dedupe-leads /30m) routinely overlap the dailies. A reproduction on 2026-07-26 with
+// 8 concurrent writers kept ONE entry and silently dropped SEVEN — so jobs that had
+// genuinely run showed as "never ran", making the continuity telemetry lie in the most
+// dangerous direction: real staleness became indistinguishable from a clobbered entry,
+// and the doctor's alerting could not be trusted. Compare-and-set fixed most of it but
+// still lost 3 of 12 when retries exhausted under contention; one row per job removes
+// the contention altogether, which is the only version that loses nothing.
+const HB_PREFIX = "cron_hb:";
+const AT_PREFIX = "cron_attempt:";
+
+async function stamp(prefix: string, name: string): Promise<void> {
+  // A blind upsert of this job's OWN row — no read, so no lost update is possible.
+  try { await setSetting(prefix + name, new Date().toISOString()); } catch { /* telemetry must never block the job */ }
+}
+
+/** Read every per-job row under a prefix, falling back to the legacy shared blob. */
+async function readStamps(prefix: string, legacyKey: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  // Legacy blob first so any pre-migration timestamps survive; per-job rows win.
   try {
-    const raw = await getSetting(KEY);
-    const map = raw ? JSON.parse(raw) : {};
-    map[name] = new Date().toISOString();
-    await setSetting(KEY, JSON.stringify(map));
-  } catch { /* never block the job */ }
+    const raw = await getSetting(legacyKey);
+    if (raw) Object.assign(out, JSON.parse(raw) || {});
+  } catch { /* legacy is best-effort */ }
+  try {
+    const { data } = await supabaseAdmin.from("app_settings").select("key, value").like("key", prefix + "%");
+    for (const r of (data || []) as { key: string; value: string | null }[]) {
+      if (r.value) out[r.key.slice(prefix.length)] = r.value;
+    }
+  } catch { /* fall back to whatever the legacy blob had */ }
+  return out;
+}
+
+export async function recordHeartbeat(name: string): Promise<void> {
+  await stamp(HB_PREFIX, name);
 }
 
 // Record that the job's ROUTE was invoked, regardless of whether it did any work.
 // Call this at the TOP of a cron route; call recordHeartbeat only once the work
 // actually completed. A fresh attempt + a stale heartbeat = the job is STALLED.
 export async function recordAttempt(name: string): Promise<void> {
-  try {
-    const raw = await getSetting(ATTEMPT_KEY);
-    const map = raw ? JSON.parse(raw) : {};
-    map[name] = new Date().toISOString();
-    await setSetting(ATTEMPT_KEY, JSON.stringify(map));
-  } catch { /* never block the job */ }
+  await stamp(AT_PREFIX, name);
 }
 
 export async function getHeartbeats(): Promise<Record<string, string>> {
-  try { const raw = await getSetting(KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+  return readStamps(HB_PREFIX, KEY);
 }
 
 export async function getAttempts(): Promise<Record<string, string>> {
-  try { const raw = await getSetting(ATTEMPT_KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+  return readStamps(AT_PREFIX, ATTEMPT_KEY);
 }
 
 export type Continuity = {
