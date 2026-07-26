@@ -26,7 +26,11 @@ const fail = (issue: string, notes: string): QCResult => ({ pass: false, severit
 // Structural integrity — no external call. Returns null when fine, else a reason.
 async function integrity(raw: Buffer, minW = 300, minH = 300): Promise<string | null> {
   if (!raw || raw.length < 3000) return "image is empty or far too small";
-  let meta: sharp.Metadata;
+  // Derived from the function's own return type rather than a `sharp.Metadata`
+  // namespace reference: sharp 0.35 switched to `export = sharp`, so the namespace
+  // types are unreachable through a default import. Inferring keeps this correct
+  // across future sharp upgrades instead of breaking on each one.
+  let meta: Awaited<ReturnType<ReturnType<typeof sharp>["metadata"]>>;
   try { meta = await sharp(raw).metadata(); } catch { return "image does not decode"; }
   if (!meta.format || !["jpeg", "jpg", "png", "webp"].includes(meta.format)) return `unexpected format ${meta.format}`;
   if (!meta.width || !meta.height || meta.width < minW || meta.height < minH) return `bad dimensions ${meta.width}x${meta.height}`;
