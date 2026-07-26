@@ -9,6 +9,7 @@
 //  - SMS always carries the STOP opt-out line; sends are one human click per
 //    deal from /scout — nothing here is ever blast/automated.
 import type { ScoutDeal } from "@/lib/scoutStore";
+import { canSpamFooterHtml } from "@/lib/legal";
 
 function firstName(d: ScoutDeal): string {
   const n = (d.seller_name || "").trim();
@@ -46,6 +47,8 @@ export function meetingEmailHtml(d: ScoutDeal, calendlyUrl: string): string {
     `Or just reply to this email — it comes straight to me.<br><br>` +
     `Ramon Dent<br>Fetti Capital<br>` +
     `<span style="color:#64748b;font-size:12px">You're receiving this one-time note because your property is publicly listed for sale by owner. ` +
-    `If you'd rather not hear from me, reply "no thanks" and I won't contact you again.</span>`
+    `If you'd rather not hear from me, reply "no thanks" and I won't contact you again.</span>` +
+    // CAN-SPAM: a commercial email needs the physical postal address too, not just an opt-out.
+    canSpamFooterHtml('Reply "no thanks" and I won\'t contact you again.')
   );
 }

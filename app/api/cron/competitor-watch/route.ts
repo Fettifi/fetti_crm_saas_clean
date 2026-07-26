@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSetting, setSetting, cfg } from "@/lib/settings";
 import { claudeChat } from "@/lib/aiFallback";
+import { recordHeartbeat, recordAttempt } from "@/lib/heartbeat";
 import {
   DEFAULT_COMPETITORS, discover, type Competitor, type Snapshot,
   CACHE_KEY, LIST_KEY, HISTORY_KEY, WEEKLY_BRIEF_KEY,
@@ -25,6 +26,7 @@ export async function GET(req: NextRequest) {
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  await recordAttempt("competitor-watch");
 
   const listRaw = await getSetting(LIST_KEY);
   let competitors: Competitor[] = DEFAULT_COMPETITORS;
@@ -97,7 +99,7 @@ export async function GET(req: NextRequest) {
     } catch (e) { console.warn("[competitor-watch] weekly brief failed:", e); }
   }
 
-  return NextResponse.json({
+  await recordHeartbeat("competitor-watch"); return NextResponse.json({
     ok: true, tracked: competitors.length, snapshotted: snapComps.length,
     igBlocked, historyDays: history.length, weeklyBrief: !!brief,
   });

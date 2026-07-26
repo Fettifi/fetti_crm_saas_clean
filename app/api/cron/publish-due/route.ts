@@ -14,6 +14,7 @@ import { integrityOk } from "@/lib/contentQC";
 import { logActivity } from "@/lib/activity";
 import { notifyTeam } from "@/lib/notify/leadAlert";
 import { cfg } from "@/lib/settings";
+import { recordHeartbeat, recordAttempt } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -23,9 +24,10 @@ export async function GET(req: NextRequest) {
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  await recordAttempt("publish-due");
   try {
     if ((await cfg("CONTENT_AUTOPUBLISH")) === "off") {
-      return NextResponse.json({ ok: true, autopublish: "off" });
+      await recordHeartbeat("publish-due"); return NextResponse.json({ ok: true, autopublish: "off" });
     }
     const nowIso = new Date().toISOString();
     const { data: due } = await supabaseAdmin
@@ -33,13 +35,13 @@ export async function GET(req: NextRequest) {
       .eq("status", "scheduled").lte("scheduled_for", nowIso)
       .order("scheduled_for", { ascending: true }).limit(1);
     const pick = (due || [])[0];
-    if (!pick) return NextResponse.json({ ok: true, due: 0 });
+    if (!pick) { await recordHeartbeat("publish-due"); return NextResponse.json({ ok: true, due: 0 }); }
 
     // Optimistic claim — only one runner may take it.
     const { data: claimed } = await supabaseAdmin
       .from("content_posts").update({ status: "posting" })
       .eq("id", pick.id).eq("status", "scheduled").select("id");
-    if (!claimed?.length) return NextResponse.json({ ok: true, due: 0, note: "claimed by another run" });
+    if (!claimed?.length) { await recordHeartbeat("publish-due"); return NextResponse.json({ ok: true, due: 0, note: "claimed by another run" }); }
 
     // Final pre-publish guard (belt to the generation-time QC): never post a media
     // row without usable media, and re-decode image assets so a garbled/blank render
@@ -47,12 +49,12 @@ export async function GET(req: NextRequest) {
     if ((pick.type === "image" || pick.type === "reel_video") && !pick.image_url) {
       await supabaseAdmin.from("content_posts").update({ status: "needs_review" }).eq("id", pick.id);
       await logActivity({ entity_type: "org", entity_id: pick.id, actor: "agent:publisher", action: "content.qc_held", detail: { reason: "no media at publish" } }).catch(() => {});
-      return NextResponse.json({ ok: true, held: "no media" });
+      await recordHeartbeat("publish-due"); return NextResponse.json({ ok: true, held: "no media" });
     }
     if (pick.type === "image" && !(await integrityOk(pick.image_url))) {
       await supabaseAdmin.from("content_posts").update({ status: "needs_review" }).eq("id", pick.id);
       await logActivity({ entity_type: "org", entity_id: pick.id, actor: "agent:publisher", action: "content.qc_held", detail: { reason: "image integrity at publish" } }).catch(() => {});
-      return NextResponse.json({ ok: true, held: "integrity" });
+      await recordHeartbeat("publish-due"); return NextResponse.json({ ok: true, held: "integrity" });
     }
 
     try {
@@ -63,7 +65,7 @@ export async function GET(req: NextRequest) {
           entity_type: "org", entity_id: pick.id, actor: "agent:publisher", action: "content.published",
           detail: { auto: true, scheduled_for: pick.scheduled_for, channels: res.channels },
         });
-        return NextResponse.json({ ok: true, published: res.channels.filter((c) => c.ok).map((c) => c.platform) });
+        await recordHeartbeat("publish-due"); return NextResponse.json({ ok: true, published: res.channels.filter((c) => c.ok).map((c) => c.platform) });
       }
       throw new Error(res.channels.map((c) => `${c.platform}: ${c.detail}`).join(" | ") || "no channel succeeded");
     } catch (e) {

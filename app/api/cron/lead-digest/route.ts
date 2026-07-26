@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildAndSendLeadDigest } from "@/lib/notify/leadDigest";
+import { recordHeartbeat, recordAttempt } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -13,6 +14,8 @@ export async function GET(req: NextRequest) {
   if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  await recordAttempt("lead-digest");
   const result = await buildAndSendLeadDigest();
+  await recordHeartbeat("lead-digest");
   return NextResponse.json({ ok: true, ...result });
 }

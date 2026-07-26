@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runNurture } from "@/lib/nurture";
-import { recordHeartbeat } from "@/lib/heartbeat";
+import { recordHeartbeat, recordAttempt } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // the daily list can exceed what 60s covers — 300s is the plan max
@@ -13,7 +13,11 @@ export async function GET(req: NextRequest) {
   if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // Attempt is stamped BEFORE the work, the heartbeat only AFTER it actually ran. When
+  // runNurture bails on the lock guard, the fresh attempt + stale heartbeat makes the
+  // doctor report STALLED — the false "healthy" that hid a 13-day follow-up outage.
+  await recordAttempt("nurture");
   const result = await runNurture();
-  await recordHeartbeat("nurture");
+  if (result.ran) await recordHeartbeat("nurture");
   return NextResponse.json({ ok: true, ...result });
 }

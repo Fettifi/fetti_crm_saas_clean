@@ -74,6 +74,11 @@ const nextConfig = {
   // clickjacking, MIME sniffing, referrer leakage, and unwanted device access.
   // (A full Content-Security-Policy is a recommended next step — it needs the
   // third-party allowlist tested against the live pixels/maps to avoid breakage.)
+  // A borrower who types or bookmarks the bare /portal got a 404 — there is no page at
+  // that path, only /portal/login and /portal/[id]. Send them to the login instead.
+  async redirects() {
+    return [{ source: "/portal", destination: "/portal/login", permanent: false }];
+  },
   async headers() {
     const baseSecurity = [
       { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },

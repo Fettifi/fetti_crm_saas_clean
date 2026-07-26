@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { sendEmail } from "@/lib/comms";
+import { recordHeartbeat, recordAttempt } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 const APP = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
@@ -15,6 +16,7 @@ export async function GET(req: NextRequest) {
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  await recordAttempt("tiktok-reminder");
   try {
     const today = new Date().toISOString().slice(0, 10);
     // Today's hook (episode video takes priority as the thing to post).
@@ -27,7 +29,7 @@ export async function GET(req: NextRequest) {
     // Nothing valid to post today (no episode + card held/absent) → don't nudge to an
     // empty page; skip the reminder rather than drive to a broken card.
     if (!ep && !card) {
-      return NextResponse.json({ ok: true, sent: false, note: "no ready TikTok asset today" });
+      await recordHeartbeat("tiktok-reminder"); return NextResponse.json({ ok: true, sent: false, note: "no ready TikTok asset today" });
     }
     const isEpisode = !!ep;
     const hook = (ep?.hook || card?.hook || "Today's Fetti post").toString();
@@ -56,7 +58,7 @@ export async function GET(req: NextRequest) {
       entity_type: "system", entity_id: "tiktok-reminder", actor: "system", action: "cron.ran",
       detail: { cron: "tiktok-reminder", to, sent: r.ok, hook, episode: isEpisode },
     }]).select("id").maybeSingle().then(() => {}, () => {});
-    return NextResponse.json({ ok: true, sent: r.ok, to, hook, episode: isEpisode });
+    await recordHeartbeat("tiktok-reminder"); return NextResponse.json({ ok: true, sent: r.ok, to, hook, episode: isEpisode });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }

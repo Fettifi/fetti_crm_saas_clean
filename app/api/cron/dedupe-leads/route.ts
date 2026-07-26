@@ -5,6 +5,7 @@
 // preview without writing.
 import { NextRequest, NextResponse } from "next/server";
 import { reconcileLeadDuplicates } from "@/lib/leadDedup";
+import { recordHeartbeat, recordAttempt } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,8 +18,11 @@ async function run(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const dry = req.nextUrl.searchParams.get("dry") === "1";
+  // Only a real (non-dry) run counts as the scheduled job completing.
+  if (!dry) await recordAttempt("dedupe-leads");
   try {
     const report = await reconcileLeadDuplicates(!dry);
+    if (!dry) await recordHeartbeat("dedupe-leads");
     // Cap the details payload; the counts are the signal.
     return NextResponse.json({ ok: true, applied: !dry, ...report, details: report.details.slice(0, 60) });
   } catch (e) {

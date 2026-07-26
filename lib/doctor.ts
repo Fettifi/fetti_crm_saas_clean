@@ -95,7 +95,13 @@ export async function runDoctor(): Promise<{ status: string; checks: Check[]; re
   try {
     continuity = await checkContinuity();
     for (const c of continuity) {
-      if (c.lastRun === null) add(`cron:${c.name}`, true, "info", "no heartbeat yet (will populate on next run)");
+      // STALLED outranks every other state: the job IS firing but never finishing its
+      // work, which a plain "last ran" heartbeat reports as healthy. That false-green is
+      // exactly how the nurture lock bug ran unnoticed for 13 days — never soften it.
+      if (c.stalled) {
+        add(`cron:${c.name}`, false, "critical",
+          `⛔ STALLED — the route fired ${c.lastAttempt ? `at ${c.lastAttempt}` : "recently"} but the job has not COMPLETED${c.lastRun ? ` since ${c.lastRun} (${c.ageHours}h)` : " ever"}. It is erroring or bailing on a guard every run.`);
+      } else if (c.lastRun === null) add(`cron:${c.name}`, true, "info", "no heartbeat yet (will populate on next run)");
       else add(`cron:${c.name}`, !c.overdue, c.overdue ? "critical" : "info",
         c.overdue ? `⛔ OVERDUE — last ran ${c.ageHours}h ago (expected ≤${c.expectedHours}h). Compute may be stalled.` : `ran ${c.ageHours}h ago`);
     }

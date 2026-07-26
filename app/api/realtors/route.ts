@@ -14,6 +14,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { getSetting, setSetting } from "@/lib/settings";
 import { sendEmail, logComms } from "@/lib/comms";
 import { logActivity } from "@/lib/activity";
+import { canSpamFooterText, canSpamFooterHtml } from "@/lib/legal";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ Open to a 15-minute call this week? I'll come with a one-pager on how we make yo
 
 — Ramon Dent
 Fetti Financial Services LLC · NMLS #2267023
-Apply/scenarios: fettifi.com`,
+Apply/scenarios: fettifi.com${canSpamFooterText('Not interested? Reply "no thanks" and I won\'t reach out again.')}`,
   };
 }
 
@@ -123,7 +124,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Already reached out to ${a.name} on ${new Date(a.last_contact_at).toLocaleDateString()} — give it a few days before following up again.` }, { status: 429 });
     }
     const { subject, body: text } = introEmail(a);
-    const html = `<div style="font:15px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#0f172a">${text.replace(/\n/g, "<br>")}</div>`;
+    const html = `<div style="font:15px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#0f172a">${text.replace(canSpamFooterText('Not interested? Reply "no thanks" and I won\'t reach out again.'), "").replace(/\n/g, "<br>")}</div>${canSpamFooterHtml('Not interested? Reply "no thanks" and I won\'t reach out again.')}`;
     const r = await sendEmail(a.email, subject, { html, text });
     if (!r.ok) return NextResponse.json({ error: `email failed: ${r.detail}` }, { status: 502 });
     a.status = a.status === "prospect" ? "contacted" : a.status;

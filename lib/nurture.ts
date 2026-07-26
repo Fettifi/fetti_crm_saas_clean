@@ -105,7 +105,10 @@ const DOC_CHASE_THROTTLE_DAYS = 2;
 // ~3 min, nothing re-typed) — the one-tap path from "interested" to "application".
 // Engaged leads with an open file get their doc-upload link in the doc-chase lane.
 
-export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number }> {
+// `ran` distinguishes "did the work" from "was invoked and bailed on the lock". The cron
+// route records a HEARTBEAT only when ran===true, so a permanently-bailing job shows up as
+// STALLED in the doctor instead of reporting healthy (see lib/heartbeat.ts).
+export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number; ran: boolean }> {
   // OVERLAP GUARD: the daily cron and the Funnel-page "Run follow-ups" button can
   // overlap and double-send TCPA texts/emails to every unprocessed lead. The old guard
   // was a non-atomic getSetting-then-setSetting — both callers could read "free" before
@@ -153,7 +156,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.skipped",
       detail: { cron: "nurture", reason: lockErr ? `lock_error: ${lockErr.message}` : "lock_held" },
     }).catch(() => {});
-    return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0 };
+    return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0, ran: false };
   }
   try {
   // Look back a full year so the dormant database keeps getting reactivated,
@@ -346,7 +349,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.ran",
     detail: { cron: "nurture", considered, sent, chased, reactivated, reviewsRequested },
   }).catch(() => {});
-  return { considered, sent, chased, reactivated, reviewsRequested };
+  return { considered, sent, chased, reactivated, reviewsRequested, ran: true };
   } finally {
     // Always release, even if the run throws, so a crash never wedges the lock (the
     // stale-check would still auto-expire it after 10 min, but releasing is cleaner).
