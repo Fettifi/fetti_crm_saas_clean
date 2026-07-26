@@ -41,7 +41,7 @@ async function sendBooking(leadId: string): Promise<BookChannel> {
     if (calendly) {
       const msg = `${name}, it's Penny from Fetti — here's Ramon's calendar to lock your call: ${calendly} Grab any time and he'll walk your real options and numbers with you. (Reply STOP to opt out.)`;
       if (smsAllowed(raw) && (lead as any).phone) {
-        const r = await sendSms((lead as any).phone, msg);
+        const r = await sendSms((lead as any).phone, msg, { state: (lead as any).state, allowQuietHours: true });
         if (r.ok) { channel = "sms"; await logComms({ leadId, channel: "sms", direction: "outbound", type: "book_link", body: msg, to: (lead as any).phone, status: "sent", providerId: r.sid, actor: "agent:penny" }).catch(() => {}); }
       } else if ((lead as any).email) {
         const body = `Hi ${name},\n\nGreat talking just now. Here's Ramon's calendar to lock in your call — grab any time and he'll go through your real options and numbers with you:\n\n${calendly}\n\nTalk soon,\nPenny — Fetti Financial Services`;

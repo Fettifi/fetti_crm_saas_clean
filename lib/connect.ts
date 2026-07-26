@@ -59,7 +59,7 @@ export async function offerConnection(lead: Lead, opts: { trigger: "app" | "docs
     const phone = fresh?.phone || lead.phone;
     let sent = false;
     if (smsOk(raw) && phone) {
-      const r = await sendSms(phone, smsBody);
+      const r = await sendSms(phone, smsBody, { state: (lead as any)?.state ?? null, allowQuietHours: true });
       if (r.ok) { sent = true; await logComms({ leadId: lead.id, channel: "sms", direction: "outbound", type: "connect_offer", body: smsBody, to: phone, status: "sent", providerId: r.sid, actor: "mark" }).catch(() => {}); }
     }
     if (!sent && (fresh?.email || lead.email)) {

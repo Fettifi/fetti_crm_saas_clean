@@ -111,7 +111,7 @@ export async function runNewLeadPipeline(newLead: any, opts: PipelineOpts = {}):
       : draftReply.replace(/[^.!?\n]*\{app_link\}[^.!?\n]*[.!?]?/g, "").trim();
     const res = await respondToLead({
       id: newLead.id, kind: "first_touch",
-      name: full_name, email, phone: smsConsent && smsCapable ? phone : null, loan_purpose,
+      name: full_name, email, phone: smsConsent && smsCapable ? phone : null, loan_purpose, state: newLead.state,
       message: smsDraft, link: fileLink || undefined, appLink,
       emailSubject: emailT.subject, emailBody: emailT.body,
     });

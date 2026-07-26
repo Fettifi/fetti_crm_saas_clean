@@ -18,6 +18,7 @@ import { unsubUrl } from "@/lib/notify/emailCopy";
 import { leadQuality, type LeadQuality } from "@/lib/leadQuality";
 import { leadReality, type LeadReality } from "@/lib/leadReality";
 import { senderFrom } from "@/lib/notify/mailFrom";
+import { quietHoursFor, quietReason } from "@/lib/quietHours";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
@@ -66,8 +67,12 @@ function normalizePhone(p?: string | null): string | null {
 export async function sendSms(
   to: string,
   body: string,
-  opts?: { statusCallback?: boolean }
-): Promise<{ ok: boolean; sid?: string; detail: string }> {
+  // `state` sharpens the quiet-hours check (the lead's own state beats an area-code guess).
+  // `allowQuietHours` is the ONLY way past the TCPA window — reserve it for messages that
+  // are not solicitations (an internal alert, or a direct reply the recipient just asked
+  // for). Automated marketing must never set it.
+  opts?: { statusCallback?: boolean; state?: string | null; allowQuietHours?: boolean; quietAt?: Date }
+): Promise<{ ok: boolean; sid?: string; detail: string; deferred?: boolean }> {
   try {
     const sid = process.env.TWILIO_ACCOUNT_SID;
     const token = process.env.TWILIO_AUTH_TOKEN;
@@ -75,6 +80,13 @@ export async function sendSms(
     const toNorm = normalizePhone(to);
     if (!sid || !token || !from) return { ok: false, detail: "twilio not configured" };
     if (!toNorm) return { ok: false, detail: "no recipient phone" };
+    // TCPA quiet hours, enforced HERE so no call site can forget it (see lib/quietHours.ts).
+    // `deferred: true` marks a hold — the caller should retry later, NOT treat it as a
+    // delivery failure and page a human.
+    if (!opts?.allowQuietHours) {
+      const v = quietHoursFor(toNorm, opts?.state ?? null, opts?.quietAt);
+      if (v.quiet) return { ok: false, deferred: true, detail: quietReason(v) };
+    }
     const params = new URLSearchParams({ To: toNorm, From: from, Body: body });
     // Per-message status callback so delivery state (delivered/failed) flows back
     // to /api/sms/status and onto the conversation thread.

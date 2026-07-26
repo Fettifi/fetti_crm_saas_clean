@@ -53,7 +53,7 @@ async function pageOwner(text: string) {
 }
 
 export async function runCommsWatchdog(): Promise<{ answered: number; firstTouched: number; paged: number }> {
-  let answered = 0, firstTouched = 0, paged = 0;
+  let answered = 0, firstTouched = 0, paged = 0, deferred = 0;
   const since = new Date(Date.now() - LOOKBACK_MS).toISOString();
 
   // ---------- 1) Unanswered inbound SMS ----------
@@ -97,7 +97,11 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
         const calendlyUrl = (await cfg("CALENDLY_URL")) || null;
         const r = await markConciergeReply({ lead, history, fileLink, appLink, firstAiReply: firstAi, calendlyUrl, missingDocs, knownFacts, expertise: expertiseFor(lead, history[history.length - 1]?.content || "") });
         if (!r.ok || !r.reply) throw new Error(r.detail || "no reply generated");
-        const s = await sendSms((lead as any).phone, r.reply);
+        const s = await sendSms((lead as any).phone, r.reply, { state: (lead as any).state });
+        // A quiet-hours HOLD is not a failure — the lead stays unanswered so the next run
+        // (every 30m) sends it the moment the window opens. Paging Ramon at 1am about a
+        // deferral we chose would turn a compliance guard into an alert-fatigue machine.
+        if (s.deferred) { deferred++; continue; }
         if (!s.ok) throw new Error("send failed: " + s.detail);
         await logComms({ leadId, channel: "sms", direction: "outbound", type: "ai_reply", body: r.reply, to: (lead as any).phone, providerId: s.sid, actor: "agent:mark" });
         await logActivity({ entity_type: "lead", entity_id: leadId, lead_id: leadId, actor: "agent:mark", action: "watchdog.answered", detail: { waitedMin: Math.round((Date.now() - new Date(inAt).getTime()) / 60000) } });
@@ -133,7 +137,7 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
         const smsOk = raw.sms_consent === true || raw.consent?.sms_optin === true;
         const res = await respondToLead({
           id: (l as any).id, kind: "first_touch", name: (l as any).full_name, email: (l as any).email,
-          phone: smsOk ? (l as any).phone : null, loan_purpose: (l as any).loan_purpose,
+          phone: smsOk ? (l as any).phone : null, loan_purpose: (l as any).loan_purpose, state: (l as any).state,
           message: "", appLink, emailSubject: emailT.subject, emailBody: emailT.body,
         });
         raw.watchdog_first_touch = new Date().toISOString();
@@ -203,5 +207,5 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
     }
   } catch (e) { console.error("[watchdog] confirm sweep failed:", e); }
 
-  return { answered, firstTouched, paged, calledBack, confirmCalls } as any;
+  return { answered, firstTouched, paged, deferred, calledBack, confirmCalls } as any;
 }

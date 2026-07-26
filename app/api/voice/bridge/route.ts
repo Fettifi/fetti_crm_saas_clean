@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     const msg = calendly
       ? `He's tied up at this exact moment — but here's his calendar, grab any slot and it's locked in: ${calendly} Or keep texting me and I'll get everything moving in the meantime. (Reply STOP to opt out.)`
       : `He's tied up at this exact moment — I've flagged you as priority and he'll call you shortly. Meanwhile I can keep things moving right here. (Reply STOP to opt out.)`;
-    const s = await sendSms(leadE164, msg);
+    const s = await sendSms(leadE164, msg, { allowQuietHours: true });
     if (s.ok) await logComms({ leadId, channel: "sms", direction: "outbound", type: "ai_reply", body: msg, to: leadE164, providerId: s.sid, actor: "agent:mark" }).catch(() => {});
   } else {
     await logComms({ leadId, channel: "sms", direction: "outbound", type: "call_bridge", body: `📞 LIVE BRIDGE: owner accepted — system dialed ${first} and connected the call.`, to: leadE164, actor: "system" }).catch(() => {});

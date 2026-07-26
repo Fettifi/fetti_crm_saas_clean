@@ -9,6 +9,7 @@ import { senderFrom } from "@/lib/notify/mailFrom";
 import { scrubSmsIsms, unsubUrl, renderTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
 import { cfg } from "@/lib/settings";
 import { logComms } from "@/lib/comms";
+import { quietHoursFor, quietReason } from "@/lib/quietHours";
 
 export type LeadContact = {
   id?: string | null;       // lead id — when set, the send is logged to the conversation thread
@@ -25,6 +26,9 @@ export type LeadContact = {
   // "(Reply STOP)" strings; SMS: short + STOP language).
   emailSubject?: string | null;
   emailBody?: string | null;
+  // Recipient's US state — sharpens the TCPA quiet-hours check in smsLead (their own
+  // state beats an area-code guess). Optional: the area code is the fallback.
+  state?: string | null;
 };
 
 function defaultMessage(l: LeadContact): string {
@@ -99,6 +103,15 @@ async function smsLead(l: LeadContact, body: string) {
   const from = process.env.TWILIO_FROM;
   if (!sid || !token || !from || !l.phone) return { ok: false as boolean, id: undefined as string | undefined };
   const to = l.phone.startsWith("+") ? l.phone : `+1${l.phone.replace(/\D/g, "")}`;
+  // TCPA QUIET HOURS. Everything routed through respondToLead is AUTOMATED outreach
+  // (first touch, drip, reactivation, doc chase) — i.e. exactly what the 8am-8pm local
+  // window governs. A hold is NOT a failure: the caller leaves nurture_step untouched so
+  // the same step is retried on the next run, inside the window.
+  const q = quietHoursFor(to, l.state ?? null);
+  if (q.quiet) {
+    console.log(`[responder] SMS held — ${quietReason(q)}`);
+    return { ok: false as boolean, id: undefined as string | undefined, deferred: true };
+  }
   const params = new URLSearchParams({ To: to, From: from, Body: body });
   // Delivery telemetry: without this, nurture/first-touch texts logged delivery=None
   // (blind to whether they even landed). Twilio POSTs status → /api/sms/status.

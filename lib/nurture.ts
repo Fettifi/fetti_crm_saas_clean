@@ -108,7 +108,7 @@ const DOC_CHASE_THROTTLE_DAYS = 2;
 // `ran` distinguishes "did the work" from "was invoked and bailed on the lock". The cron
 // route records a HEARTBEAT only when ran===true, so a permanently-bailing job shows up as
 // STALLED in the doctor instead of reporting healthy (see lib/heartbeat.ts).
-export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number; ran: boolean }> {
+export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number; ran: boolean; firstTouchesHeld?: number }> {
   // OVERLAP GUARD: the daily cron and the Funnel-page "Run follow-ups" button can
   // overlap and double-send TCPA texts/emails to every unprocessed lead. The old guard
   // was a non-atomic getSetting-then-setSetting — both callers could read "free" before
@@ -156,7 +156,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.skipped",
       detail: { cron: "nurture", reason: lockErr ? `lock_error: ${lockErr.message}` : "lock_held" },
     }).catch(() => {});
-    return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0, ran: false };
+    return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0, ran: false, firstTouchesHeld: 0 };
   }
   try {
   // Look back a full year so the dormant database keeps getting reactivated,
@@ -184,6 +184,17 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   const reviewUrl = (await cfg("GBP_REVIEW_URL")) || "";
 
   let considered = 0, sent = 0, chased = 0, reactivated = 0, reviewsRequested = 0;
+  // BACKLOG STAGGER. If the drip stops for any reason (see the lock bug above, which cost
+  // 13 days), every missed lead becomes "due" at once and the next run fires a burst of
+  // first touches at people who have gone cold — the loudest possible way to announce an
+  // outage, and a deliverability/spam-complaint risk on a shared A2P number. So OVERDUE
+  // first touches (step 0 on a lead older than the cadence's first step by >2 days) are
+  // metered per run; the backlog drains over consecutive days instead. Normal volume is a
+  // handful a day and never reaches the cap. NOT silent: the count held is logged and
+  // returned. Tune with NURTURE_FIRST_TOUCH_CAP (0 disables the meter entirely).
+  const capRaw = Number(await cfg("NURTURE_FIRST_TOUCH_CAP"));
+  const FIRST_TOUCH_CAP = Number.isFinite(capRaw) && capRaw >= 0 ? capRaw : 8;
+  let firstTouchesSent = 0, firstTouchesHeld = 0;
   for (const l of (leads || []) as Lead[]) {
     considered++;
     if (l.nurture_paused) continue;
@@ -213,7 +224,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         const reviewEmail = `Hey ${fn} — congrats again on closing. Genuinely glad we got it done.\n\nOne small ask: if we earned it, a quick Google review makes a real difference for a small shop like ours. Two sentences is plenty: ${reviewUrl}\n\nEither way — thank you for trusting us with it.`;
         try {
           const res = await respondToLead({
-            id: l.id, kind: "nurture", name: fn, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message: msg,
+            id: l.id, kind: "nurture", name: fn, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state, message: msg,
             emailSubject: "a quick favor", emailBody: reviewEmail,
           });
           if ((res?.sent || []).length) {
@@ -262,7 +273,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       const emailBody = `Hey ${name} — you're genuinely close on ${purpose}. Still open on my side: ${list}.\n\nUpload them here whenever suits: ${link}\n\nIf one of these is a pain to get, tell me which — there's usually a workaround.${textMeLine}`;
       try {
         const res = await respondToLead({
-          id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, message,
+          id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state, message,
           emailSubject: "what's left on your file", emailBody,
         });
         if ((res?.sent || []).length) {
@@ -298,6 +309,14 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       // Throttle: a lead whose backlog makes multiple steps "due" (old import, re-opt-in)
       // still gets at most one touch every 2 days — never seven emails in seven days.
       if (sinceLast < 2) continue;
+      // Backlog meter (see FIRST_TOUCH_CAP above): only bites on OVERDUE first touches —
+      // a lead that should already have had step 1 days ago. Brand-new leads are never
+      // delayed, and a lead already mid-cadence is never delayed.
+      const overdueFirstTouch = curStep === 0 && ageDays > due.afterDays + 2;
+      if (overdueFirstTouch && FIRST_TOUCH_CAP > 0) {
+        if (firstTouchesSent >= FIRST_TOUCH_CAP) { firstTouchesHeld++; continue; }
+        firstTouchesSent++;
+      }
       try {
         // Conversion CTA: the PRE-FILLED application (magic link), not the bare doc-upload
         // page — a drip lead hasn't finished applying, so "finish the app" IS the next step.
@@ -306,7 +325,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         const emailT = renderTouch(EMAIL_TOUCHES[STEP_TOUCH[due.step]] || EMAIL_TOUCHES.d30, l);
         const emailBody = emailT.body + `\n\nP.S. Whenever you're ready your saved application is right here — or just reply and I'll help: ${link}` + textMeLine;
         const res = await respondToLead({
-          id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
+          id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
           message: due.msg(name, purpose) + finishLine + bookLine,   // SMS copy
           emailSubject: emailT.subject, emailBody,                    // email copy
         });
@@ -331,7 +350,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       const finishLine = ` Your saved application is still here whenever you want it: ${link}`;
       const emailT = renderTouch(EMAIL_TOUCHES[REACTIVATION_KEYS[rIdx]] || EMAIL_TOUCHES.r1, l);
       const res = await respondToLead({
-        id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose,
+        id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
         message: msg + finishLine + bookLine,                        // SMS copy
         emailSubject: emailT.subject,                                 // email copy
         emailBody: emailT.body + `\n\nP.S. Your saved application is still here whenever you want it — or just reply: ${link}` + textMeLine,
@@ -347,9 +366,13 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   // doesn't exist; this powers the Funnel/Follow-up Health view).
   await logActivity({
     entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.ran",
-    detail: { cron: "nurture", considered, sent, chased, reactivated, reviewsRequested },
+    detail: { cron: "nurture", considered, sent, chased, reactivated, reviewsRequested, firstTouchesHeld, firstTouchCap: FIRST_TOUCH_CAP },
   }).catch(() => {});
-  return { considered, sent, chased, reactivated, reviewsRequested, ran: true };
+  // Never let a cap look like completion: say out loud how much backlog is still queued.
+  if (firstTouchesHeld > 0) {
+    console.warn(`[nurture] backlog meter: sent ${firstTouchesSent} overdue first touches (cap ${FIRST_TOUCH_CAP}), HELD ${firstTouchesHeld} for the next run`);
+  }
+  return { considered, sent, chased, reactivated, reviewsRequested, ran: true, firstTouchesHeld };
   } finally {
     // Always release, even if the run throws, so a crash never wedges the lock (the
     // stale-check would still auto-expire it after 10 min, but releasing is cleaner).

@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
           : `Hey ${first}, it's Mark at Fetti — here's Ramon's calendar, grab any time that works and it's locked in: ${link}`;
         const smsOk = raw.sms_consent === true || raw.consent?.sms_optin === true;
         if ((l as any).phone && smsOk) {
-          const r = await sendSms((l as any).phone, text2 + " (Reply STOP to opt out.)");
+          const r = await sendSms((l as any).phone, text2 + " (Reply STOP to opt out.)", { state: (l as any).state, allowQuietHours: true });
           if (!r.ok) return NextResponse.json({ error: `SMS failed: ${r.detail}` }, { status: 502 });
           await logComms({ leadId, channel: "sms", direction: "outbound", type: "manual", body: text2, to: (l as any).phone, providerId: r.sid, actor: "lo", status: "sent" });
           return NextResponse.json({ ok: true, via: "sms" });
@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
 
     if (channel === "sms") {
       if (!lead.phone) return NextResponse.json({ error: "This lead has no phone number on file." }, { status: 400 });
-      const r = await sendSms(lead.phone, text);
+      const r = await sendSms(lead.phone, text, { state: (lead as any).state, allowQuietHours: true });
       if (!r.ok) return NextResponse.json({ error: `SMS failed: ${r.detail}` }, { status: 502 });
       await logComms({ leadId, channel: "sms", direction: "outbound", type: "manual", body: text, to: lead.phone, providerId: r.sid, actor: "lo", status: "sent" });
       return NextResponse.json({ ok: true, channel, providerId: r.sid });
