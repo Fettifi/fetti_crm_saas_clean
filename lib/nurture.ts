@@ -121,15 +121,38 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   // an existing value).
   await supabaseAdmin.from("app_settings")
     .upsert({ key: "NURTURE_RUN_LOCK", value: "" }, { onConflict: "key", ignoreDuplicates: true });
-  // Win the lock only if it's unset/empty or older than 10 min. ISO-8601 timestamps sort
-  // lexically, so `lte` is a valid time comparison against the text value.
-  const { data: won } = await supabaseAdmin.from("app_settings")
+  // Normalize a NULL lock to "" so the plain `lte` filter below can see it as free. The
+  // acquire can no longer OR in an `is.null` branch (see the note on the UPDATE), and a
+  // NULL never satisfies `lte` — without this, a NULL row would wedge the lane forever.
+  // Setting NULL → "" only ever means "free", so it can't hand the lock to two runners.
+  await supabaseAdmin.from("app_settings")
+    .update({ value: "" }).eq("key", "NURTURE_RUN_LOCK").is("value", null);
+  // Win the lock only if it's free ("") or older than 10 min. ISO-8601 timestamps sort
+  // lexically, so `lte` is a valid time comparison against the text value — and "" sorts
+  // before every timestamp, so a released lock is always winnable.
+  //
+  // DO NOT reintroduce an .or() filter here. Until 2026-07-26 this read
+  //   .or(`value.is.null,value.eq.,value.lte.${staleBefore}`)
+  // and PostgREST rejects an or() filter on an UPDATE against app_settings with
+  // 42703 "column app_settings.value does not exist" (the identical filter is accepted on
+  // a SELECT, which is why it looked correct). So the conditional UPDATE 400'd on every
+  // run, `won` came back empty, and runNurture bailed at the guard below — 13 days
+  // (2026-07-13 → 07-26) of ZERO follow-up to a 160-lead database, while the cron's
+  // heartbeat kept reporting healthy because the route still returned 200.
+  const { data: won, error: lockErr } = await supabaseAdmin.from("app_settings")
     .update({ value: nowIso, updated_at: nowIso })
     .eq("key", "NURTURE_RUN_LOCK")
-    .or(`value.is.null,value.eq.,value.lte.${staleBefore}`)
+    .lte("value", staleBefore)
     .select("key");
   if (!won || won.length === 0) {
-    console.warn("[nurture] another run holds the lock — skipping");
+    console.warn("[nurture] lock not acquired — skipping", lockErr?.message || "(held by another run)");
+    // Leave a DURABLE trail for every skipped run. The bug above hid for 13 days precisely
+    // because this path logged nothing to activity_log — the daily "cron.ran" row simply
+    // stopped appearing, and nothing alerted on its absence.
+    await logActivity({
+      entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.skipped",
+      detail: { cron: "nurture", reason: lockErr ? `lock_error: ${lockErr.message}` : "lock_held" },
+    }).catch(() => {});
     return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0 };
   }
   try {
