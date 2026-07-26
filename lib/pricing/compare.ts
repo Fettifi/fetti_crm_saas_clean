@@ -75,7 +75,13 @@ function eligible(p: PricingProduct, s: Scenario): { ok: boolean; reason?: strin
   if (p.maxLtv && ltv && ltv > p.maxLtv + 0.001) return { ok: false, reason: `max LTV ${p.maxLtv}%` };
   if (p.minLoanAmount && s.loanAmount && s.loanAmount < p.minLoanAmount) return { ok: false, reason: "below min loan" };
   if (p.maxLoanAmount && s.loanAmount && s.loanAmount > p.maxLoanAmount) return { ok: false, reason: "above max loan" };
-  if (p.minDscr && s.dscr && s.dscr < p.minDscr) return { ok: false, reason: `min DSCR ${p.minDscr}` };
+  // FAIL CLOSED. `s.dscr && …` skipped this gate whenever the scenario had no DSCR
+  // (null, undefined, or 0), so a DSCR product was reported ELIGIBLE without its single
+  // most important requirement ever being checked. An unknown ratio is not a passing one.
+  if (p.minDscr) {
+    if (s.dscr == null || !(s.dscr > 0)) return { ok: false, reason: `needs DSCR (min ${p.minDscr})` };
+    if (s.dscr < p.minDscr) return { ok: false, reason: `min DSCR ${p.minDscr}` };
+  }
   if (p.occupancy?.length && s.occupancy && !p.occupancy.some((o) => o.toLowerCase() === s.occupancy!.toLowerCase())) return { ok: false, reason: "occupancy" };
   if (p.purpose?.length && s.purpose && !p.purpose.some((o) => o.toLowerCase() === s.purpose!.toLowerCase())) return { ok: false, reason: "purpose" };
   if (p.states?.length && s.state && !p.states.some((st) => st.toUpperCase() === s.state!.toUpperCase())) return { ok: false, reason: "state" };

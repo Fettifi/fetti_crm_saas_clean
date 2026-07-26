@@ -206,10 +206,15 @@ export function computeLtv(s: Partial<Scenario>): number | null {
 }
 
 // Compute DSCR = rent / PITIA when both present.
+// Kept at 4dp, NOT 2dp: this value is compared against lender minDscr floors in
+// lib/pricing/compare.ts, and 2dp rounding let a true 1.0951 store as 1.10 and clear a
+// 1.10 floor it actually misses — a false PASS on eligibility, which is the direction
+// that misquotes a borrower. Nothing renders this raw (callers format for display), so
+// the extra precision is display-neutral.
 export function computeDscr(s: Partial<Scenario>): number | null {
   const rent = num(s.monthly_rent), piti = num(s.monthly_piti);
   if (!rent || !piti) return null;
-  return Math.round((rent / piti) * 100) / 100;
+  return Math.round((rent / piti) * 10000) / 10000;
 }
 
 // Infer the loan purpose (intent) from a free-text product/purpose string.
