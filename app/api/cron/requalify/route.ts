@@ -17,6 +17,7 @@ import { runAgent } from "@/lib/agents/runner";
 import { applyQualification } from "@/lib/qualify";
 import { scoreLead } from "@/lib/leadScore";
 import { logActivity } from "@/lib/activity";
+import { recordHeartbeat, recordAttempt } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  await recordAttempt("requalify");
   try {
     const limit = Math.min(Number(req.nextUrl.searchParams.get("limit")) || 60, 100);
     const since = new Date(Date.now() - 120 * 86400000).toISOString();
@@ -87,6 +89,7 @@ export async function GET(req: NextRequest) {
       entity_type: "system", entity_id: "requalify", actor: "system", action: "cron.ran",
       detail: { cron: "requalify", considered, requalified, nowQualified, rescored },
     }).catch(() => {});
+    await recordHeartbeat("requalify");
     return NextResponse.json({ ok: true, considered, requalified, nowQualified, rescored, details });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "error" }, { status: 500 });

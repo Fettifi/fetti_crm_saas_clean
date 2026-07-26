@@ -14,6 +14,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { scoreSignals, checkPhonePattern, editDistance, type ShieldSignal } from "@/lib/leadShield";
 import { cfg } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
+import { recordHeartbeat, recordAttempt } from "@/lib/heartbeat";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
   if (!secret || (auth !== `Bearer ${secret}` && internal !== secret)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  await recordAttempt("shield-sweep");
   const apply = req.nextUrl.searchParams.get("apply") === "1";
   const qTh = Number((await cfg("SHIELD_RISK_QUARANTINE").catch(() => ""))) || 60;
   const csv = (s: string | null) => String(s || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
@@ -115,5 +117,6 @@ export async function GET(req: NextRequest) {
   if (apply) {
     await logActivity({ entity_type: "shield", entity_id: "sweep", actor: "shield", action: "shield.sweep", detail: { scanned: scope.length, engaged_skipped: engaged.size, quarantined: hits.length } }).catch(() => {});
   }
-  return NextResponse.json({ ok: true, mode: apply ? "applied" : "dry_run", scanned: scope.length, engaged_skipped: engaged.size, hits: hits.length, leads: hits });
+  await recordHeartbeat("shield-sweep");
+    return NextResponse.json({ ok: true, mode: apply ? "applied" : "dry_run", scanned: scope.length, engaged_skipped: engaged.size, hits: hits.length, leads: hits });
 }

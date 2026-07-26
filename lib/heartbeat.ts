@@ -37,6 +37,11 @@ export const CRON_EXPECTED: Record<string, number> = {
   "lead-digest": 26 * 3600,      // daily
   "tiktok-reminder": 26 * 3600,  // daily
   "competitor-watch": 26 * 3600, // daily
+  // Scheduled 2026-07-26 at Ramon's request; watched from the same day so they can never
+  // be "running" on paper while silently dead.
+  requalify: 26 * 3600,          // daily — rescoring only, no sends
+  "shield-sweep": 8 * 3600,      // every 6h + grace
+  "reengage-stale": 8 * 86400,   // weekly (Tue) + a day of grace
 };
 
 // Per-job rows: each cron stamps ONLY its own key, so there is no shared cell to

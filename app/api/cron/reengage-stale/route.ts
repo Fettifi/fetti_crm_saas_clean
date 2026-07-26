@@ -5,6 +5,8 @@ import { advanceLeadStage } from "@/lib/leadStage";
 import { BRAND } from "@/lib/brand";
 import { LICENSING_NOTE } from "@/lib/legal";
 import { senderFrom } from "@/lib/notify/mailFrom";
+import { cfg } from "@/lib/settings";
+import { recordHeartbeat, recordAttempt } from "@/lib/heartbeat";
 
 // ONE-TIME, MANUAL, EMAIL-ONLY re-engagement of historically-recovered Facebook
 // leads (raw.historical_import) that were correctly held from auto-contact (stale
@@ -14,7 +16,15 @@ import { senderFrom } from "@/lib/notify/mailFrom";
 //   - Idempotent: stamps raw.historical_outreach_at so a re-run NEVER double-sends.
 //   - Excludes test/dummy leads.
 //   - Marks each contacted lead -> "Contacted" so the LO works replies.
-// NOT in vercel.json crons — it only runs when triggered with the CRON_SECRET bearer.
+//
+// SCHEDULED weekly 2026-07-26 at Ramon's request (it was manual-only before). Safe to
+// repeat ONLY because of two properties, both of which must be preserved:
+//   1) IDEMPOTENT — raw.historical_outreach_at means a lead is emailed at most once, ever.
+//      A weekly run therefore only ever picks up leads recovered SINCE the last run.
+//   2) CAPPED per run (REENGAGE_CAP, default 25) — a large historical import can no longer
+//      turn one tick into a mass send. This is the guard the nurture backlog lacked when a
+//      single run pushed 159 touches out at once (2026-07-26).
+// Email-only forever: stale Meta opt-in is NOT TCPA consent for SMS.
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
@@ -54,6 +64,11 @@ async function sendEmail(to: string, subject: string, html: string): Promise<boo
 }
 
 async function run(dry: boolean) {
+  // Raw-string parse, NOT Number(await cfg(...)): cfg() returns null when unset and
+  // Number(null) === 0, which would silently disable the cap (see nurture, 2026-07-26).
+  const capRaw = await cfg("REENGAGE_CAP");
+  const capNum = capRaw == null || String(capRaw).trim() === "" ? NaN : Number(capRaw);
+  const CAP = Number.isFinite(capNum) && capNum > 0 ? capNum : 25;
   const { data: leads } = await supabaseAdmin
     .from("leads").select("id, full_name, email, stage, raw, source, nurture_paused").limit(5000);
   const targets = (leads || []).filter((l: any) => {
@@ -69,11 +84,14 @@ async function run(dry: boolean) {
   });
 
   if (dry) {
-    return { dry: true, found: targets.length, sample: targets.slice(0, 25).map((l: any) => ({ name: l.full_name, email: l.email })) };
+    return { dry: true, found: targets.length, cap: CAP, wouldSend: Math.min(targets.length, CAP), sample: targets.slice(0, 25).map((l: any) => ({ name: l.full_name, email: l.email })) };
   }
 
+  // Never silent about a cap: `held` is returned so a backlog can't look like completion.
+  const batch = (targets as any[]).slice(0, CAP);
+  const held = targets.length - batch.length;
   let contacted = 0, failed = 0;
-  for (const l of targets as any[]) {
+  for (const l of batch) {
     const first = (l.full_name || "there").split(" ")[0];
     const { subject, html } = buildEmail(first);
     const ok = await sendEmail(l.email, subject, html);
@@ -89,14 +107,23 @@ async function run(dry: boolean) {
     }).catch(() => {});
     contacted++;
   }
-  return { dry: false, found: targets.length, contacted, failed };
+  if (held > 0) console.warn(`[reengage-stale] cap ${CAP} reached — HELD ${held} for the next run`);
+  return { dry: false, found: targets.length, cap: CAP, contacted, failed, held };
 }
 
-export async function POST(req: NextRequest) {
+async function handle(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const dry = req.nextUrl.searchParams.get("dry") === "1";
-  try { return NextResponse.json({ ok: true, ...(await run(dry)) }); }
-  catch (e: any) { return NextResponse.json({ error: e?.message || "failed" }, { status: 500 }); }
+  await recordAttempt("reengage-stale");
+  try {
+    const out = await run(dry);
+    if (!dry) await recordHeartbeat("reengage-stale");
+    return NextResponse.json({ ok: true, ...out });
+  } catch (e: any) { return NextResponse.json({ error: e?.message || "failed" }, { status: 500 }); }
 }
+
+// Vercel Cron issues GET — POST-only would have 405'd on every scheduled tick.
+export async function GET(req: NextRequest) { return handle(req); }
+export async function POST(req: NextRequest) { return handle(req); }
