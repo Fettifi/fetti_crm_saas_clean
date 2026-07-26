@@ -192,9 +192,15 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   // metered per run; the backlog drains over consecutive days instead. Normal volume is a
   // handful a day and never reaches the cap. NOT silent: the count held is logged and
   // returned. Tune with NURTURE_FIRST_TOUCH_CAP (0 disables the meter entirely).
-  const capRaw = Number(await cfg("NURTURE_FIRST_TOUCH_CAP"));
-  const FIRST_TOUCH_CAP = Number.isFinite(capRaw) && capRaw >= 0 ? capRaw : 8;
-  let firstTouchesSent = 0, firstTouchesHeld = 0;
+  // BUG FIXED 2026-07-26: this was `Number(await cfg(...))`, and cfg() returns NULL when
+  // the setting is unset — Number(null) is 0, NOT NaN — so the "default 8" branch was never
+  // reached and the meter silently defaulted to 0 = DISABLED. A manual run then pushed 159
+  // backlogged touches out at once, the exact burst this exists to prevent. Parse the raw
+  // string and treat only an explicit, finite number as a configured value.
+  const capRaw = await cfg("NURTURE_FIRST_TOUCH_CAP");
+  const capNum = capRaw == null || String(capRaw).trim() === "" ? NaN : Number(capRaw);
+  const OVERDUE_CAP = Number.isFinite(capNum) && capNum >= 0 ? capNum : 8;
+  let overdueSent = 0, firstTouchesHeld = 0;
   for (const l of (leads || []) as Lead[]) {
     considered++;
     if (l.nurture_paused) continue;
@@ -309,13 +315,16 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       // Throttle: a lead whose backlog makes multiple steps "due" (old import, re-opt-in)
       // still gets at most one touch every 2 days — never seven emails in seven days.
       if (sinceLast < 2) continue;
-      // Backlog meter (see FIRST_TOUCH_CAP above): only bites on OVERDUE first touches —
-      // a lead that should already have had step 1 days ago. Brand-new leads are never
-      // delayed, and a lead already mid-cadence is never delayed.
-      const overdueFirstTouch = curStep === 0 && ageDays > due.afterDays + 2;
-      if (overdueFirstTouch && FIRST_TOUCH_CAP > 0) {
-        if (firstTouchesSent >= FIRST_TOUCH_CAP) { firstTouchesHeld++; continue; }
-        firstTouchesSent++;
+      // Backlog meter. Originally this only metered FIRST touches, which missed the real
+      // failure mode: when the drip stalls for days, EVERY lead's next step comes due at
+      // once, not just step 1. The 2026-07-26 run proved it — 37 first touches but 122
+      // mid-cadence steps, 159 sends in one burst. So the meter now covers any OVERDUE
+      // step: one whose due date passed more than 2 days ago. A lead hitting its step on
+      // schedule is never delayed, so normal daily volume is untouched.
+      const overdue = ageDays > due.afterDays + 2;
+      if (overdue && OVERDUE_CAP > 0) {
+        if (overdueSent >= OVERDUE_CAP) { firstTouchesHeld++; continue; }
+        overdueSent++;
       }
       try {
         // Conversion CTA: the PRE-FILLED application (magic link), not the bare doc-upload
@@ -366,11 +375,11 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   // doesn't exist; this powers the Funnel/Follow-up Health view).
   await logActivity({
     entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.ran",
-    detail: { cron: "nurture", considered, sent, chased, reactivated, reviewsRequested, firstTouchesHeld, firstTouchCap: FIRST_TOUCH_CAP },
+    detail: { cron: "nurture", considered, sent, chased, reactivated, reviewsRequested, firstTouchesHeld, overdueSent, overdueCap: OVERDUE_CAP },
   }).catch(() => {});
   // Never let a cap look like completion: say out loud how much backlog is still queued.
   if (firstTouchesHeld > 0) {
-    console.warn(`[nurture] backlog meter: sent ${firstTouchesSent} overdue first touches (cap ${FIRST_TOUCH_CAP}), HELD ${firstTouchesHeld} for the next run`);
+    console.warn(`[nurture] backlog meter: sent ${overdueSent} overdue touches (cap ${OVERDUE_CAP}), HELD ${firstTouchesHeld} for the next run`);
   }
   return { considered, sent, chased, reactivated, reviewsRequested, ran: true, firstTouchesHeld };
   } finally {
