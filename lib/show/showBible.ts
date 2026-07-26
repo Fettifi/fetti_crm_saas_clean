@@ -59,7 +59,11 @@ export const DONTS = [
   "DON'T make RAY frantic, panicked, clueless, or the butt of a joke. He is the founder and the authority.",
   "DON'T do pranks, gotchas, or comedy-of-errors — this is a real conversation about a deal.",
   "DON'T promise rates, approval, or qualification — frame qualifying as a PROGRAM, and the CTA as an INVITATION.",
-  "DON'T say 'find the money' — Fetti HAS it and funds the deal.",
+  // Capital source stays OPEN — same rule as markPersona/adFactory. Lead with the OUTCOME
+  // ("we get it funded"), never with WHOSE money funds it: Fetti is a lender AND a broker,
+  // and claiming "our own capital" on a brokered deal is a claim we can't stand behind.
+  "DON'T say 'find the money' — Fetti GETS IT FUNDED and gets the deal done.",
+  "DON'T say or imply WHOSE capital funds a deal — never 'our own capital', 'our money', 'we have the money'. Lead with the outcome: 'we get it funded', 'we get it done', 'the loans banks won't'.",
   "DON'T use a real or identifiable borrower — always 'an investor', 'a flipper', 'a business owner'.",
   "DON'T dump documents or sound like a form — it's a conversation, not intake.",
 ];
@@ -128,5 +132,5 @@ SERIES CONTINUITY — the CASE LOG: ${MEMORY_SYSTEMS.caseLog}
   This is episode #${opts.episodeNumber}.${opts.bondNote ? " " + opts.bondNote : ""}
 
 LOCKED: every episode ends on the EXACT sign-off "${SHOW.signoff}". CTA: ${SHOW.ctaFraming}
-COMPLIANCE: ${SHOW.product} Never promise rates/approval/qualification; never say "find the money" (Fetti HAS it); always anonymize the borrower.`;
+COMPLIANCE: ${SHOW.product} Never promise rates/approval/qualification; never say "find the money" (Fetti GETS IT FUNDED); never state or imply whose capital funds a deal ("our own capital"/"our money" is banned — we are a lender AND a broker); always anonymize the borrower.`;
 }
