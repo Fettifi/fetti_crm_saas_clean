@@ -23,7 +23,9 @@ const FORMATS: Record<string, { w: number; h: number; label: string; gen: string
 const TEMPLATES = [
   { key: "DSCR Purchase", headline: "DSCR Loans", sub: "Qualify on the rental income — not your tax returns.", cta: "Apply in 2 min",
     hooks: ["No tax returns needed.", "Buy rentals on the rent.", "Qualify on the property."],
-    line: "I'm Mark, with Fetti. Own a rental — or ready to? We qualify you on the property's income, not your tax returns. Close in your L-L-C, in any state. Two minutes to start, and the capital is ready when you are. Fetti. We do money.",
+    // "the capital is ready" implied Fetti lends its OWN money — the one claim the brand
+    // must never make (we broker; we get it funded). Reworded to the funding outcome.
+    line: "I'm Mark, with Fetti. Own a rental — or ready to? We qualify you on the property's income, not your tax returns. Close in your L-L-C, in any state. Two minutes to start, and we get it funded when you're ready. Fetti. We do money.",
     prompt: "attractive modern American single-family rental home, manicured lawn, bright daylight, blue sky" },
   { key: "DSCR Cash-Out", headline: "Cash Out Your Rentals", sub: "Refinance on the property's cash flow. Close in your LLC.", cta: "Get my options",
     hooks: ["Pull cash from your rentals.", "Your equity = your next deal.", "Cash out, no tax returns."],
