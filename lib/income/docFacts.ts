@@ -387,11 +387,38 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
       if (stub) {
         const mult = FREQ[stub.payFrequency!];
         annualBase = num(stub.regularPerPeriod)! * mult;
-        // 2x pay-frequency guard: base ≈ 1.8–2.2× a same-stream full prior-year W-2 ⇒ halved.
-        const anchor = w2s.find((w) => num(w.w2Box1) != null);
-        if (anchor && num(anchor.w2Box1)! > 0) {
-          const ratio = annualBase / num(anchor.w2Box1)!;
-          if (ratio >= 1.8 && ratio <= 2.2) { annualBase /= 2; flags.push({ text: `${employer}: pay-frequency looked doubled vs the W-2 — halved to reconcile. Verify.`, addBackMonthly: 0, borrower: b }); }
+        // 2x pay-frequency guard: a stub read at the wrong frequency (monthly parsed as
+        // semi-monthly) annualises to ~2× the W-2, so we halve it. Two corrections after it
+        // fired wrongly on Asia Dearman (2026-07-27), cutting her from ~$7,604 to $3,802/mo
+        // of base — enough to sink an approval:
+        //
+        //  1) ANCHOR ON BOX 5, NOT BOX 1. Box 1 is taxable wages: it excludes 401(k)
+        //     deferrals and pre-tax benefits, so for anyone with a real pension/transit
+        //     deduction (LACMTA here) it sits far below gross and manufactures a ~2× ratio.
+        //     Box 5 (Medicare wages) includes deferrals and is the basis the rest of this
+        //     engine already uses via wageOf(). Against Box 5 her ratio is 1.76 — no halve.
+        //
+        //  2) LET THE STUB'S OWN YTD OVERRULE IT. A prior-year W-2 is weak evidence: it is
+        //     partial for anyone hired mid-year (a job change alone can look like doubling),
+        //     while the current stub's YTD measures THIS job at THIS frequency. If the YTD
+        //     pace corroborates the un-halved base, the frequency is right and we must not
+        //     halve. Hers: $53,475 through 07-10 ≈ $101k/yr against a $91k base.
+        const anchorW2 = w2s.find((w) => (num(w.w2Box5) ?? num(w.w2Box1)) != null);
+        const anchorWage = anchorW2 ? (num(anchorW2.w2Box5) ?? num(anchorW2.w2Box1))! : 0;
+        if (anchorWage > 0) {
+          const ratio = annualBase / anchorWage;
+          if (ratio >= 1.8 && ratio <= 2.2) {
+            // YTD veto: annualise the stub's own year-to-date and see which base it supports.
+            const em = elapsedMonths(stub.ytdThroughDate);
+            const ytdAnnual = num(stub.ytdGross) != null && em > 0 ? num(stub.ytdGross)! / em * 12 : null;
+            const ytdBacksFullBase = ytdAnnual != null && ytdAnnual >= annualBase * 0.75;
+            if (ytdBacksFullBase) {
+              flags.push({ text: `${employer}: the W-2 is ~half the annualised base, but this year's own pay history (${money(ytdAnnual!)}/yr run-rate) confirms the pay frequency is right — NOT halved. Usually means a mid-year start or large pre-tax deductions on the W-2.`, addBackMonthly: 0, borrower: b });
+            } else {
+              annualBase /= 2;
+              flags.push({ text: `${employer}: pay-frequency looked doubled vs the W-2 — halved to reconcile. Verify.`, addBackMonthly: 0, borrower: b });
+            }
+          }
         }
         baseMonthly = annualBase / 12;
         baseBasis = `${money(num(stub.regularPerPeriod)!)} ${stub.payFrequency} ×${mult}÷12`;

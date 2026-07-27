@@ -30,7 +30,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-25-employer-stream-merge";
+const LOGIC_VERSION = "2026-07-27-freq-guard-box5-ytd";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" is deliberately GENERIC — a Chase/Wells file is rarely named
 // "bank statement"; the per-doc reader classifies, and a non-income statement is harmless.
