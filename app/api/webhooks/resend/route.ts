@@ -14,6 +14,7 @@ import { listRequests, saveRequest } from "@/lib/esign";
 import { logActivity } from "@/lib/activity";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { senderFrom } from "@/lib/notify/mailFrom";
+import { recordEmailBounce } from "@/lib/comms";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,6 +92,21 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (e) { console.error("[resend webhook] receipt stamp failed:", e); }
+  }
+
+  // SUPPRESSION. Stamping the conversation row "bounced" was never enough on its own —
+  // the drip read none of it and re-mailed the dead address on the next cycle. Feed the
+  // suppression list so the send primitives refuse it from here on (lib/comms.ts).
+  if (delivery === "bounced" || delivery === "complained") {
+    const b = evt?.data?.bounce || {};
+    for (const addr of emails) {
+      await recordEmailBounce(addr, {
+        kind: delivery,
+        bounceType: b?.type ?? null,
+        subType: b?.subType ?? null,
+        message: b?.message ?? null,
+      }).catch(() => {});
+    }
   }
 
   // Only e-sign emails (subject "Please sign: …") matter for envelope delivery tracking;

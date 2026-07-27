@@ -151,6 +151,129 @@ export async function sendSms(
   }
 }
 
+/**
+ * EMAIL BOUNCE SUPPRESSION — the email twin of recordCarrierOptOut above.
+ *
+ * Discovered 2026-07-27: Resend told us an address hard-bounced, we stamped the
+ * conversation row "bounced"… and then the drip emailed that same dead address again on
+ * the next cycle. Measured over 14 days: 12 bounces across 11 addresses, 3 of which we
+ * re-sent to (johnndu@ bounced 7/22 and was mailed again 7/26 — and bounced again).
+ *
+ * Two costs. (1) Reputation: 12/241 = a 5.0% bounce rate on frank@fettifi.com, where
+ * Gmail/Yahoo bulk-sender rules start throttling around 2% and spam-foldering above that.
+ * Every repeat send to a known-dead mailbox makes the mail that DOES have a real reader
+ * more likely to land in spam. (2) Honesty: a lead whose only channel is a dead mailbox
+ * is not being "worked" — the drip just looks busy. Suppressing it surfaces the truth.
+ *
+ * So a bounce/complaint now writes back into OUR record, by address, across every lead
+ * holding it — exactly like the carrier opt-out. The two suppression lists converge
+ * instead of silently diverging.
+ *
+ * HARD vs SOFT. Only a permanent failure kills the address: Resend's bounce type
+ * "Permanent", or a spam complaint, or a SECOND bounce of any type (a mailbox that is
+ * full or greylisted deserves one retry, not an eternity of them). Transient first
+ * bounces are counted and let through.
+ *
+ * SMS IS UNAFFECTED. A dead mailbox says nothing about the phone, so a suppressed lead
+ * with SMS consent keeps its text drip. Nurture is paused only when email was the last
+ * road in — which is precisely the lead a human should be calling instead.
+ */
+export async function recordEmailBounce(
+  email: string,
+  opts: { kind: "bounced" | "complained"; bounceType?: string | null; subType?: string | null; message?: string | null } = { kind: "bounced" },
+): Promise<{ suppressed: boolean; leads: number }> {
+  const addr = String(email || "").toLowerCase().trim();
+  if (!addr || !addr.includes("@")) return { suppressed: false, leads: 0 };
+  try {
+    const { data: leads } = await supabaseAdmin
+      .from("leads").select("id, email, phone, raw, nurture_paused")
+      .ilike("email", addr);
+    const hits = (leads || []) as any[];
+
+    // Strike count is per-address, so it survives across duplicate lead rows.
+    const priorStrikes = Math.max(0, ...hits.map((l) => Number(l.raw?.email_bounce_count) || 0), 0);
+    const strikes = priorStrikes + 1;
+    const permanent = String(opts.bounceType || "").toLowerCase() === "permanent";
+    const suppressed = permanent || opts.kind === "complained" || strikes >= 2;
+    const now = new Date().toISOString();
+
+    for (const l of hits) {
+      const raw = l.raw && typeof l.raw === "object" ? { ...l.raw } : {};
+      if (raw.email_suppressed_at) continue; // already suppressed — nothing to add
+      raw.email_bounce_count = strikes;
+      raw.email_bounce_at = now;
+      raw.email_bounce_type = opts.bounceType || opts.kind;
+      if (opts.subType) raw.email_bounce_subtype = opts.subType;
+      const update: Record<string, unknown> = {};
+      if (suppressed) {
+        raw.email_suppressed_at = now;
+        raw.email_suppress_reason = opts.kind === "complained"
+          ? "spam complaint"
+          : permanent ? "permanent bounce" : `${strikes} bounces`;
+        // Email is dead. Pause the whole drip ONLY if there's no live SMS path left —
+        // same consent test the nurture engine uses (lib/nurture.ts), so the two agree.
+        const smsAlive = !!l.phone && !raw.historical_import && raw.sms_consent !== false &&
+          !raw.sms_optout_at && (raw.sms_consent === true || raw.consent?.sms_optin === true);
+        if (!smsAlive) update.nurture_paused = true;
+      }
+      // Assigned last: the branch above mutates `raw`, so this must come after it.
+      update.raw = raw;
+      await supabaseAdmin.from("leads").update(update).eq("id", l.id);
+      await logActivity({
+        entity_type: "lead", entity_id: l.id, lead_id: l.id, actor: "system",
+        action: suppressed ? "email.suppressed" : "email.bounce_strike",
+        detail: {
+          address: addr, kind: opts.kind, bounce_type: opts.bounceType || null,
+          sub_type: opts.subType || null, strikes,
+          note: suppressed
+            ? "address is undeliverable; stopped emailing it"
+            : "transient bounce — one retry allowed before suppression",
+        },
+      }).catch(() => {});
+    }
+
+    if (suppressed) {
+      suppressionCache.set(addr, { bad: true, at: Date.now() });
+      console.warn(`[comms] email suppressed: ${addr} (${opts.kind}, strike ${strikes}) across ${hits.length} lead(s)`);
+    } else {
+      suppressionCache.delete(addr);
+    }
+    return { suppressed, leads: hits.length };
+  } catch (e: any) {
+    console.warn("[comms] recordEmailBounce failed:", e?.message);
+    return { suppressed: false, leads: 0 };
+  }
+}
+
+// Short-lived cache so a nurture batch doesn't re-query per recipient. Suppression is
+// permanent once set, so a stale MISS costs one wasted send at most; TTL keeps a newly
+// suppressed address from being emailed by a warm serverless instance.
+const suppressionCache = new Map<string, { bad: boolean; at: number }>();
+const SUPPRESSION_TTL_MS = 5 * 60_000;
+
+/**
+ * True when this address is on our email suppression list (hard bounce / spam complaint).
+ * Enforced inside the send primitives below so NO call site can forget it — the same
+ * reason quiet hours live inside sendSms. Fails OPEN: a DB hiccup must never silence
+ * legitimate mail. Addresses with no lead row (vendors, title, the LO) are never
+ * suppressed — this list is about borrower deliverability only.
+ */
+export async function isEmailSuppressed(email: string): Promise<boolean> {
+  const addr = String(email || "").toLowerCase().trim();
+  if (!addr) return false;
+  const hit = suppressionCache.get(addr);
+  if (hit && Date.now() - hit.at < SUPPRESSION_TTL_MS) return hit.bad;
+  try {
+    const { data } = await supabaseAdmin
+      .from("leads").select("raw").ilike("email", addr).limit(25);
+    const bad = (data || []).some((l: any) => !!l.raw?.email_suppressed_at);
+    suppressionCache.set(addr, { bad, at: Date.now() });
+    return bad;
+  } catch {
+    return false; // fail open
+  }
+}
+
 /** Send an email via Resend. Returns the email id. Never throws. */
 export async function sendEmail(
   to: string,
@@ -162,6 +285,10 @@ export async function sendEmail(
     const from = senderFrom();
     if (!key || !from) return { ok: false, detail: "resend not configured" };
     if (!to) return { ok: false, detail: "no recipient email" };
+    // Suppression list, enforced HERE so no call site can forget it (see isEmailSuppressed).
+    if (await isEmailSuppressed(to)) {
+      return { ok: false, detail: "recipient email is suppressed (hard bounce / spam complaint)" };
+    }
     // Borrower replies must land where a human reads them, not the raw send alias.
     const replyTo = ((await cfg("REPLY_TO_EMAIL")) || "frank@fettifi.com").trim();
     const payload: Record<string, unknown> = { from, to: [to], subject, reply_to: [replyTo] };

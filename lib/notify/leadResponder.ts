@@ -8,7 +8,7 @@ import { markSignatureLite } from "@/lib/notify/emailSignature";
 import { senderFrom } from "@/lib/notify/mailFrom";
 import { scrubSmsIsms, unsubUrl, renderTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
 import { cfg } from "@/lib/settings";
-import { logComms } from "@/lib/comms";
+import { logComms, isEmailSuppressed } from "@/lib/comms";
 import { quietHoursFor, quietReason } from "@/lib/quietHours";
 
 export type LeadContact = {
@@ -45,6 +45,13 @@ async function emailLead(l: LeadContact, fallbackBody: string) {
   const key = process.env.RESEND_API_KEY;
   const from = senderFrom(); // e.g. "Fetti <frank@fettifi.com>"
   if (!key || !from || !l.email) return { ok: false as boolean, id: undefined as string | undefined, body: "" };
+  // SECOND CHOKEPOINT. This path posts to Resend directly rather than through
+  // comms.sendEmail, so the suppression list has to be checked here too — the same
+  // two-chokepoint shape as TCPA quiet hours (sendSms + smsLead). Miss one and the drip
+  // keeps mailing dead addresses, which is the exact bug this fixes.
+  if (await isEmailSuppressed(l.email)) {
+    return { ok: false as boolean, id: undefined as string | undefined, body: "" };
+  }
 
   // Channel-correct body: prefer email-specific copy; always scrub SMS-isms
   // ("Reply STOP/YES") that make an email read like spam.
