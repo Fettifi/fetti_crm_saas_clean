@@ -15,6 +15,7 @@ import sharp from "sharp";
 import { compressPdfIfNeeded } from "@/lib/pdfCompress";
 import { computeQualifyingIncome, assignBorrowers, makeBorrowerResolver, type DocFact } from "@/lib/income/docFacts";
 import { computeBankStatementIncome } from "@/lib/income/bankStatement";
+import { combineBankStatement } from "@/lib/income/combineBankStatement";
 import { compute1099Income, computePnlIncome, computeAssetDepletion, type AltDocResult } from "@/lib/income/altDoc";
 import { readDocumentsPooled, toDocFact, type DocRead } from "@/lib/income/readDocument";
 import { verifyWorksheet, type VerifyFinding } from "@/lib/income/verifyWorksheet";
@@ -30,7 +31,7 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-27-freq-guard-box5-ytd";
+const LOGIC_VERSION = "2026-07-27-bankstmt-no-additive-benefit";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" is deliberately GENERIC — a Chase/Wells file is rarely named
 // "bank statement"; the per-doc reader classifies, and a non-income statement is harmless.
@@ -326,38 +327,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (effectiveMethod === "bank_statement") {
       const bank = computeBankStatementIncome(bankReads, makeBorrowerResolver(roster), { loanType, expenseFactor });
       bankCoverage = bank.coverage;
-      // COMBINE per borrower: a borrower who qualifies on deposits uses their BANK income; their
-      // documented wage/self-employment income is NOT added on top (those earnings usually flow
-      // through the very deposits being counted — adding both double-counts). Each held stream
-      // becomes an Omit-to-add flag so the LO can consciously combine (e.g. a true W-2 second
-      // job paid into a different account). Fixed benefits (SSA/pension) stay additive. A
-      // borrower with NO bank income (e.g. a W-2 co-borrower) keeps their standard income.
-      const perBorrowerMonthly: Record<number, number> = { ...bank.perBorrowerMonthly };
-      const breakdown = [...bank.breakdown];
-      const flags = [...bank.flags];
-      for (const b of [1, 2] as const) {
-        const bankMonthly = bank.perBorrowerMonthly[b] || 0;
-        const lines = standard.breakdown.filter((l) => l.borrower === b);
-        if (bankMonthly > 0) {
-          for (const l of lines) {
-            if (/benefit$/i.test(l.label)) {   // fixed benefits are additive alongside deposit income
-              perBorrowerMonthly[b] = Math.round((perBorrowerMonthly[b] || 0) + l.monthly);
-              breakdown.push(l);
-            } else {
-              flags.push({ text: `${l.label} (${"$" + Math.round(l.monthly).toLocaleString()}/mo documented): NOT added — this file qualifies on bank-statement deposits and these earnings likely flow through the counted deposits (adding both would double-count). Omit to add it if it's a separate income paid into a different account.`, addBackMonthly: Math.round(l.monthly), borrower: b });
-            }
-          }
-        } else if (lines.length) {
-          for (const l of lines) { perBorrowerMonthly[b] = Math.round((perBorrowerMonthly[b] || 0) + l.monthly); breakdown.push(l); }
-        }
-      }
-      // Standard-engine flags still apply (unreadables, held streams for non-bank borrowers…).
-      computed = {
-        perBorrowerMonthly,
-        qualifyingMonthlyIncome: Object.values(perBorrowerMonthly).reduce((s, v) => s + v, 0),
-        breakdown,
-        flags: [...flags, ...standard.flags],
-      };
+      // See lib/income/combineBankStatement.ts for the rule and why benefits are NOT additive.
+      computed = combineBankStatement(bank, standard);
       if (!bank.accountsUsed) computed = { ...standard, flags: [...standard.flags, { text: "Bank-statement method selected but no statement months could be read — verify the statements are legible; fell back to the standard calculation.", addBackMonthly: 0, borrower: 1 }] };
     } else if (effectiveMethod === "1099_only" || effectiveMethod === "pnl_only" || effectiveMethod === "asset_depletion") {
       const alt: AltDocResult =
