@@ -55,6 +55,10 @@ export type Scenario = {
   down_payment?: number | null;
   ltv?: number | null;             // %
   cltv?: number | null;            // % (with secondary financing)
+  // Unpaid balance of the mortgage that STAYS in place behind this loan. Required to size a
+  // second position at all: a 2nd's own LTV is meaningless on its own, and every lender
+  // qualifies it on CLTV = (1st balance + this loan) / value.
+  first_lien_balance?: number | null;
   term?: string | null;            // requested term
   amortization?: string | null;    // 30yr / 40yr / Interest-Only
   rate_type?: string | null;       // Fixed / ARM
@@ -141,8 +145,9 @@ export const SCENARIO_SECTIONS: Section[] = [
       { key: "arv", label: "ARV (after repair)", type: "money", hint: "Fix & Flip" },
       { key: "rehab_budget", label: "Rehab Budget", type: "money", hint: "Fix & Flip" },
       { key: "down_payment", label: "Down Payment", type: "money" },
+      { key: "first_lien_balance", label: "1st Lien Balance", type: "money", hint: "2nd / HELOC — payoff stays in place" },
       { key: "ltv", label: "LTV %", type: "percent" },
-      { key: "cltv", label: "CLTV %", type: "percent" },
+      { key: "cltv", label: "CLTV %", type: "percent", hint: "auto from 1st + this loan" },
       { key: "term", label: "Term", type: "text", hint: "e.g. 30yr" },
       { key: "amortization", label: "Amortization", type: "text", hint: "30yr / IO / 40yr" },
       { key: "rate_type", label: "Rate Type", type: "select", options: RATE_TYPES },
@@ -205,6 +210,27 @@ export function computeLtv(s: Partial<Scenario>): number | null {
   return Math.round((loan / value) * 1000) / 10;
 }
 
+// Compute CLTV = (balance staying in first position + this loan) / value.
+//
+// A second-position loan cannot be sized without this. Its own LTV — which is all computeLtv
+// returns — describes the new money only and understates the real exposure: a $100k 2nd
+// behind a $400k 1st on a $600k property is a 16.7% LTV but an 83.3% CLTV, and it is the
+// CLTV every lender caps. With no first-lien balance captured, the desk had no way to say
+// that (reported by Ramon 2026-07-27 on a refi + second position scenario).
+export function computeCltv(s: Partial<Scenario>): number | null {
+  const value = num(s.purchase_price) ?? num(s.as_is_value);
+  const loan = num(s.loan_amount);
+  if (!value || !loan) return null;
+  const first = num(s.first_lien_balance) ?? 0;
+  if (first <= 0) return null;   // no junior financing ⇒ CLTV is just LTV; leave it blank
+  return Math.round(((first + loan) / value) * 1000) / 10;
+}
+
+/** True when this scenario sits BEHIND existing financing (2nd lien / HELOC). */
+export function isJuniorLien(s: Partial<Scenario>): boolean {
+  return /heloc|2nd|second/i.test(String(s.loan_type || "")) || (num(s.first_lien_balance) ?? 0) > 0;
+}
+
 // Compute DSCR = rent / PITIA when both present.
 // Kept at 4dp, NOT 2dp: this value is compared against lender minDscr floors in
 // lib/pricing/compare.ts, and 2dp rounding let a true 1.0951 store as 1.10 and clear a
@@ -255,6 +281,7 @@ export function scenarioFromLead(l: any): Partial<Scenario> {
     notes: l?.notes || null,
   };
   if (draft.ltv == null) draft.ltv = computeLtv(draft);
+  if (draft.cltv == null) draft.cltv = computeCltv(draft);
   if (draft.dscr == null) draft.dscr = computeDscr(draft);
   return draft;
 }
@@ -274,6 +301,7 @@ export function scenarioFromLoanFile(f: any): Partial<Scenario> {
     occupancy: f?.occupancy || null,
   };
   if (draft.ltv == null) draft.ltv = computeLtv(draft);
+  if (draft.cltv == null) draft.cltv = computeCltv(draft);
   return draft;
 }
 

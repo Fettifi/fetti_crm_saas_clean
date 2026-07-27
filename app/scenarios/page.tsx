@@ -23,7 +23,7 @@ import CurrencyInput from "@/components/ui/CurrencyInput";
 import AddressInput from "@/components/AddressInput";
 import LoanComparisonPanel from "@/components/LoanComparisonPanel";
 import {
-  SCENARIO_SECTIONS, fmtMoney, fmtPercent,
+  SCENARIO_SECTIONS, fmtMoney, fmtPercent, computeCltv,
   type Scenario, type Wholesaler, type Quote, type Field, type ScenarioStatus,
 } from "@/lib/scenario";
 
@@ -366,7 +366,18 @@ function ScenarioDesk() {
 
   // --- editor save -----------------------------------------------------------
   const setF = useCallback((key: keyof Scenario, raw: string) => {
-    setDraft((p) => (p ? { ...p, [key]: raw } as Scenario : p));
+    setDraft((p) => {
+      if (!p) return p;
+      const next = { ...p, [key]: raw } as Scenario;
+      // Keep CLTV live while a second is being sized. The LO moves the first-lien balance,
+      // the loan amount and the value against each other to find the deal, and a CLTV that
+      // only refreshed on save would be stale exactly when it is being used to decide.
+      if (key === "first_lien_balance" || key === "loan_amount" || key === "as_is_value" || key === "purchase_price") {
+        const c = computeCltv(next);
+        if (c != null) (next as any).cltv = c;
+      }
+      return next;
+    });
   }, []);
 
   const saveScenario = useCallback(async () => {

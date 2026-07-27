@@ -8,6 +8,7 @@ import {
   isNumericField,
   num,
   computeLtv,
+  computeCltv,
   computeDscr,
 } from "@/lib/scenario";
 import type { Scenario } from "@/lib/scenario";
@@ -65,6 +66,10 @@ export async function POST(req: NextRequest) {
 
     // Recompute derived ratios when not explicitly provided.
     if (base.ltv == null) base.ltv = computeLtv(base);
+    // CLTV is RE-derived whenever a first-lien balance is present, not just when blank: the
+    // balance and the loan amount both move while an LO works a second, and a stale hand-typed
+    // CLTV is worse than none. An explicit CLTV with no first lien behind it is left alone.
+    { const c = computeCltv(base); if (c != null) base.cltv = c; }
     if (base.dscr == null) base.dscr = computeDscr(base);
 
     const scenario = await saveScenario(base);
