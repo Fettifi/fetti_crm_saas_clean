@@ -39,7 +39,11 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   const [emailTo, setEmailTo] = useState(borrowerEmail || "");
   const [emailBusy, setEmailBusy] = useState(false);
   const [emailMsg, setEmailMsg] = useState("");
-  const rentalBase = metrics?.rental || 0;
+  // Gross rent for the DSCR ratio. A rent READ OFF THE LEASE beats the 1003's "projected
+  // monthly rent", which is a number the borrower typed into a web form months ago; the
+  // verified figure is the lesser of the executed lease and the appraiser's market rent.
+  // The LO's own typed override still wins over both (see `rental` below).
+  const rentalBase = Number(verified?.dscrRent) > 0 ? Number(verified.dscrRent) : (metrics?.rental || 0);
   const proposedPI = metrics?.pi || 0;
   const amount = metrics?.amount || 0;
   const ltv = metrics?.ltv ?? null;
@@ -441,6 +445,9 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
               <option value="1099_only">1099-only</option>
               <option value="pnl_only">P&amp;L-only</option>
               <option value="asset_depletion">Asset depletion</option>
+              {/* DSCR qualifies the PROPERTY on its rent — the borrower's personal income is
+                  never used. Auto-detect picks it for an investment file that has a lease. */}
+              <option value="dscr">DSCR — property rent (lease / 1007)</option>
             </select>
             {(qualMethod === "bank_statement" || qualMethod === "1099_only") && (
               <label className="text-[11px] text-slate-400 flex items-center gap-1">
@@ -465,8 +472,10 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
           {verified && (
             <div className="mt-2 bg-slate-900/60 border border-emerald-700/40 rounded-xl p-3">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-sm text-emerald-300 font-semibold">AI-verified income: {money(verified.qualifyingMonthlyIncome || 0)}/mo{borrowersNote ? ` · using ${money(income)}/mo` : ""}</div>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">{verified.method && verified.method !== "standard" ? `${String(verified.method).replace(/_/g, " ")} · ` : ""}{verified.docsRead?.length || 0} doc{(verified.docsRead?.length || 0) === 1 ? "" : "s"} · confidence {verified.report?.confidence}</span>
+                {/* On a DSCR file the figure is the property's RENT, not the borrower's income —
+                    call it that, or the LO reads a rent number as though it were a paycheck. */}
+                <div className="text-sm text-emerald-300 font-semibold">{verified.method === "dscr" ? `AI-verified rent: ${money(verified.dscrRent || verified.qualifyingMonthlyIncome || 0)}/mo gross` : `AI-verified income: ${money(verified.qualifyingMonthlyIncome || 0)}/mo${borrowersNote ? ` · using ${money(income)}/mo` : ""}`}</div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">{verified.method === "dscr" ? "DSCR · property rent · " : verified.method && verified.method !== "standard" ? `${String(verified.method).replace(/_/g, " ")} · ` : ""}{verified.docsRead?.length || 0} doc{(verified.docsRead?.length || 0) === 1 ? "" : "s"} · confidence {verified.report?.confidence}</span>
               </div>
               {/* Stability: this number is FROZEN to the document set — re-verifying an
                   unchanged file returns the same figure. It only changes if the documents

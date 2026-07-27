@@ -9,7 +9,7 @@ import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { getSetting, setSetting } from "@/lib/settings";
-import { assembleUrla, type Urla } from "@/lib/urla";
+import { assembleUrla, isInvestmentDeal, type Urla } from "@/lib/urla";
 import type { LoanType } from "@/lib/income";
 import sharp from "sharp";
 import { compressPdfIfNeeded } from "@/lib/pdfCompress";
@@ -17,7 +17,8 @@ import { computeQualifyingIncome, assignBorrowers, makeBorrowerResolver, type Do
 import { computeBankStatementIncome } from "@/lib/income/bankStatement";
 import { combineBankStatement } from "@/lib/income/combineBankStatement";
 import { compute1099Income, computePnlIncome, computeAssetDepletion, type AltDocResult } from "@/lib/income/altDoc";
-import { readDocumentsPooled, toDocFact, type DocRead } from "@/lib/income/readDocument";
+import { readDocumentsPooled, toDocFacts, type DocRead } from "@/lib/income/readDocument";
+import { computeRentalIncome, isRentalDoc, type RentalResult } from "@/lib/income/rentalIncome";
 import { verifyWorksheet, type VerifyFinding } from "@/lib/income/verifyWorksheet";
 
 export const runtime = "nodejs";
@@ -31,11 +32,14 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-27-bankstmt-no-additive-benefit";
+const LOGIC_VERSION = "2026-07-27-dscr-lease-rent";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" is deliberately GENERIC — a Chase/Wells file is rarely named
 // "bank statement"; the per-doc reader classifies, and a non-income statement is harmless.
-const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support/i;
+// Rental documents are income documents: on a DSCR deal the rent IS the qualifying income.
+// Leaving lease/rent-roll/1007 out of this pattern is why an investment file's leases were
+// never even SELECTED for reading, so DSCR files verified at $0 with no rental income type.
+const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\s_.-]*roll|rental[\s_.-]*agreement|tenanc|1007|1025|market[\s_.-]*rent/i;
 
 function mediaTypeFor(name: string): string {
   const ext = (name || "").toLowerCase().split(".").pop() || "";
@@ -87,7 +91,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // comp × (1−factor); pnl_only on a licensed-preparer P&L; asset_depletion on assets ÷ divisor
   // (LO-selected ONLY — never auto). expenseFactor overrides the method's default factor;
   // divisor overrides the 120-month depletion default.
-  const METHOD_VALUES = ["standard", "bank_statement", "1099_only", "pnl_only", "asset_depletion"] as const;
+  // "dscr" qualifies the PROPERTY on lease/market rent and ignores personal income entirely.
+  const METHOD_VALUES = ["standard", "bank_statement", "1099_only", "pnl_only", "asset_depletion", "dscr"] as const;
   type MethodChoice = "auto" | (typeof METHOD_VALUES)[number];
   let force = false;
   let method: MethodChoice = "auto";
@@ -109,6 +114,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (loanFile.lead_id) { const r = await supabaseAdmin.from("leads").select("*").eq("id", loanFile.lead_id).maybeSingle(); lead = r.data; }
     const urla: Urla = assembleUrla(lead, loanFile);
     const loanType: LoanType = /fha/i.test(urla.loan?.loanType || "") ? "fha" : "conventional";
+    // Investment deals qualify on the property (DSCR), not the borrower. Read the loan file
+    // directly — it is the worked record, and its product ("DSCR Purchase") settles the
+    // question even when occupancy was typed loosely ("Investor" vs "Investment").
+    const isInvestment = isInvestmentDeal(loanFile.occupancy, loanFile.product) || isInvestmentDeal(urla.property?.occupancy, urla.loan?.productDescription);
     // The named applicant(s), DEDUPED case-insensitively — a broken 1003 routinely lists
     // the SAME borrower twice (which would read as two applicants), and a real CO-BORROWER
     // is often missing from the 1003 entirely even though their own income docs are on the
@@ -165,6 +174,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const s = `${d.name || ""} ${d.file_name || ""}`.toLowerCase();
       if (/w-?2/.test(s)) return 0;                                   // W-2s: income + 2-yr job history
       if (/1099|k-?1/.test(s)) return 1;
+      // A lease outranks everything on a DSCR file (it IS the income) and costs little to
+      // read, so it never gets squeezed out of the MAX_DOCS budget by a stack of statements.
+      if (/lease|rent.?roll|rental.?agreement|1007|1025|market.?rent/.test(s)) return 1;
       if (/pay.?stub|check.?stub|paystub|earnings/.test(s)) return 2; // current base — the qualifying foundation
       if (/1040|tax.?return|schedule/.test(s)) return 3;
       if (/statement/.test(s)) return 5;                              // statements: weak income evidence, large — last
@@ -294,7 +306,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Only actual INCOME documents feed the math (a lone ID / voided check establishes identity
     // but creates no income). Map each DocRead → the DocFact the deterministic engine consumes.
     const incomeReads = docReads.filter((r) => r.isIncomeDoc !== false);
-    const rawDocFacts: DocFact[] = incomeReads.map(toDocFact).filter((f) => f && !!f.docType);
+    const rawDocFacts: DocFact[] = incomeReads.flatMap(toDocFacts).filter((f) => f && !!f.docType);
     if (!rawDocFacts.length) {
       return NextResponse.json({ error: "Couldn't read income facts from the uploaded documents — re-check they're legible income docs (W-2, pay stubs, 1099, tax returns).", unreadableDocs: unreadable }, { status: 422 });
     }
@@ -316,15 +328,45 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const has1099s = incomeReads.some((r) => r.docType === "1099nec" || r.docType === "1099misc");
     const has1040 = incomeReads.some((r) => r.docType === "tax_return_1040" || r.docType === "schedule_c" || r.docType === "wage_income_transcript");
     const hasPaystubs = incomeReads.some((r) => r.docType === "paystub");
+    // DSCR: an investment deal with a lease/rent-roll/1007 in the file qualifies on the
+    // PROPERTY's rent, not the borrower's paycheck — so it outranks every personal-income
+    // method. Requires an actual rental document; an investment file with only paystubs
+    // still runs standard (some investor programmes are full-doc), and the LO can force
+    // either way with body.method.
+    const rentalFacts = docFacts.filter(isRentalDoc);
     const effectiveMethod: (typeof METHOD_VALUES)[number] =
       method !== "auto" ? method
+      : isInvestment && rentalFacts.length ? "dscr"
       : bankMonthCount >= 8 ? "bank_statement"
       : has1099s && !has1040 && !hasPaystubs ? "1099_only"
       : "standard";
 
     let computed = standard;
     let bankCoverage: any[] = [];   // per-account month-by-month PROOF of coverage (12/24-mo programs)
-    if (effectiveMethod === "bank_statement") {
+    let rental: RentalResult | null = null;
+    if (effectiveMethod === "dscr") {
+      rental = computeRentalIncome(rentalFacts, { mode: "dscr" });
+      if (rental.monthlyGrossRent > 0) {
+        // The rent REPLACES personal income — it does not add to it. A DSCR lender qualifies
+        // the property and never counts the borrower's wages, so summing both would invent
+        // qualifying income that no programme allows. Any personal income the documents did
+        // show is preserved as an Omit-to-add flag, for the LO who is actually running a
+        // full-doc investor programme and wants it counted.
+        const held = standard.breakdown.map((l) => ({
+          text: `${l.label} (${"$" + Math.round(l.monthly).toLocaleString()}/mo documented): NOT counted — this file qualifies on the property's rent (DSCR), which does not use personal income. Omit to add it if you are running a full-doc investor programme instead.`,
+          addBackMonthly: Math.round(l.monthly),
+          borrower: l.borrower,
+        }));
+        computed = {
+          perBorrowerMonthly: { 1: rental.monthlyGrossRent },
+          qualifyingMonthlyIncome: rental.monthlyGrossRent,
+          breakdown: rental.lines,
+          flags: [...rental.flags, ...held, ...standard.flags],
+        };
+      } else {
+        computed = { ...standard, flags: [...standard.flags, ...rental.flags, { text: "DSCR method selected but no rent could be read from the lease / rent roll / 1007 — check the documents state a monthly rent and are legible; fell back to the standard calculation.", addBackMonthly: 0, borrower: 1 }] };
+      }
+    } else if (effectiveMethod === "bank_statement") {
       const bank = computeBankStatementIncome(bankReads, makeBorrowerResolver(roster), { loanType, expenseFactor });
       bankCoverage = bank.coverage;
       // See lib/income/combineBankStatement.ts for the rule and why benefits are NOT additive.
@@ -377,6 +419,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       effectiveMethod === "bank_statement" ? [...new Set(bankReads.map((r) => r.bankStatement?.accountType === "business" ? "BANK_STMT_BUSINESS" : "BANK_STMT_PERSONAL"))]
       : effectiveMethod === "1099_only" ? ["IRS_1099_ONLY"]
       : effectiveMethod === "pnl_only" ? ["PNL_ONLY"]
+      : effectiveMethod === "dscr" ? ["DSCR"]
       : effectiveMethod === "asset_depletion" ? ["ASSET_DEPLETION_NONQM", "W2_BASE", "OTHER_FIXED_BENEFIT"]
       : ["W2_BASE", "W2_VARIABLE", "SE_SCHEDULE_C", "OTHER_FIXED_BENEFIT"];
     try { qc = await verifyWorksheet(key as string, incomeReads, computed, { loanType, applicants, methodIds }); } catch { /* QC best-effort */ }
@@ -410,7 +453,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       crossChecks: [] as string[],
       flags: [...qcFlags, ...overflowFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...computed.flags.map(normFlag)].slice(0, 30),
       confidence: qc.confidence || (computed.breakdown.length ? "high" : "low"),
-      notes: `${effectiveMethod === "bank_statement" ? `BANK-STATEMENT method (${bankMonthCount} statement-months read)` : effectiveMethod === "1099_only" ? "1099-ONLY method (gross 1099 comp × counted factor)" : effectiveMethod === "pnl_only" ? "P&L-ONLY method (licensed-preparer P&L net)" : effectiveMethod === "asset_depletion" ? "ASSET-DEPLETION method (assets ÷ divisor)" : "Standard method"} · read ${incomeReads.length} document${incomeReads.length === 1 ? "" : "s"} individually · QC ${qc.findings.length} finding${qc.findings.length === 1 ? "" : "s"}.`,
+      notes: `${effectiveMethod === "dscr" ? `DSCR method (qualifies on the property's rent — ${rental?.units.length || 0} unit${(rental?.units.length || 0) === 1 ? "" : "s"} read from lease/1007, personal income not counted)` : effectiveMethod === "bank_statement" ? `BANK-STATEMENT method (${bankMonthCount} statement-months read)` : effectiveMethod === "1099_only" ? "1099-ONLY method (gross 1099 comp × counted factor)" : effectiveMethod === "pnl_only" ? "P&L-ONLY method (licensed-preparer P&L net)" : effectiveMethod === "asset_depletion" ? "ASSET-DEPLETION method (assets ÷ divisor)" : "Standard method"} · read ${incomeReads.length} document${incomeReads.length === 1 ? "" : "s"} individually · QC ${qc.findings.length} finding${qc.findings.length === 1 ? "" : "s"}.`,
     };
     // "Omit → add income" for a variable/gig earner, COMPUTED IN CODE (the model reliably
     // STATES the most-recent-year figure in the flag but is unreliable at setting
@@ -438,7 +481,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Freeze this read against the doc-set fingerprint so the SAME file returns the SAME
     // number until its documents change (or the LO forces a re-read).
-    const payload = { perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage };
+    const payload = { perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage,
+      // The DSCR panel prefills its Gross monthly rent from this, so the rent the LO sees in
+      // the qualification box is the one actually read off the lease.
+      dscrRent: effectiveMethod === "dscr" && rental?.monthlyGrossRent ? rental.monthlyGrossRent : null,
+      rentalUnits: rental?.units || null };
     const verifiedAt = new Date().toISOString();
     await setSetting(CACHE_KEY, JSON.stringify({ fingerprint, verifiedAt, payload })).catch(() => {});
     return NextResponse.json({ ...payload, cached: false, verifiedAt });

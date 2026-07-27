@@ -9,7 +9,11 @@
 
 export type DocType =
   | "paystub" | "w2" | "1099nec" | "1099misc" | "schedule_c" | "tax_return_1040"
-  | "wage_income_transcript" | "bank_statement" | "ssa_award" | "pension" | "disability" | "voe" | "pnl" | "other";
+  | "wage_income_transcript" | "bank_statement" | "ssa_award" | "pension" | "disability" | "voe" | "pnl"
+  // Rental documents. On a DSCR deal the property's rent IS the qualifying income, so a lease
+  // is an income document in exactly the way a paystub is on a wage deal.
+  | "lease" | "rent_roll" | "appraisal_1007"
+  | "other";
 
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly";
 
@@ -46,6 +50,22 @@ export type DocFact = {
   isJointReturn?: boolean;
   yearsAtCurrentEmployer?: number | null;
   ssnLast4?: string | null;        // last 4 of SSN (identity key for clustering); null if not shown
+  // ── RENTAL (lease / rent roll / 1007 market-rent appraisal) ──────────────────────────
+  // These are per-PROPERTY, not per-person: a lease is attributed to the door, not the
+  // earner, which is why lib/income/rentalIncome.ts groups them by address+unit.
+  propertyAddress?: string | null;     // street address the rent is for
+  unit?: string | null;                // unit/apt designator when the doc names one
+  leaseMonthlyRent?: number | null;    // rent AS PRINTED (not necessarily monthly — see below)
+  // The period that printed rent is stated for. The engine converts; the reader never does,
+  // so an annually-stated lease can't silently qualify at 12× the real rent.
+  leaseRentFrequency?: "monthly" | "weekly" | "biweekly" | "semimonthly" | "annual" | null;
+  leaseStartDate?: string | null;      // YYYY-MM-DD
+  leaseEndDate?: string | null;        // YYYY-MM-DD
+  isMonthToMonth?: boolean;
+  tenantName?: string | null;
+  marketRent?: number | null;          // appraiser's opinion of market rent (1007/1025 only)
+  isShortTermRental?: boolean;         // STR/Airbnb — trailing-12 method, not a fixed lease
+  trailing12GrossRent?: number | null; // STR trailing-12-month gross
   notes?: string;
 };
 
@@ -67,7 +87,7 @@ Output ONLY: {"docFacts":[DocFact, ...]}  — one DocFact per DISTINCT document 
 
 Each DocFact:
 {"file":"<the '--- Document: X ---' label this came from>",
- "docType":"paystub|w2|1099nec|1099misc|schedule_c|tax_return_1040|wage_income_transcript|bank_statement|ssa_award|pension|disability|voe|other",
+ "docType":"paystub|w2|1099nec|1099misc|schedule_c|tax_return_1040|wage_income_transcript|bank_statement|ssa_award|pension|disability|voe|lease|rent_roll|appraisal_1007|other",
  "personName":"<name printed on the doc>",
  "borrower":<1 or 2 — see BORROWER ASSIGNMENT>,
  "incomeCategory":"<wage_salaried = a steady base salary/hourly rate (may have some OT/bonus on top) | wage_variable = FLUCTUATING hourly / gig / IHSS / piece-rate with NO stable base (hours & pay vary each period) | self_employment = 1099/Schedule C | fixed_benefit = SSA/pension/disability/annuity | null if not an income doc>",
@@ -82,10 +102,15 @@ Each DocFact:
  "monthlyBenefit":<SSA/pension/disability monthly amount|null>, "benefitType":"<social_security|ssdi|pension|va_disability|annuity|child_support|alimony|null>", "continuanceMonthsRemaining":<months the benefit is documented to continue, null if lifetime/indefinite>, "monthsReceived":<months of documented receipt (child support/alimony), null otherwise>, "nonTaxable":<true if the benefit is non-taxable|false>,
  "isJointReturn":<true if this 1040 is Married-Filing-Jointly (combined figures)|false>,
  "yearsAtCurrentEmployer":<whole years at this employer if determinable|null>,
+ "propertyAddress":"<street address the rent is for — lease/rent roll/1007 only|null>", "unit":"<unit or apt designator if the doc names one|null>",
+ "leaseMonthlyRent":<the rent AS PRINTED on a lease or rent-roll row|null>, "leaseRentFrequency":"monthly|weekly|biweekly|semimonthly|annual (the period that rent figure is stated for; monthly if not stated)", "leaseStartDate":"<YYYY-MM-DD|null>", "leaseEndDate":"<YYYY-MM-DD|null>", "isMonthToMonth":<true if the tenancy is month-to-month/holdover|false>, "tenantName":"<tenant on the lease|null>",
+ "marketRent":<the APPRAISER'S opinion of market rent — Form 1007/1025 only, never a lease amount|null>,
+ "isShortTermRental":<true for Airbnb/VRBO/short-term operating statements|false>, "trailing12GrossRent":<trailing-12-month gross for a short-term rental|null>,
  "notes":"<one terse line: anything an underwriter needs, e.g. 'recipient John R', 'declining YoY', 'partial year'>"}
 
 BORROWER ASSIGNMENT: you are given the named applicant(s). Assign each document to the borrower whose NAME is printed on it. The named list is OFTEN incomplete or lists one person twice — a person who has their OWN income document here is a real borrower even if not on that list; the FIRST distinct person is borrower 1, a genuinely DIFFERENT second person is borrower 2. A spouse who appears ONLY inside a joint 1040 (no income doc of their own) is NOT a borrower — still emit the 1040 DocFact with isJointReturn=true, but do not invent a borrower for them.
 STREAM IDs: give the SAME streamId to every document for the same job (a stub, its W2, its transcript all share it). Give DIFFERENT streamIds to genuinely different jobs — including one IHSS provider's different recipients (each recipient's case number makes a distinct streamId).
+RENTAL DOCUMENTS (lease / rent roll / Form 1007-1025): on an investment deal the RENT is the qualifying income, so read these as carefully as a paystub. Emit ONE DocFact PER UNIT — a rent roll listing 4 units is 4 DocFacts, each with its own propertyAddress/unit/leaseMonthlyRent; a duplex lease covering 2 units is 2 DocFacts. Put the LEASE amount in leaseMonthlyRent and the APPRAISER'S market-rent opinion in marketRent — never the same number in both, and never a 1007's market rent in leaseMonthlyRent (a separate engine compares them, and swapping them changes the qualifying rent). leaseMonthlyRent is the BASE monthly rent only — exclude pet rent, parking, utility reimbursements and one-off fees. Report the rent EXACTLY as printed and set leaseRentFrequency to the period it is stated for — do NOT convert it to monthly yourself; the engine does that. Leave incomeCategory null and set borrower to the property owner/landlord named on the document (borrower 1 if unclear) — rental docs belong to the property, not to a person's employment.
 RULES: numbers EXACTLY as printed (never rounded/derived). Never assign a joint 1040's combined wages to one person — capture it as a joint-return fact. Extract only what you can SEE; null otherwise. JSON only.`;
 
 // ── DETERMINISTIC BORROWER ASSIGNMENT ────────────────────────────────────────────────

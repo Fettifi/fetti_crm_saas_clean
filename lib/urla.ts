@@ -181,6 +181,50 @@ export const DEFAULT_ORIGINATOR: UrlaOriginator = {
   companyAddress: { street: "5757 W CENTURY BLVD", city: "LOS ANGELES", state: "CA", zip: "90045", country: "US" },
 };
 
+/**
+ * Is this an INVESTMENT (non-owner-occupied) deal? Drives whether the LOS qualifies on DSCR
+ * instead of DTI, so getting it wrong hides the entire DSCR panel.
+ *
+ * This replaced `occupancy === "Investment"`, an exact string match on the ASSEMBLED urla.
+ * That match was survivable only because `assembleUrla` happened to fold "Investor" into
+ * "Investment" first; it broke the moment the lead row carried no occupancy at all. Running
+ * the real files on 2026-07-27 showed three genuine DSCR deals resolving to PrimaryResidence
+ * — Aubrey and Boykan ("DSCR Purchase"), Kyser Livingston ("Investment HELOC") and O'Dell
+ * ("DSCR", occupancy null) — because the loan file's own occupancy/product were never read.
+ * Reported on the Michelle Jackson Metoyer file.
+ *
+ * The PRODUCT is authoritative when it names an investor programme: you cannot write a DSCR,
+ * fix-and-flip or hard-money loan against a primary residence, so a product like that settles
+ * it even if occupancy was typed as something else.
+ */
+export function isInvestmentDeal(occupancy?: string | null, product?: string | null): boolean {
+  const occ = String(occupancy || "").toLowerCase();
+  const prod = String(product || "").toLowerCase();
+  // Investor-only programmes decide it outright, whatever occupancy says.
+  if (/dscr|fix.?(and.?)?flip|hard.?money|bridge|rental|investor|commercial|ground.?up/.test(prod)) return true;
+  // "non-owner occupied" contains "owner", so the negative test must come first.
+  if (/non.?owner|noo\b/.test(occ)) return true;
+  if (/invest/.test(occ)) return true;                       // Investment, Investor, investment, Investment/Commercial
+  if (/rental|tenant.?occupied/.test(occ)) return true;
+  return false;                                              // Owner, PrimaryResidence, Second Home → DTI, not DSCR
+}
+
+/**
+ * Free-text occupancy ("Investor", "Owner", "non-owner occupied", "2nd home") → the URLA
+ * enum. Returns undefined when there is nothing to go on, so a caller can fall back to a
+ * lower-priority source rather than defaulting a blank to PrimaryResidence.
+ * `product` is consulted only to promote to Investment — a DSCR/hard-money product cannot
+ * be a primary residence — never to demote.
+ */
+export function normalizeOccupancy(occupancy?: string | null, product?: string | null): string | undefined {
+  const occ = String(occupancy || "").trim();
+  if (!occ && !String(product || "").trim()) return undefined;
+  if (isInvestmentDeal(occ, product)) return "Investment";
+  if (!occ) return undefined;                                // product alone can't prove owner-occupancy
+  if (/second|2nd|vacation/i.test(occ)) return "SecondHome";
+  return "PrimaryResidence";
+}
+
 export function assembleUrla(lead: any, loanFile?: any): Urla {
   const raw = lead?.raw && typeof lead.raw === "object" ? lead.raw : {};
   const seeded: Partial<Urla> = raw.urla && typeof raw.urla === "object" ? raw.urla : {};
@@ -250,10 +294,22 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
   const propAddr: UrlaAddress = { ...((seeded.property?.address as UrlaAddress) || parseAddress(lead?.property_address) || {}) };
   if (!propAddr.state && lead?.state) propAddr.state = normalizeState(lead.state) || lead.state || undefined;
   if (!propAddr.zip && lead?.zip) propAddr.zip = String(lead.zip);
+  const fileOccupancy = normalizeOccupancy(loanFile?.occupancy, loanFile?.product);
   const property: UrlaProperty = {
     address: (propAddr.street || propAddr.city || propAddr.state || propAddr.zip) ? propAddr : undefined,
     propertyType: seeded.property?.propertyType || lead?.property_type || undefined,
-    occupancy: seeded.property?.occupancy || (lead?.occupancy ? (/(investor|investment)/i.test(lead.occupancy) ? "Investment" : /(second)/i.test(lead.occupancy) ? "SecondHome" : "PrimaryResidence") : undefined),
+    // Occupancy precedence, and why it is PROMOTE-ONLY. The normal order is
+    // seeded (the saved 1003) → loan file → lead. But `seeded` lives in lead.raw.urla and is
+    // itself usually AUTO-DERIVED by an earlier run of this function (meta.source "derived"),
+    // not typed by anyone — so a stale snapshot was outranking the live file. Aubrey and
+    // Kyser Livingston both carried a derived seeded "PrimaryResidence" from early July while
+    // their files said Investor / "DSCR Purchase" / "Investment HELOC", which silently put a
+    // DSCR deal on DTI qualification.
+    // The override is one-way: an investor-only file (DSCR/hard-money/investor occupancy)
+    // promotes to Investment, because such a loan cannot be written on a primary residence.
+    // Nothing ever demotes a seeded Investment — a real LO entry is never overruled.
+    occupancy: fileOccupancy === "Investment" ? "Investment"
+      : (seeded.property?.occupancy || fileOccupancy || normalizeOccupancy(lead?.occupancy, lead?.loan_purpose)),
     presentValue: seeded.property?.presentValue ?? num(lead?.property_value),
     expectedMonthlyRentalIncome: seeded.property?.expectedMonthlyRentalIncome ?? num(n["projected monthly rent"]),
     afterRepairValue: seeded.property?.afterRepairValue ?? undefined,
@@ -267,7 +323,10 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
   // says purchase/refi/cash-out — a product-only string (hard money, dscr, bridge, 2nd)
   // is NOT a purchase, so leave purpose blank for the LO to set rather than mislabeling
   // every business-purpose deal a "Purchase" (the bug the Underwriting Desk hand-off hit).
-  const purposeStr = (lead?.loan_purpose || "").toLowerCase();
+  // Same precedence as occupancy: the loan file's product is the worked record, the lead's
+  // loan_purpose is the intake answer. Reading only the lead is what typed "DSCR Purchase"
+  // files as FHA/Conventional and lost the investor signal downstream.
+  const purposeStr = String(loanFile?.product || lead?.loan_purpose || "").toLowerCase();
   const derivedPurpose =
     /cash[\s-]?out/.test(purposeStr) ? "CashOutRefinance" :
     purposeStr.includes("refi") ? "Refinance" :
@@ -367,7 +426,7 @@ export function computeLoanMetrics(u: Urla) {
   const housing = (escrowKnown && pitia != null) ? pitia : (pi ?? (u.borrowers?.[0]?.monthlyHousingExpense || 0));
   const frontDti = monthlyIncome && housing ? (housing / monthlyIncome) * 100 : undefined;
   const backDti = monthlyIncome ? ((housing + liabilities) / monthlyIncome) * 100 : undefined;
-  const isInvestment = u.property?.occupancy === "Investment";
+  const isInvestment = isInvestmentDeal(u.property?.occupancy, u.loan?.productDescription);
   // DSCR = gross rent ÷ PITIA, and ONLY when escrow is known — never bare P&I (overstates).
   const dscr = isInvestment && escrowKnown && pitia ? grossRent / pitia : undefined;
   const round = (n?: number, d = 1) => (n === undefined ? undefined : Math.round(n * 10 ** d) / 10 ** d);
