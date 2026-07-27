@@ -283,10 +283,38 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     if (!f || !target) return;
     setDocBusy(target);
     try {
+      // Anything over ~4.5MB is rejected by the platform BEFORE our route runs (bank
+      // statements and tax returns are routinely larger), so a big file goes straight to
+      // storage on a signed URL and we post only the metadata back. Small files keep the
+      // simple one-shot multipart path. Threshold is deliberately below the real ceiling
+      // to leave room for multipart overhead.
+      const DIRECT_OVER = 4 * 1024 * 1024;
+      if (f.size > DIRECT_OVER) {
+        const su = await fetch(`/api/los/files/${id}/upload-url`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: f.name }),
+        });
+        const sj = await su.json().catch(() => ({}));
+        if (!su.ok || !sj?.url) { alert(sj?.error || "Couldn't start the upload."); return; }
+        const put = await fetch(sj.url, { method: "PUT", body: f, headers: { "Content-Type": f.type || "application/octet-stream" } });
+        if (!put.ok) { alert(`Upload failed while sending the file (${put.status}). Please try again.`); return; }
+        const rec = await fetch(`/api/los/files/${id}/upload`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storage_path: sj.path, file_name: sj.fileName, size_bytes: f.size, doc_id: target !== "new" ? target : null }),
+        });
+        if (!rec.ok) { const j = await rec.json().catch(() => ({})); alert(j.error || "The file uploaded but could not be recorded."); }
+        await load();
+        return;
+      }
       const fd = new FormData(); fd.append("file", f);
       if (target !== "new") fd.append("doc_id", target);
       const r = await fetch(`/api/los/files/${id}/upload`, { method: "POST", body: fd });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error || "Upload failed."); }
+      if (!r.ok) {
+        // A 413 comes back as HTML from the platform, so json() throws and the old code
+        // showed the misleading "Connection error" for what is really a size limit.
+        const j = await r.json().catch(() => ({}));
+        alert(j.error || (r.status === 413 ? "That file is too large to send this way — please try again; it will now upload directly." : `Upload failed (${r.status}).`));
+      }
       await load();
     } catch { alert("Connection error during upload."); } finally { setDocBusy(null); }
   }

@@ -19,6 +19,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { data: file } = await supabaseAdmin.from("loan_files").select("id, lead_id").eq("id", id).maybeSingle();
     if (!file) return NextResponse.json({ error: "loan file not found" }, { status: 404 });
 
+    // ── Direct-to-storage path ────────────────────────────────────────────────────
+    // A JSON body means the browser already PUT the file to storage via a signed URL
+    // (see ./upload-url) because it exceeds Vercel's ~4.5MB request-body ceiling. We only
+    // record the row here. The path is re-verified to sit under THIS loan file's folder so
+    // a client cannot register someone else's document against this file.
+    if ((req.headers.get("content-type") || "").includes("application/json")) {
+      const b = await req.json().catch(() => ({} as any));
+      const sp = String(b?.storage_path || "");
+      if (!sp.startsWith(`${file.id}/`)) return NextResponse.json({ error: "bad storage path" }, { status: 400 });
+      const { data: obj } = await supabaseAdmin.storage.from(BUCKET).list(file.id, { search: sp.split("/").slice(1).join("/") });
+      if (!obj?.length) return NextResponse.json({ error: "upload did not complete — the file is not in storage" }, { status: 400 });
+      const fname = String(b?.file_name || sp.split("/").pop() || "document").slice(0, 120);
+      const size = Number(b?.size_bytes) || obj[0]?.metadata?.size || 0;
+      const dId = b?.doc_id ? String(b.doc_id) : null;
+      let rec: any = null;
+      if (dId) {
+        const { data } = await supabaseAdmin.from("loan_documents").update({
+          status: "received", storage_path: sp, file_name: fname, size_bytes: size,
+          uploaded_by: "lo", updated_at: new Date().toISOString(),
+        }).eq("id", dId).eq("loan_file_id", id).select().single();
+        rec = data;
+      }
+      if (!rec) {
+        const { data } = await supabaseAdmin.from("loan_documents").insert([{
+          loan_file_id: file.id, name: (b?.name ? String(b.name).slice(0, 160) : null) || fname,
+          category: "Added by LO", required: false, status: "received",
+          storage_path: sp, file_name: fname, size_bytes: size, uploaded_by: "lo",
+        }]).select().single();
+        rec = data;
+      }
+      await logActivity({
+        entity_type: "document", entity_id: rec?.id, loan_file_id: id, lead_id: file.lead_id,
+        actor: "lo", action: "doc.uploaded", detail: { name: rec?.name || fname, by: "lo", direct: true },
+      });
+      await maybeAdvanceStage(id);
+      return NextResponse.json({ ok: true, document: rec }, { status: 201 });
+    }
+
     const form = await req.formData();
     const upload = form.get("file");
     const docId = form.get("doc_id") ? String(form.get("doc_id")) : null;

@@ -29,9 +29,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       if (!file) return NextResponse.json({ error: "Could not open your file — please contact your Fetti specialist." }, { status: 500 });
     }
 
-    const form = await req.formData();
-    const upload = form.get("file");
-    let docId = form.get("doc_id") ? String(form.get("doc_id")) : null;
+    // A JSON body means the browser already PUT the file straight to storage on a signed
+    // URL (see ./upload-url) because it exceeds Vercel's ~4.5MB request-body ceiling. Only
+    // the INTAKE differs — every doc-row rule below (needed: mapping, re-upload handling,
+    // versioning) is shared, so the two paths can never drift apart.
+    const isDirect = (req.headers.get("content-type") || "").includes("application/json");
+    let form: FormData | null = null;
+    let upload: any = null;
+    let docId: string | null = null;
+    let directPath: string | null = null, directName = "", directSize = 0;
+    if (isDirect) {
+      const b = await req.json().catch(() => ({} as any));
+      directPath = String(b?.storage_path || "");
+      if (!directPath.startsWith(`${file.id}/`)) return NextResponse.json({ error: "bad storage path" }, { status: 400 });
+      const { data: obj } = await supabaseAdmin.storage.from(BUCKET).list(file.id, { search: directPath.split("/").slice(1).join("/") });
+      if (!obj?.length) return NextResponse.json({ error: "upload did not complete — please try again" }, { status: 400 });
+      directName = String(b?.file_name || directPath.split("/").pop() || "document").slice(0, 120);
+      directSize = Number(b?.size_bytes) || obj[0]?.metadata?.size || 0;
+      docId = b?.doc_id ? String(b.doc_id) : null;
+    } else {
+      form = await req.formData();
+      upload = form.get("file");
+      docId = form.get("doc_id") ? String(form.get("doc_id")) : null;
+    }
     // The lead-preview checklist (before a file exists) sends a synthetic id
     // "needed:<name>"; now that the file exists, map it to the real seeded doc row so
     // the borrower's first upload satisfies the item they intended.
@@ -41,22 +61,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         .select("id").eq("loan_file_id", file.id).eq("name", wantName).order("created_at").limit(1).maybeSingle();
       docId = match?.id || null;
     }
-    if (!(upload instanceof File)) return NextResponse.json({ error: "no file" }, { status: 400 });
-    if (upload.size > MAX_BYTES) return NextResponse.json({ error: "File too large (max 25MB)." }, { status: 400 });
-    const safeName = upload.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
+    if (!isDirect) {
+      if (!(upload instanceof File)) return NextResponse.json({ error: "no file" }, { status: 400 });
+      if (upload.size > MAX_BYTES) return NextResponse.json({ error: "File too large (max 25MB)." }, { status: 400 });
+    }
+    const safeName = isDirect ? directName : upload.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
     if (!ALLOWED.test(safeName)) return NextResponse.json({ error: "Unsupported file type." }, { status: 400 });
+    const uploadSize = isDirect ? directSize : upload.size;
 
     const stamp = Date.now();
-    const path = `${file.id}/${stamp}-${safeName}`;
-    const buf = Buffer.from(await upload.arrayBuffer());
+    const path = isDirect ? directPath! : `${file.id}/${stamp}-${safeName}`;
+    const buf = isDirect ? null : Buffer.from(await upload.arrayBuffer());
     // SECURITY: never persist the client-supplied MIME type — derive it from the
     // validated extension so a spoofed text/html type can't later be served inline.
     const _ext = safeName.toLowerCase().split(".").pop() || "";
     const _CT: Record<string, string> = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", heic: "image/heic", heif: "image/heic", tif: "image/tiff", tiff: "image/tiff" };
-    const { error: upErr } = await supabaseAdmin.storage.from(BUCKET).upload(path, buf, {
-      contentType: _CT[_ext] || "application/octet-stream", upsert: false,
-    });
-    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+    if (!isDirect) {
+      const { error: upErr } = await supabaseAdmin.storage.from(BUCKET).upload(path, buf!, {
+        contentType: _CT[_ext] || "application/octet-stream", upsert: false,
+      });
+      if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+    }
 
     let doc;
     if (docId) {
@@ -66,7 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       if (reqRow && !alreadySatisfied) {
         // First file for this request (or replacing a rejected/needed one) → fill the request row.
         const { data } = await supabaseAdmin.from("loan_documents").update({
-          status: "received", storage_path: path, file_name: safeName, size_bytes: upload.size,
+          status: "received", storage_path: path, file_name: safeName, size_bytes: uploadSize,
           uploaded_by: "borrower", updated_at: new Date().toISOString(),
         }).eq("id", docId).eq("loan_file_id", file.id).select().single();
         doc = data;
@@ -78,7 +103,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         // never re-blocks completion. This is how a borrower attaches multiple docs to one request.
         const { data } = await supabaseAdmin.from("loan_documents").insert([{
           loan_file_id: file.id, name: `${reqRow.name} — additional`, category: reqRow.category || "Additional",
-          required: false, status: "received", storage_path: path, file_name: safeName, size_bytes: upload.size,
+          required: false, status: "received", storage_path: path, file_name: safeName, size_bytes: uploadSize,
           uploaded_by: "borrower", notes: `Additional file for: ${reqRow.name}`,
         }]).select().single();
         doc = data;
@@ -92,14 +117,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (dupe?.id) {
         const { data } = await supabaseAdmin.from("loan_documents").update({
-          status: "received", storage_path: path, size_bytes: upload.size,
+          status: "received", storage_path: path, size_bytes: uploadSize,
           uploaded_by: "borrower", updated_at: new Date().toISOString(),
         }).eq("id", dupe.id).eq("loan_file_id", file.id).select().single();
         doc = data;
       } else {
         const { data } = await supabaseAdmin.from("loan_documents").insert([{
           loan_file_id: file.id, name: safeName, category: "Additional", required: false,
-          status: "received", storage_path: path, file_name: safeName, size_bytes: upload.size, uploaded_by: "borrower",
+          status: "received", storage_path: path, file_name: safeName, size_bytes: uploadSize, uploaded_by: "borrower",
         }]).select().single();
         doc = data;
       }
@@ -107,7 +132,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
     await logActivity({
       entity_type: "document", entity_id: doc?.id, loan_file_id: file.id, lead_id: file.lead_id,
-      actor: "borrower", action: "doc.uploaded", detail: { name: doc?.name || safeName, size: upload.size },
+      actor: "borrower", action: "doc.uploaded", detail: { name: doc?.name || safeName, size: uploadSize },
     });
 
     // THE LOS GATE: a real document upload is what makes this a real application.

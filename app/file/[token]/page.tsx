@@ -45,10 +45,30 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
     const failed: string[] = [];
     try {
       for (const f of files) {
-        const fd = new FormData();
-        fd.append("file", f);
-        if (docId) fd.append("doc_id", docId);
         try {
+          // Bank statements and tax returns are routinely over the ~4.5MB the platform
+          // will accept in a request body — those never reached the server at all and the
+          // borrower just saw "(too large)" with no way forward. Send anything big straight
+          // to storage on a signed URL, then post only the metadata.
+          if (f.size > 4 * 1024 * 1024) {
+            const su = await fetch(`/api/file/${token}/upload-url`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ fileName: f.name }),
+            });
+            const sj = await su.json().catch(() => ({} as any));
+            if (!su.ok || !sj?.url) { failed.push(`${f.name}${sj?.error ? ` (${sj.error})` : ""}`); continue; }
+            const put = await fetch(sj.url, { method: "PUT", body: f, headers: { "Content-Type": f.type || "application/octet-stream" } });
+            if (!put.ok) { failed.push(`${f.name} (transfer failed)`); continue; }
+            const rec = await fetch(`/api/file/${token}/upload`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ storage_path: sj.path, file_name: sj.fileName, size_bytes: f.size, doc_id: docId || null }),
+            });
+            if (!rec.ok) { const j = await rec.json().catch(() => ({} as any)); failed.push(`${f.name}${j?.error ? ` (${j.error})` : ""}`); }
+            continue;
+          }
+          const fd = new FormData();
+          fd.append("file", f);
+          if (docId) fd.append("doc_id", docId);
           const res = await fetch(`/api/file/${token}/upload`, { method: "POST", body: fd });
           if (!res.ok) {
             const j = await res.json().catch(() => ({} as any));
@@ -59,7 +79,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
       await load();
       // A silent failure here meant borrowers walked away believing their documents
       // went through (audit P1) — always tell them exactly which files didn't land.
-      if (failed.length) setUploadErr(`These didn't upload: ${failed.join(", ")}. Please try again — smaller files or photos usually work.`);
+      if (failed.length) setUploadErr(`These didn't upload: ${failed.join(", ")}. Please try again, or reply to your specialist and we'll take them by email.`);
     } finally { setBusyDoc(null); }
   }
 
