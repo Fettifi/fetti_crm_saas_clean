@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { maybeAdvanceStage } from "@/lib/los";
+import { isHeic, heicToJpeg, heicNameToJpg } from "@/lib/heic";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -30,13 +31,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!sp.startsWith(`${file.id}/`)) return NextResponse.json({ error: "bad storage path" }, { status: 400 });
       const { data: obj } = await supabaseAdmin.storage.from(BUCKET).list(file.id, { search: sp.split("/").slice(1).join("/") });
       if (!obj?.length) return NextResponse.json({ error: "upload did not complete — the file is not in storage" }, { status: 400 });
-      const fname = String(b?.file_name || sp.split("/").pop() || "document").slice(0, 120);
-      const size = Number(b?.size_bytes) || obj[0]?.metadata?.size || 0;
+      let fname = String(b?.file_name || sp.split("/").pop() || "document").slice(0, 120);
+      let size = Number(b?.size_bytes) || obj[0]?.metadata?.size || 0;
+      let sp2 = sp;
+      // A HEIC big enough to take the signed-URL route is already in storage — pull it back,
+      // convert, and store the JPEG beside it. (HEICs are typically 2-4MB+, so this is the
+      // path most phone photos actually take.)
+      if (isHeic(fname, null)) {
+        const { data: dl } = await supabaseAdmin.storage.from(BUCKET).download(sp);
+        if (dl) {
+          const src = Buffer.from(await dl.arrayBuffer());
+          const c = await heicToJpeg(src);
+          if (c.ok) {
+            const jpgPath = sp.replace(/\.(heic|heif)$/i, "") + ".jpg";
+            const { error: e2 } = await supabaseAdmin.storage.from(BUCKET)
+              .upload(jpgPath, c.jpeg, { contentType: "image/jpeg", upsert: true });
+            if (!e2) { sp2 = jpgPath; fname = heicNameToJpg(fname); size = c.jpeg.length; }
+          } else console.warn(`[upload] HEIC convert failed for ${fname}: ${c.reason}`);
+        }
+      }
       const dId = b?.doc_id ? String(b.doc_id) : null;
       let rec: any = null;
       if (dId) {
         const { data } = await supabaseAdmin.from("loan_documents").update({
-          status: "received", storage_path: sp, file_name: fname, size_bytes: size,
+          status: "received", storage_path: sp2, file_name: fname, size_bytes: size,
           uploaded_by: "lo", updated_at: new Date().toISOString(),
         }).eq("id", dId).eq("loan_file_id", id).select().single();
         rec = data;
@@ -45,7 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const { data } = await supabaseAdmin.from("loan_documents").insert([{
           loan_file_id: file.id, name: (b?.name ? String(b.name).slice(0, 160) : null) || fname,
           category: "Added by LO", required: false, status: "received",
-          storage_path: sp, file_name: fname, size_bytes: size, uploaded_by: "lo",
+          storage_path: sp2, file_name: fname, size_bytes: size, uploaded_by: "lo",
         }]).select().single();
         rec = data;
       }
@@ -66,28 +84,43 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const safeName = upload.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
     if (!ALLOWED.test(safeName)) return NextResponse.json({ error: "Unsupported file type." }, { status: 400 });
 
-    const path = `${file.id}/${Date.now()}-${safeName}`;
-    const buf = Buffer.from(await upload.arrayBuffer());
+    let storeName = safeName;
+    let buf: Buffer = Buffer.from(await upload.arrayBuffer());
+    // HEIC is unviewable in every browser but Safari — convert on the way in so the file is
+    // readable forever, rather than converting on every view. Keeps the ORIGINAL alongside.
+    let heicOriginal: Buffer | null = null;
+    if (isHeic(safeName, buf)) {
+      const c = await heicToJpeg(buf);
+      if (c.ok) { heicOriginal = buf; buf = c.jpeg; storeName = heicNameToJpg(safeName); }
+      else console.warn(`[upload] HEIC convert failed for ${safeName}: ${c.reason} — storing the original`);
+    }
+    const path = `${file.id}/${Date.now()}-${storeName}`;
     // SECURITY: derive stored MIME from the validated extension, never the client type.
-    const _ext = safeName.toLowerCase().split(".").pop() || "";
+    const _ext = storeName.toLowerCase().split(".").pop() || "";
     const _CT: Record<string, string> = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", heic: "image/heic", heif: "image/heic", tif: "image/tiff", tiff: "image/tiff" };
     const { error: upErr } = await supabaseAdmin.storage.from(BUCKET).upload(path, buf, {
       contentType: _CT[_ext] || "application/octet-stream", upsert: false,
     });
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+    // Keep the untouched capture next to the JPEG: never destroy a borrower's original.
+    if (heicOriginal) {
+      await supabaseAdmin.storage.from(BUCKET).upload(`${path}.original.heic`, heicOriginal, {
+        contentType: "image/heic", upsert: false,
+      }).catch(() => {});
+    }
 
     let doc: any = null;
     if (docId) {
       const { data } = await supabaseAdmin.from("loan_documents").update({
-        status: "received", storage_path: path, file_name: safeName, size_bytes: upload.size,
+        status: "received", storage_path: path, file_name: storeName, size_bytes: buf.length,
         uploaded_by: "lo", updated_at: new Date().toISOString(),
       }).eq("id", docId).eq("loan_file_id", id).select().single();
       doc = data;
     }
     if (!doc) {
       const { data } = await supabaseAdmin.from("loan_documents").insert([{
-        loan_file_id: file.id, name: nameOverride || safeName, category: "Added by LO", required: false,
-        status: "received", storage_path: path, file_name: safeName, size_bytes: upload.size, uploaded_by: "lo",
+        loan_file_id: file.id, name: nameOverride || storeName, category: "Added by LO", required: false,
+        status: "received", storage_path: path, file_name: storeName, size_bytes: buf.length, uploaded_by: "lo",
       }]).select().single();
       doc = data;
     }

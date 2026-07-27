@@ -6,6 +6,7 @@ import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { maybeAdvanceStage, resolvePortalToken, promoteLeadToLoanFile } from "@/lib/los";
+import { isHeic, heicToJpeg, heicNameToJpg } from "@/lib/heic";
 import { advanceLeadStage } from "@/lib/leadStage";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       if (!obj?.length) return NextResponse.json({ error: "upload did not complete — please try again" }, { status: 400 });
       directName = String(b?.file_name || directPath.split("/").pop() || "document").slice(0, 120);
       directSize = Number(b?.size_bytes) || obj[0]?.metadata?.size || 0;
+      // Phone photos are HEIC and usually large enough to take this signed-URL path, so this
+      // is where most borrower captures actually arrive. Convert in place so the LO can see it.
+      if (isHeic(directName, null)) {
+        const { data: dl } = await supabaseAdmin.storage.from(BUCKET).download(directPath);
+        if (dl) {
+          const c = await heicToJpeg(Buffer.from(await dl.arrayBuffer()));
+          if (c.ok) {
+            const jpgPath = directPath.replace(/\.(heic|heif)$/i, "") + ".jpg";
+            const { error: e2 } = await supabaseAdmin.storage.from(BUCKET)
+              .upload(jpgPath, c.jpeg, { contentType: "image/jpeg", upsert: true });
+            if (!e2) { directPath = jpgPath; directName = heicNameToJpg(directName); directSize = c.jpeg.length; }
+          } else console.warn(`[portal-upload] HEIC convert failed for ${directName}: ${c.reason}`);
+        }
+      }
       docId = b?.doc_id ? String(b.doc_id) : null;
     } else {
       form = await req.formData();
@@ -67,20 +82,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     }
     const safeName = isDirect ? directName : upload.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
     if (!ALLOWED.test(safeName)) return NextResponse.json({ error: "Unsupported file type." }, { status: 400 });
-    const uploadSize = isDirect ? directSize : upload.size;
-
     const stamp = Date.now();
-    const path = isDirect ? directPath! : `${file.id}/${stamp}-${safeName}`;
-    const buf = isDirect ? null : Buffer.from(await upload.arrayBuffer());
+    // Read the bytes BEFORE deciding the stored name: a HEIC becomes a JPEG, which changes
+    // the filename, the MIME type and the size that go on the document row.
+    const buf: Buffer | null = isDirect ? null : Buffer.from(await upload.arrayBuffer());
+    let storeName = safeName;
+    let heicOriginal: Buffer | null = null;
+    let convertedBuf: Buffer | null = null;
+    if (!isDirect && buf && isHeic(safeName, buf)) {
+      const c = await heicToJpeg(buf);
+      if (c.ok) { heicOriginal = buf; convertedBuf = c.jpeg; storeName = heicNameToJpg(safeName); }
+      else console.warn(`[portal-upload] HEIC convert failed for ${safeName}: ${c.reason} — storing the original`);
+    }
+    const uploadSize = isDirect ? directSize : (convertedBuf?.length ?? upload.size);
+    const path = isDirect ? directPath! : `${file.id}/${stamp}-${storeName}`;
     // SECURITY: never persist the client-supplied MIME type — derive it from the
     // validated extension so a spoofed text/html type can't later be served inline.
-    const _ext = safeName.toLowerCase().split(".").pop() || "";
+    const _ext = storeName.toLowerCase().split(".").pop() || "";
     const _CT: Record<string, string> = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", heic: "image/heic", heif: "image/heic", tif: "image/tiff", tiff: "image/tiff" };
     if (!isDirect) {
-      const { error: upErr } = await supabaseAdmin.storage.from(BUCKET).upload(path, buf!, {
-        contentType: _CT[_ext] || "application/octet-stream", upsert: false,
+      const { error: upErr } = await supabaseAdmin.storage.from(BUCKET).upload(path, convertedBuf ?? buf!, {
+        contentType: convertedBuf ? "image/jpeg" : (_CT[_ext] || "application/octet-stream"), upsert: false,
       });
       if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+      if (heicOriginal) {
+        await supabaseAdmin.storage.from(BUCKET).upload(`${path}.original.heic`, heicOriginal, {
+          contentType: "image/heic", upsert: false,
+        }).catch(() => {});
+      }
     }
 
     let doc;
@@ -91,7 +120,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       if (reqRow && !alreadySatisfied) {
         // First file for this request (or replacing a rejected/needed one) → fill the request row.
         const { data } = await supabaseAdmin.from("loan_documents").update({
-          status: "received", storage_path: path, file_name: safeName, size_bytes: uploadSize,
+          status: "received", storage_path: path, file_name: storeName, size_bytes: uploadSize,
           uploaded_by: "borrower", updated_at: new Date().toISOString(),
         }).eq("id", docId).eq("loan_file_id", file.id).select().single();
         doc = data;
@@ -103,7 +132,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         // never re-blocks completion. This is how a borrower attaches multiple docs to one request.
         const { data } = await supabaseAdmin.from("loan_documents").insert([{
           loan_file_id: file.id, name: `${reqRow.name} — additional`, category: reqRow.category || "Additional",
-          required: false, status: "received", storage_path: path, file_name: safeName, size_bytes: uploadSize,
+          required: false, status: "received", storage_path: path, file_name: storeName, size_bytes: uploadSize,
           uploaded_by: "borrower", notes: `Additional file for: ${reqRow.name}`,
         }]).select().single();
         doc = data;
@@ -124,7 +153,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       } else {
         const { data } = await supabaseAdmin.from("loan_documents").insert([{
           loan_file_id: file.id, name: safeName, category: "Additional", required: false,
-          status: "received", storage_path: path, file_name: safeName, size_bytes: uploadSize, uploaded_by: "borrower",
+          status: "received", storage_path: path, file_name: storeName, size_bytes: uploadSize, uploaded_by: "borrower",
         }]).select().single();
         doc = data;
       }
@@ -132,7 +161,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
     await logActivity({
       entity_type: "document", entity_id: doc?.id, loan_file_id: file.id, lead_id: file.lead_id,
-      actor: "borrower", action: "doc.uploaded", detail: { name: doc?.name || safeName, size: uploadSize },
+      actor: "borrower", action: "doc.uploaded", detail: { name: doc?.name || storeName, size: uploadSize },
     });
 
     // THE LOS GATE: a real document upload is what makes this a real application.
