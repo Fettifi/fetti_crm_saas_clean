@@ -390,11 +390,26 @@ function ScenarioDesk() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       const j = await r.json();
-      if (r.ok) { await loadScenarios(); setSelectedId(j.scenario.id); setFlash("Saved."); setTimeout(() => setFlash(null), 1500); }
-      else setErr(j.error || "Save failed.");
-    } catch (e: any) { setErr(e?.message || "Save failed."); }
+      if (r.ok) { await loadScenarios(); setSelectedId(j.scenario.id); setFlash("Saved."); setTimeout(() => setFlash(null), 1500); return true; }
+      setErr(j.error || "Save failed."); return false;
+    } catch (e: any) { setErr(e?.message || "Save failed."); return false; }
     finally { setSaving(false); }
   }, [draft, loadScenarios]);
+
+  // The PDF is rendered SERVER-side from the SAVED scenario, while the editor works on a
+  // separate `draft` copy. A plain link to the PDF therefore printed whatever was last
+  // saved and silently omitted everything on screen — reported 2026-07-27 as the PDF "not
+  // capturing the right information". So: always persist the draft first, then open.
+  // The tab is opened SYNCHRONOUSLY on the click (before any await) or the browser's popup
+  // blocker kills it; it is pointed at the PDF only once the save has actually landed.
+  const openPdf = useCallback(async () => {
+    if (!draft) return;
+    const tab = window.open("", "_blank");
+    const ok = await saveScenario();
+    if (!ok) { tab?.close(); return; }          // never print a stale PDF after a failed save
+    const url = `/api/scenarios/${draft.id}/pdf`;
+    if (tab) tab.location.href = url; else window.location.href = url;   // popup blocked → same tab
+  }, [draft, saveScenario]);
 
   const deleteScenario = useCallback(async (id: string) => {
     setBusyAction("delete");
@@ -617,9 +632,9 @@ function ScenarioDesk() {
                     <div className="text-lg font-semibold truncate">{draft?.borrower_name || "Unnamed borrower"}</div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <a href={`/api/scenarios/${selected.id}/pdf`} target="_blank" rel="noreferrer" className="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                    <button type="button" onClick={openPdf} disabled={saving} title="Saves your edits, then opens the PDF" className="text-sm bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                       <Download className="w-4 h-4" /> PDF
-                    </a>
+                    </button>
                     <button type="button" onClick={saveScenario} disabled={saving} className="text-sm bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                       {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
                     </button>
