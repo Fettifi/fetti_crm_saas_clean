@@ -39,6 +39,12 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [viewer, setViewer] = useState<{ url: string; name: string; isImage?: boolean } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [docBusy, setDocBusy] = useState<string | null>(null);
+  // Working notes — what the LO types while on the phone. Debounced autosave so it never
+  // needs a Save click, and the saved state is always visible so nobody wonders.
+  const [notes, setNotes] = useState("");
+  const [notesState, setNotesState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const notesTimer = useRef<any>(null);
+  const notesLoaded = useRef(false);
   const [rejectTarget, setRejectTarget] = useState<{ id: string; name: string } | null>(null);
   const [rejectNote, setRejectNote] = useState("");
   // Combine PDFs: pick several uploaded docs (e.g. a bond that came in as separate scans)
@@ -152,6 +158,29 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     try { const sr = await fetch(`/api/los/screen?file=${id}`); if (sr.ok) { const sj = await sr.json(); if (sj.screen) setScreen(sj.screen); } } catch {}
   }, [id]);
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!id) return;
+    fetch(`/api/los/files/${id}/notes`).then((r) => (r.ok ? r.json() : null)).then((j) => {
+      if (j && typeof j.notes === "string") setNotes(j.notes);
+      notesLoaded.current = true;          // only autosave AFTER the first load, or an empty
+    }).catch(() => { notesLoaded.current = true; });  // initial render would wipe real notes
+  }, [id]);
+
+  function onNotesChange(v: string) {
+    setNotes(v);
+    if (!notesLoaded.current) return;
+    setNotesState("saving");
+    if (notesTimer.current) clearTimeout(notesTimer.current);
+    notesTimer.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/los/files/${id}/notes`, {
+          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notes: v }),
+        });
+        setNotesState(r.ok ? "saved" : "error");
+      } catch { setNotesState("error"); }
+    }, 700);
+  }
 
   async function patchFile(patch: any) {
     setSaving(true);
@@ -412,6 +441,26 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                 className={`text-xs px-3 py-1.5 rounded-full ${file.stage === s ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 hover:bg-slate-700 text-slate-300"}`}>{s}</button>
             ))}
           </div>
+        </div>
+
+        {/* Working notes — internal only; never shown to the borrower or in any PDF. */}
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Notes</div>
+            <div className="text-[11px]">
+              {notesState === "saving" && <span className="text-slate-500">Saving…</span>}
+              {notesState === "saved" && <span className="text-emerald-400">Saved</span>}
+              {notesState === "error" && <span className="text-red-400">Not saved — check your connection</span>}
+            </div>
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => onNotesChange(e.target.value)}
+            rows={6}
+            placeholder="Notes from your calls with the borrower — what they said, what you promised, what to chase next. Saves as you type."
+            className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-emerald-700 resize-y leading-relaxed"
+          />
+          <div className="mt-1.5 text-[11px] text-slate-600">Internal only — the borrower never sees these, and they stay out of every generated document.</div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
