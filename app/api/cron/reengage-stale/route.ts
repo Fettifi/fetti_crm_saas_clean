@@ -116,7 +116,11 @@ async function handle(req: NextRequest) {
   const auth = req.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const dry = req.nextUrl.searchParams.get("dry") === "1";
-  await recordAttempt("reengage-stale");
+  // Only stamp an ATTEMPT for a real invocation. A ?dry=1 preview does no work and records
+  // no heartbeat, so stamping the attempt made the doctor read "fired but never completed"
+  // — i.e. STALLED — and report the whole system down until the next live run. A preview is
+  // not an invocation. (Found by the doctor itself, 2026-07-26, crying wolf over my own audit.)
+  if (!dry) await recordAttempt("reengage-stale");
   try {
     const out = await run(dry);
     if (!dry) await recordHeartbeat("reengage-stale");

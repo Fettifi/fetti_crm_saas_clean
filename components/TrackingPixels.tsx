@@ -8,9 +8,11 @@ import Script from "next/script";
 import { useEffect, useState } from "react";
 import { getConsent } from "@/lib/consent";
 
-const META = process.env.NEXT_PUBLIC_META_PIXEL_ID;
-const TIKTOK = process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID;
-const GADS = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID; // e.g. AW-XXXXXXXXX
+// Build-time ids. These stay the source of truth for anything already live — see the
+// precedence note in app/api/tracking/ids/route.ts.
+const ENV_META = process.env.NEXT_PUBLIC_META_PIXEL_ID;
+const ENV_TIKTOK = process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID;
+const ENV_GADS = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID; // e.g. AW-XXXXXXXXX
 
 export default function TrackingPixels() {
   // Advertising/analytics pixels load ONLY after the visitor consents to "all"
@@ -22,6 +24,26 @@ export default function TrackingPixels() {
     window.addEventListener("fetti-consent", sync);
     return () => window.removeEventListener("fetti-consent", sync);
   }, []);
+
+  // A pixel id can also be supplied at RUNTIME (app_settings), so switching one on no longer
+  // needs a Vercel env var and a redeploy. Build-time ids win; this only fills the gaps —
+  // which means the already-live Meta and Google pixels are completely unaffected. Fetched
+  // only after consent, so a visitor who declines triggers no extra request either.
+  const [ids, setIds] = useState<{ meta?: string | null; tiktok?: string | null; gads?: string | null }>({});
+  useEffect(() => {
+    if (!allowed) return;
+    let off = false;
+    fetch("/api/tracking/ids")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (!off && j) setIds(j); })
+      .catch(() => { /* fall back to the build-time ids */ });
+    return () => { off = true; };
+  }, [allowed]);
+
+  const META = ENV_META || ids.meta || undefined;
+  const TIKTOK = ENV_TIKTOK || ids.tiktok || undefined;
+  const GADS = ENV_GADS || ids.gads || undefined;
+
   if (!allowed) return null;
   return (
     <>

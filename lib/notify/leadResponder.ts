@@ -126,6 +126,12 @@ async function smsLead(l: LeadContact, body: string) {
     body: params.toString(),
   });
   const j = await res.json().catch(() => ({} as any));
+  // Mirror of the 21610 handling in lib/comms sendSms: this path builds its own Twilio
+  // request, so without this the automated drip would never learn about a carrier opt-out.
+  if (!res.ok && String(j?.code) === "21610") {
+    try { const { recordCarrierOptOut } = await import("@/lib/comms"); await recordCarrierOptOut(to); } catch { /* best effort */ }
+    return { ok: false as boolean, id: undefined as string | undefined, optedOut: true };
+  }
   return { ok: res.ok, id: j?.sid as string | undefined };
 }
 

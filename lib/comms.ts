@@ -63,6 +63,44 @@ function normalizePhone(p?: string | null): string | null {
   return d.length === 10 ? `+1${d}` : `+${d}`;
 }
 
+/**
+ * Twilio error 21610 means the CARRIER-level opt-out list has this number: the recipient
+ * sent STOP to our Twilio number at some point, Twilio recorded it, and Twilio refuses the
+ * send. Discovered 2026-07-26: our own DB did NOT know, so the engine kept queueing texts
+ * to an opted-out person indefinitely, with only Twilio's suppression standing between us
+ * and a TCPA violation. Any provider change, or one gap in their filter, and we would send.
+ *
+ * So a 21610 now writes the opt-out back into OUR record, by phone, for every lead holding
+ * that number. The two suppression lists converge instead of silently diverging.
+ */
+export async function recordCarrierOptOut(phone: string, source = "twilio_21610"): Promise<number> {
+  const digits = String(phone || "").replace(/\D/g, "").slice(-10);
+  if (digits.length !== 10) return 0;
+  try {
+    const { data: leads } = await supabaseAdmin.from("leads").select("id, phone, raw, nurture_paused");
+    const hits = (leads || []).filter((l: any) => String(l.phone || "").replace(/\D/g, "").slice(-10) === digits);
+    let n = 0;
+    for (const l of hits as any[]) {
+      const raw = l.raw && typeof l.raw === "object" ? { ...l.raw } : {};
+      if (raw.sms_optout_at && l.nurture_paused) continue;   // already suppressed
+      raw.sms_optout_at = raw.sms_optout_at || new Date().toISOString();
+      raw.sms_optout_source = source;
+      raw.sms_consent = false;
+      await supabaseAdmin.from("leads").update({ raw, nurture_paused: true }).eq("id", l.id);
+      await logActivity({
+        entity_type: "lead", entity_id: l.id, lead_id: l.id, actor: "system",
+        action: "sms.optout_synced", detail: { source, note: "carrier reported this number as opted out; suppressed locally" },
+      }).catch(() => {});
+      n++;
+    }
+    if (n) console.warn(`[comms] carrier opt-out synced for ${digits} across ${n} lead(s)`);
+    return n;
+  } catch (e: any) {
+    console.warn("[comms] recordCarrierOptOut failed:", e?.message);
+    return 0;
+  }
+}
+
 /** Send an SMS via Twilio. Returns the message SID for status correlation. Never throws. */
 export async function sendSms(
   to: string,
@@ -102,6 +140,11 @@ export async function sendSms(
     });
     const j = await res.json().catch(() => ({}));
     if (res.ok && j?.sid) return { ok: true, sid: String(j.sid), detail: "sent" };
+    // 21610 = carrier-level opt-out. Write it back to our own record so we stop trying.
+    if (String(j?.code) === "21610") {
+      await recordCarrierOptOut(toNorm);
+      return { ok: false, detail: "recipient has opted out (carrier suppression) — suppressed locally too" };
+    }
     return { ok: false, detail: j?.message || `HTTP ${res.status}` };
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : "error" };
