@@ -251,26 +251,66 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
     // that HAS current evidence (stub/VOE) is the SAME job's history — merge it in so the W-2
     // seasons the variable-income average instead of spawning a phantom "prior employer" flag
     // that invites double-counting (Glover: NVIDIA counted current AND flagged prior twice).
-    // Case-number streams (IHSS) keep their distinct identity and never merge; streams that
-    // EACH have current evidence stay separate (genuinely concurrent same-name jobs survive).
+    // Case-number streams (IHSS) keep their distinct identity and never merge.
+    //
+    // REVISED 2026-07-27 (Asia Dearman): this used to merge only a STUB-LESS stream into a
+    // stub-bearing one, deliberately leaving two stub-bearing streams apart so "genuinely
+    // concurrent same-name jobs" survived. That was backwards. Three pay stubs from ONE
+    // employer are three PAY PERIODS, not three jobs — and because each landed in its own
+    // stream the engine counted her single LACMTA salary THREE times ($8,644 + $7,464 +
+    // $7,464 = $23,572/mo) and even flagged her as holding a second concurrent job with
+    // herself. A second genuinely-separate role at the SAME employer is vanishingly rare and
+    // would share one payroll and one W-2 anyway, whereas multiple stubs per employer is the
+    // normal case on every file. So ALL streams sharing an employer stem now merge; only a
+    // distinct case number (IHSS recipients) keeps them apart.
     const empStem = (s?: string | null): string => {
       const raw = String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
       const stripped = raw.replace(/\b(incorporated|inc|corporation|corp|company|co|llc|llp|lp|ltd|the|of|and|group|holdings|enterprises|executive|services|service|staffing|solutions|payroll|dba|na|usa)\b/g, " ").replace(/\s+/g, " ").trim();
-      return (stripped || raw).replace(/ /g, "");
+      // Fall back to the FULL name when stripping leaves too little to identify an employer:
+      // "ABC Services" reduces to "abc" (3 chars), which the length guard below would skip,
+      // so two stubs from one small employer would never merge. "abcservices" is both long
+      // enough and more specific.
+      const out = (stripped || raw).replace(/ /g, "");
+      return out.length >= 4 ? out : raw.replace(/ /g, "");
     };
-    const hasCaseId = (k: string, sf: DocFact[]) => /case#\d/i.test(k) || sf.some((f) => /case\s*#?\s*\d{3,}/i.test(`${f.streamId || ""} ${f.notes || ""}`));
+    // A stream's DISTINGUISHING IDENTITY: an IHSS-style payer covers several genuinely
+    // separate assignments under ONE employer name, told apart by a case number or a named
+    // recipient. Two such streams must never merge (that would silently drop a real income
+    // source), while ordinary stubs — which carry no such marker — must.
+    const streamIdentity = (k: string, sf: DocFact[]): string => {
+      const toks: string[] = [];
+      for (const f of [...sf]) {
+        const blob = `${f.streamId || ""} ${f.notes || ""}`;
+        for (const m of blob.matchAll(/case\s*#?\s*(\d{3,})/gi)) toks.push("c" + m[1]);
+        const rec = blob.match(/recipient[:\s]+([a-z][a-z.\s]{2,})/i);
+        if (rec) toks.push("r" + rec[1].toLowerCase().replace(/[^a-z]/g, "").slice(0, 14));
+      }
+      for (const m of k.matchAll(/case\s*#?\s*(\d{3,})/gi)) toks.push("c" + m[1]);
+      return [...new Set(toks)].sort().join("|");
+    };
     const hasCurrentEvidence = (sf: DocFact[]) => sf.some((f) => f.docType === "paystub" || f.docType === "voe");
-    const anchorStems: { k: string; stem: string }[] = [];
-    for (const [k, sf] of wageStreams) if (hasCurrentEvidence(sf) && !hasCaseId(k, sf)) {
-      const stem = empStem(sf.find((f) => f.employerOrPayer)?.employerOrPayer);
-      if (stem.length >= 4) anchorStems.push({ k, stem });
-    }
-    for (const [k, sf] of [...wageStreams]) {
-      if (hasCurrentEvidence(sf) || hasCaseId(k, sf)) continue;   // only stub-less HISTORY merges
+    // One canonical stream per employer stem. The first stream seen for a stem wins as the
+    // anchor; prefer one with current evidence so the merged stream keeps its stub.
+    const byStem = new Map<string, string>();               // employer stem -> canonical stream key
+    const ordered = [...wageStreams.keys()].sort((a, z) => {
+      const ea = hasCurrentEvidence(wageStreams.get(a)!) ? 0 : 1;
+      const ez = hasCurrentEvidence(wageStreams.get(z)!) ? 0 : 1;
+      return ea - ez || a.localeCompare(z);                  // stub-bearing first, then stable
+    });
+    for (const k of ordered) {
+      const sf = wageStreams.get(k);
+      if (!sf) continue;
       const stem = empStem(sf.find((f) => f.employerOrPayer)?.employerOrPayer);
       if (stem.length < 4) continue;
-      const hit = anchorStems.find((a) => a.stem === stem || a.stem.startsWith(stem) || stem.startsWith(a.stem));
-      if (hit && hit.k !== k) { wageStreams.get(hit.k)!.push(...sf); wageStreams.delete(k); }
+      // Key on employer + identity, so IHSS|recipient-John and IHSS|recipient-Ophelia stay
+      // apart while three plain LACMTA stubs collapse into one.
+      const stem2 = stem + "\u0000" + streamIdentity(k, sf);
+      const prior = [...byStem.entries()].find(([st]) => st === stem2);
+      if (!prior) { byStem.set(stem2, k); continue; }
+      const target = prior[1];
+      if (target === k) continue;
+      wageStreams.get(target)!.push(...sf);                  // same employer ⇒ same job
+      wageStreams.delete(k);
     }
     // ── CURRENT-EMPLOYMENT CLASSIFICATION (per borrower). Two windows: a stream is
     //    CURRENT/concurrent (summed) only with a pay stub within ~3 months of THIS borrower's
