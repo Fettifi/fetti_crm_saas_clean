@@ -2,12 +2,17 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
+import { allowedStates, stateLabel, NATIONWIDE_KEY } from "@/lib/lendingMatrix";
 
 export const metadata = {
   title: "Loan Programs | Fetti Financial Services",
   description:
     "Explore Fetti Financial Services LLC loan programs. Home purchase & refinance, DSCR & rental, fix & flip, hard money, bridge, commercial real estate, SBA and business loans.",
-  alternates: { canonical: "https://app.fettifi.com/lending" },
+  // fettifi.com — NOT app.fettifi.com. This said app.* and was the only page on the site
+  // that did, which told Google the real version of the hub lives on the application
+  // subdomain and it should not index this one. The hub is the sole internal route to all
+  // 84 program pages, so pointing it off-domain suppressed the whole SEO tree beneath it.
+  alternates: { canonical: "https://fettifi.com/lending" },
 };
 
 // Index of the owned-channel lending pages. Investment & business programs are
@@ -49,6 +54,13 @@ const GROUPS: { title: string; tag: string; state: string; products: { slug: str
   },
 ];
 
+// The state links to list under a product card: every state that product has a page for,
+// minus the one the card itself already points at (nationwide for investment/business,
+// Florida for the licensed consumer products) so the same URL isn't linked twice.
+function statesFor(slug: string, cardState: string): string[] {
+  return allowedStates(slug).filter((s) => s !== cardState && s !== NATIONWIDE_KEY);
+}
+
 export default function LendingIndex() {
   return (
     <div className="min-h-screen bg-white text-slate-900">
@@ -72,11 +84,27 @@ export default function LendingIndex() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {g.products.map((p) => (
-                <Link key={p.slug} href={`/lending/${p.slug}-${g.state}`}
-                  className="group bg-white border border-slate-200 shadow-sm hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-600/5 hover:-translate-y-0.5 rounded-2xl p-5 transition">
-                  <h3 className="font-bold flex items-center justify-between text-slate-900">{p.label} <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" /></h3>
-                  <p className="text-slate-500 mt-1 text-sm">{p.blurb}</p>
-                </Link>
+                <div key={p.slug}
+                  className="group bg-white border border-slate-200 shadow-sm hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-600/5 rounded-2xl p-5 transition flex flex-col">
+                  <Link href={`/lending/${p.slug}-${g.state}`} className="block">
+                    <h3 className="font-bold flex items-center justify-between text-slate-900">{p.label} <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" /></h3>
+                    <p className="text-slate-500 mt-1 text-sm">{p.blurb}</p>
+                  </Link>
+                  {/* Per-state links. Without these, only the 12 cards above were reachable
+                      and the other 72 program pages existed solely in the sitemap — Google
+                      logged all 26 it had found as "Discovered - currently not indexed",
+                      because a URL with no internal link pointing at it reads as a page the
+                      site itself does not consider worth linking. These also carry the
+                      state name in the anchor text, which is the term each page targets. */}
+                  <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-x-2 gap-y-1">
+                    {statesFor(p.slug, g.state).map((s) => (
+                      <Link key={s} href={`/lending/${p.slug}-${s}`}
+                        className="text-[11px] text-slate-500 hover:text-emerald-600 hover:underline transition">
+                        {stateLabel(s)}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>

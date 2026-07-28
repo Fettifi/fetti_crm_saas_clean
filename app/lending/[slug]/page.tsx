@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import HeroCapture from "@/components/HeroCapture";
 import { SocialProofWall } from "@/components/SocialProofWall";
+import { STATES, NATIONWIDE_KEY, CONSUMER_STATES, PRODUCT_SCOPE, stateLabel, allowedStates } from "@/lib/lendingMatrix";
 
 // ISR so newly approved wins / fresh Google reviews appear without a redeploy.
 export const revalidate = 600;
@@ -195,26 +196,19 @@ const PRODUCTS: Record<string, Product> = {
   },
 };
 
-const STATES: Record<string, string> = {
-  florida: "Florida", california: "California", texas: "Texas", michigan: "Michigan",
-  ohio: "Ohio", arizona: "Arizona", georgia: "Georgia", nevada: "Nevada",
-};
-// Nationwide pseudo-"state" for investment & business programs, which we offer in
-// all 50 states. Gives each an accurate "…in the U.S." landing page so the lending
-// hub links nationwide products here instead of stamping a single state on them.
-const NATIONWIDE_KEY = "usa";
-const NATIONWIDE_LABEL = "the U.S.";
-const CONSUMER_STATES = ["florida", "michigan", "california"];
-
-function stateLabel(key: string): string | null {
-  if (key === NATIONWIDE_KEY) return NATIONWIDE_LABEL;
-  return STATES[key] ?? null;
-}
-
-function allowedStates(product: string): string[] {
-  return PRODUCTS[product]?.scope === "consumer"
-    ? CONSUMER_STATES
-    : [NATIONWIDE_KEY, ...Object.keys(STATES)];
+// The product x state footprint now lives in lib/lendingMatrix.ts so the sitemap and the
+// lending hub build the SAME set of URLs this router will actually serve. PRODUCTS below
+// still owns each page's content; the matrix owns only which pages exist.
+// This assertion is the guard against the two drifting apart: a product added here without
+// a scope in the matrix would be absent from the sitemap and unlinked from the hub, i.e.
+// invisible to Google, and a scope with no product here would put a 404 in the sitemap.
+if (process.env.NODE_ENV !== "production") {
+  const a = Object.keys(PRODUCTS).sort().join(",");
+  const b = Object.keys(PRODUCT_SCOPE).sort().join(",");
+  if (a !== b) throw new Error(`lending matrix drift: PRODUCTS [${a}] != PRODUCT_SCOPE [${b}]`);
+  for (const k of Object.keys(PRODUCTS)) {
+    if (PRODUCTS[k].scope !== PRODUCT_SCOPE[k]) throw new Error(`lending scope drift on "${k}": ${PRODUCTS[k].scope} != ${PRODUCT_SCOPE[k]}`);
+  }
 }
 
 function parse(slug: string) {
