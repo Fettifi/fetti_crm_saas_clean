@@ -104,7 +104,8 @@ export function computeRentalIncome(
   const borrower: 1 | 2 = opts.borrower || 1;
   const today = ymd(opts.today) || new Date().toISOString().slice(0, 10);
   const rentals = (facts || []).filter(Boolean).filter(isRentalDoc);
-  const units = new Map<string, RentUnit & { expired?: boolean; m2m?: boolean; str?: boolean; hasLease?: boolean }>();
+  type Acc = RentUnit & { expired?: boolean; m2m?: boolean; str?: boolean; hasLease?: boolean; superseded?: number; leaseCandidates?: { rent: number; start: string | null; end: string | null; m2m: boolean }[] };
+  const units = new Map<string, Acc>();
   const flags: IncomeFlag[] = [];
 
   for (const f of rentals) {
@@ -120,24 +121,55 @@ export function computeRentalIncome(
     } else {
       const lr = monthlyRent(f.leaseMonthlyRent, f.leaseRentFrequency);
       if (lr != null && lr > 0) {
-        // Two leases on one unit (renewal + original): the CURRENT one governs. Without dates
-        // to tell them apart, keep the lower rather than guessing upward.
-        cur.leaseRent = cur.leaseRent != null ? Math.min(cur.leaseRent, lr) : lr;
+        // Collect every lease figure for this unit; which one governs is decided below, once
+        // all of them are known. Resolving pairwise here is what made the Jackson Metoyer
+        // file qualify 4235 8th Ave at its 2021 rent of $2,750 while a 2026 rent-increase
+        // notice for $2,954 sat in the same folder.
+        (cur.leaseCandidates ||= []).push({ rent: lr, start: ymd(f.leaseStartDate), end: ymd(f.leaseEndDate), m2m: !!f.isMonthToMonth });
         cur.hasLease = true;
       }
       if (f.isShortTermRental) {
         const t12 = num(f.trailing12GrossRent);
         if (t12 != null && t12 > 0) { cur.str = true; cur.leaseRent = (t12 / 12) * 0.8; cur.hasLease = true; }
       }
-      if (f.isMonthToMonth) cur.m2m = true;
-      const end = ymd(f.leaseEndDate);
-      if (end && end < today && !f.isMonthToMonth) cur.expired = true;
+      // Term status is judged on the GOVERNING lease only (resolved below) — a renewal that
+      // supersedes an expired lease means the unit is NOT expired.
     }
     units.set(key, cur);
   }
 
   const out: RentUnit[] = [];
   for (const u of units.values()) {
+    // WHICH LEASE GOVERNS this unit. A folder routinely holds the original lease, a renewal,
+    // a rent-increase notice, and the same PDF uploaded twice.
+    //   • Dated documents: the LATEST start date wins — a 2026 increase supersedes a 2021
+    //     lease. Same date, different amounts → the higher (an amendment raises rent).
+    //   • Undated documents: no way to order them, so keep the LOWEST and say so. Guessing
+    //     upward on an undated pair would qualify a deal on a rent nobody can evidence.
+    //   • Identical amounts are the same lease uploaded twice — deduped silently.
+    const cands = u.leaseCandidates || [];
+    if (cands.length) {
+      const dated = cands.filter((c) => c.start);
+      let chosen: number;
+      if (dated.length) {
+        const latest = dated.reduce((a, b) => (b.start! > a.start! ? b : a));
+        chosen = Math.max(...dated.filter((c) => c.start === latest.start).map((c) => c.rent));
+      } else {
+        chosen = Math.min(...cands.map((c) => c.rent));
+      }
+      const others = [...new Set(cands.map((c) => c.rent))].filter((r) => r !== chosen);
+      if (others.length) u.superseded = Math.max(...others);
+      if (others.length && !dated.length) {
+        flags.push({ text: `${u.address || "Subject property"}${u.unit ? ` Unit ${u.unit}` : ""}: ${cands.length} lease documents show different rents (${[...new Set(cands.map((c) => money(c.rent)))].join(", ")}) and none states a start date — qualified at the LOWEST. Confirm which lease is current.`, addBackMonthly: 0, borrower });
+      }
+      u.leaseRent = chosen;
+      // Judge the term on the document that actually governs. A rent-increase notice carries
+      // a start date and no end date — that is a month-to-month tenancy, not an expired one.
+      const gov = (dated.length ? dated.filter((c) => c.start === dated.reduce((a, b) => (b.start! > a.start! ? b : a)).start) : cands)
+        .find((c) => c.rent === chosen) || cands[0];
+      if (gov.m2m || !gov.end) u.m2m = true;
+      else if (gov.end < today) u.expired = true;
+    }
     const lease = u.leaseRent ?? null;
     const market = u.marketRent ?? null;
     const label = [u.address || "Subject property", u.unit ? `Unit ${u.unit}` : ""].filter(Boolean).join(" ");
@@ -167,6 +199,9 @@ export function computeRentalIncome(
       continue;
     }
 
+    if (u.superseded != null && u.superseded !== used && source !== "market") {
+      flags.push({ text: `${label}: qualified at ${money(used)} — a second lease document for this unit shows ${money(u.superseded)}. The most recently dated one governs; confirm it is the lease in force.`, addBackMonthly: 0, borrower });
+    }
     if (u.expired) flags.push({ text: `${label}: the lease term has ENDED (holdover / month-to-month). The rent still counts, but programmes that require a current executed lease will ask for a renewal.`, addBackMonthly: 0, borrower });
     else if (u.m2m) flags.push({ text: `${label}: month-to-month tenancy. The rent counts, but confirm the programme allows M2M — some require a 12-month executed lease.`, addBackMonthly: 0, borrower });
 

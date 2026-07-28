@@ -254,7 +254,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (error || !blob) { unreadable.push(name); continue; }
       let mt = (blob as any).type || mediaTypeFor(d.file_name || d.storage_path || "");
       if (!MEDIA.has(mt)) mt = mediaTypeFor(d.file_name || "");
-      if (!MEDIA.has(mt)) { unreadable.push(name); continue; }
+      if (!MEDIA.has(mt)) {
+        // Say WHICH format, or the LO sees "unreadable" on a perfectly good document and has
+        // no idea the fix is a re-save. Kyser Livingston's rent roll is a Word/Excel file:
+        // the vision reader takes PDFs and images only, so its rent never reached the engine.
+        const ext = (d.file_name || d.storage_path || "").toLowerCase().split(".").pop() || "";
+        const office = /^(docx?|xlsx?|pptx?|pages|numbers|csv|txt|rtf)$/.test(ext);
+        unreadable.push(office ? `${name} (.${ext} — save it as a PDF and re-upload; the reader takes PDF and image files)` : name);
+        continue;
+      }
       let buf = Buffer.from(await blob.arrayBuffer());
       const hash = crypto.createHash("sha1").update(buf).digest("hex");
       if (seenHash.has(hash)) continue; // exact same file already included (multi-slot dup) — silently skip

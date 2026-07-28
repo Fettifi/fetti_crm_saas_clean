@@ -127,6 +127,39 @@ console.log("\n── DSCR gross rent ──");
   check("no rental docs → zero, no crash", [r.monthlyGrossRent, r.lines.length, r.flags.length], [0, 0, 0]);
 }
 
+console.log("\n── which lease governs when a unit has several (the real Jackson Metoyer shape) ──");
+{
+  // 4235 8th Ave: a 2021 lease at $2,750 and a 2026 rent-increase notice at $2,954.
+  const r = computeRentalIncome([
+    lease({ propertyAddress: "4235 8th Ave", leaseMonthlyRent: 2750, leaseRentFrequency: "monthly", leaseStartDate: "2021-09-01" }),
+    lease({ propertyAddress: "4235 8TH AVE", leaseMonthlyRent: 2954, leaseRentFrequency: "monthly", leaseStartDate: "2026-03-01" }),
+  ], { mode: "dscr", today: "2026-07-27" });
+  check("2026 rent increase supersedes the 2021 lease", r.monthlyGrossRent, 2954);
+  check("one unit, not two", r.units.length, 1);
+  check("the superseded amount is disclosed", r.flags.some((f) => /2,750/.test(f.text)), true);
+}
+{
+  const r = computeRentalIncome([
+    lease({ propertyAddress: "9 Undated Rd", leaseMonthlyRent: 2000, leaseRentFrequency: "monthly" }),
+    lease({ propertyAddress: "9 Undated Rd", leaseMonthlyRent: 2400, leaseRentFrequency: "monthly" }),
+  ], { mode: "dscr", today: "2026-07-27" });
+  check("undated conflicting leases → the LOWER", r.monthlyGrossRent, 2000);
+  check("undated conflict is flagged", r.flags.some((f) => /none states a start date/i.test(f.text)), true);
+}
+{
+  const r = computeRentalIncome([
+    lease({ propertyAddress: "11 Amend St", leaseMonthlyRent: 1800, leaseRentFrequency: "monthly", leaseStartDate: "2026-01-01" }),
+    lease({ propertyAddress: "11 Amend St", leaseMonthlyRent: 1950, leaseRentFrequency: "monthly", leaseStartDate: "2026-01-01" }),
+  ], { mode: "dscr", today: "2026-07-27" });
+  check("same-date amendment takes the higher", r.monthlyGrossRent, 1950);
+}
+{
+  const same = { propertyAddress: "13 Dup Ave", leaseMonthlyRent: 2100, leaseRentFrequency: "monthly" as const, leaseStartDate: "2025-05-01" };
+  const r = computeRentalIncome([lease(same), lease({ ...same, file: "copy.pdf" })], { mode: "dscr", today: "2026-07-27" });
+  check("identical duplicate upload → no conflict flag", r.flags.some((f) => /second lease document/i.test(f.text)), false);
+  check("identical duplicate upload → single rent", r.monthlyGrossRent, 2100);
+}
+
 console.log("\n── agency 75% rule is HELD, never auto-counted ──");
 {
   const r = computeRentalIncome([lease({ propertyAddress: "2 Rental Ave", leaseMonthlyRent: 2000, leaseRentFrequency: "monthly" })], { mode: "agency", today: "2026-07-27" });
