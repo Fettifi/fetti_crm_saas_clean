@@ -42,6 +42,10 @@ export const CRON_EXPECTED: Record<string, number> = {
   requalify: 26 * 3600,          // daily — rescoring only, no sends
   "shield-sweep": 8 * 3600,      // every 6h + grace
   "reengage-stale": 8 * 86400,   // weekly (Tue) + a day of grace
+  // Stalled-file watchdog (2026-07-29): the pipeline-movement blind spot. Watched from
+  // day one — a watchdog that dies silently is worse than no watchdog, because the
+  // quiet then reads as "no stalled files" instead of "nobody is looking".
+  "stale-files": 26 * 3600,      // daily
 };
 
 // Per-job rows: each cron stamps ONLY its own key, so there is no shared cell to

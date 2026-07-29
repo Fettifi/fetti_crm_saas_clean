@@ -76,6 +76,10 @@
     {
       "path": "/api/cron/reengage-stale",
       "schedule": "0 18 * * 2"
+    },
+    {
+      "path": "/api/cron/stale-files",
+      "schedule": "30 15 * * *"
     }
   ]
 }
