@@ -54,7 +54,7 @@ export default function TermsPage() {
         <p className="mt-2">
           Fetti Financial Services LLC<br />
           5777 W Century Blvd, Suite 1435, Los Angeles, CA 90045<br />
-          Email: info@fettifi.com · Phone: +1 (920) 754-3647
+          Email: info@fettifi.com · Phone: (424) 675-6295
         </p>
 
         <p className="mt-8 text-xs text-gray-500">
