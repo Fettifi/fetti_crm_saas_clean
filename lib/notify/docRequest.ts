@@ -8,6 +8,7 @@
 
 import { logComms } from "@/lib/comms";
 import { senderFrom } from "@/lib/notify/mailFrom";
+import { COMMS_PERSONA } from "@/lib/markPersona";
 
 export type DocRequest = {
   to_name?: string | null;
@@ -63,7 +64,7 @@ async function emailDocRequest(r: DocRequest): Promise<boolean> {
   const j = await res.json().catch(() => ({} as any));
   if (res.ok && r.leadId) {
     const who = (r.to_name || "there").split(" ")[0];
-    const human = `Hey ${who}, it's Mark — to keep your file moving I just need a couple things: ${r.docs.join(", ")}. Easiest is to drop them at your secure link.${r.note ? ` ${r.note}` : ""}`;
+    const human = `Hey ${who}, it's ${COMMS_PERSONA} — to keep your file moving I just need a couple things: ${r.docs.join(", ")}. Easiest is to drop them at your secure link.${r.note ? ` ${r.note}` : ""}`;
     await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "email", direction: "outbound", type: "doc_request", subject, body: human, to: r.to_email, actor: "agent:mark", providerId: j?.id }).catch(() => {});
   }
   return res.ok;

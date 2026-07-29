@@ -10,6 +10,7 @@ import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { cfg } from "@/lib/settings";
 import { sendSms, sendEmail, logComms } from "@/lib/comms";
+import { COMMS_PERSONA } from "@/lib/markPersona";
 
 const APP = (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com").replace(/\/$/, "");
 
@@ -52,9 +53,9 @@ export async function offerConnection(lead: Lead, opts: { trigger: "app" | "docs
     const opener = opts.trigger === "docs"
       ? `${name}, your documents are in — you're moving fast. Let's get you with someone to map the rest.`
       : `${name}, you're officially in motion — nice work finishing your application. I'd love to map your exact path with you.`;
-    const smsBody = `${opener} Want a quick video call, a phone call, or to talk right now? Pick whatever's easiest here: ${link} — Mark at Fetti (Reply STOP to opt out.)`;
+    const smsBody = `${opener} Want a quick video call, a phone call, or to talk right now? Pick whatever's easiest here: ${link} — ${COMMS_PERSONA} at Fetti (Reply STOP to opt out.)`;
     const emailSubject = opts.trigger === "docs" ? "your documents are in — let's connect" : "you're in motion — let's connect";
-    const emailBody = `Hi ${name},\n\n${opener}\n\nI want this to feel like a real conversation, not a form. Pick whatever's easiest and we'll take it from there:\n\n• 📹 Book a quick video call\n• 📞 Schedule a phone call\n• ☎️ Or talk right now\n\nAll three are one tap here: ${link}\n\nTalk soon,\nMark — Fetti Financial Services`;
+    const emailBody = `Hi ${name},\n\n${opener}\n\nI want this to feel like a real conversation, not a form. Pick whatever's easiest and we'll take it from there:\n\n• 📹 Book a quick video call\n• 📞 Schedule a phone call\n• ☎️ Or talk right now\n\nAll three are one tap here: ${link}\n\nTalk soon,\n${COMMS_PERSONA} — Fetti Financial Services`;
 
     const phone = fresh?.phone || lead.phone;
     let sent = false;

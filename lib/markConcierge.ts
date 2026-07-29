@@ -1,10 +1,11 @@
-// Mark — the SMS concierge. Turns one-way nurture drips into REAL two-way
-// conversations: when a lead texts back, Mark (Fetti's compliant spokesperson AI)
+// Frank — the SMS + email concierge. Turns one-way nurture drips into REAL two-way
+// conversations: when a lead texts back, Frank (Fetti's compliant assistant, the name on
+// frank@fettifi.com — see COMMS_PERSONA in lib/markPersona.ts)
 // reads the whole thread + their context and replies like a sharp, helpful person,
 // driving them toward finishing their application. Same persona + hard compliance
 // rules as the website chat (/api/mark), tuned for SMS. Best-effort: never throws,
 // returns ok:false (caller falls back to a human task) if anything goes wrong.
-import { MARK_PERSONA, MARK_CONVERSATION } from "@/lib/markPersona";
+import { COMMS_PERSONA, personaBrief, conversationMode } from "@/lib/markPersona";
 import { claudeChat } from "@/lib/aiFallback";
 import { retrieveKB } from "@/lib/voice/mortgageKB";
 
@@ -42,12 +43,12 @@ function complianceGate(reply: string, ctx: { firstAiReply: boolean; state?: str
     // Safe deferral always offers BOTH paths: finish the secure app, OR book a call.
     const book = ctx.calendlyUrl ? ` Prefer to talk it through? Grab a time with us: ${ctx.calendlyUrl}` : ` I'll have a Fetti specialist follow up too.`;
     return {
-      reply: `It's Mark, Fetti's AI assistant. Your exact numbers depend on your scenario, so I won't quote something off — the fastest way to real options is to finish your secure application (about 2 minutes, no credit pull):${link}${book}`,
+      reply: `It's ${COMMS_PERSONA}, Fetti's AI assistant. Your exact numbers depend on your scenario, so I won't quote something off — the fastest way to real options is to finish your secure application (about 2 minutes, no credit pull):${link}${book}`,
       flagged: true,
     };
   }
   if (ctx.firstAiReply && !/\b(ai assistant|fetti'?s ai|i'?m mark|it'?s mark|a bot)\b/i.test(reply)) {
-    return { reply: `It's Mark, Fetti's AI assistant — ${reply}`, flagged: false };
+    return { reply: `It's ${COMMS_PERSONA}, Fetti's AI assistant — ${reply}`, flagged: false };
   }
   return { reply, flagged: false };
 }
@@ -106,9 +107,11 @@ function systemPrompt(lead: any, fileLink?: string | null, firstAiReply?: boolea
     knownFacts && knownFacts.length ? `THINGS THEY'VE TOLD US in earlier conversations (reference naturally, NEVER re-ask): ${knownFacts.slice(0, 12).join(" | ")}` : "",
   ].filter(Boolean).join(" ");
 
-  return `${MARK_PERSONA}
+  // Frank, not the mascot: this prompt writes borrower SMS and the email auto-reply,
+  // both of which send from frank@fettifi.com.
+  return `${personaBrief(COMMS_PERSONA)}
 
-${MARK_CONVERSATION}
+${conversationMode(COMMS_PERSONA)}
 
 YOU ARE TEXTING (SMS) a lead/borrower of Fetti Financial Services LLC (NMLS #2267023), a NONBANK mortgage lender that funds the deals big banks won't. This is a real back-and-forth text conversation.
 
@@ -128,7 +131,7 @@ PSYCHOLOGY OF THE MOVE (ethical + compliant — how real people actually decide)
 - Honest loss framing only: what waiting actually costs (rates drift daily, DPA program funds go first-come) — NEVER invented scarcity, countdowns, or fake pressure.
 - Social proof only when true ("we work these files every week") — never invented stories or numbers.
 
-DISCLOSURE: You are Mark, Fetti's AI assistant — NOT a human.${firstAiReply ? " Because this is your first reply in this conversation, make clear early and naturally that you're Fetti's AI assistant (e.g. \"It's Mark, Fetti's AI assistant\")." : " If they ask whether you're a bot/human, say plainly you're Fetti's AI assistant."} Any time they want a person, offer to connect them with the team.
+DISCLOSURE: You are ${COMMS_PERSONA}, Fetti's AI assistant — NOT a human.${firstAiReply ? " Because this is your first reply in this conversation, make clear early and naturally that you're Fetti's AI assistant (e.g. \"It's ${COMMS_PERSONA}, Fetti's AI assistant\")." : " If they ask whether you're a bot/human, say plainly you're Fetti's AI assistant."} Any time they want a person, offer to connect them with the team.
 
 REMEMBER: this person came TO US and told us what they're working on — you already know their deal, so act like it. Answer what they actually asked, add one genuinely useful point about THEIR scenario, and keep the momentum: any sign of forward intent ("how do I…", "what's next", "ok", a question about numbers/timing) gets the pre-filled application link or the booking link from CONTEXT as the natural next step. Never re-ask things we know, never ask if they're interested, never open with document demands — but don't bury the next step behind small talk either.
 

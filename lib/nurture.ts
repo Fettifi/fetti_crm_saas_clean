@@ -15,6 +15,7 @@ import { logActivity } from "@/lib/activity";
 import { renderTouch, EMAIL_TOUCHES, STEP_TOUCH, REACTIVATION_KEYS, prettyPurpose } from "@/lib/notify/emailCopy";
 import { magicApplyLink } from "@/lib/magicLink";
 import { setSetting } from "@/lib/settings";
+import { COMMS_PERSONA } from "@/lib/markPersona";
 
 // Record every follow-up that actually goes out, so sends are AUDITABLE in
 // activity_log (the blind spot that let the phantom-status bug send 0 unnoticed).
@@ -47,13 +48,13 @@ const STEPS: { step: number; afterDays: number; msg: (name: string, purpose: str
   // Each message asks ONE genuine, low-friction question that invites a reply — that's
   // what turns a delivered text into a conversation the concierge can work. NOT a one-way
   // "finish your application" nag (real, reachable leads ignored those → ~0 replies).
-  { step: 1, afterDays: 1, msg: (n, p) => `Hey ${n}, it's Mark at Fetti (their AI assistant). You looked into ${p} — quick q so I point you the right way: buying, refinancing, or just seeing what's possible? (Txt STOP to opt out)` },
-  { step: 2, afterDays: 3, msg: (n, p) => `${n}, Mark again — on ${p}, what's the one number you'd want to know first: your rate, your monthly payment, or how much you'd need up front?` },
+  { step: 1, afterDays: 1, msg: (n, p) => `Hey ${n}, it's ${COMMS_PERSONA} at Fetti (their AI assistant). You looked into ${p} — quick q so I point you the right way: buying, refinancing, or just seeing what's possible? (Txt STOP to opt out)` },
+  { step: 2, afterDays: 3, msg: (n, p) => `${n}, ${COMMS_PERSONA} again — on ${p}, what's the one number you'd want to know first: your rate, your monthly payment, or how much you'd need up front?` },
   { step: 3, afterDays: 7, msg: (n, p) => `Hi ${n} — for ${p}, do you have a property + timeline in mind yet, or still early? Either way I can point you in the right direction.` },
-  { step: 4, afterDays: 14, msg: (n, p) => `${n}, it's Mark — anything about ${p} feel unclear or stuck? Tell me the confusing part and I'll break it down plain — no pitch.` },
+  { step: 4, afterDays: 14, msg: (n, p) => `${n}, it's ${COMMS_PERSONA} — anything about ${p} feel unclear or stuck? Tell me the confusing part and I'll break it down plain — no pitch.` },
   { step: 5, afterDays: 30, msg: (n, p) => `Hi ${n} — still thinking about ${p}, or did plans shift? Totally fine either way; just let me know so I'm not bugging you.` },
   { step: 6, afterDays: 60, msg: (n, p) => `${n} — been a couple months since you looked at ${p}. Rates and values move; a deal that didn't pencil then sometimes does now. Want me to take a fresh look?` },
-  { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, last check-in from Mark on ${p}. Door's open anytime — text back with a question and I've got you.` },
+  { step: 7, afterDays: 90, msg: (n, p) => `Hi ${n}, last check-in from ${COMMS_PERSONA} on ${p}. Door's open anytime — text back with a question and I've got you.` },
 ];
 
 // TIER-2 WARM LANE. A Tier-2 lead is genuinely warm (not junk, not fully pre-qualified) —
@@ -71,12 +72,12 @@ const WARM_STEPS = STEPS.map((s, i) => ({ ...s, afterDays: WARM_AFTER_DAYS[i] ??
 // of getting them to finish). A pre-qualified lead ignored 7 "finish the application"
 // nags too. STOP opt-out on every message (TCPA/CAN-SPAM). Same step counter as STEPS.
 const HOT_STEPS: { step: number; afterDays: number; msg: (name: string, purpose: string) => string }[] = [
-  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's Mark at Fetti (I'm their AI — a real advisor's on your file too). Good news on ${p}: you look pre-qualified. Before I pull real numbers — got a property in mind, or still shopping? (Reply STOP to opt out.)` },
-  { step: 2, afterDays: 2, msg: (n, p) => `${n}, Mark again — to get ${p} numbers exact, what matters most to you: the lowest payment, the fastest close, or the least out of pocket? (Reply STOP to opt out.)` },
+  { step: 1, afterDays: 1, msg: (n, p) => `Hi ${n}, it's ${COMMS_PERSONA} at Fetti (I'm their AI — a real advisor's on your file too). Good news on ${p}: you look pre-qualified. Before I pull real numbers — got a property in mind, or still shopping? (Reply STOP to opt out.)` },
+  { step: 2, afterDays: 2, msg: (n, p) => `${n}, ${COMMS_PERSONA} again — to get ${p} numbers exact, what matters most to you: the lowest payment, the fastest close, or the least out of pocket? (Reply STOP to opt out.)` },
   { step: 3, afterDays: 4, msg: (n, p) => `Hi ${n} — what's your rough timeline on ${p}? This month, a few months out, or just exploring? Helps me move at your pace. (Reply STOP to opt out.)` },
-  { step: 4, afterDays: 7, msg: (n, p) => `${n}, Mark — anything holding you up on ${p}? The rate, the down payment, the paperwork? Tell me the sticking point and I'll give you a straight answer. (Reply STOP to opt out.)` },
+  { step: 4, afterDays: 7, msg: (n, p) => `${n}, ${COMMS_PERSONA} — anything holding you up on ${p}? The rate, the down payment, the paperwork? Tell me the sticking point and I'll give you a straight answer. (Reply STOP to opt out.)` },
   { step: 5, afterDays: 12, msg: (n, p) => `Hi ${n} — still want to move on ${p}? If yes, I'll get your options together today. If the timing shifted, just say so — either's completely fine. (Reply STOP to opt out.)` },
-  { step: 6, afterDays: 21, msg: (n, p) => `${n}, Mark at Fetti — on ${p}, what would need to be true for this to be a yes for you? Tell me and I'll work backwards from there. (Reply STOP to opt out.)` },
+  { step: 6, afterDays: 21, msg: (n, p) => `${n}, ${COMMS_PERSONA} at Fetti — on ${p}, what would need to be true for this to be a yes for you? Tell me and I'll work backwards from there. (Reply STOP to opt out.)` },
   { step: 7, afterDays: 35, msg: (n, p) => `Hi ${n} — last note on ${p} for now. If anything changed or you've got a question, text me back and I'm on it. Otherwise I'll leave you be. (Reply STOP to opt out.)` },
 ];
 
@@ -84,8 +85,8 @@ const HOT_STEPS: { step: number; afterDays: number; msg: (name: string, purpose:
 // ~45 days until they reply or opt out. This reactivates the dormant database —
 // money from leads already paid for, with no new ad spend. Rotates by step.
 const REACTIVATION: ((name: string, purpose: string) => string)[] = [
-  (n, p) => `Hi ${n}, Mark at Fetti — lending guidelines have moved since you asked about ${p}. Programs that didn't fit then sometimes fit now.`,
-  (n, p) => `${n}, Mark here — that ${p}: dead, delayed, or handled elsewhere? Any of those is a fine answer. If delayed, you're minutes from done.`,
+  (n, p) => `Hi ${n}, ${COMMS_PERSONA} at Fetti — lending guidelines have moved since you asked about ${p}. Programs that didn't fit then sometimes fit now.`,
+  (n, p) => `${n}, ${COMMS_PERSONA} here — that ${p}: dead, delayed, or handled elsewhere? Any of those is a fine answer. If delayed, you're minutes from done.`,
   (n, p) => `Hi ${n} — genuinely the last one from me on ${p}. Your info stays saved; finish or reply any time and you start warm, not cold.`,
 ];
 const REACTIVATE_THROTTLE_DAYS = 45;
@@ -108,7 +109,7 @@ const DOC_CHASE_THROTTLE_DAYS = 2;
 // `ran` distinguishes "did the work" from "was invoked and bailed on the lock". The cron
 // route records a HEARTBEAT only when ran===true, so a permanently-bailing job shows up as
 // STALLED in the doctor instead of reporting healthy (see lib/heartbeat.ts).
-export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number; ran: boolean; firstTouchesHeld?: number }> {
+export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number; ran: boolean; firstTouchesHeld?: number; dripSuppressedInProcess?: number }> {
   // OVERLAP GUARD: the daily cron and the Funnel-page "Run follow-ups" button can
   // overlap and double-send TCPA texts/emails to every unprocessed lead. The old guard
   // was a non-atomic getSetting-then-setSetting — both callers could read "free" before
@@ -156,7 +157,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.skipped",
       detail: { cron: "nurture", reason: lockErr ? `lock_error: ${lockErr.message}` : "lock_held" },
     }).catch(() => {});
-    return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0, ran: false, firstTouchesHeld: 0 };
+    return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0, ran: false, firstTouchesHeld: 0, dripSuppressedInProcess: 0 };
   }
   try {
   // Look back a full year so the dormant database keeps getting reactivated,
@@ -183,7 +184,39 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   // #1 local ranking lever; we ask every funded borrower once (no incentive — Google/FTC).
   const reviewUrl = (await cfg("GBP_REVIEW_URL")) || "";
 
-  let considered = 0, sent = 0, chased = 0, reactivated = 0, reviewsRequested = 0;
+  // ── WHO IS ALREADY A CLIENT ───────────────────────────────────────────────────────
+  // A lead who has uploaded real documents into a loan file is IN PROCESS. They are
+  // working with a human on their file, and a generic drip ("what's the one number you'd
+  // want to know first?") landing on them is embarrassing — Ramon, 2026-07-28.
+  //
+  // Stage strings alone can't be trusted for this: `leads` has no status column, stage
+  // moves forward only, and DONE_STAGES misses a file whose stage is still "new" or
+  // "qualified" while documents are already in. So this is decided on the FILE, which is
+  // the fact that matters. Batched into two queries up front rather than per-lead, so the
+  // check costs nothing inside the loop.
+  //
+  // "Uploaded" means storage_path IS NOT NULL — a checklist row with no file behind it is
+  // a placeholder, and a loan file with only placeholders is a phantom (those exist), so
+  // neither counts as being in process.
+  const inProcess = new Set<string>();
+  const leadIds = (leads || []).map((l: any) => l.id).filter(Boolean);
+  if (leadIds.length) {
+    const { data: files } = await supabaseAdmin
+      .from("loan_files").select("id, lead_id").in("lead_id", leadIds);
+    const byFile = new Map<string, string>();   // loan_file id -> lead id
+    for (const f of (files || []) as any[]) if (f.lead_id) byFile.set(f.id, f.lead_id);
+    if (byFile.size) {
+      const { data: docs } = await supabaseAdmin
+        .from("loan_documents").select("loan_file_id").in("loan_file_id", [...byFile.keys()])
+        .not("storage_path", "is", null);
+      for (const d of (docs || []) as any[]) {
+        const leadId = byFile.get(d.loan_file_id);
+        if (leadId) inProcess.add(leadId);
+      }
+    }
+  }
+
+  let considered = 0, sent = 0, chased = 0, reactivated = 0, reviewsRequested = 0, dripSuppressedInProcess = 0;
   // BACKLOG STAGGER. If the drip stops for any reason (see the lock bug above, which cost
   // 13 days), every missed lead becomes "due" at once and the next run fires a burst of
   // first touches at people who have gone cold — the loudest possible way to announce an
@@ -226,7 +259,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     if (reviewUrl && (stage.includes("funded") || stage.includes("closed") || stage.includes("won"))) {
       if (!l.raw?.review_requested) {
         const fn = (l.first_name || l.full_name || "there").split(" ")[0];
-        const msg = `Hi ${fn}, it's Mark — congrats on closing with Fetti Financial Services! 🎉 If we earned it, a quick Google review genuinely helps a small shop like ours: ${reviewUrl} — thank you! (Reply STOP to opt out.)`;
+        const msg = `Hi ${fn}, it's ${COMMS_PERSONA} — congrats on closing with Fetti Financial Services! 🎉 If we earned it, a quick Google review genuinely helps a small shop like ours: ${reviewUrl} — thank you! (Reply STOP to opt out.)`;
         const reviewEmail = `Hey ${fn} — congrats again on closing. Genuinely glad we got it done.\n\nOne small ask: if we earned it, a quick Google review makes a real difference for a small shop like ours. Two sentences is plenty: ${reviewUrl}\n\nEither way — thank you for trusting us with it.`;
         try {
           const res = await respondToLead({
@@ -275,7 +308,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       if (!missing.length) continue; // nothing required left → will flip to Application
       const link = `${baseUrl()}/file/${file.share_token}`;
       const list = missing.slice(0, 3).join(", ") + (missing.length > 3 ? `, +${missing.length - 3} more` : "");
-      const message = `Hi ${name}, it's Mark — you're almost there on ${purpose}! Still need: ${list}. Upload securely here: ${link}${bookLine} (Reply STOP to opt out.)`;
+      const message = `Hi ${name}, it's ${COMMS_PERSONA} — you're almost there on ${purpose}! Still need: ${list}. Upload securely here: ${link}${bookLine} (Reply STOP to opt out.)`;
       const emailBody = `Hey ${name} — you're genuinely close on ${purpose}. Still open on my side: ${list}.\n\nUpload them here whenever suits: ${link}\n\nIf one of these is a pain to get, tell me which — there's usually a workaround.${textMeLine}`;
       try {
         const res = await respondToLead({
@@ -291,6 +324,16 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       continue;
       }
     }
+
+    // IN PROCESS ⇒ NO DRIP. Anyone with documents already uploaded into a loan file has
+    // stopped being a lead and started being a client. They reach this line only when the
+    // doc-chaser above declined to handle them (no share_token on the file, or a stage
+    // outside engaged/application) — and the old behaviour was to fall through into the
+    // generic drip, which is how borrowers mid-process got "what's the one number you'd
+    // want to know first?". The doc-chaser is untouched: it is specific, operational, and
+    // the only thing that gets a stalled file finished. This kills the marketing cadence
+    // only, and it is counted + logged so a silenced borrower is never invisible.
+    if (inProcess.has(l.id)) { dripSuppressedInProcess++; continue; }
 
     // --- Lane 1: Cold/qualified lead → drip, then long-term reactivation ---
     // Qualified leads (Tier 1, or agent-qualified) ride the tighter HOT_STEPS cadence
@@ -381,7 +424,9 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   if (firstTouchesHeld > 0) {
     console.warn(`[nurture] backlog meter: sent ${overdueSent} overdue touches (cap ${OVERDUE_CAP}), HELD ${firstTouchesHeld} for the next run`);
   }
-  return { considered, sent, chased, reactivated, reviewsRequested, ran: true, firstTouchesHeld };
+  // dripSuppressedInProcess is surfaced (not swallowed) so the doctor can tell the
+  // difference between "nobody was due" and "we deliberately held back N clients".
+  return { considered, sent, chased, reactivated, reviewsRequested, ran: true, firstTouchesHeld, dripSuppressedInProcess };
   } finally {
     // Always release, even if the run throws, so a crash never wedges the lock (the
     // stale-check would still auto-expire it after 10 min, but releasing is cleaner).

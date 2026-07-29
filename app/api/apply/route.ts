@@ -19,6 +19,7 @@ import { advanceLeadStage } from "@/lib/leadStage";
 import { scoreLead } from "@/lib/leadScore";
 import { assessLead, applyShieldToRow, promoteQuarantined, sendVerificationEmail, notifyQuarantine, type ShieldChannel } from "@/lib/leadShield";
 import { runNewLeadPipeline } from "@/lib/leadPipeline";
+import { COMMS_PERSONA } from "@/lib/markPersona";
 
 export const dynamic = "force-dynamic";
 // The full 5-agent pipeline runs post-response via after(); give the function
@@ -483,7 +484,7 @@ export async function POST(req: NextRequest) {
               const res = await respondToLead({
                 id: data.id, kind: "returning", name: full_name, email,
                 phone: smsOk ? phone : null, loan_purpose: body.loan_purpose, state: body.state ?? (data as any)?.state ?? null,
-                message: `Hey ${first}, it's Mark at Fetti — saw you stopped by again about the ${purpose}. Anything I can help with? No rush; your saved application is here whenever you want it: ${backLink}`,
+                message: `Hey ${first}, it's ${COMMS_PERSONA} at Fetti — saw you stopped by again about the ${purpose}. Anything I can help with? No rush; your saved application is here whenever you want it: ${backLink}`,
                 emailSubject: "saw you came back",
                 emailBody: `Hey ${first} — noticed you stopped by again about the ${purpose}. Happy to answer whatever's on your mind — just reply here.\n\nAnd whenever you're ready, your saved application is still right here:\n${backLink}\n\n— Mark`,
               });

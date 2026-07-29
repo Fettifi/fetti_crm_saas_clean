@@ -11,6 +11,7 @@ import { magicApplyLink } from "@/lib/magicLink";
 import { leadQuality } from "@/lib/leadQuality";
 import { leadReality } from "@/lib/leadReality";
 import { cfg } from "@/lib/settings";
+import { COMMS_PERSONA } from "@/lib/markPersona";
 
 export const dynamic = "force-dynamic";
 
@@ -111,8 +112,8 @@ export async function POST(req: NextRequest) {
         const link = action === "send_app_link" ? magicApplyLink(l as any) : ((await cfg("CALENDLY_URL")) || "");
         if (!link) return NextResponse.json({ error: "No calendar link configured." }, { status: 400 });
         const text2 = action === "send_app_link"
-          ? `Hey ${first}, it's Mark at Fetti — your application is saved and pre-filled, about 3 minutes to finish whenever you're ready: ${link}`
-          : `Hey ${first}, it's Mark at Fetti — here's Ramon's calendar, grab any time that works and it's locked in: ${link}`;
+          ? `Hey ${first}, it's ${COMMS_PERSONA} at Fetti — your application is saved and pre-filled, about 3 minutes to finish whenever you're ready: ${link}`
+          : `Hey ${first}, it's ${COMMS_PERSONA} at Fetti — here's Ramon's calendar, grab any time that works and it's locked in: ${link}`;
         const smsOk = raw.sms_consent === true || raw.consent?.sms_optin === true;
         if ((l as any).phone && smsOk) {
           const r = await sendSms((l as any).phone, text2 + " (Reply STOP to opt out.)", { state: (l as any).state, allowQuietHours: true });

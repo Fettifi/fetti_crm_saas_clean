@@ -10,6 +10,7 @@ import { scrubSmsIsms, unsubUrl, renderTouch, EMAIL_TOUCHES } from "@/lib/notify
 import { cfg } from "@/lib/settings";
 import { logComms, isEmailSuppressed } from "@/lib/comms";
 import { quietHoursFor, quietReason } from "@/lib/quietHours";
+import { COMMS_PERSONA } from "@/lib/markPersona";
 
 export type LeadContact = {
   id?: string | null;       // lead id — when set, the send is logged to the conversation thread
@@ -36,9 +37,9 @@ function defaultMessage(l: LeadContact): string {
   // KNOW-FIRST: they told us what they're doing — acknowledge it, never re-ask it.
   // Only when the purpose is genuinely unknown does the opener ask what they're working on.
   if (l.loan_purpose) {
-    return `Hey ${first}, it's Mark with Fetti — your ${String(l.loan_purpose).toLowerCase()} inquiry just hit my desk and I'm on it. What's your timeline looking like?`;
+    return `Hey ${first}, it's ${COMMS_PERSONA} with Fetti — your ${String(l.loan_purpose).toLowerCase()} inquiry just hit my desk and I'm on it. What's your timeline looking like?`;
   }
-  return `Hey ${first}, it's Mark with Fetti — saw you reached out. Quick q so I can point you the right way: what are you working on, and what's your timeline?`;
+  return `Hey ${first}, it's ${COMMS_PERSONA} with Fetti — saw you reached out. Quick q so I can point you the right way: what are you working on, and what's your timeline?`;
 }
 
 async function emailLead(l: LeadContact, fallbackBody: string) {

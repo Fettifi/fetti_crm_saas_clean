@@ -1,4 +1,7 @@
-// Full, official email signature for Mark (Fetti's spokesperson) — appended to every
+// Full, official email signature for FRANK — appended to every borrower-facing email.
+// The name here must match the mailbox it sends from (frank@fettifi.com) and the name in
+// the body copy; it read "Mark" while sending from Frank's address, which is the mismatch
+// Ramon reported 2026-07-28. The owl mascot keeps the name Mark on marketing surfaces only.
 // automated follow-up email so they read like a real loan officer's email, not spam:
 // logo, name, company, office line, contact, licensing, address, and a confidentiality
 // footer. Office phone + mailing address are pulled from app_settings (OFFICE_PHONE,
@@ -6,6 +9,7 @@
 // when its value exists, so nothing ever shows a broken placeholder.
 import { cfg } from "@/lib/settings";
 import { LICENSING_SHORT } from "@/lib/legal";
+import { COMMS_PERSONA } from "@/lib/markPersona";
 
 const SITE = "https://fettifi.com";
 const ASSET_BASE = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "https://app.fettifi.com").replace(/\/$/, "");
@@ -31,7 +35,7 @@ export async function markSignatureHtml(): Promise<string> {
         <img src="${ASSET_BASE}/fetti-emblem.png" width="48" height="48" alt="Fetti Financial Services LLC" style="display:block;border-radius:8px" />
       </td>
       <td style="vertical-align:top;font-size:13px;line-height:1.5">
-        <div style="font-size:16px;font-weight:700;color:${slate}">Mark</div>
+        <div style="font-size:16px;font-weight:700;color:${slate}">${COMMS_PERSONA}</div>
         <div style="font-size:12px;font-weight:600;color:${emerald}">Client Concierge &middot; Fetti Financial Services LLC</div>
         <div style="margin-top:7px;font-size:12px;color:${body}">
           ${phonePart}<span style="white-space:nowrap">&#9993; <a href="mailto:${contactEmail}" style="color:${body};text-decoration:none">${contactEmail}</a></span>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<span style="white-space:nowrap">&#127760; <a href="${SITE}" style="color:${body};text-decoration:none">fettifi.com</a></span>
@@ -69,7 +73,7 @@ export async function markSignatureLite(unsubscribeUrl?: string): Promise<string
     <div style="border-top:2px solid ${emerald};max-width:430px;margin-bottom:14px"></div>
     <img src="${ASSET_BASE}/fetti-logo.png" width="132" alt="Fetti Financial Services LLC" style="display:block;height:auto;margin-bottom:4px" />
     <div style="font-weight:800;color:${emerald};letter-spacing:.6px;font-size:12px">WE DO MONEY!</div>
-    <div style="margin-top:11px;font-weight:700;color:${slate};font-size:15px">Mark</div>
+    <div style="margin-top:11px;font-weight:700;color:${slate};font-size:15px">${COMMS_PERSONA}</div>
     <div style="font-weight:600;color:${emerald};font-size:12px">Client Concierge &middot; Fetti Financial Services LLC</div>
     <div style="margin-top:8px;font-size:12px;color:${body}">
       &#128222; <a href="tel:${phone.replace(/[^0-9+]/g, "")}" style="color:${body};text-decoration:none">${phone}</a>

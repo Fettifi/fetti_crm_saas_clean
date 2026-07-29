@@ -24,6 +24,7 @@ import { logActivity } from "@/lib/activity";
 import { senderFrom } from "@/lib/notify/mailFrom";
 import { isDisposableDomain, FREEMAIL_DOMAINS } from "@/lib/disposableDomains";
 import crypto from "crypto";
+import { COMMS_PERSONA } from "@/lib/markPersona";
 
 export type ShieldChannel = "lp" | "wizard" | "quote" | "api" | "meta" | "meta_import" | "mark" | "sms_optin";
 
@@ -601,7 +602,7 @@ export async function sendVerificationEmail(lead: any): Promise<boolean> {
     const link = magicApplyLink(lead);
     const signature = await markSignatureLite(unsubUrl(lead.id));
     const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#0f172a;max-width:560px">
-Hey ${first} — it's Mark with Fetti. Your ${purpose} inquiry just hit my desk.<br><br>
+Hey ${first} — it's ${COMMS_PERSONA} with Fetti. Your ${purpose} inquiry just hit my desk.<br><br>
 One quick step so I know it's really you (and not one of the bots we keep out): tap below and your application opens already filled out — takes about 3 minutes to finish.<br><br>
 <a href="${link}" style="display:inline-block;background:#0c7a52;color:#fff;font-weight:600;padding:10px 22px;border-radius:8px;text-decoration:none">Confirm &amp; continue my application</a><br><br>
 If that wasn't you, just ignore this email and nothing happens.</div>${signature}`;
