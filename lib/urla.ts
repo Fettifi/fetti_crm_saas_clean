@@ -178,7 +178,7 @@ export const DEFAULT_ORIGINATOR: UrlaOriginator = {
   company: "FETTI FINANCIAL SERVICES LLC",
   companyNmls: "2267023",
   stateLicense: "CA#60DBO-153798",
-  companyAddress: { street: "5757 W CENTURY BLVD", city: "LOS ANGELES", state: "CA", zip: "90045", country: "US" },
+  companyAddress: { street: "5777 W CENTURY BLVD STE 1435", city: "LOS ANGELES", state: "CA", zip: "90045", country: "US" },
 };
 
 /**
