@@ -23,7 +23,7 @@ import CurrencyInput from "@/components/ui/CurrencyInput";
 import AddressInput from "@/components/AddressInput";
 import LoanComparisonPanel from "@/components/LoanComparisonPanel";
 import {
-  SCENARIO_SECTIONS, fmtMoney, fmtPercent, computeCltv,
+  SCENARIO_SECTIONS, fmtMoney, fmtPercent, computeCltv, computeLtv,
   type Scenario, type Wholesaler, type Quote, type Field, type ScenarioStatus,
 } from "@/lib/scenario";
 
@@ -373,6 +373,11 @@ function ScenarioDesk() {
       // the loan amount and the value against each other to find the deal, and a CLTV that
       // only refreshed on save would be stale exactly when it is being used to decide.
       if (key === "first_lien_balance" || key === "loan_amount" || key === "as_is_value" || key === "purchase_price") {
+        // LTV has to move too. It only recomputed on the CLTV path before, so changing the
+        // loan amount or the as-is value left a STALE LTV on screen — the ratio the LO is
+        // actually reading while sizing the deal, and the one that lands on the PDF.
+        const v = computeLtv(next);
+        if (v != null) (next as any).ltv = v;
         const c = computeCltv(next);
         if (c != null) (next as any).cltv = c;
       }

@@ -202,9 +202,42 @@ export const num = (v: any): number | null => {
   return isFinite(n) ? n : null;
 };
 
-// Compute LTV from loan/value when not explicitly given (purchase price preferred, else as-is).
+/**
+ * The value LTV is measured against. THE AS-IS VALUE GOVERNS (Ramon, 2026-07-29: "the loan
+ * to value is based off the as is value versus the loan amount").
+ *
+ * This used to be `purchase_price ?? as_is_value` — price preferred, as-is only as a
+ * fallback — which is wrong twice over:
+ *   • On a REFI there is no new purchase price, so a price typed in from what the borrower
+ *     ORIGINALLY paid became the denominator. A property bought for $200k and now worth
+ *     $500k reported a 75% LTV on a $150k loan instead of the true 30%.
+ *   • On a PURCHASE it ignored the appraisal entirely. Every guideline sizes a purchase on
+ *     the LESSER of price and appraised value — if the appraisal comes in UNDER the
+ *     contract price, the low appraisal is the number that binds, and preferring the price
+ *     understated the LTV on exactly the deals where that matters most.
+ *
+ * The lesser-of rule belongs to PURCHASES ONLY. On a refinance the purchase price is
+ * history — often what the borrower paid a decade ago — and must be ignored outright, or
+ * the lesser-of rule reintroduces the very bug it was meant to fix. So:
+ *   • purchase   → lesser of contract price and as-is/appraised value
+ *   • everything else (refi, cash-out, and an unstated purpose) → the as-is value governs,
+ *     falling back to a price only when no as-is value has been entered yet.
+ * ARV is deliberately NOT used — a fix & flip's LTV is against today's as-is value, and
+ * sizing against the after-repair value is how a lender ends up upside down.
+ */
+export function ltvBasis(s: Partial<Scenario>): number | null {
+  const asIs = num(s.as_is_value);
+  const price = num(s.purchase_price);
+  const ok = (v: number | null | undefined): v is number => v != null && v > 0;
+  const isPurchase = /purchase|acquisition/i.test(String(s.loan_purpose || "")) && !/refi/i.test(String(s.loan_purpose || ""));
+  if (isPurchase && ok(asIs) && ok(price)) return Math.min(asIs, price);
+  if (ok(asIs)) return asIs;
+  return ok(price) ? price : null;
+}
+
+// Compute LTV = loan amount ÷ the as-is value (see ltvBasis).
 export function computeLtv(s: Partial<Scenario>): number | null {
-  const value = num(s.purchase_price) ?? num(s.as_is_value);
+  const value = ltvBasis(s);
   const loan = num(s.loan_amount);
   if (!value || !loan) return null;
   return Math.round((loan / value) * 1000) / 10;
@@ -218,7 +251,7 @@ export function computeLtv(s: Partial<Scenario>): number | null {
 // CLTV every lender caps. With no first-lien balance captured, the desk had no way to say
 // that (reported by Ramon 2026-07-27 on a refi + second position scenario).
 export function computeCltv(s: Partial<Scenario>): number | null {
-  const value = num(s.purchase_price) ?? num(s.as_is_value);
+  const value = ltvBasis(s);   // same as-is basis as LTV — the two must never disagree
   const loan = num(s.loan_amount);
   if (!value || !loan) return null;
   const first = num(s.first_lien_balance) ?? 0;
@@ -280,8 +313,12 @@ export function scenarioFromLead(l: any): Partial<Scenario> {
     monthly_rent: num(raw.monthly_rent ?? raw.rent ?? raw.market_rent),
     notes: l?.notes || null,
   };
-  if (draft.ltv == null) draft.ltv = computeLtv(draft);
-  if (draft.cltv == null) draft.cltv = computeCltv(draft);
+  // The COMPUTED ratio wins. These drafts import an `ltv` straight off the lead/file row,
+  // which is whatever the borrower typed into a web form — so a guessed 80% outranked the
+  // real loan ÷ as-is-value and the sheet showed a number that matched neither input.
+  // Derive it whenever the inputs allow; keep the imported figure only as a last resort.
+  draft.ltv = computeLtv(draft) ?? draft.ltv ?? null;
+  draft.cltv = computeCltv(draft) ?? draft.cltv ?? null;
   if (draft.dscr == null) draft.dscr = computeDscr(draft);
   return draft;
 }
@@ -300,8 +337,12 @@ export function scenarioFromLoanFile(f: any): Partial<Scenario> {
     state: f?.state || null,
     occupancy: f?.occupancy || null,
   };
-  if (draft.ltv == null) draft.ltv = computeLtv(draft);
-  if (draft.cltv == null) draft.cltv = computeCltv(draft);
+  // The COMPUTED ratio wins. These drafts import an `ltv` straight off the lead/file row,
+  // which is whatever the borrower typed into a web form — so a guessed 80% outranked the
+  // real loan ÷ as-is-value and the sheet showed a number that matched neither input.
+  // Derive it whenever the inputs allow; keep the imported figure only as a last resort.
+  draft.ltv = computeLtv(draft) ?? draft.ltv ?? null;
+  draft.cltv = computeCltv(draft) ?? draft.cltv ?? null;
   return draft;
 }
 
