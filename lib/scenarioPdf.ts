@@ -33,7 +33,22 @@ export async function buildScenarioPdf(s: Scenario): Promise<Uint8Array> {
     for (const ln of wrap(str, f, size, max)) { page.drawText(ln, { x, y: yAt(size), size, font: f, color }); cur += size * gap; }
   };
   // Start a fresh page + reset the cursor when the next block won't fit above the bottom margin.
-  const ensure = (needed: number) => { if (cur + needed > H - M) { page = doc.addPage([W, H]); cur = M; } };
+  // Start a fresh page + reset the cursor when the next block won't fit above the bottom margin.
+  // Every continuation page gets a light identifying header: the wholesaler fills in the
+  // response form, which lands on page 2, then prints or scans it back — and a loose sheet
+  // with no scenario number and no borrower name on it cannot be matched to a deal.
+  const ensure = (needed: number) => {
+    if (cur + needed > H - M) {
+      page = doc.addPage([W, H]);
+      cur = M;
+      const who = String(s.borrower_name || "").trim();
+      const head = [snum, who].filter(Boolean).join("  ·  ");
+      page.drawText(head, { x: M, y: H - M + 6, size: 8, font, color: GREY });
+      page.drawText(BRAND.company, { x: RIGHT - font.widthOfTextAtSize(BRAND.company, 8), y: H - M + 6, size: 8, font, color: GREY });
+      page.drawLine({ start: { x: M, y: H - M - 4 }, end: { x: RIGHT, y: H - M - 4 }, thickness: 0.5, color: rgb(0.85, 0.87, 0.9) });
+      cur += 14;
+    }
+  };
 
   try {
     // Clean EMBLEM mark (no text) — readable at letterhead size; the full stacked logo's
@@ -70,7 +85,11 @@ export async function buildScenarioPdf(s: Scenario): Promise<Uint8Array> {
     if (!rows.length && !notesText) continue;
 
     // Keep each section's title + rows + bounding box together on one page.
-    ensure(18 + rows.length * rh + 24 + (notesText ? 72 : 0));
+    // Reserve the note's REAL wrapped height, not a flat 72pt. The guess was ~5× too big for
+    // a one-line note, and over-reserving is what pushes a section onto a fresh page while
+    // leaving a third of the current one blank — the same mistake the response block made.
+    const noteH = notesText ? wrap(notesText, font, 9.5, CW).length * 9.5 * 1.45 + 6 : 0;
+    ensure(18 + rows.length * rh + 12 + noteH);
     text(section.title, 11, bold, EMERALD); cur += 18;
 
     if (rows.length) {

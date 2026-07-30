@@ -10,6 +10,7 @@ import {
   computeLtv,
   computeCltv,
   computeDscr,
+  computePitia,
 } from "@/lib/scenario";
 import type { Scenario } from "@/lib/scenario";
 import {
@@ -70,7 +71,11 @@ export async function POST(req: NextRequest) {
     // balance and the loan amount both move while an LO works a second, and a stale hand-typed
     // CLTV is worse than none. An explicit CLTV with no first lien behind it is left alone.
     { const c = computeCltv(base); if (c != null) base.cltv = c; }
-    if (base.dscr == null) base.dscr = computeDscr(base);
+    // PITIA and DSCR are RE-derived whenever their inputs exist, not just when blank — the
+    // components move while an LO works the deal and a stale hand-typed total is worse than
+    // none (same rule as CLTV above).
+    { const p = computePitia(base); if (p != null) base.monthly_piti = p; }
+    { const d = computeDscr(base); if (d != null) base.dscr = d; else if (base.dscr == null) base.dscr = null; }
 
     const scenario = await saveScenario(base);
 

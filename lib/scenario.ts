@@ -75,7 +75,14 @@ export type Scenario = {
 
   // Qualifying
   monthly_rent?: number | null;    // market/lease rent (DSCR)
-  monthly_piti?: number | null;    // PITIA used for DSCR
+  // PITIA, broken into its parts. DSCR divides gross rent by the FULL housing payment, so a
+  // wholesaler pricing the deal needs the components, not just a lump sum they have to trust
+  // — and taxes/insurance/HOA are exactly what an LO forgets, which silently inflates DSCR.
+  principal_interest?: number | null;  // P&I only
+  taxes_monthly?: number | null;       // property taxes /mo
+  insurance_monthly?: number | null;   // hazard/flood insurance /mo
+  hoa_monthly?: number | null;         // HOA dues /mo
+  monthly_piti?: number | null;    // PITIA used for DSCR — derived from the four above
   dscr?: number | null;            // computed DSCR ratio
   monthly_income?: number | null;  // qualifying income (full-doc)
   dti?: number | null;             // %
@@ -170,7 +177,11 @@ export const SCENARIO_SECTIONS: Section[] = [
     title: "Qualifying",
     fields: [
       { key: "monthly_rent", label: "Market / Lease Rent (mo)", type: "money", hint: "DSCR" },
-      { key: "monthly_piti", label: "PITIA (mo)", type: "money", hint: "DSCR" },
+      { key: "principal_interest", label: "P&I (mo)", type: "money", hint: "DSCR" },
+      { key: "taxes_monthly", label: "Property Taxes (mo)", type: "money", hint: "DSCR" },
+      { key: "insurance_monthly", label: "Insurance (mo)", type: "money", hint: "DSCR" },
+      { key: "hoa_monthly", label: "HOA Dues (mo)", type: "money", hint: "DSCR" },
+      { key: "monthly_piti", label: "PITIA (mo)", type: "money", hint: "auto from P&I + taxes + ins + HOA" },
       { key: "dscr", label: "DSCR Ratio", type: "number" },
       { key: "monthly_income", label: "Qualifying Income (mo)", type: "money", hint: "Full-doc" },
       { key: "dti", label: "DTI %", type: "percent" },
@@ -270,8 +281,28 @@ export function isJuniorLien(s: Partial<Scenario>): boolean {
 // 1.10 floor it actually misses — a false PASS on eligibility, which is the direction
 // that misquotes a borrower. Nothing renders this raw (callers format for display), so
 // the extra precision is display-neutral.
+/**
+ * PITIA = P&I + taxes + insurance + HOA. Returns null unless P&I is known, because a
+ * "PITIA" made only of escrows is not a housing payment — it would understate the
+ * denominator and overstate DSCR, which is the error that makes a deal look fundable when
+ * it isn't. A missing HOA or insurance line is treated as zero (many properties have none);
+ * a missing P&I means we simply don't know the payment yet.
+ */
+export function computePitia(s: Partial<Scenario>): number | null {
+  const pi = num(s.principal_interest);
+  if (pi == null || !(pi > 0)) return null;
+  const t = num(s.taxes_monthly) ?? 0;
+  const i = num(s.insurance_monthly) ?? 0;
+  const h = num(s.hoa_monthly) ?? 0;
+  return Math.round((pi + t + i + h) * 100) / 100;
+}
+
 export function computeDscr(s: Partial<Scenario>): number | null {
-  const rent = num(s.monthly_rent), piti = num(s.monthly_piti);
+  const rent = num(s.monthly_rent);
+  // Prefer the payment BUILT from its components — if the LO fills in P&I/taxes/insurance/HOA
+  // and also has an older lump PITIA typed in, the components are the truth and the ratio
+  // must follow them, or the sheet shows a DSCR that contradicts its own line items.
+  const piti = computePitia(s) ?? num(s.monthly_piti);
   if (!rent || !piti) return null;
   return Math.round((rent / piti) * 10000) / 10000;
 }

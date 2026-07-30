@@ -1,6 +1,6 @@
 // LTV must be loan ÷ AS-IS VALUE (Ramon, 2026-07-29). Guards the cases the old
 // `purchase_price ?? as_is_value` rule got wrong.  npx tsx scripts/verify-scenario-ltv.ts
-import { computeLtv, computeCltv, ltvBasis } from "@/lib/scenario";
+import { computeLtv, computeCltv, ltvBasis, computePitia, computeDscr } from "@/lib/scenario";
 let pass=0, fail=0;
 const ck=(n:string,got:unknown,want:unknown)=>{const ok=JSON.stringify(got)===JSON.stringify(want);
   if(ok){pass++;console.log(`  ✅ ${n}`);}else{fail++;console.log(`  ❌ ${n}\n       got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);}};
@@ -32,6 +32,22 @@ ck("CLTV also ignores an old purchase price",
    computeCltv({ loan_amount: 100000, first_lien_balance: 400000, as_is_value: 600000, purchase_price: 250000 } as any), 83.3);
 ck("no junior financing → CLTV blank",
    computeCltv({ loan_amount: 100000, as_is_value: 600000 } as any), null);
+
+console.log("\n── PITIA build-up: taxes + insurance + HOA ──");
+ck("PITIA = P&I + taxes + insurance + HOA",
+   computePitia({ principal_interest: 5200, taxes_monthly: 1450, insurance_monthly: 410, hoa_monthly: 250 } as any), 7310);
+ck("missing HOA / insurance count as zero, not as unknown",
+   computePitia({ principal_interest: 5200, taxes_monthly: 1450 } as any), 6650);
+ck("escrows WITHOUT P&I is not a housing payment → null",
+   computePitia({ taxes_monthly: 1450, insurance_monthly: 410 } as any), null);
+ck("DSCR divides by the FULL PITIA, not bare P&I ($8,904 / $7,310)",
+   computeDscr({ monthly_rent: 8904, principal_interest: 5200, taxes_monthly: 1450, insurance_monthly: 410, hoa_monthly: 250 } as any), 1.2181);
+ck("components OUTRANK a stale hand-typed PITIA",
+   computeDscr({ monthly_rent: 8904, monthly_piti: 5200, principal_interest: 5200, taxes_monthly: 1450, insurance_monthly: 410, hoa_monthly: 250 } as any), 1.2181);
+ck("a lump PITIA still works when no components are entered",
+   computeDscr({ monthly_rent: 8904, monthly_piti: 7310 } as any), 1.2181);
+ck("forgetting taxes+insurance would have overstated DSCR (1.71 vs 1.22)",
+   computeDscr({ monthly_rent: 8904, principal_interest: 5200 } as any), 1.7123);
 
 console.log("\n── never invent a ratio ──");
 ck("no value → null", computeLtv({ loan_amount: 100000 } as any), null);

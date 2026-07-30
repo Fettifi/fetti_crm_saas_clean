@@ -23,7 +23,7 @@ import CurrencyInput from "@/components/ui/CurrencyInput";
 import AddressInput from "@/components/AddressInput";
 import LoanComparisonPanel from "@/components/LoanComparisonPanel";
 import {
-  SCENARIO_SECTIONS, fmtMoney, fmtPercent, computeCltv, computeLtv,
+  SCENARIO_SECTIONS, fmtMoney, fmtPercent, computeCltv, computeLtv, computePitia, computeDscr,
   type Scenario, type Wholesaler, type Quote, type Field, type ScenarioStatus,
 } from "@/lib/scenario";
 
@@ -372,6 +372,17 @@ function ScenarioDesk() {
       // Keep CLTV live while a second is being sized. The LO moves the first-lien balance,
       // the loan amount and the value against each other to find the deal, and a CLTV that
       // only refreshed on save would be stale exactly when it is being used to decide.
+      // PITIA is built from its parts, and DSCR divides by it — so touching any component
+      // has to move both, live. Leaving them to refresh on save is what let a DSCR sit on
+      // screen that contradicted the taxes and insurance printed right above it.
+      if (key === "principal_interest" || key === "taxes_monthly" || key === "insurance_monthly" || key === "hoa_monthly") {
+        const p = computePitia(next);
+        if (p != null) (next as any).monthly_piti = p;
+      }
+      if (key === "principal_interest" || key === "taxes_monthly" || key === "insurance_monthly" || key === "hoa_monthly" || key === "monthly_piti" || key === "monthly_rent") {
+        const d = computeDscr(next);
+        if (d != null) (next as any).dscr = d;
+      }
       if (key === "first_lien_balance" || key === "loan_amount" || key === "as_is_value" || key === "purchase_price") {
         // LTV has to move too. It only recomputed on the CLTV path before, so changing the
         // loan amount or the as-is value left a STALE LTV on screen — the ratio the LO is
