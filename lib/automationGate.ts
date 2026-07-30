@@ -39,3 +39,49 @@ export async function automationPaused(): Promise<boolean> {
 /** One-line audit string for the logs, so a silent run is never mysterious. */
 export const PAUSED_NOTE =
   "automated borrower messaging is PAUSED (app_settings AUTOMATION_PAUSED) — set it to 0 to resume";
+
+export const AUTOMATION_ALLOWLIST_KEY = "AUTOMATION_ALLOWLIST";
+
+/**
+ * PILOT MODE. When this list is non-empty, automated messaging reaches ONLY these people —
+ * everyone else is silent no matter what any engine decides. It is the safe way to turn the
+ * rebuilt conversation engine back on: pick one or two borrowers you don't mind being wrong
+ * about, watch it for a few days, then widen. Empty list = normal behaviour for everyone
+ * (still subject to AUTOMATION_PAUSED and the governor).
+ *
+ * Accepts lead UUIDs, email addresses or phone numbers, comma/space/newline separated, so
+ * it can be filled in from the Leads screen without hunting for an id.
+ */
+export async function automationAllowlist(): Promise<string[]> {
+  const raw = String((await cfg(AUTOMATION_ALLOWLIST_KEY)) ?? "").trim();
+  if (!raw) return [];
+  return raw.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const digits = (s: string) => s.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+
+/**
+ * Is this lead allowed through the pilot list? True when the list is empty (no pilot in
+ * force). Resolves emails/phones against the lead row so the list is human-writable.
+ */
+export async function allowlistPermits(leadId: string | null | undefined, lead?: { email?: string | null; phone?: string | null } | null): Promise<boolean> {
+  const list = await automationAllowlist();
+  if (!list.length) return true;                 // no pilot configured
+  if (!leadId) return false;                     // a pilot is on and we can't identify them
+  if (list.some((e) => UUID_RE.test(e) && e.toLowerCase() === String(leadId).toLowerCase())) return true;
+
+  const emails = new Set(list.filter((e) => e.includes("@")).map((e) => e.toLowerCase()));
+  const phones = new Set(list.filter((e) => !e.includes("@") && !UUID_RE.test(e)).map(digits).filter((d) => d.length >= 10));
+  if (!emails.size && !phones.size) return false;
+
+  let row = lead;
+  if (!row) {
+    const { supabaseAdmin } = await import("@/lib/supabaseAdminClient");
+    const { data } = await supabaseAdmin.from("leads").select("email, phone").eq("id", leadId).maybeSingle();
+    row = (data as any) || null;
+  }
+  if (row?.email && emails.has(String(row.email).toLowerCase())) return true;
+  if (row?.phone && phones.has(digits(String(row.phone)))) return true;
+  return false;
+}

@@ -28,7 +28,7 @@
 // bug can leave stale — the class of failure that hid 13 days of silence behind a green
 // dashboard.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { automationPaused } from "@/lib/automationGate";
+import { automationPaused, allowlistPermits } from "@/lib/automationGate";
 import crypto from "crypto";
 
 export type SendKind =
@@ -110,6 +110,13 @@ export async function authorizeSend(input: {
 
   const leadId = input.leadId || "";
   if (!leadId) return { allow: false, reason: "no lead id — cannot reason about the conversation" };
+
+  // 2b. PILOT LIST. When one is configured, only those borrowers hear from automation at
+  //     all. This is how the rebuilt engine gets turned back on safely: a couple of people
+  //     first, watched, then widened — rather than 190 at once, which is how we got here.
+  if (!(await allowlistPermits(leadId))) {
+    return { allow: false, reason: "not on the automation pilot allowlist" };
+  }
 
   const now = input.now ?? new Date();
   const thread = input.thread ?? (await threadFor(leadId));

@@ -53,7 +53,7 @@ export async function buildScenarioPdf(s: Scenario): Promise<Uint8Array> {
   page.drawLine({ start: { x: M, y: H - cur }, end: { x: RIGHT, y: H - cur }, thickness: 2, color: EMERALD });
   cur += 22;
 
-  center("LOAN SCENARIO — PRICING & APPROVAL REQUEST", 13, bold); cur += 26;
+  center("LOAN SCENARIO — PRICING & APPROVAL REQUEST", 13, bold); cur += 22;
 
   // ---- Deal data: iterate the shared field catalog so PDF & form never drift. ----
   const rh = 17;
@@ -75,41 +75,64 @@ export async function buildScenarioPdf(s: Scenario): Promise<Uint8Array> {
 
     if (rows.length) {
       const startCur = cur;
+      // GEOMETRY. A row occupies the band from (H - cur) down to (H - cur - rh), and its
+      // text baseline sits 12pt below the band top. The stripe and the surrounding box must
+      // use those same edges — both were drawn 4pt HIGHER than the rows, so the box's bottom
+      // border cut straight through the last row of every section: "Term / 30yr Fixed",
+      // "Occupancy / Investment" and "Citizenship / US Citizen" all rendered sliced in half.
+      // (Reported by Ramon 2026-07-29 as the scenario PDF not rendering right.)
       rows.forEach(([k, v], i) => {
-        if (i % 2) page.drawRectangle({ x: M, y: H - cur - rh + 4, width: CW, height: rh, color: LIGHT });
+        if (i % 2) page.drawRectangle({ x: M, y: H - cur - rh, width: CW, height: rh, color: LIGHT });
         page.drawText(k, { x: M + 8, y: H - cur - 12, size: 9.5, font, color: GREY });
         page.drawText(v, { x: RIGHT - 8 - bold.widthOfTextAtSize(v, 9.5), y: H - cur - 12, size: 9.5, font: bold, color: SLATE });
         cur += rh;
       });
-      page.drawRectangle({ x: M, y: H - cur + 4, width: CW, height: cur - startCur, borderColor: rgb(0.85, 0.87, 0.9), borderWidth: 1, color: undefined });
-      cur += 10;
+      page.drawRectangle({ x: M, y: H - cur, width: CW, height: cur - startCur, borderColor: rgb(0.85, 0.87, 0.9), borderWidth: 1, color: undefined });
+      cur += 8;
     }
 
     if (notesText) { para(notesText, 9.5, font, SLATE); cur += 6; }
   }
 
-  cur += 6;
+  cur += 4;
 
   // ---- Wholesaler response block (the point of the sheet) — never let it clip. ----
-  const bh = 116;
-  ensure(bh + 28);
+  // Reserve what the box ACTUALLY occupies plus a hairline gap. It used to reserve bh + 28,
+  // and on an ordinary scenario that over-reservation missed the page by 26pt: 118pt of room
+  // remained for a 116pt box, so the single most important block on the sheet — the form the
+  // wholesaler fills in — got pushed onto a near-empty page 2 while page 1 kept a third of a
+  // page of white space. Measured, not guessed (see the debug run 2026-07-29).
+  const bh = 120;   // must be >= the internal advances below, or the last line falls outside
+  ensure(bh + 6);
+  const blockTop = cur;
   page.drawRectangle({ x: M, y: H - cur - bh, width: CW, height: bh, borderColor: EMERALD, borderWidth: 1.2, color: undefined });
   const inX = M + 12;
   cur += 12;
-  text("FOR WHOLESALER USE — RETURN PRICING & APPROVAL", 10, bold, EMERALD, inX); cur += 20;
-  text("Rate ____________     Points ____________     Lender Fees ____________", 9.5, font, SLATE, inX); cur += 18;
-  text("Max LTV ____________     Term ______________________     Prepay ______________________", 9.5, font, SLATE, inX); cur += 18;
-  text("Approved:    [  ] Yes      [  ] No", 9.5, font, SLATE, inX); cur += 18;
-  text("Conditions: __________________________________________________________________", 9.5, font, SLATE, inX); cur += 16;
-  text("______________________________________________________________________________", 9.5, font, SLATE, inX); cur += 18;
+  text("FOR WHOLESALER USE — RETURN PRICING & APPROVAL", 10, bold, EMERALD, inX); cur += 18;
+  text("Rate ____________     Points ____________     Lender Fees ____________", 9.5, font, SLATE, inX); cur += 16;
+  text("Max LTV ____________     Term ______________________     Prepay ______________________", 9.5, font, SLATE, inX); cur += 16;
+  text("Approved:    [  ] Yes      [  ] No", 9.5, font, SLATE, inX); cur += 16;
+  text("Conditions: __________________________________________________________________", 9.5, font, SLATE, inX); cur += 14;
+  text("______________________________________________________________________________", 9.5, font, SLATE, inX); cur += 16;
   text("Pricing valid until ____________          AE name ______________________________", 9.5, font, SLATE, inX);
-  cur = cur + 14 + 14;
+  // Land cur on the BOX's real bottom edge. The per-line advances above total 148pt while
+  // the box is only 116pt tall, so accumulating them left cur ~32pt past where anything was
+  // actually drawn — which then convinced the footer it had overflowed the page and made it
+  // start a new one. Measure from the box, not from the cursor's running total.
+  cur = blockTop + bh + 6;
 
   // ---- Footer ----
-  ensure(46);
-  page.drawLine({ start: { x: M, y: H - cur }, end: { x: RIGHT, y: H - cur }, thickness: 0.5, color: rgb(0.85, 0.87, 0.9) });
-  cur += 10;
-  para(`Equal Housing Opportunity. ${LICENSING_NOTE} This is a wholesale pricing request, not a consumer disclosure.`, 7, font, GREY, M, CW, 1.4);
+  // PINNED to the bottom of whatever page we finished on, not flowed. As flowed content it
+  // reserved 46pt and, when the page was nearly full, started a new page to hold nothing but
+  // a disclosure line. A footer should never be able to create a page.
+  // The rule sits ON the bottom margin and the 7pt disclosure runs just below it, inside the
+  // margin band where a footer belongs. Placing it 14pt higher left only 2pt of clearance
+  // under the response box and started a whole page for one line of small print.
+  const footY = H - M - 2;
+  if (cur > footY) { page = doc.addPage([W, H]); cur = M; }
+  page.drawLine({ start: { x: M, y: H - footY }, end: { x: RIGHT, y: H - footY }, thickness: 0.5, color: rgb(0.85, 0.87, 0.9) });
+  cur = footY + 8;
+  para(`Equal Housing Opportunity. ${LICENSING_NOTE} This is a wholesale pricing request, not a consumer disclosure.`, 6, font, GREY, M, CW, 1.25);
 
   return doc.save();
 }
