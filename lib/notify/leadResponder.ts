@@ -12,6 +12,7 @@ import { logComms, isEmailSuppressed } from "@/lib/comms";
 import { quietHoursFor, quietReason } from "@/lib/quietHours";
 import { COMMS_PERSONA } from "@/lib/markPersona";
 import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
+import { authorizeSend, type SendKind } from "@/lib/conversation/governor";
 
 export type LeadContact = {
   id?: string | null;       // lead id — when set, the send is logged to the conversation thread
@@ -149,6 +150,16 @@ export async function respondToLead(lead: LeadContact): Promise<{ sent: string[]
   // MASTER SHUTOFF for anything the system sends on its own. Returning no channels makes
   // every caller record "delivered on no channel" rather than pretend it sent.
   if (await automationPaused()) { console.warn("[leadResponder]", PAUSED_NOTE); return { sent: [] }; }
+  // THE GOVERNOR decides, not the caller. Every engine that used to send on its own now has
+  // to get past one gate that can see the WHOLE conversation — what the other engines just
+  // sent, whether the borrower has spoken, and whether this body is a blast. 82% of the 756
+  // messages that caused the complaint fail these rules (scripts/verify-governor.ts).
+  {
+    const k = String(lead.kind || "first_touch");
+    const govKind: SendKind = k === "doc_chase" ? "operational" : k === "ai_reply" ? "reply" : "proactive";
+    const d = await authorizeSend({ leadId: lead.id, kind: govKind, body: (lead.message || "") + " " + (lead.emailBody || "") });
+    if (!d.allow) { console.warn(`[leadResponder] held (${k}):`, d.reason); return { sent: [] }; }
+  }
   const body = (lead.message && lead.message.trim()) || defaultMessage(lead);
   const kind = lead.kind || "first_touch";
   // The FIRST text stays a human opener — no doc-upload dump. But when we have their

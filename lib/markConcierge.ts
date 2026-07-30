@@ -9,6 +9,7 @@ import { COMMS_PERSONA, personaBrief, conversationMode } from "@/lib/markPersona
 import { claudeChat } from "@/lib/aiFallback";
 import { retrieveKB } from "@/lib/voice/mortgageKB";
 import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
+import { authorizeSend } from "@/lib/conversation/governor";
 
 const MODEL = process.env.OPENAI_CHAT_MODEL || process.env.OPENAI_MODEL || "gpt-4o";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
@@ -39,12 +40,16 @@ function complianceGate(reply: string, ctx: { firstAiReply: boolean; state?: str
   const stateOk = ctx.state ? OWNER_OCC_STATES.has(String(ctx.state).toUpperCase().trim()) : true;
   const offersOwnerOccOutOfArea = !stateOk && OWNER_OCC_KEYWORDS.test(reply);
   if (RATE_PROMISE.test(reply) || APPROVAL_PROMISE.test(reply) || PAYMENT_PROMISE.test(reply) || offersOwnerOccOutOfArea) {
-    // Prefer the PRE-FILLED application link in the safe deferral — it's the converting CTA.
-    const link = ctx.appLink ? ` ${ctx.appLink}` : ctx.fileLink ? ` ${ctx.fileLink}` : "";
-    // Safe deferral always offers BOTH paths: finish the secure app, OR book a call.
-    const book = ctx.calendlyUrl ? ` Prefer to talk it through? Grab a time with us: ${ctx.calendlyUrl}` : ` I'll have a Fetti specialist follow up too.`;
+    // This gate REPLACES the drafted reply, so what it says instead matters enormously.
+    // It used to substitute a canned "finish your secure application" push — which is how
+    // Melinda, who had written a real answer ("we're still looking for a home, waiting to
+    // see what we can qualify for"), got a sales pitch back for a rate she never asked
+    // about. The reply died there. A compliance stop must not become a CTA: keep it
+    // conversational, admit plainly why no number is coming, and hand the turn BACK to
+    // them. No application link, no calendar push — if they want a person, the thread is
+    // already flagged for one.
     return {
-      reply: `It's ${COMMS_PERSONA}, Fetti's AI assistant. Your exact numbers depend on your scenario, so I won't quote something off — the fastest way to real options is to finish your secure application (about 2 minutes, no credit pull):${link}${book}`,
+      reply: `I'm not going to throw out a number that turns out to be wrong — it genuinely depends on your situation. Tell me a bit more about what you're working with and I'll walk you through how it actually gets calculated.`,
       flagged: true,
     };
   }
@@ -134,7 +139,7 @@ PSYCHOLOGY OF THE MOVE (ethical + compliant — how real people actually decide)
 
 DISCLOSURE: You are ${COMMS_PERSONA}, Fetti's AI assistant — NOT a human.${firstAiReply ? " Because this is your first reply in this conversation, make clear early and naturally that you're Fetti's AI assistant (e.g. \"It's ${COMMS_PERSONA}, Fetti's AI assistant\")." : " If they ask whether you're a bot/human, say plainly you're Fetti's AI assistant."} Any time they want a person, offer to connect them with the team.
 
-REMEMBER: this person came TO US and told us what they're working on — you already know their deal, so act like it. Answer what they actually asked, add one genuinely useful point about THEIR scenario, and keep the momentum: any sign of forward intent ("how do I…", "what's next", "ok", a question about numbers/timing) gets the pre-filled application link or the booking link from CONTEXT as the natural next step. Never re-ask things we know, never ask if they're interested, never open with document demands — but don't bury the next step behind small talk either.
+REMEMBER: this person came TO US and told us what they're working on — you already know their deal, so act like it. Answer what they actually asked and add one genuinely useful point about THEIR scenario. THE GOAL OF A REPLY IS THE NEXT REPLY, not the application. Do NOT reach for the application or booking link because they said "ok" or asked a question — that reflex is what made these threads read as a sales script instead of a conversation, and it is why almost nobody wrote back. Offer the link ONLY when they ask for it, ask how to start, or plainly say they're ready. Never re-ask things we know, never ask if they're interested, never open with document demands.
 
 CONTEXT: ${ctx}
 
@@ -169,6 +174,14 @@ export async function markConciergeReply(opts: {
   // auto-reply — the inbound message is still logged and still alerts Ramon, it just
   // doesn't get an AI answer. See lib/automationGate.ts.
   if (await automationPaused()) return { ok: false, detail: PAUSED_NOTE };
+  // Checked BEFORE spending a model call: if the last word in the thread is already ours,
+  // the borrower has said nothing new and there is nothing to answer. That single rule is
+  // what would have stopped Dawn receiving three near-identical IRS-transcript messages in
+  // twelve hours without having typed a word between them.
+  {
+    const d = await authorizeSend({ leadId: opts.lead?.id, kind: "reply", body: "" });
+    if (!d.allow) return { ok: false, detail: `governor: ${d.reason}` };
+  }
   try {
     const key = process.env.OPENAI_API_KEY; // optional now — Claude is primary, OpenAI is the fallback
     const history = (opts.history || [])
