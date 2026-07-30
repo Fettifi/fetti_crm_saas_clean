@@ -8,6 +8,7 @@
 import { COMMS_PERSONA, personaBrief, conversationMode } from "@/lib/markPersona";
 import { claudeChat } from "@/lib/aiFallback";
 import { retrieveKB } from "@/lib/voice/mortgageKB";
+import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
 
 const MODEL = process.env.OPENAI_CHAT_MODEL || process.env.OPENAI_MODEL || "gpt-4o";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
@@ -164,6 +165,10 @@ export async function markConciergeReply(opts: {
   knownFacts?: string[];     // persisted conversation memory (lead.raw.concierge_facts)
   expertise?: string[];      // topic-matched teaching nuggets (expertiseFor)
 }): Promise<{ ok: boolean; reply?: string; flagged?: boolean; detail: string }> {
+  // MASTER SHUTOFF. Callers all gate on `ok && reply`, so this silently declines to
+  // auto-reply — the inbound message is still logged and still alerts Ramon, it just
+  // doesn't get an AI answer. See lib/automationGate.ts.
+  if (await automationPaused()) return { ok: false, detail: PAUSED_NOTE };
   try {
     const key = process.env.OPENAI_API_KEY; // optional now — Claude is primary, OpenAI is the fallback
     const history = (opts.history || [])

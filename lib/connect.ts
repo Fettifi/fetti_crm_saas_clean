@@ -11,6 +11,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { cfg } from "@/lib/settings";
 import { sendSms, sendEmail, logComms } from "@/lib/comms";
 import { COMMS_PERSONA } from "@/lib/markPersona";
+import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
 
 const APP = (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com").replace(/\/$/, "");
 
@@ -39,6 +40,10 @@ function smsOk(raw: any): boolean {
  * minutes later by a doc upload doesn't double-message. Best-effort — never throws.
  */
 export async function offerConnection(lead: Lead, opts: { trigger: "app" | "docs" }): Promise<{ sent: boolean; skipped?: string }> {
+  // MASTER SHUTOFF — this fires on its own when someone submits an application or uploads
+  // a document, so it counts as automated. lib/notify/docRequest.ts is deliberately NOT
+  // gated: those sends happen because a human clicked "remind" in the LOS.
+  if (await automationPaused()) return { sent: false, skipped: PAUSED_NOTE };
   try {
     if (!lead?.id) return { sent: false, skipped: "no lead" };
     if (/@fetti-internal\.test$/i.test(lead.email || "")) return { sent: false, skipped: "internal test" };

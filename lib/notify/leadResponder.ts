@@ -11,6 +11,7 @@ import { cfg } from "@/lib/settings";
 import { logComms, isEmailSuppressed } from "@/lib/comms";
 import { quietHoursFor, quietReason } from "@/lib/quietHours";
 import { COMMS_PERSONA } from "@/lib/markPersona";
+import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
 
 export type LeadContact = {
   id?: string | null;       // lead id — when set, the send is logged to the conversation thread
@@ -145,6 +146,9 @@ async function smsLead(l: LeadContact, body: string) {
 
 /** Instantly respond to a lead via every configured channel. Never throws. */
 export async function respondToLead(lead: LeadContact): Promise<{ sent: string[] }> {
+  // MASTER SHUTOFF for anything the system sends on its own. Returning no channels makes
+  // every caller record "delivered on no channel" rather than pretend it sent.
+  if (await automationPaused()) { console.warn("[leadResponder]", PAUSED_NOTE); return { sent: [] }; }
   const body = (lead.message && lead.message.trim()) || defaultMessage(lead);
   const kind = lead.kind || "first_touch";
   // The FIRST text stays a human opener — no doc-upload dump. But when we have their

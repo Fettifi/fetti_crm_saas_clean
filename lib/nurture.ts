@@ -16,6 +16,7 @@ import { renderTouch, EMAIL_TOUCHES, STEP_TOUCH, REACTIVATION_KEYS, prettyPurpos
 import { magicApplyLink } from "@/lib/magicLink";
 import { setSetting } from "@/lib/settings";
 import { COMMS_PERSONA } from "@/lib/markPersona";
+import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
 
 // Record every follow-up that actually goes out, so sends are AUDITABLE in
 // activity_log (the blind spot that let the phantom-status bug send 0 unnoticed).
@@ -162,6 +163,11 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   try {
   // Look back a full year so the dormant database keeps getting reactivated,
   // not just leads from the last 30 days.
+  if (await automationPaused()) {
+    console.warn("[nurture]", PAUSED_NOTE);
+    await logActivity({ entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.skipped", detail: { reason: "automation_paused" } }).catch(() => {});
+    return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0, ran: true, firstTouchesHeld: 0, dripSuppressedInProcess: 0 };
+  }
   const cutoff = new Date(Date.now() - 365 * 86400000).toISOString();
   const { data: leads } = await supabaseAdmin
     .from("leads")
