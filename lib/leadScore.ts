@@ -33,13 +33,38 @@ export type ScorableLead = {
 // scale as website/wizard intake so a tier means the same thing for every source.
 
 // Derive a numeric credit score from either a verbose band ("680-699") or a coded
-// band ("c700") — returns the first credit-range number found, else null.
+// band ("c700") — returns the borrower's most conservative defensible score, else null.
+//
+// BOUNDED vs POINT ESTIMATE (fixed 2026-07-31). The old version took the first
+// 3-digit number in the string and used it verbatim, which silently read a CEILING
+// as if it were the borrower's actual score: "below_650" scored 650 and collected
+// the 650-679 bucket's +20 — the same credit points as a genuine 650-679 borrower,
+// awarded to someone who had just told us they are UNDER 650. That is not a corner
+// case: on 2026-07-31, 79 of 152 Facebook leads answered "below_650" and 3 more
+// "Below 620", so 54% of the highest-volume source was scored a full bucket too
+// strong. An inflated tier is worse than no tier — Tier 1/2 is the queue Ramon
+// works by hand, so a lead that lies its way up the queue costs the scarcest
+// resource in the business.
+//
+// Rules, all conservative (never score a borrower stronger than they claimed):
+//   - CEILING ("below_650", "under 620", "<650") → strictly under N, so use N-1.
+//   - RANGE   ("650_679", "680-699")             → the LOW end governs.
+//   - FLOOR   ("720_plus", "700+")               → N is the floor; use N as-is.
+//   - BARE    ("c649", "700")                    → a point estimate; use N.
 function creditFromBand(band?: string | null): number | null {
   if (!band) return null;
-  const m = String(band).match(/(\d{3})/); // 3-digit credit number, e.g. 700 in "c700" or "700-719"
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return n >= 300 && n <= 850 ? n : null;
+  const s = String(band);
+  // Every plausible credit number in the string, in order.
+  const nums = (s.match(/\d{3}/g) || [])
+    .map((d) => parseInt(d, 10))
+    .filter((n) => n >= 300 && n <= 850);
+  if (!nums.length) return null;
+  // A stated RANGE: qualify on the low end, the only value the whole band supports.
+  if (nums.length > 1) return Math.min(...nums);
+  const n = nums[0];
+  // A stated CEILING: the borrower is strictly BELOW n, so the best they can be is n-1.
+  if (/(below|under|less\s*than|lower\s*than|no\s*higher\s*than|up\s*to)|</i.test(s)) return n - 1;
+  return n;
 }
 
 // Coded money answers arrive in THOUSANDS (350 = $350K). No real property value or
