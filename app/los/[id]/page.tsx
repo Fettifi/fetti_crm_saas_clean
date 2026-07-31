@@ -13,6 +13,7 @@ import DeleteConfirm from "@/components/DeleteConfirm";
 import ConditionsImporter from "@/components/los/ConditionsImporter";
 import IncomeQualifier from "@/components/los/IncomeQualifier";
 import CardAuthPanel from "@/components/los/CardAuthPanel";
+import { isBusinessCreditDeal } from "@/lib/bizApp";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
 
@@ -711,8 +712,17 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
         {/* 1003 / MISMO export */}
         <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4">
           <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="text-xs uppercase tracking-wide text-slate-500">1003 / URLA · MISMO 3.4 export</div>
+            {/* A working-capital or SBA file is not a mortgage: it gets a Business Credit
+                Application, not a 1003. Same panel, honest label, and the business form is
+                offered FIRST on those files so nobody prints the wrong one. */}
+            <div className="text-xs uppercase tracking-wide text-slate-500">
+              {isBusinessCreditDeal(file.product, null) ? "Business credit application · MISMO 3.4 export" : "1003 / URLA · MISMO 3.4 export"}
+            </div>
             <div className="flex items-center gap-2">
+              {isBusinessCreditDeal(file.product, null) && (
+                <a href={`/api/los/bizapp/pdf?file=${id}`} target="_blank" rel="noreferrer"
+                  className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 px-3 py-1.5 rounded-lg">⬇ Business Credit Application</a>
+              )}
               <Link href={`/los/${id}/1003`} className="text-xs font-semibold bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg">✎ Complete 1003</Link>
               <a href={`/api/los/export?file=${id}`} download
                 className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 px-3 py-1.5 rounded-lg">⬇ Download MISMO 3.4 XML</a>
