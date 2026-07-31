@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { use } from "react";
 import { CheckCircle2, Clock, Upload, Loader2, FileText, ShieldCheck, CalendarDays } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
+import { isBusinessCreditDeal } from "@/lib/bizApp";
 
 type Doc = { id: string; name: string; category: string; required: boolean; status: string; file_name?: string; notes?: string };
 type FileInfo = { file_number: string; borrower_name: string; product: string; stage: string; status: string; property_address?: string; state?: string };
@@ -38,6 +39,14 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
   // never overwrites). Sequential so the request→satisfied transition lands before the
   // next file, which then attaches as an additional doc to that same item.
   const [uploadErr, setUploadErr] = useState<string | null>(null);
+  // Business profile — shown only on business-purpose files. These applicants came through
+  // the mortgage-shaped intake, so their file has no entity, revenue or debt schedule; the
+  // magic apply link only restores contact details, so asking them to "finish the
+  // application" would mean starting over. Nine fields on the link they already have.
+  const [biz, setBiz] = useState<Record<string, string>>({});
+  const [bizSaving, setBizSaving] = useState(false);
+  const [bizSaved, setBizSaved] = useState(false);
+  const [bizErr, setBizErr] = useState<string | null>(null);
   async function uploadMany(docId: string | null, files: File[]) {
     if (!files.length) return;
     setBusyDoc(docId || "new");
@@ -94,6 +103,21 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
       <p className="text-sm text-red-700">{uploadErr}</p>
     </div>
   ) : null;
+  async function saveBiz(e: React.FormEvent) {
+    e.preventDefault();
+    setBizSaving(true); setBizErr(null);
+    try {
+      const r = await fetch(`/api/file/${token}/biz`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(biz),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "Could not save.");
+      setBizSaved(true);
+    } catch (err) {
+      setBizErr(err instanceof Error ? err.message : "Could not save.");
+    } finally { setBizSaving(false); }
+  }
+
   return (
     <div className="min-h-screen bg-white text-slate-900">
       {errBanner}
@@ -128,6 +152,58 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
             ))}
           </div>
         </div>
+
+        {/* Business profile — business-purpose files only. */}
+        {isBusinessCreditDeal(file.product, null) && (
+          <div className="mt-6 border border-slate-200 rounded-2xl p-5">
+            <div className="font-bold">About your business</div>
+            <p className="text-slate-500 text-sm mt-1">
+              A few details funders ask for. Takes about two minutes and it&apos;s the fastest way to get real terms.
+            </p>
+            {bizSaved ? (
+              <div className="mt-4 text-sm bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3">
+                Got it — thank you. That&apos;s everything we needed on the business side.
+              </div>
+            ) : (
+              <form onSubmit={saveBiz} className="mt-4 space-y-3">
+                {([
+                  ["business_name", "Legal business name", "text"],
+                  ["entity_type", "Entity type (LLC, S-Corp, sole proprietor…)", "text"],
+                  ["industry", "What the business does", "text"],
+                  ["months_in_business", "Months in business", "number"],
+                  ["annual_revenue", "Gross revenue last year ($)", "number"],
+                  ["avg_monthly_deposits", "Average monthly bank deposits ($)", "number"],
+                  ["use_of_proceeds", "What the funds are for", "text"],
+                  ["ownership_pct", "% of the business you own", "number"],
+                  ["ein", "EIN (optional)", "text"],
+                ] as [string, string, string][]).map(([k, label, type]) => (
+                  <div key={k}>
+                    <label className="text-xs text-slate-500">{label}</label>
+                    <input type={type} inputMode={type === "number" ? "numeric" : undefined}
+                      value={biz[k] || ""} onChange={(e) => setBiz((b) => ({ ...b, [k]: e.target.value }))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-900 focus:border-emerald-500 focus:outline-none" />
+                  </div>
+                ))}
+                <div>
+                  <label className="text-xs text-slate-500">Any current business loans, advances or lines of credit?</label>
+                  <div className="flex gap-2 mt-1">
+                    {(["no", "yes"] as const).map((v) => (
+                      <button key={v} type="button" onClick={() => setBiz((b) => ({ ...b, existing_biz_debt: v }))}
+                        className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-semibold ${biz.existing_biz_debt === v ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
+                        {v === "no" ? "No, nothing outstanding" : "Yes, there is some"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {bizErr && <div className="text-sm text-red-600">{bizErr}</div>}
+                <button type="submit" disabled={bizSaving}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold rounded-2xl py-3 text-sm">
+                  {bizSaving ? "Saving…" : "Save business details"}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
 
         {/* Documents */}
         <div className="mt-6">
