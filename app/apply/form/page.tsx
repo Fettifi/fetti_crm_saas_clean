@@ -330,6 +330,19 @@ function product(a: Answers): string {
 
 // ---- Arc 2: the disguised 1003 ----------------------------------------------
 // Built per-answers so we only ask what's relevant (purchase vs refi, etc.).
+/**
+ * A business-credit applicant is not a mortgage applicant. Working capital, SBA and
+ * equipment deals have no property and no personal housing story — asking a business owner
+ * for their marital status, dependents, rent payment and down-payment source is how the
+ * Javier Buenas file (FF-202607-1321) ended up holding property_address and own_other_property
+ * while the underwriter still had no entity name, no revenue and no debt schedule.
+ * Commercial real estate stays OUT of this branch: it is business credit, but it is secured
+ * by a property, so it still needs the property questions.
+ */
+function isBizCredit(a: Answers): boolean {
+  return a.goal === "business" && ["Working Capital", "SBA Loan", "Equipment"].includes(String(a.biz_type || ""));
+}
+
 function appSteps(a: Answers): Q[] {
   const purchase = a.goal === "buy" || a.invest_action === "purchase" || a.goal === "flip";
   const consumer = isConsumer(a);
@@ -345,18 +358,60 @@ function appSteps(a: Answers): Q[] {
     { value: "Permanent Resident", label: "Permanent resident (green card)" },
     { value: "Non-Permanent Resident", label: "Visa / other" },
   ] });
+  if (isBizCredit(a)) {
+    // ── THE BUSINESS BRANCH. These map 1:1 onto lib/bizApp.ts so the Business Credit
+    //    Application prints complete instead of printing a list of holes.
+    steps.push({ id: "business_name", kind: "text", prompt: "What's the legal name of your business?", sub: "Exactly as it appears on your entity paperwork.", placeholder: "Legal business name" });
+    steps.push({ id: "entity_type", kind: "select", prompt: "How is it set up?", options: [
+      { value: "LLC", label: "LLC", emoji: "🏢" }, { value: "S-Corp", label: "S-Corporation" },
+      { value: "C-Corp", label: "C-Corporation" }, { value: "Sole Proprietorship", label: "Sole proprietor", emoji: "🙋" },
+      { value: "Partnership", label: "Partnership" },
+    ] });
+    steps.push({ id: "months_in_business", kind: "select", prompt: "How long have you been in business?", sub: "Time in business is one of the first things a funder looks at.", options: [
+      { value: "6", label: "Under 1 year" }, { value: "18", label: "1–2 years" },
+      { value: "36", label: "2–5 years" }, { value: "72", label: "5+ years" },
+    ] });
+    steps.push({ id: "industry", kind: "text", prompt: "What does the business do?", placeholder: "Industry / what you sell", optional: true });
+    steps.push({ id: "annual_revenue", kind: "number", prompt: "Roughly what did the business gross last year?", sub: "Best estimate. Revenue, not profit.", placeholder: "Annual revenue ($)" });
+    steps.push({ id: "avg_monthly_deposits", kind: "number", prompt: "About how much goes through the business bank account each month?", sub: "Average monthly deposits. This is what most working-capital funders actually underwrite.", placeholder: "Avg monthly deposits ($)" });
+    steps.push({ id: "use_of_proceeds", kind: "text", prompt: "What will you use the money for?", sub: "Inventory, payroll, equipment, expansion, refinancing debt — plain words are fine.", placeholder: "Use of funds" });
+    // The single most important question on a working-capital file: stacked positions are
+    // the top decline reason, and finding out at funding is the expensive way.
+    steps.push({ id: "existing_biz_debt", kind: "select", prompt: "Does the business have any current loans, advances or lines of credit?", sub: "Including merchant cash advances. An honest yes is far better than a surprise later — it changes which funders fit, not whether you qualify.", options: [
+      { value: "no", label: "No, nothing outstanding", emoji: "✅" },
+      { value: "yes", label: "Yes, there's existing financing", emoji: "📋", hint: "We'll get the details with you" },
+    ] });
+    steps.push({ id: "ownership_pct", kind: "select", prompt: "How much of the business do you own?", options: [
+      { value: "100", label: "100% — it's all mine" }, { value: "51", label: "A majority (51–99%)" },
+      { value: "50", label: "Half (50%)" }, { value: "25", label: "A minority stake" },
+    ] });
+    steps.push({ id: "ein", kind: "text", prompt: "What's the business EIN?", sub: "🔒 Used to verify the entity and pull business credit. You can skip it for now.", placeholder: "XX-XXXXXXX", optional: true });
+  } else {
   steps.push({ id: "marital", kind: "select", prompt: "Marital status?", sub: "Required on every loan application.", options: [
     { value: "Married", label: "Married", emoji: "💍" }, { value: "Unmarried", label: "Single", emoji: "🙂" }, { value: "Separated", label: "Separated" },
   ] });
   steps.push({ id: "dependents", kind: "select", prompt: "Anyone depend on you financially?", options: [
     { value: "0", label: "Just me" }, { value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3+" },
   ] });
+  }
   // Co-borrower (URLA supports multiple borrowers; the public form used to hard-cap
   // at one, so spouses/partners/co-investors had no way onto their own application).
-  steps.push({ id: "has_coborrower", kind: "select", prompt: "Is anyone applying with you?", sub: "A spouse, partner or co-investor on the loan with you.", options: [
-    { value: "no", label: "Just me", emoji: "🙂" },
-    { value: "yes", label: "Yes — add a co-borrower", emoji: "👥", hint: "Their income can strengthen the application" },
-  ] });
+  // On a business file this is the SECOND OWNER/GUARANTOR — every funder wants everyone
+  // at 20%+ on the paperwork, so the wording changes with the branch.
+  steps.push(isBizCredit(a)
+    ? { id: "has_coborrower", kind: "select", prompt: "Is there another owner of 20% or more?", sub: "Funders want every significant owner on the application as a guarantor.", options: [
+        { value: "no", label: "No, just me", emoji: "🙂" },
+        { value: "yes", label: "Yes — add the other owner", emoji: "👥" },
+      ] }
+    : { id: "has_coborrower", kind: "select", prompt: "Is anyone applying with you?", sub: "A spouse, partner or co-investor on the loan with you.", options: [
+        { value: "no", label: "Just me", emoji: "🙂" },
+        { value: "yes", label: "Yes — add a co-borrower", emoji: "👥", hint: "Their income can strengthen the application" },
+      ] });
+  // ── MORTGAGE-ONLY from here to the declarations. A business-credit applicant has no
+  //    personal housing story, no employer (they ARE the employer), no down payment and no
+  //    "other real estate" question — asking anyway is what produced a working-capital file
+  //    full of homeowner data and no business data.
+  if (!isBizCredit(a)) {
   // Current residence (URLA §1b)
   steps.push({ id: "own_or_rent", kind: "select", prompt: "Right now, do you own or rent?", options: [
     { value: "Own", label: "I own", emoji: "🏠" }, { value: "Rent", label: "I rent", emoji: "🔑" }, { value: "Rent-free", label: "Neither / live rent-free" },
@@ -398,6 +453,11 @@ function appSteps(a: Answers): Q[] {
   steps.push({ id: "own_other_property", kind: "select", prompt: "Do you own any other real estate?", options: [
     { value: "no", label: "No, this is it", emoji: "🙂" }, { value: "yes", label: "Yes, I own other property", emoji: "🏘️" },
   ] });
+  }
+  // Liquidity is asked of BOTH: a funder wants to know a business owner's reserves too.
+  if (isBizCredit(a)) {
+    steps.push({ id: "liquid_assets", kind: "number", prompt: "Roughly how much does the business hold in cash or reserves?", sub: "Best estimate. Helps show staying power.", placeholder: "Business cash / reserves ($)", optional: true });
+  }
   // Declarations (URLA §5. The most material ones, asked gently)
   steps.push({ id: "bk_fc", kind: "select", prompt: "In the last 7 years, any bankruptcy or foreclosure?", sub: "Totally fine either way. It just shapes your options.", options: [
     { value: "no", label: "Nope, all good", emoji: "✅" }, { value: "yes", label: "Yes, within 7 years" },
@@ -689,6 +749,19 @@ export default function ApplyWizard() {
       // Portfolio flag — structural, not just a notes string: scoreLead awards
       // tier points for it and it lands in raw for downstream agents.
       own_other_property: a.own_other_property || undefined,
+      // ── Business-credit answers. rawBody in /api/apply spreads the whole payload into
+      //    lead.raw, and lib/bizApp.ts reads these exact keys, so the Business Credit
+      //    Application prints filled in instead of printing a list of holes.
+      business_name: a.business_name || undefined,
+      entity_type: a.entity_type || undefined,
+      ein: a.ein || undefined,
+      industry: a.industry || undefined,
+      months_in_business: a.months_in_business ? Number(a.months_in_business) : undefined,
+      annual_revenue: a.annual_revenue ? Number(a.annual_revenue) : undefined,
+      avg_monthly_deposits: a.avg_monthly_deposits ? Number(a.avg_monthly_deposits) : undefined,
+      use_of_proceeds: a.use_of_proceeds || undefined,
+      ownership_pct: a.ownership_pct ? Number(a.ownership_pct) : undefined,
+      existing_biz_debt: a.existing_biz_debt || undefined,
       bk_fc: a.bk_fc || undefined,
       notes: lines.join(" · "),
       referrer: av("ref"),

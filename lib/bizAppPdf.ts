@@ -144,7 +144,13 @@ export async function buildBizAppPdf(a: BizApp): Promise<Uint8Array> {
     let x = M;
     for (const [h, f] of cols) { page.drawText(h, { x: x + 2, y: H - cur - 8, size: 6.5, font: bold, color: GREY }); x += CW * f; }
     cur += 12;
-    const rows = Math.max(5, a.debts.length + 1);
+    if (a.noExistingDebt && !a.debts.length) {
+      // They were asked and said none. Print it, so a blank grid is never mistaken for
+      // "we forgot to ask" — the reader can tell an answer from an omission.
+      page.drawText("NONE — applicant declared no existing business financing", { x: M + 2, y: H - cur - 10, size: 8.5, font: bold, color: SLATE });
+      cur += 20;
+    }
+    const rows = a.noExistingDebt && !a.debts.length ? 2 : Math.max(5, a.debts.length + 1);
     for (let i = 0; i < rows; i++) {
       const d = a.debts[i];
       let cx = M;

@@ -84,6 +84,10 @@ export type BizApp = {
   // ── People and obligations
   owners: BizOwner[];
   debts: BizDebt[];
+  /** The applicant affirmatively said there is NO existing business financing. Different
+   *  from an empty schedule, which only means nobody asked — and on a working-capital file
+   *  that distinction is the whole underwrite. */
+  noExistingDebt?: boolean;
 
   // ── Declarations (business credit — none of these are consumer-mortgage questions)
   declarations?: {
@@ -204,6 +208,7 @@ export function assembleBizApp(lead: any, loanFile?: any): BizApp {
 
     owners,
     debts: Array.isArray(seeded.debts) ? seeded.debts : [],
+    noExistingDebt: seeded.noExistingDebt ?? (raw.existing_biz_debt === "no" ? true : raw.existing_biz_debt === "yes" ? false : undefined),
     declarations: seeded.declarations ?? {},
 
     meta: {
@@ -228,7 +233,7 @@ export function bizAppGaps(a: BizApp): string[] {
   if (a.annualRevenuePrior == null && a.annualRevenueYtd == null) gaps.push("Annual revenue");
   if (a.avgMonthlyDeposits == null) gaps.push("Average monthly bank deposits");
   if (!a.useOfProceeds) gaps.push("Use of proceeds");
-  if (!a.debts.length) gaps.push("Existing business debt schedule (or a written 'none')");
+  if (!a.debts.length && !a.noExistingDebt) gaps.push("Existing business debt schedule (or a written 'none')");
   const o = a.owners[0];
   if (!o?.name) gaps.push("Owner name");
   if (o && o.ownershipPct == null) gaps.push("Ownership %");
