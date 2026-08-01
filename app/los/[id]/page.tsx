@@ -93,6 +93,22 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [credit, setCredit] = useState<any>(null);
   const [creditLoading, setCreditLoading] = useState(false);
   const [credco, setCredco] = useState<Record<string, string>>({});
+  // Manual tri-merge order sheet. Credco has no interface on this account, so every pull is
+  // typed by hand — this puts the values in one place, in the portal's field order, with
+  // copy buttons, because a transposed SSN digit is a bad pull you have already paid for.
+  const [orderSheet, setOrderSheet] = useState<any>(null);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [copiedField, setCopiedField] = useState<string>("");
+  async function openOrderSheet() {
+    setOrderOpen((v) => !v);
+    if (orderSheet) return;
+    try { const r = await fetch(`/api/los/files/${id}/credit-order`); if (r.ok) setOrderSheet(await r.json()); } catch {}
+  }
+  function copyVal(label: string, v?: string | null) {
+    if (!v) return;
+    navigator.clipboard?.writeText(String(v));
+    setCopiedField(label); setTimeout(() => setCopiedField(""), 1200);
+  }
   const [credcoSaving, setCredcoSaving] = useState(false);
   const [credcoMsg, setCredcoMsg] = useState<string>("");
   async function saveCredco() {
@@ -905,11 +921,52 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
         <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="text-xs uppercase tracking-wide text-slate-500">Credit · Credco tri-merge</div>
+            <button onClick={openOrderSheet}
+              className="text-xs font-semibold bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg mr-auto ml-3">
+              {orderOpen ? "Hide order sheet" : "Manual order sheet"}
+            </button>
             <button onClick={pullCredit} disabled={creditLoading || !credit?.ready?.ready}
               className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
               {creditLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}{creditLoading ? "Pulling…" : "Pull credit"}
             </button>
           </div>
+          {orderOpen && (
+            <div className="mb-4 border border-slate-800 rounded-xl p-4 bg-slate-950/40">
+              <div className="text-xs text-slate-400 mb-3">
+                Key these into credco.com → Order → Instant Merge (their tri-merge). Click any value to copy.
+                {orderSheet?.reference ? <> Use <span className="font-mono text-slate-300">{orderSheet.reference}</span> as the reference number.</> : null}
+              </div>
+              {!orderSheet ? <div className="text-sm text-slate-500">Loading…</div> : (
+                <>
+                  {(orderSheet.borrowers || []).map((b: any, i: number) => (
+                    <div key={i} className="mb-3">
+                      <div className="text-[11px] uppercase tracking-wide text-emerald-500 mb-1">{i === 0 ? "Borrower" : "Co-borrower"}</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                        {([["Name", b.name], ["SSN", b.ssn], ["Date of birth", b.dob],
+                           ["Address", b.currentAddress], ["City", b.city], ["State", b.state], ["ZIP", b.zip],
+                           ["Prior address", b.priorAddress], ["Employer", b.employer], ["Phone", b.phone],
+                          ] as [string, string | null][]).filter(([, v]) => v).map(([label, v]) => (
+                          <button key={label} onClick={() => copyVal(label, v)} title="Click to copy"
+                            className="text-left bg-slate-900/60 border border-slate-800 hover:border-emerald-700 rounded-lg px-2.5 py-1.5">
+                            <div className="text-[10px] text-slate-500">{label}{copiedField === label ? " · copied" : ""}</div>
+                            <div className="text-sm text-slate-200 font-mono truncate">{v}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {orderSheet.missing?.length ? (
+                    <div className="text-xs text-amber-300/90 mt-2">Missing before you order: {orderSheet.missing.join(", ")}</div>
+                  ) : null}
+                  <div className="text-xs text-slate-500 mt-3 border-t border-slate-800 pt-2">
+                    {orderSheet.cardOnFile
+                      ? <>Card on file: <span className="text-slate-300">{orderSheet.card?.brand} ••••{orderSheet.card?.last4}</span> exp {orderSheet.card?.expMonth}/{orderSheet.card?.expYear}, ZIP {orderSheet.card?.billingZip}. Reveal the full number in the Card authorization panel — that reveal is access-logged.</>
+                      : <>No authorized card on file. Send the card authorization before ordering.</>}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           {credit?.credit?.scores?.length ? (
             <div className="flex flex-wrap items-center gap-3">
               {credit.credit.scores.map((s: any, i: number) => (
