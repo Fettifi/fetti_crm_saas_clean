@@ -32,14 +32,52 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-08-01-va-military-income";
+const LOGIC_VERSION = "2026-07-27-dscr-lease-rent";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" is deliberately GENERIC — a Chase/Wells file is rarely named
 // "bank statement"; the per-doc reader classifies, and a non-income statement is harmless.
 // Rental documents are income documents: on a DSCR deal the rent IS the qualifying income.
 // Leaving lease/rent-roll/1007 out of this pattern is why an investment file's leases were
 // never even SELECTED for reading, so DSCR files verified at $0 with no rental income type.
-const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\s_.-]*roll|rental[\s_.-]*agreement|tenanc|1007|1025|market[\s_.-]*rent|dd.?214|certificate[\s_.-]*of[\s_.-]*eligibility|\bcoe\b|\bva\b[\s_.-]*(?:award|benefit|letter|disab)|leave[\s_.-]*(?:and|&)?[\s_.-]*earnings|\bles\b|\bbah\b|\bbas\b|entitlement|veteran|military/i;
+const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\s_.-]*roll|rental[\s_.-]*agreement|tenanc|1007|1025|market[\s_.-]*rent/i;
+
+// ── VETERAN DETECTION, FROM METADATA ONLY ────────────────────────────────────────────────
+// Ramon, 2026-08-01: read the DD-214 and the certificate of eligibility on veteran files.
+//
+// The first attempt did this by adding those documents to INCOME_RE, which was wrong and
+// broke the Wilson file: MAX_DOCS orders the read but does NOT truncate it (HARD_MAX = 60),
+// so the two extra documents were actually fed to the vision reader, the doc-set fingerprint
+// changed, the stability cache missed, and a non-deterministic re-read replaced a settled
+// $11,701 with $3,129 — losing the co-borrower entirely. That cache exists precisely because
+// of Ramon on 2026-07-22: "income I verified last week is completely different this week on
+// the same file."
+//
+// The insight: we do not need to OCR a DD-214 to know it is a DD-214. Its NAME says so.
+// Neither document carries a dollar figure — the money is on the VA award/benefit letter
+// (already eligible via the long-standing `award`/`disability` patterns) and on an LES
+// (`earnings`). So detection is pure metadata: no download, no model call, no candidate slot,
+// no fingerprint change, and therefore zero effect on anyone's qualifying income.
+const VA_STATUS_RE = /dd.?214|certificate[\s_.-]*of[\s_.-]*eligibility|\bcoe\b/i;
+const VA_INCOME_RE = /\bva\b[\s_.-]*(?:award|benefit|comp)|disability[\s_.-]*award|leave[\s_.-]*(?:and|&)?[\s_.-]*earnings|\bles\b/i;
+
+/** An advisory flag when a veteran's status documents are on file but the award letter that
+ *  actually states the money is not. Appended to BOTH the fresh and cached responses, so it
+ *  shows without ever invalidating a settled income figure. */
+function veteranFlag(docs: any[], loanType: string): { text: string; addBackMonthly: number; borrower: 1 | 2 } | null {
+  const named = (d: any) => `${d?.name || ""} ${d?.file_name || ""}`;
+  const status = (docs || []).filter((d: any) => d?.storage_path && VA_STATUS_RE.test(named(d)));
+  if (!status.length) return null;
+  const hasIncomeDoc = (docs || []).some((d: any) => d?.storage_path && VA_INCOME_RE.test(named(d)));
+  if (hasIncomeDoc) return null;
+  const grossUp = loanType === "fha" ? 1.15 : 1.25;
+  const which = [...new Set(status.map((d: any) => (/dd.?214/i.test(named(d)) ? "DD-214" : "COE")))].join(" + ");
+  const who = String(status[0]?.name || "").replace(VA_STATUS_RE, "").replace(/\b(va|paul|the)\b/gi, "").trim();
+  return {
+    text: `${which} on file${who ? ` (${who})` : ""} — veteran on this loan. Neither document states a dollar amount: the DD-214 proves service and the COE proves entitlement (a funding-fee EXEMPTION on it means service-connected disability compensation is being paid). Request the VA award/benefit letter — it is non-taxable and grosses up ×${grossUp} — or the LES for BAH/BAS. None of it is counted yet.`,
+    addBackMonthly: 0,
+    borrower: 1,
+  };
+}
 
 function mediaTypeFor(name: string): string {
   const ext = (name || "").toLowerCase().split(".").pop() || "";
@@ -211,7 +249,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         try {
           const cached = JSON.parse(cachedRaw);
           if (cached?.fingerprint === fingerprint && cached?.payload) {
-            return NextResponse.json({ ...cached.payload, cached: true, verifiedAt: cached.verifiedAt || null });
+            // The veteran advisory is metadata-derived, so it is layered onto the cached
+            // payload rather than baked into the fingerprint — it can appear without
+            // re-reading anything and without changing a settled income number.
+            const vf = veteranFlag((docs || []) as any[], loanType);
+            const payload = vf
+              ? { ...cached.payload, flags: [...((cached.payload as any).flags || []), vf] }
+              : cached.payload;
+            return NextResponse.json({ ...payload, cached: true, verifiedAt: cached.verifiedAt || null });
           }
         } catch { /* corrupt cache — fall through to a fresh read */ }
       }
@@ -496,7 +541,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       rentalUnits: rental?.units || null };
     const verifiedAt = new Date().toISOString();
     await setSetting(CACHE_KEY, JSON.stringify({ fingerprint, verifiedAt, payload })).catch(() => {});
-    return NextResponse.json({ ...payload, cached: false, verifiedAt });
+    const vf = veteranFlag((docs || []) as any[], loanType);
+    const out = vf ? { ...payload, flags: [...((payload as any).flags || []), vf] } : payload;
+    return NextResponse.json({ ...out, cached: false, verifiedAt });
   } catch (e: any) {
     console.error("[los/verify-income]", e);
     return NextResponse.json({ error: e?.message || "Income verification failed." }, { status: 500 });
