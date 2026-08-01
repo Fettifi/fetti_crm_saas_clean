@@ -11,7 +11,8 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { cfg } from "@/lib/settings";
 import { sendSms, sendEmail, logComms } from "@/lib/comms";
 import { COMMS_PERSONA } from "@/lib/markPersona";
-import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
+import { automationPaused, allowlistPermits, PAUSED_NOTE } from "@/lib/automationGate";
+import { convertedReasons } from "@/lib/inProcess";
 
 const APP = (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com").replace(/\/$/, "");
 
@@ -47,6 +48,22 @@ export async function offerConnection(lead: Lead, opts: { trigger: "app" | "docs
   try {
     if (!lead?.id) return { sent: false, skipped: "no lead" };
     if (/@fetti-internal\.test$/i.test(lead.email || "")) return { sent: false, skipped: "internal test" };
+    // PILOT LIST. This sender never consulted it, so it could reach anyone while the rebuilt
+    // engine was supposedly limited to a couple of watched borrowers.
+    if (!(await allowlistPermits(lead.id))) return { sent: false, skipped: "not on the automation pilot allowlist" };
+    // ALREADY A CLIENT. Note what this means here: offerConnection is TRIGGERED BY conversion
+    // (application completed, or documents uploaded), so its recipient set IS the converted
+    // population by construction — which makes it the sharpest case of the thing Ramon ruled
+    // out on 2026-08-01. Under that rule this sender goes quiet.
+    //
+    // It is gated rather than deleted because the call it makes ("your documents are in —
+    // want a video call, a phone call, or to talk now?") is service, not drip, and Ramon may
+    // well want it back as a second OPERATIONAL exception alongside the doc-chaser. Flip it
+    // on by making this check allow the "connect" trigger; nothing else needs to change.
+    const converted = await convertedReasons(lead.id);
+    if (converted?.length) {
+      return { sent: false, skipped: `already a client (${converted.join("+")}) — automated messaging is off for converted applicants` };
+    }
     // Fresh read of consent/dedup state.
     const { data: fresh } = await supabaseAdmin.from("leads").select("raw, full_name, first_name, email, phone, loan_purpose").eq("id", lead.id).maybeSingle();
     const raw = (fresh?.raw && typeof fresh.raw === "object" ? fresh.raw : {}) as any;
@@ -65,7 +82,10 @@ export async function offerConnection(lead: Lead, opts: { trigger: "app" | "docs
     const phone = fresh?.phone || lead.phone;
     let sent = false;
     if (smsOk(raw) && phone) {
-      const r = await sendSms(phone, smsBody, { state: (lead as any)?.state ?? null, allowQuietHours: true });
+      // NOT allowQuietHours. This is a solicitation ("want a call?"), not a transactional
+      // alert the borrower just asked for, so it belongs inside the 8am-8pm recipient-local
+      // window like every other automated text.
+      const r = await sendSms(phone, smsBody, { state: (lead as any)?.state ?? null });
       if (r.ok) { sent = true; await logComms({ leadId: lead.id, channel: "sms", direction: "outbound", type: "connect_offer", body: smsBody, to: phone, status: "sent", providerId: r.sid, actor: "mark" }).catch(() => {}); }
     }
     if (!sent && (fresh?.email || lead.email)) {

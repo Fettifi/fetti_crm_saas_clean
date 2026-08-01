@@ -17,6 +17,7 @@ import { magicApplyLink } from "@/lib/magicLink";
 import { setSetting } from "@/lib/settings";
 import { COMMS_PERSONA } from "@/lib/markPersona";
 import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
+import { convertedLeads } from "@/lib/inProcess";
 
 // Record every follow-up that actually goes out, so sends are AUDITABLE in
 // activity_log (the blind spot that let the phantom-status bug send 0 unnoticed).
@@ -204,23 +205,20 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   // "Uploaded" means storage_path IS NOT NULL — a checklist row with no file behind it is
   // a placeholder, and a loan file with only placeholders is a phantom (those exist), so
   // neither counts as being in process.
-  const inProcess = new Set<string>();
+  // The shared applicant gate (lib/inProcess.ts). This used to be a local Set keyed on
+  // UPLOADED DOCUMENTS only, which protected 20 of the 55 real applicants — 35 people who had
+  // completed an application were still drip-eligible, every one of them reachable.
+  //
+  // It also silently depended on a second guard that did nothing: DONE_STAGES below tests for
+  // "processing/underwriting/approved/clear to close" against LEAD stages, which are
+  // New Lead/Contacted/Engaged/Application/Submitted/Funded. Those vocabularies do not
+  // overlap, so that check matched ZERO of 202 leads while looking like protection.
+  //
+  // Throws on lookup failure rather than returning an empty set: "we could not tell" and
+  // "nobody is a client" must never produce the same behaviour.
   const leadIds = (leads || []).map((l: any) => l.id).filter(Boolean);
-  if (leadIds.length) {
-    const { data: files } = await supabaseAdmin
-      .from("loan_files").select("id, lead_id").in("lead_id", leadIds);
-    const byFile = new Map<string, string>();   // loan_file id -> lead id
-    for (const f of (files || []) as any[]) if (f.lead_id) byFile.set(f.id, f.lead_id);
-    if (byFile.size) {
-      const { data: docs } = await supabaseAdmin
-        .from("loan_documents").select("loan_file_id").in("loan_file_id", [...byFile.keys()])
-        .not("storage_path", "is", null);
-      for (const d of (docs || []) as any[]) {
-        const leadId = byFile.get(d.loan_file_id);
-        if (leadId) inProcess.add(leadId);
-      }
-    }
-  }
+  const convertedMap = await convertedLeads(leadIds);
+  const inProcess = new Set<string>(convertedMap.keys());
 
   let considered = 0, sent = 0, chased = 0, reactivated = 0, reviewsRequested = 0, dripSuppressedInProcess = 0;
   // BACKLOG STAGGER. If the drip stops for any reason (see the lock bug above, which cost
@@ -318,7 +316,12 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       const emailBody = `Hey ${name} — you're genuinely close on ${purpose}. Still open on my side: ${list}.\n\nUpload them here whenever suits: ${link}\n\nIf one of these is a pain to get, tell me which — there's usually a workaround.${textMeLine}`;
       try {
         const res = await respondToLead({
-          id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state, message,
+          // kind "doc_chase" -> govKind "operational" (leadResponder.ts). This MATTERS now:
+          // "operational" is the one kind allowed to reach a converted client, and until
+          // today this lane passed "nurture", which mapped to "proactive". Nobody in the repo
+          // produced "operational" at all, so the doc-chaser would have been silenced by the
+          // new applicant gate — the opposite of what Ramon asked for.
+          id: l.id, kind: "doc_chase", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state, message,
           emailSubject: "what's left on your file", emailBody,
         });
         if ((res?.sent || []).length) {

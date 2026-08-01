@@ -29,6 +29,7 @@
 // dashboard.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { automationPaused, allowlistPermits } from "@/lib/automationGate";
+import { convertedReasons } from "@/lib/inProcess";
 import crypto from "crypto";
 
 export type SendKind =
@@ -40,6 +41,12 @@ export type Decision = { allow: true } | { allow: false; reason: string };
 
 /** Proactive touches a lead may EVER receive. Was effectively 12+ across 90 days. */
 export const PROACTIVE_LIFETIME_CAP = 3;
+// The ONLY send kinds allowed to reach a borrower who has already converted. Ramon kept the
+// doc-chaser (2026-08-01): asking for a document we are genuinely waiting on moves the
+// client's own file forward and is not marketing. Drip, re-engagement and AI concierge
+// replies all stop the moment someone becomes a client.
+export const OPERATIONAL_KINDS = new Set<SendKind>(["operational"]);
+
 /** Minimum gap between any two automated messages to the same person, any channel. */
 export const COOLDOWN_HOURS: Record<SendKind, number> = {
   reply: 0,          // a reply is invited by definition; rule 3 stops it running away
@@ -116,6 +123,36 @@ export async function authorizeSend(input: {
   //     first, watched, then widened — rather than 190 at once, which is how we got here.
   if (!(await allowlistPermits(leadId))) {
     return { allow: false, reason: "not on the automation pilot allowlist" };
+  }
+
+  // 2c. ALREADY A CLIENT. Ramon, 2026-08-01: "don't auto message anyone that's already
+  //     converted to a real loan application... cross reference against active loan
+  //     application and any auto messaging going out. should not happen."
+  //
+  //     This sits here — after the allowlist, BEFORE the thread load — for two reasons.
+  //     It is a fact about the PERSON, not the conversation, so rules 3-6 (which are pure
+  //     functions of the message thread and must stay replayable with no IO) can never
+  //     express it. And putting it above threadFor() means a converted borrower costs no
+  //     query at all.
+  //
+  //     Until today not one of the seven rules read application state: the governor's only
+  //     data sources were activity_log and activity_log again. It never touched `leads` or
+  //     `loan_files`, so a borrower mid-underwriting looked exactly like a cold lead.
+  //
+  //     OPERATIONAL_KINDS is the deliberate exception. Ramon kept the doc-chaser (2026-08-01):
+  //     chasing a document we are actually waiting on moves the client's own file forward and
+  //     is not marketing. Everything else — drip, re-engagement, AI concierge replies — goes
+  //     silent the moment someone converts.
+  if (!OPERATIONAL_KINDS.has(input.kind)) {
+    const reasons = await convertedReasons(leadId).catch((e) => {
+      // A failed lookup must DENY, never fall through. "Could not tell" and "not a client"
+      // must not produce the same outcome — that is how a borrower in underwriting gets a
+      // drip message during a database blip.
+      throw new Error(`governor: could not establish applicant status for ${leadId} — ${e instanceof Error ? e.message : e}`);
+    });
+    if (reasons?.length) {
+      return { allow: false, reason: `already a client (${reasons.join("+")}) — automated messaging is off for converted applicants` };
+    }
   }
 
   const now = input.now ?? new Date();

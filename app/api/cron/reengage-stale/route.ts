@@ -7,6 +7,8 @@ import { LICENSING_NOTE } from "@/lib/legal";
 import { senderFrom } from "@/lib/notify/mailFrom";
 import { cfg } from "@/lib/settings";
 import { recordHeartbeat, recordAttempt } from "@/lib/heartbeat";
+import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
+import { convertedLeadIds } from "@/lib/inProcess";
 
 // ONE-TIME, MANUAL, EMAIL-ONLY re-engagement of historically-recovered Facebook
 // leads (raw.historical_import) that were correctly held from auto-contact (stale
@@ -69,11 +71,23 @@ async function run(dry: boolean) {
   const capRaw = await cfg("REENGAGE_CAP");
   const capNum = capRaw == null || String(capRaw).trim() === "" ? NaN : Number(capRaw);
   const CAP = Number.isFinite(capNum) && capNum > 0 ? capNum : 25;
+  // MASTER SHUTOFF. This cron was NOT under it: it builds its own sendEmail (above) that
+  // POSTs straight to Resend, so it never touched lib/comms, the governor or automationPaused
+  // — meaning it could still send while everything else was "paused". lib/automationGate.ts
+  // explicitly lists re-engagement as something the pause stops; it did not.
+  if (await automationPaused()) return { paused: true, note: PAUSED_NOTE, found: 0, sent: 0 };
+
   const { data: leads } = await supabaseAdmin
     .from("leads").select("id, full_name, email, stage, raw, source, nurture_paused").limit(5000);
+
+  // ALREADY A CLIENT — cross-referenced against real loan applications before anything is
+  // built, so a converted borrower can never be in `targets` at all.
+  const converted = await convertedLeadIds((leads || []).map((l: any) => l.id).filter(Boolean));
+
   const targets = (leads || []).filter((l: any) => {
     const raw = l.raw || {};
     if (l.nurture_paused) return false;               // unsubscribed/opted-out: never email again
+    if (converted.has(l.id)) return false;            // already a client — Ramon, 2026-08-01
     if (!raw.historical_import) return false;        // only the recovered/stale Meta leads
     if (raw.historical_outreach_at) return false;    // already emailed once — never repeat
     if (!l.email) return false;                      // email-only outreach
