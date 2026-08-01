@@ -32,14 +32,14 @@ const MAX_DOCS = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-07-27-dscr-lease-rent";
+const LOGIC_VERSION = "2026-08-01-va-military-income";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" is deliberately GENERIC — a Chase/Wells file is rarely named
 // "bank statement"; the per-doc reader classifies, and a non-income statement is harmless.
 // Rental documents are income documents: on a DSCR deal the rent IS the qualifying income.
 // Leaving lease/rent-roll/1007 out of this pattern is why an investment file's leases were
 // never even SELECTED for reading, so DSCR files verified at $0 with no rental income type.
-const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\s_.-]*roll|rental[\s_.-]*agreement|tenanc|1007|1025|market[\s_.-]*rent/i;
+const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\s_.-]*roll|rental[\s_.-]*agreement|tenanc|1007|1025|market[\s_.-]*rent|dd.?214|certificate[\s_.-]*of[\s_.-]*eligibility|\bcoe\b|\bva\b[\s_.-]*(?:award|benefit|letter|disab)|leave[\s_.-]*(?:and|&)?[\s_.-]*earnings|\bles\b|\bbah\b|\bbas\b|entitlement|veteran|military/i;
 
 function mediaTypeFor(name: string): string {
   const ext = (name || "").toLowerCase().split(".").pop() || "";

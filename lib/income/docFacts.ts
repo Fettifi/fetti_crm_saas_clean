@@ -13,6 +13,22 @@ export type DocType =
   // Rental documents. On a DSCR deal the property's rent IS the qualifying income, so a lease
   // is an income document in exactly the way a paystub is on a wage deal.
   | "lease" | "rent_roll" | "appraisal_1007"
+  // MILITARY / VETERAN. Ramon, 2026-08-01: "on certain files, especially ones that contain a
+  // veteran, I want you to read the DD-214 and the certificate of eligibility... You're not
+  // factoring that into the income on the Wilson file."
+  //
+  // These four are NOT interchangeable, and the distinction decides whether a dollar gets
+  // counted:
+  //   dd214        — service dates, rank, character of discharge. Proves VETERAN STATUS.
+  //                  Carries NO ongoing income figure. Never a dollar source.
+  //   va_coe       — entitlement amount + FUNDING FEE EXEMPTION. Also no dollar income —
+  //                  but "exempt" means the veteran draws service-connected disability
+  //                  compensation, which IS income we must then go and document.
+  //   va_award     — the VA benefit/award letter. THIS is where the monthly disability
+  //                  compensation figure lives. Non-taxable, so it grosses up.
+  //   military_les — active-duty Leave & Earnings Statement: base pay (taxable) plus BAH
+  //                  and BAS (non-taxable allowances that also gross up).
+  | "dd214" | "va_coe" | "va_award" | "military_les"
   | "other";
 
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly";
@@ -66,6 +82,21 @@ export type DocFact = {
   marketRent?: number | null;          // appraiser's opinion of market rent (1007/1025 only)
   isShortTermRental?: boolean;         // STR/Airbnb — trailing-12 method, not a fixed lease
   trailing12GrossRent?: number | null; // STR trailing-12-month gross
+  // ── MILITARY / VETERAN ───────────────────────────────────────────────────────────────
+  // DD-214 and the COE prove STATUS, not dollars. They are read so the engine can tell that
+  // VA income must exist on this file — and say so out loud when the award letter is
+  // missing, instead of silently qualifying the borrower on wages alone.
+  isVeteran?: boolean;                    // DD-214 present and discharge is not dishonorable
+  serviceCharacter?: string | null;       // "Honorable" / "General" / etc., as printed
+  serviceStartDate?: string | null;       // YYYY-MM-DD
+  serviceEndDate?: string | null;         // YYYY-MM-DD
+  vaFundingFeeExempt?: boolean | null;    // COE: exempt ⇒ drawing service-connected disability
+  vaEntitlementAmount?: number | null;    // COE entitlement — an ELIGIBILITY figure, never income
+  vaDisabilityRating?: number | null;     // percent, when the award letter states it
+  // LES allowances. Base pay goes in the normal wage fields; these two are separate because
+  // they are NON-TAXABLE and therefore grossed up, while base pay is not.
+  bahMonthly?: number | null;             // Basic Allowance for Housing
+  basMonthly?: number | null;             // Basic Allowance for Subsistence
   notes?: string;
 };
 
@@ -87,7 +118,7 @@ Output ONLY: {"docFacts":[DocFact, ...]}  — one DocFact per DISTINCT document 
 
 Each DocFact:
 {"file":"<the '--- Document: X ---' label this came from>",
- "docType":"paystub|w2|1099nec|1099misc|schedule_c|tax_return_1040|wage_income_transcript|bank_statement|ssa_award|pension|disability|voe|lease|rent_roll|appraisal_1007|other",
+ "docType":"paystub|w2|1099nec|1099misc|schedule_c|tax_return_1040|wage_income_transcript|bank_statement|ssa_award|pension|disability|voe|lease|rent_roll|appraisal_1007|dd214|va_coe|va_award|military_les|other",
  "personName":"<name printed on the doc>",
  "borrower":<1 or 2 — see BORROWER ASSIGNMENT>,
  "incomeCategory":"<wage_salaried = a steady base salary/hourly rate (may have some OT/bonus on top) | wage_variable = FLUCTUATING hourly / gig / IHSS / piece-rate with NO stable base (hours & pay vary each period) | self_employment = 1099/Schedule C | fixed_benefit = SSA/pension/disability/annuity | null if not an income doc>",
@@ -105,11 +136,20 @@ Each DocFact:
  "propertyAddress":"<street address the rent is for — lease/rent roll/1007 only|null>", "unit":"<unit or apt designator if the doc names one|null>",
  "leaseMonthlyRent":<the rent AS PRINTED on a lease or rent-roll row|null>, "leaseRentFrequency":"monthly|weekly|biweekly|semimonthly|annual (the period that rent figure is stated for; monthly if not stated)", "leaseStartDate":"<YYYY-MM-DD|null>", "leaseEndDate":"<YYYY-MM-DD|null>", "isMonthToMonth":<true if the tenancy is month-to-month/holdover|false>, "tenantName":"<tenant on the lease|null>",
  "marketRent":<the APPRAISER'S opinion of market rent — Form 1007/1025 only, never a lease amount|null>,
+ "isVeteran":<true if a DD-214 shows service with a discharge that is not dishonorable|null>, "serviceCharacter":"<character of service exactly as printed, e.g. Honorable|null>", "serviceStartDate":"<YYYY-MM-DD|null>", "serviceEndDate":"<YYYY-MM-DD|null>",
+ "vaFundingFeeExempt":<COE only: true if it states the veteran is EXEMPT from the VA funding fee|false|null>, "vaEntitlementAmount":<COE entitlement figure|null>, "vaDisabilityRating":<disability percent if stated|null>,
+ "bahMonthly":<LES Basic Allowance for Housing per month|null>, "basMonthly":<LES Basic Allowance for Subsistence per month|null>,
  "isShortTermRental":<true for Airbnb/VRBO/short-term operating statements|false>, "trailing12GrossRent":<trailing-12-month gross for a short-term rental|null>,
  "notes":"<one terse line: anything an underwriter needs, e.g. 'recipient John R', 'declining YoY', 'partial year'>"}
 
 BORROWER ASSIGNMENT: you are given the named applicant(s). Assign each document to the borrower whose NAME is printed on it. The named list is OFTEN incomplete or lists one person twice — a person who has their OWN income document here is a real borrower even if not on that list; the FIRST distinct person is borrower 1, a genuinely DIFFERENT second person is borrower 2. A spouse who appears ONLY inside a joint 1040 (no income doc of their own) is NOT a borrower — still emit the 1040 DocFact with isJointReturn=true, but do not invent a borrower for them.
 STREAM IDs: give the SAME streamId to every document for the same job (a stub, its W2, its transcript all share it). Give DIFFERENT streamIds to genuinely different jobs — including one IHSS provider's different recipients (each recipient's case number makes a distinct streamId).
+MILITARY / VETERAN DOCUMENTS — read these whenever they appear, and DO NOT invent a dollar figure that is not printed:
+• DD-214 (Certificate of Release or Discharge): docType "dd214". Set isVeteran, serviceCharacter and the service dates. A DD-214 shows NO ongoing income — leave every income field null. Never treat a separation/severance figure on it as monthly income.
+• Certificate of Eligibility (COE, VA Form 26-1880 output): docType "va_coe". Set vaEntitlementAmount and — most important — vaFundingFeeExempt. Entitlement is an ELIGIBILITY amount, NOT income: never put it in monthlyBenefit. If the COE says the veteran is exempt from the funding fee, that means they receive service-connected disability compensation, so set vaFundingFeeExempt true even though this document does not state the dollar amount.
+• VA benefit / award letter: docType "va_award". THIS is the document with the money. Put the monthly compensation in monthlyBenefit, set benefitType "va_disability", nonTaxable true, and vaDisabilityRating if a percent is shown. VA disability is generally lifetime — leave continuanceMonthsRemaining null unless the letter states an end date.
+• Military Leave & Earnings Statement (LES): docType "military_les". Base pay goes in the normal wage fields (regularPerPeriod / grossPerPeriod / payFrequency) because it IS taxable. Put BAH in bahMonthly and BAS in basMonthly — those are non-taxable allowances and are handled separately; do NOT also fold them into grossPerPeriod, or they get counted twice.
+
 RENTAL DOCUMENTS (lease / rent roll / Form 1007-1025): on an investment deal the RENT is the qualifying income, so read these as carefully as a paystub. Emit ONE DocFact PER UNIT — a rent roll listing 4 units is 4 DocFacts, each with its own propertyAddress/unit/leaseMonthlyRent; a duplex lease covering 2 units is 2 DocFacts. Put the LEASE amount in leaseMonthlyRent and the APPRAISER'S market-rent opinion in marketRent — never the same number in both, and never a 1007's market rent in leaseMonthlyRent (a separate engine compares them, and swapping them changes the qualifying rent). leaseMonthlyRent is the BASE monthly rent only — exclude pet rent, parking, utility reimbursements and one-off fees. Report the rent EXACTLY as printed and set leaseRentFrequency to the period it is stated for — do NOT convert it to monthly yourself; the engine does that. Leave incomeCategory null and set borrower to the property owner/landlord named on the document (borrower 1 if unclear) — rental docs belong to the property, not to a person's employment.
 RULES: numbers EXACTLY as printed (never rounded/derived). Never assign a joint 1040's combined wages to one person — capture it as a joint-return fact. Extract only what you can SEE; null otherwise. JSON only.`;
 
@@ -227,11 +267,16 @@ function monthsBetweenISO(a?: string | null, b?: string | null): number {
   return Math.abs((+pa[1] - +pb[1]) * 12 + (+pa[2] - +pb[2]) + (+pa[3] - +pb[3]) / 30);
 }
 
-const WAGE_DOCS = new Set<DocType>(["paystub", "w2", "wage_income_transcript", "voe"]);
+const WAGE_DOCS = new Set<DocType>(["paystub", "w2", "wage_income_transcript", "voe", "military_les"]);
 const SE_DOCS = new Set<DocType>(["schedule_c", "1099nec", "1099misc"]);
-const BENEFIT_DOCS = new Set<DocType>(["ssa_award", "pension", "disability"]);
+const BENEFIT_DOCS = new Set<DocType>(["ssa_award", "pension", "disability", "va_award"]);
 // Docs that make a person a real borrower (a lone joint 1040 does NOT).
-const INDIVIDUAL_DOCS = new Set<DocType>(["paystub", "w2", "wage_income_transcript", "voe", "1099nec", "1099misc", "schedule_c", "ssa_award", "pension", "disability"]);
+const INDIVIDUAL_DOCS = new Set<DocType>(["paystub", "w2", "wage_income_transcript", "voe", "1099nec", "1099misc", "schedule_c", "ssa_award", "pension", "disability", "va_award", "military_les"]);
+// Status documents. They prove a veteran is on the file but carry no dollar figure, so they
+// must NEVER pull a borrower into the income calculation on their own — a file holding only
+// a DD-214 has no documented income, and treating it as an income doc would qualify someone
+// on nothing. They are read for the flags below, not for math.
+const VA_STATUS_DOCS = new Set<DocType>(["dd214", "va_coe"]);
 
 export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "conventional" | "fha" }): QualifyResult {
   const grossUp = opts.loanType === "fha" ? 1.15 : 1.25;
@@ -568,6 +613,57 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
       } else {
         add(b, m, label, `documented monthly${f.nonTaxable ? ` grossed up ×${grossUp}` : ""}`, streamKey(f));
       }
+    }
+
+    // ── MILITARY ALLOWANCES (LES). BAH and BAS are non-taxable, so they gross up, and they
+    // are counted SEPARATELY from base pay — the reader is told to keep them out of
+    // grossPerPeriod precisely so they can't be counted twice here. Highest single LES wins
+    // rather than summing, because several months of statements repeat the same allowance.
+    const les = bf.filter((f) => f.docType === "military_les");
+    if (les.length) {
+      for (const [field, name] of [["bahMonthly", "BAH (housing allowance)"], ["basMonthly", "BAS (subsistence allowance)"]] as const) {
+        const best = les.reduce<number | null>((mx, f) => {
+          const v = num((f as any)[field]); return v != null && (mx == null || v > mx) ? v : mx;
+        }, null);
+        if (best != null && best > 0) add(b, best * grossUp, name, `documented monthly, non-taxable — grossed up ×${grossUp}`, `les|${field}`);
+      }
+    }
+
+  }
+
+
+  // ── THE VETERAN RULE. Deliberately OUTSIDE the per-borrower loop above: that loop only
+  // visits borrowers who were pulled in by an INCOME document, and a DD-214/COE is not one.
+  // A file holding only status documents would otherwise skip this check entirely — which is
+  // precisely the case that matters, because it is the file where nobody has asked for the
+  // award letter yet.
+  //
+  // Ramon, 2026-08-01, on the Wilson file: a DD-214 or COE proves there is a veteran here,
+  // and a COE marked EXEMPT from the funding fee means service-connected disability
+  // compensation is being paid — real, non-taxable, grossable income. Neither document states
+  // the amount, so the engine cannot count it. What it must NOT do is stay quiet: silently
+  // qualifying a veteran on wages alone is how income comes in low and the file is structured
+  // wrong.
+  {
+    const statusByBorrower = new Map<1 | 2, DocFact[]>();
+    for (const f of clean) if (VA_STATUS_DOCS.has(f.docType)) {
+      const arr = statusByBorrower.get(f.borrower) || [];
+      arr.push(f); statusByBorrower.set(f.borrower, arr);
+    }
+    for (const b of [...statusByBorrower.keys()].sort()) {
+      const statusDocs = statusByBorrower.get(b)!;
+      const hasVaIncome = clean.some((f) => f.borrower === b &&
+        (f.docType === "va_award" || (f.benefitType || "").toLowerCase() === "va_disability"));
+      if (hasVaIncome) continue;
+      const exempt = statusDocs.some((f) => f.vaFundingFeeExempt === true);
+      const which = [...new Set(statusDocs.map((f) => (f.docType === "dd214" ? "DD-214" : "COE")))].join(" + ");
+      flags.push({
+        text: exempt
+          ? `${which} on file and the COE shows the borrower is EXEMPT from the VA funding fee — that means service-connected disability compensation is being paid. Get the VA award/benefit letter: it is non-taxable and grosses up \u00d7${grossUp}, and none of it is counted yet.`
+          : `${which} on file — veteran borrower. If VA disability compensation is received, request the VA award/benefit letter (non-taxable, grosses up \u00d7${grossUp}). Not counted without it.`,
+        addBackMonthly: 0,
+        borrower: b,
+      });
     }
   }
 
