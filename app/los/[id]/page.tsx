@@ -92,6 +92,23 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [uwLoading, setUwLoading] = useState(false);
   const [credit, setCredit] = useState<any>(null);
   const [creditLoading, setCreditLoading] = useState(false);
+  const [credco, setCredco] = useState<Record<string, string>>({});
+  const [credcoSaving, setCredcoSaving] = useState(false);
+  const [credcoMsg, setCredcoMsg] = useState<string>("");
+  async function saveCredco() {
+    setCredcoSaving(true); setCredcoMsg("");
+    try {
+      const r = await fetch(`/api/los/credit/config`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(credco),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "Could not save.");
+      setCredcoMsg(j.configured ? "Connected." : "Saved — still missing a required value.");
+      setCredco({});
+      const s = await fetch(`/api/los/credit?file=${id}`); if (s.ok) setCredit(await s.json());
+    } catch (e) { setCredcoMsg(e instanceof Error ? e.message : "Could not save."); }
+    finally { setCredcoSaving(false); }
+  }
   const [dirLenders, setDirLenders] = useState<any[]>([]);
   const [submitState, setSubmitState] = useState<{ id?: string; msg?: string; ok?: boolean }>({});
   const [priceRows, setPriceRows] = useState<any[] | null>(null);
@@ -905,7 +922,28 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
               <div className="text-xs text-slate-600 w-full">Pulled {credit.credit.pulledAt ? new Date(credit.credit.pulledAt).toLocaleString() : ""}{credit.addedLiabilities ? ` · ${credit.addedLiabilities} tradelines → liabilities` : ""}</div>
             </div>
           ) : credit && credit.configured === false ? (
-            <div className="text-sm text-amber-300/90">Credco isn&apos;t connected yet. Add <span className="font-mono text-xs">{(credit.neededEnv || []).join(", ")}</span> to Vercel env (CERT endpoint first) and send Ramon the Credco integration guide to finalize.</div>
+            // Connect it right here. Setting these in Vercel env still works and still WINS,
+            // but that costs a dashboard trip plus a redeploy — and the account already
+            // exists, so the only thing standing between this file and a live tri-merge is
+            // four values. The password is encrypted server-side and never returned.
+            <div className="space-y-2">
+              <div className="text-sm text-amber-300/90">Credco isn&apos;t connected yet. Paste your credentials to switch it on — start with the CERT endpoint.</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {([["url", "Endpoint URL (https)"], ["account", "Account number"], ["user", "User ID"], ["password", "Password"]] as [string, string][]).map(([k, label]) => (
+                  <input key={k} type={k === "password" ? "password" : "text"} placeholder={label}
+                    value={credco[k] || ""} onChange={(e) => setCredco((c: any) => ({ ...c, [k]: e.target.value }))}
+                    className="bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:border-emerald-600 focus:outline-none" />
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={saveCredco} disabled={credcoSaving}
+                  className="text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg">
+                  {credcoSaving ? "Saving…" : "Connect Credco"}
+                </button>
+                {credcoMsg && <span className="text-xs text-slate-400">{credcoMsg}</span>}
+              </div>
+              <div className="text-[11px] text-slate-500">Stored encrypted. A pull sends the borrower&apos;s SSN and DOB, so the endpoint must be https — and confirm the request envelope against Credco&apos;s integration guide before the first production pull.</div>
+            </div>
           ) : credit && !credit.ready?.ready ? (
             <div className="text-sm text-slate-400">Need before a pull: {(credit.ready?.missing || []).join(", ")}. Complete the 1003.</div>
           ) : (

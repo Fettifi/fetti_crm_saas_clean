@@ -7,6 +7,8 @@
 // finalized once you provide the Credco spec + credentials. Nothing fires a real
 // pull unless CREDCO_URL + credentials are configured (use the CERT env first).
 import type { Urla, UrlaLiability } from "@/lib/urla";
+import { cfg } from "@/lib/settings";
+import { decryptField } from "@/lib/crypto";
 
 export type CreditScore = { bureau: string; score?: number };
 export type CreditResult = {
@@ -29,8 +31,42 @@ export function readyForCredit(u: Urla): { ready: boolean; missing: string[] } {
 }
 
 export const CREDCO_ENV = ["CREDCO_URL", "CREDCO_ACCOUNT", "CREDCO_USER", "CREDCO_PASSWORD"];
-export function credcoConfigured(): boolean {
-  return !!(process.env.CREDCO_URL && process.env.CREDCO_USER && process.env.CREDCO_PASSWORD);
+
+export type CredcoCreds = { url?: string; account?: string; user?: string; password?: string };
+
+/**
+ * Credco credentials, ENV FIRST then app_settings.
+ *
+ * Env is the better home for a bureau credential and keeps precedence, but setting it means
+ * a Vercel trip plus a redeploy — so the LO can also paste the four values straight into the
+ * LOS credit panel and start pulling immediately. Same pattern the Graph client secret and
+ * the Meta token already use. The password is stored ENCRYPTED (lib/crypto) and decrypted
+ * only here, in memory, at the moment of the call.
+ */
+export async function credcoCreds(): Promise<CredcoCreds> {
+  const fromEnv = {
+    url: process.env.CREDCO_URL || undefined,
+    account: process.env.CREDCO_ACCOUNT || undefined,
+    user: process.env.CREDCO_USER || undefined,
+    password: process.env.CREDCO_PASSWORD || undefined,
+  };
+  if (fromEnv.url && fromEnv.user && fromEnv.password) return fromEnv;
+  const [url, account, user, pw] = await Promise.all([
+    cfg("CREDCO_URL"), cfg("CREDCO_ACCOUNT"), cfg("CREDCO_USER"), cfg("CREDCO_PASSWORD"),
+  ]);
+  return {
+    url: fromEnv.url || url || undefined,
+    account: fromEnv.account || account || undefined,
+    user: fromEnv.user || user || undefined,
+    // decryptField passes legacy plaintext through untouched, so a value stored before
+    // encryption still works rather than silently failing auth.
+    password: fromEnv.password || (pw ? decryptField(pw) || pw : undefined),
+  };
+}
+
+export async function credcoConfigured(): Promise<boolean> {
+  const c = await credcoCreds();
+  return !!(c.url && c.user && c.password);
 }
 
 function esc(v: any) { return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }

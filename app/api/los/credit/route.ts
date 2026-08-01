@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { assembleUrla } from "@/lib/urla";
-import { readyForCredit, credcoConfigured, buildCreditRequestXml, parseCreditResponse, CREDCO_ENV } from "@/lib/credit";
+import { readyForCredit, credcoConfigured, credcoCreds, buildCreditRequestXml, parseCreditResponse, CREDCO_ENV } from "@/lib/credit";
+import { getCardAuths, type CardAuth } from "@/lib/cardAuth";
+import { cfg } from "@/lib/settings";
 
 // Credco tri-merge pull. Auth-gated via the /api/los matcher.
 //   GET  /api/los/credit?file=<id>   -> status (ready? configured? last pull)
@@ -24,7 +26,7 @@ export async function GET(req: NextRequest) {
   const urla = assembleUrla(lead, loanFile);
   const ready = readyForCredit(urla);
   const credit = (lead.raw?.urla?.credit) || null;
-  return NextResponse.json({ configured: credcoConfigured(), neededEnv: CREDCO_ENV, ready, credit });
+  return NextResponse.json({ configured: await credcoConfigured(), neededEnv: CREDCO_ENV, ready, credit });
 }
 
 export async function POST(req: NextRequest) {
@@ -35,23 +37,38 @@ export async function POST(req: NextRequest) {
     const ready = readyForCredit(urla);
     if (!ready.ready) return NextResponse.json({ error: `Complete these first: ${ready.missing.join(", ")}` }, { status: 422 });
 
-    if (!credcoConfigured()) {
+    // ── WHO PAYS FOR THIS REPORT. A tri-merge costs money the moment it fires, so the
+    //    borrower's card authorization has to be on file BEFORE the pull, not chased after.
+    //    On a consumer mortgage the credit-report fee is specifically the one fee that may be
+    //    collected before the Loan Estimate and intent to proceed (Reg Z 1026.19(e)(2)) — any
+    //    OTHER fee still has to wait, so this deliberately gates on nothing else.
+    const auths: Record<string, CardAuth> = getCardAuths(lead);
+    const authorized = Object.values(auths || {}).find((a: any) => a?.status === "authorized" && a?.last4);
+    if (!authorized) {
+      return NextResponse.json({
+        error: "No authorized card on file — a credit report is a real cost. Send the card authorization first (Card authorization panel), then pull.",
+        needsCardAuth: true,
+      }, { status: 402 });
+    }
+
+    const creds = await credcoCreds();
+    if (!(creds.url && creds.user && creds.password)) {
       return NextResponse.json({
         configured: false,
         neededEnv: CREDCO_ENV,
-        note: "Add your Credco endpoint + credentials to Vercel env (use the CERT/test endpoint first), and send me your Credco integration guide so I finalize the request envelope. Then this fires a live tri-merge.",
+        note: "Add your Credco endpoint + credentials below (start with the CERT/test endpoint), or set them in Vercel env. Send the Credco integration guide so the request envelope can be confirmed against their schema before the first production pull.",
       }, { status: 503 });
     }
 
     // --- Live pull (envelope/auth per your Credco spec) ---
     const requestXml = buildCreditRequestXml(urla);
-    const auth = Buffer.from(`${process.env.CREDCO_USER}:${process.env.CREDCO_PASSWORD}`).toString("base64");
-    const res = await fetch(process.env.CREDCO_URL as string, {
+    const auth = Buffer.from(`${creds.user}:${creds.password}`).toString("base64");
+    const res = await fetch(creds.url as string, {
       method: "POST",
       headers: {
         "Content-Type": "application/xml",
         Authorization: `Basic ${auth}`,
-        ...(process.env.CREDCO_ACCOUNT ? { "X-Account": process.env.CREDCO_ACCOUNT } : {}),
+        ...(creds.account ? { "X-Account": creds.account } : {}),
       },
       body: requestXml,
     });
