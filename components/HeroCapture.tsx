@@ -5,7 +5,7 @@
 // /api/apply (same intake: scored, auto-responded, alerted, nurtured).
 import { useState } from "react";
 import Link from "next/link";
-import { getAttribution } from "@/lib/attribution";
+import { getAttribution, pageSourceWithChannel } from "@/lib/attribution";
 import { referralCode } from "@/lib/referral";
 import { applyHrefForProduct } from "@/lib/lendingMatrix";
 import ReferShare from "@/components/ReferShare";
@@ -42,7 +42,10 @@ export default function HeroCapture({ source = "homepage_hero" }: { source?: str
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           full_name: fd.get("full_name"), phone: fd.get("phone"), email: fd.get("email"),
-          source: a("ref") ? "referral" : a("utm_source") ? `paid_${a("utm_source")}` : source,
+          // a("ref") is a /r/<code> referral CODE, not the HTTP referrer. With no code and
+          // no ad params, the page tag is qualified by the REAL channel so a lead that was
+          // handed the URL in person stops being reported as organic search.
+          source: a("ref") ? "referral" : a("utm_source") ? `paid_${a("utm_source")}` : pageSourceWithChannel(source),
           utm_source: a("utm_source"), utm_medium: a("utm_medium"), utm_campaign: a("utm_campaign"),
           utm_term: a("utm_term"), utm_content: a("utm_content"), gclid: a("gclid"), fbclid: a("fbclid"), referrer: a("ref"),
           consent: true, consent_at: new Date().toISOString(), consent_text: CONSENT,
