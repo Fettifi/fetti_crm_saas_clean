@@ -40,6 +40,32 @@ export const PRODUCT_SCOPE: Record<string, ProductScope> = {
   "sba-loans": "all",
 };
 
+/**
+ * Which /apply/form flow a product page should open. Mapped ONLY where the intent is
+ * unambiguous — a wrong goal drops the borrower into the wrong qualifying questions,
+ * which is worse than the one tap of choosing it. hard-money, bridge and CRE are
+ * deliberately absent: each covers several intents, so those ask.
+ * (Goals must stay in sync with the `valid` list in app/apply/form/page.tsx.)
+ */
+const GOAL_BY_PRODUCT: Record<string, string> = {
+  "home-purchase-loans": "buy",
+  "first-time-homebuyer": "buy",
+  "down-payment-assistance": "buy",
+  "refinance-loans": "refi",
+  "dscr-loans": "invest",
+  "rental-property-loans": "invest",
+  "fix-and-flip-loans": "flip",
+  "business-loans": "business",
+  "sba-loans": "business",
+};
+
+/** The application URL for a product, pre-aimed at its flow when we know it. Accepts a
+ *  bare product key or a `seo_<product>` source tag. Unknown → the generic entry. */
+export function applyHrefForProduct(product?: string | null): string {
+  const goal = GOAL_BY_PRODUCT[String(product || "").replace(/^seo_/, "")];
+  return goal ? `/apply/form?goal=${goal}` : "/apply/form";
+}
+
 export function stateLabel(key: string): string | null {
   if (key === NATIONWIDE_KEY) return NATIONWIDE_LABEL;
   return STATES[key] ?? null;

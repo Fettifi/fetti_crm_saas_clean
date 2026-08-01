@@ -5,7 +5,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import HeroCapture from "@/components/HeroCapture";
 import { SocialProofWall } from "@/components/SocialProofWall";
-import { STATES, NATIONWIDE_KEY, CONSUMER_STATES, PRODUCT_SCOPE, stateLabel, allowedStates } from "@/lib/lendingMatrix";
+import { STATES, NATIONWIDE_KEY, CONSUMER_STATES, PRODUCT_SCOPE, stateLabel, allowedStates, applyHrefForProduct } from "@/lib/lendingMatrix";
 
 // ISR so newly approved wins / fresh Google reviews appear without a redeploy.
 export const revalidate = 600;
@@ -319,7 +319,7 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
             </div>
           ))}
         </div>
-        <Link href="/apply/form" className="inline-block mt-8 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full shadow-lg shadow-emerald-600/25 transition">
+        <Link href={applyHrefForProduct(parsed.product)} className="inline-block mt-8 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full shadow-lg shadow-emerald-600/25 transition">
           Get pre-qualified →
         </Link>
         <p className="text-slate-500 text-xs mt-3">No impact to your credit to get started.</p>

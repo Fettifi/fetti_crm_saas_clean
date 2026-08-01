@@ -516,6 +516,9 @@ export default function ApplyWizard() {
   // Magic-link prefill (?lead=&t=): the lead's known contact info, so a nurtured
   // borrower lands with everything already typed — one confirm click, zero friction.
   const [prefill, setPrefill] = useState<{ full_name: string; first_name: string; email: string; phone: string; state: string } | null>(null);
+  // Prefill came from the capture form she filled in moments ago, not from a nurture
+  // link — so the copy must say "let's finish", not "welcome back, I kept your file warm".
+  const [carried, setCarried] = useState(false);
   // State is DERIVED from the ZIP (no more dropdown to pick) — a valid 5-digit ZIP resolves it.
   const [zipState, setZipState] = useState("");
 
@@ -563,6 +566,26 @@ export default function ApplyWizard() {
             if (!g && p.goal && valid.includes(p.goal)) { setAnswers((a) => (a.goal ? a : { ...a, goal: p.goal })); setI((cur) => (cur === 0 ? 1 : cur)); track("answer", { phase: "flow", step_id: "goal", goal: p.goal }); }
           })
           .catch(() => {});
+      } else {
+        // Continuing from the short capture form on the marketing site (HeroCapture):
+        // she already typed name/email/phone seconds ago, so don't make her do it twice.
+        // Read from HER OWN browser, never from a token — /api/apply dedupes on
+        // phone/email, so a server-minted token here would expose an existing lead's
+        // details to anyone who knows their email address.
+        const stashed = sessionStorage.getItem("fetti_apply_contact");
+        if (stashed) {
+          const c = JSON.parse(stashed) as { full_name?: string; email?: string; phone?: string };
+          if (c?.email || c?.phone) {
+            setCarried(true);
+            setPrefill({
+              full_name: c.full_name || "",
+              first_name: (c.full_name || "").trim().split(/\s+/)[0] || "",
+              email: c.email || "",
+              phone: c.phone || "",
+              state: "",   // derived from the ZIP she still has to give
+            });
+          }
+        }
       }
     } catch { /* ignore */ }
     // Pull what the Application Coach has learned, and adapt this session to it.
@@ -901,9 +924,9 @@ export default function ApplyWizard() {
     const matched = (() => { const p = product(answers); return p && p !== "Mortgage Inquiry" ? p : null; })();
     return (
       <Shell pct={pct} onBack={back}>
-        <h1 className="text-2xl font-bold">{prefill ? `Welcome back${prefill.first_name ? `, ${prefill.first_name}` : ""} 👋` : matched ? `Your ${matched} match is ready` : "Where should we send your options?"}</h1>
-        <p className="text-slate-500 mt-1 text-sm">{prefill ? "We saved everything — confirm your info and keep going. No impact to your credit." : matched ? "Confirm your info and I'll pull your real numbers. No impact to your credit." : "No impact to your credit. A real specialist follows up fast."}</p>
-        <CediBubble size={48} className="mt-4">{prefill ? "I kept your file warm. One click and we pick up right where we left off. 😎" : matched ? `Nice — you line up for a ${matched}. Drop your info and I'll get it moving. 😎` : "Almost there. Drop your info and I'll get your options moving. 😎"}</CediBubble>
+        <h1 className="text-2xl font-bold">{carried ? `Let's finish it${prefill?.first_name ? `, ${prefill.first_name}` : ""} 👋` : prefill ? `Welcome back${prefill.first_name ? `, ${prefill.first_name}` : ""} 👋` : matched ? `Your ${matched} match is ready` : "Where should we send your options?"}</h1>
+        <p className="text-slate-500 mt-1 text-sm">{carried ? "We carried over what you just entered — confirm it and keep going. No impact to your credit." : prefill ? "We saved everything — confirm your info and keep going. No impact to your credit." : matched ? "Confirm your info and I'll pull your real numbers. No impact to your credit." : "No impact to your credit. A real specialist follows up fast."}</p>
+        <CediBubble size={48} className="mt-4">{carried ? "Already got your details — just check them and we keep rolling. 😎" : prefill ? "I kept your file warm. One click and we pick up right where we left off. 😎" : matched ? `Nice — you line up for a ${matched}. Drop your info and I'll get it moving. 😎` : "Almost there. Drop your info and I'll get your options moving. 😎"}</CediBubble>
         <form key={prefill ? "prefilled" : "blank"} onSubmit={submitContact} className="space-y-3 mt-5">
           <input type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: "absolute", left: "-9999px" }} />
           <input name="full_name" required placeholder="Full name" defaultValue={prefill?.full_name || ""} className={field} />
