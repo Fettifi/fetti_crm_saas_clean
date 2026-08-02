@@ -1,0 +1,332 @@
+{
+  "logicVersion": "2026-07-27-dscr-lease-rent",
+  "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|tenanc|1007|1025|market[\\s_.-]*rent",
+  "files": {
+    "c1097a06-8a5e-4ff2-80e8-846710dc44a8": {
+      "file": "FF-202606-4509",
+      "borrower": "jazmine wilson",
+      "candidates": [
+        "04e60394-bfcd-4dde-bca2-28341e0941b6|paul 2025 w2",
+        "0761ede3-3a45-4100-8528-b910e43309ae|Paul tax transcript 2024",
+        "16b557d0-863b-4c2f-94d5-3b391acb0c79|Tax returns — last 2 years — additional",
+        "30fc365e-fdc3-4a5e-85bd-361e7445dabb|Tax returns — last 2 years",
+        "392e443e-408f-400a-9af3-168a8d4e1713|W-2s — last 2 years",
+        "3bb39038-98a7-4041-b88e-f8db0be85ce8|Recent pay stub",
+        "419545e0-b35f-46b1-bbb9-6859179d4c8a|Bank statements — last 2 months — additional",
+        "59e7e042-c497-4941-ab45-48b16c18da6e|2023 Tax return",
+        "9908236e-6cd9-4a1c-bbe5-4ff08f2dfc7e|Pay stubs — last 30 days — additional",
+        "9e8f738d-a932-49c0-a95a-c15998347376|Bank statements — last 2 months",
+        "afe408bc-48ea-494e-9a7d-70dde236793f|paul 2025 w2 — additional",
+        "b03a1b10-bb12-4827-8d3c-a9c84c4010e6|Pay stubs — last 30 days",
+        "c475266d-6aac-42a3-b13e-fe7d80d97589|Bank statements — last 2 months — additional",
+        "e434345f-0062-4761-bb7d-e29f1c4627af|Pay stubs — last 30 days — additional"
+      ],
+      "cachedIncome": null
+    },
+    "6cd60248-6525-4fe6-a36b-e82541585271": {
+      "file": "FF-202606-5978",
+      "borrower": "Edson Cruz",
+      "candidates": [
+        "02909be0-176d-49d3-98dc-3de4fc466df6|June Bank Statement for accounts x9140 and 5222",
+        "227fcda4-2214-433e-807e-8b8e146af1f0|Bank statements — last 2 months",
+        "8d1228da-a1d9-499c-bc1a-59163b5bc015|June Bank Statement for accounts x9140 and 5222 — additional",
+        "92c5666a-e6e6-4893-bb42-8dc37636125d|Mortgage statement",
+        "ebc6339e-6169-4e46-8a98-106006d025fe|Social Security Card",
+        "ed9e5845-04a1-477e-beb1-b9dd76ed0836|Bank statements — last 2 months"
+      ],
+      "cachedIncome": null
+    },
+    "745ea431-8a22-4d5c-9d44-f270d167fab5": {
+      "file": "FF-202606-3544",
+      "borrower": "Brijanae Aubrey",
+      "candidates": [
+        "02a116ca-3ec0-416c-9d85-d733f90ef075|2025 W2 — additional",
+        "02ddc93a-9435-4036-8697-39e24ac2ee86|2024 W2 — additional",
+        "108d2dc7-e268-4b41-86b5-745727c99fec|Bank statements — last 2 months",
+        "160f2ee0-c8e8-4fc8-abd5-758e7d163287|2025 W2",
+        "28c13f43-c0ac-4536-b6dc-e32e7e80083f|2024 W2 — additional",
+        "2a301be5-a8ad-4182-8c2b-03f037784dca|2 recent paystubs — additional",
+        "3a7cb718-2fcf-46d4-992f-8eee7eba9885|2024 W2",
+        "4070fa7d-500a-41d4-b391-cc8ff8f3ca53|2025 W2 — additional",
+        "455b3c8f-fd95-4699-a266-99857b42e0f3|2 recent paystubs — additional",
+        "45e916f1-b6ec-450d-ac34-9203c869bc68|2 recent paystubs",
+        "9202638a-2698-436c-b256-9c4a7d7219ae|2 most recent paystubs",
+        "9e54cde3-0643-45b9-911c-0c097e65e525|2024 W2",
+        "a3e7b939-c353-4b7b-b889-301bbacc450f|2025 W2",
+        "aac0b575-5361-42ef-9ec7-8c76f343253b|Bank statements — last 2 months",
+        "b20931b1-df2b-4363-9e50-f5bc9ed430a6|2 most recent paystubs — additional",
+        "b2e3e7a4-6a22-41fa-9052-b84728921a08|2024 w2 — additional",
+        "c8644fc5-04c1-4304-bcd2-8215e554851e|Bank statements — last 2 months — additional",
+        "cb4782c1-4be2-41da-bde1-a83346ab661b|2024 W2 — additional — additional",
+        "dd9ca684-2cf3-4a05-b9fa-5a1903f936e2|2025 W2 — additional",
+        "f36adb0d-2180-4d3b-9c85-e4e05c978405|2024 W2 — additional"
+      ],
+      "cachedIncome": 9103
+    },
+    "6b1aec47-de6a-4a8b-9bcc-77d8a92e245a": {
+      "file": "FF-202606-7961",
+      "borrower": "LesaMarie Silva",
+      "candidates": [],
+      "cachedIncome": null
+    },
+    "1c7a616f-549c-4a7b-b565-b7a6c14cb2ef": {
+      "file": "FF-202606-4157",
+      "borrower": "Kandace Hithe",
+      "candidates": [
+        "36cfd5f9-d397-4827-a0f1-71bcf9eeb8ac|Bank statements — last 2 months",
+        "51ce9bb4-a99a-4a64-bc6e-28818ff3844a|Pay stubs — last 30 days",
+        "6cab0fcc-a87c-42e3-add2-e183851acdf0|May26PayStub_2.pdf",
+        "6d9db755-b59d-4e19-b4f9-4db8d2b864fd|June10PayStub.pdf",
+        "d27d9856-2c37-4330-a2a4-0e9d35729cc9|4-5_statements_hithe.pdf.pdf"
+      ],
+      "cachedIncome": null
+    },
+    "043e040d-9bde-4718-ba0d-eceb3bc4de05": {
+      "file": "FF-202606-5223",
+      "borrower": "Dominic Glover",
+      "candidates": [
+        "10f7ec86-56df-4d66-b2e9-6fbb7415d560|May_2026_-_Chase_Statement.pdf",
+        "24efb09e-160e-47c4-9f71-4ce49f4feb00|Verification of Employment Letter",
+        "609e49d3-60a1-4d9f-9630-fe90635b158a|2025-W-2-Dom-NVIDIA.pdf",
+        "b5f17530-ffb2-48e5-a815-da259bc5bcdd|June_2026_-_Chase_Statement.pdf",
+        "ca82202e-bca2-4de6-9799-e29fc8643ef0|2025 TAX RETURN",
+        "db1d4aa7-2bda-48cc-a808-9bf5bbbd1613|2024-W-2-Dom-NVIDIA.pdf",
+        "dcf62077-e89f-4cd1-aa86-b1c154076c92|W-2s — last 2 years",
+        "e71594f5-9eca-4c06-b929-57974e51bee4|2024 TAX RETURN",
+        "f984015a-8f71-4bbe-b817-ad96d6d4b390|Pay stubs — last 30 days"
+      ],
+      "cachedIncome": 16867
+    },
+    "ee7cb704-d695-4112-8b9b-f6248fa8e8d6": {
+      "file": "FF-202607-5106",
+      "borrower": "Elizabeth Disimone",
+      "candidates": [
+        "165de6ca-7812-425c-a663-72c9d206959e|Pay stubs — last 30 days",
+        "556ba574-18b4-4dd5-8a8e-2ab9fa72b336|Pay stubs — last 30 days — additional",
+        "73879210-dc3a-4fa3-ae30-bfe3e246a9d8|Pay stubs — last 30 days — additional",
+        "74eaaa16-d831-4ba8-b7b8-f83d973d76a4|W-2s — last 2 years",
+        "83d5d579-84e0-4062-bac5-35d09efc6f54|Tax returns — last 2 years",
+        "8c6ce56c-47e3-422b-9877-88229c4b8ea2|Bank statements — last 2 months — additional",
+        "a790df7b-4ab3-4661-ba1b-3bb760ae1394|Tax returns — last 2 years — additional",
+        "ef1758ff-688d-4e0a-8675-64f09db2f4da|W-2s — last 2 years — additional",
+        "f8f39c05-9c7b-4b60-a839-68ec2dfcee95|Tax returns — last 2 years — additional",
+        "f9002a66-4a0e-4193-bc15-ad948c95c9ef|Bank statements — last 2 months"
+      ],
+      "cachedIncome": null
+    },
+    "c3473ce9-7bdb-4882-8a7b-bbd1a30a86d3": {
+      "file": "FF-202606-2956",
+      "borrower": "Stephen Friedlander",
+      "candidates": [
+        "1bbb5070-d34b-496b-a08b-f1db084a81e2|Mortgage statement",
+        "564b6b25-4ffe-46aa-8400-2898104737ed|Mortgage statement — additional",
+        "95642614-e2ba-43ca-9051-8dec2542c0ed|Bank statements — last 2 months",
+        "d834f80a-349d-4b5f-ad68-2f469bae8fee|Bank statements — last 2 months — additional"
+      ],
+      "cachedIncome": null
+    },
+    "21d5ada1-2c88-489d-b928-b38908089e62": {
+      "file": "FF-202607-6368",
+      "borrower": "Joseph Boykan",
+      "candidates": [
+        "31b1a215-65ca-4dc7-95b5-a3b774115fcb|Mortgage statement (if refinance)",
+        "327949d0-9abf-4f2a-b920-08a5d3f9bc8c|Bank statements — last 2 months",
+        "6c72b79e-faef-417b-9686-2c8e0c8da331|Lease agreement or market rent estimate (Form 1007)",
+        "8a3fac37-08a7-4307-9af4-cc096dd89859|Bank statements — last 2 months — additional"
+      ],
+      "cachedIncome": null
+    },
+    "7eeeffb6-a0ee-4723-8758-0244c211c4ee": {
+      "file": "FF-202606-9231",
+      "borrower": "David Stidhum",
+      "candidates": [
+        "11ff5291-7f86-4eba-b855-74407f54ba1b|Payoff statements for all mortgages being paid, reflecting loan is current; provide previous FHA case # for refinance authorization"
+      ],
+      "cachedIncome": null
+    },
+    "2613890d-f6f3-4833-88d5-e66cd0884a18": {
+      "file": "FF-202607-6819",
+      "borrower": "Helena Kyser Livingston",
+      "candidates": [
+        "00cdec2d-6f67-48c2-afd0-18a0a8629c26|Mortgage statement (if refinance) — additional",
+        "12bfc7f6-9f3a-4b20-9bed-73c3f61fa998|Mortgage statement (if refinance) — additional",
+        "171eb56e-084d-4e84-b997-618ed6c48c28|Mortgage statement (if refinance) — additional",
+        "1a2c6de7-4aad-425e-9ad7-21af8fe72edf|Mortgage statement (if refinance)",
+        "20a2ddf7-4a94-4c1a-8f10-9866acc53f97|Bank statements — last 2 months — additional",
+        "25ecbb7a-4df5-4330-a504-2abf80bca88d|Bank statements — last 2 months",
+        "2e96c2c9-9184-4f35-8fe0-7c7ad7bdf790|Bank statements — last 2 months — additional",
+        "3199b976-cd4e-4dc7-83a2-fcc7f04bb640|Rent roll / lease agreements",
+        "49a85360-b72c-4832-93f7-142e66faf83a|Bank statements — last 2 months — additional",
+        "7106e043-f290-4fd8-bd0b-5444a22fd370|Mortgage statement (if refinance) — additional",
+        "81f9d10a-d960-49c4-a70d-a5828383a2f0|Mortgage statement (if refinance) — additional",
+        "df7cff7a-2d47-421c-a927-1cfc189748d3|Bank statements — last 2 months — additional",
+        "fa3bef9b-3e1e-45ba-80f5-253b169e9428|Mortgage statement (if refinance) — additional"
+      ],
+      "cachedIncome": null
+    },
+    "599ab8ca-4f43-440c-9fe3-6699b1e14c28": {
+      "file": "FF-202607-3633",
+      "borrower": "Michelle Jackson Metoyer",
+      "candidates": [
+        "002a783e-76ff-4540-ac99-57a484d25cdc|Lease agreement or market rent estimate (Form 1007) — additional",
+        "0dc7e292-1408-4cd9-90d3-6f3a0ec91f49|Lease agreement or market rent estimate (Form 1007) — additional",
+        "45a9dc69-f13b-46d9-9b4c-3cd600180ea0|Lease agreement or market rent estimate (Form 1007) — additional",
+        "5f566fda-de10-499c-83a5-c4bac608fc54|Lease agreement or market rent estimate (Form 1007) — additional",
+        "a1d8916b-195a-4d15-80e1-aafaf7ae8c0a|Lease agreement or market rent estimate (Form 1007)"
+      ],
+      "cachedIncome": null
+    },
+    "dd0579fe-bc96-4d62-a4a9-b06ee2acec9a": {
+      "file": "FF-202607-2769",
+      "borrower": "Issac O'Dell",
+      "candidates": [
+        "00e2e15d-ba38-4482-a332-c456fe86aba6|Bank statements — last 2 months",
+        "e0d8539f-a9d2-4e53-b35b-d5f607737f6c|Bank statements — last 2 months — additional"
+      ],
+      "cachedIncome": null
+    },
+    "79448bca-b65a-4328-897d-0ee1ee85a7f8": {
+      "file": "FF-202607-1321",
+      "borrower": "Javier Buenas",
+      "candidates": [
+        "65ff8a5c-a896-4184-8eae-670f834c10d1|Business bank statements — last 3 months",
+        "75dabf69-fa9a-45dd-8956-faef06e8f0f7|Business bank statements — last 3 months — additional",
+        "de207680-6172-4c46-a7fc-186b1350ce43|Business bank statements — last 3 months — additional"
+      ],
+      "cachedIncome": null
+    },
+    "b0f692ab-e276-4e6c-aaa8-7bcf6648ea6c": {
+      "file": "FF-202608-1913",
+      "borrower": "Charletha Osborne",
+      "candidates": [
+        "7248910f-759d-46d2-bce0-1cc787c06dc2|Mortgage statement",
+        "7be22bc2-0d61-4277-aa9e-c34dbe4ce8b1|W-2s — last 2 years — additional",
+        "9d94b9ad-972c-4182-af38-51a2d3e0c9a7|W-2s — last 2 years",
+        "c6df7a60-51bb-4281-b9e6-8eeb540ef935|2025 tax return",
+        "f75fbd44-d044-4d42-8cbe-6fa57dcf2622|2024 Tax return"
+      ],
+      "cachedIncome": null
+    },
+    "605aebb1-680d-445d-ad79-02c538f19c4c": {
+      "file": "FF-202607-6681",
+      "borrower": "Kelly Dorsey",
+      "candidates": [],
+      "cachedIncome": null
+    },
+    "45a69da4-6162-408d-b2eb-0aff5a471890": {
+      "file": "FF-202607-6280",
+      "borrower": "Merwin Bachiller",
+      "candidates": [
+        "02c709e5-523e-4ebd-901a-d5427ee01018|Pay stubs — last 30 days — additional",
+        "1bf631ad-df21-46e9-b455-7fd70afcdb12|Pay stubs — last 30 days",
+        "3f7e4839-7205-48de-a2f4-de665e43d17c|Tax returns — last 2 years",
+        "837c2726-66fa-4cfa-8a96-b7244e3e21bd|Tax returns — last 2 years — additional",
+        "ab3af2a6-b829-413f-adf0-1272931f7b89|W-2s — last 2 years",
+        "b3ebeccb-951a-4f0b-a8f1-4c7f307db0dd|Pay stubs — last 30 days — additional"
+      ],
+      "cachedIncome": 6864
+    },
+    "6ef12dd0-038c-4bce-956f-e39fa656ef3c": {
+      "file": "FF-202607-9927",
+      "borrower": "Asia Dearman",
+      "candidates": [
+        "018bcdfe-30f5-4aa6-a29d-bab1f8219477|Bank statements — last 2 months",
+        "08b83804-8f86-4d00-a7cd-7f4b50ab39da|Pay stubs — last 30 days — additional",
+        "0e9df6ad-05d0-4406-bb5e-ab1adb08a70b|recent paystub — additional",
+        "16066304-93ac-4626-934b-65fbe2a66d82|Pay stubs — last 30 days — additional",
+        "3287079a-8444-4390-ba5d-c041ff0f3e8d|Pay stubs — last 30 days — additional",
+        "6b254923-af58-46c8-9815-b76dacdb2c63|W-2s — last 2 years",
+        "6d3a8bad-c82d-4bc4-a8db-21fdd1cadde5|Pay stubs — last 30 days",
+        "7b5e409a-6c77-472a-bc6d-d29cf3532d7d|W-2s — last 2 years — additional",
+        "8b76ce68-e7f7-496f-8701-89730e717050|W-2s — last 2 years — additional",
+        "9acd4635-66cc-48ab-89e2-01af9fa03e5f|W-2s — last 2 years — additional",
+        "a4e281f0-8a78-44cf-8e29-5715a81922cb|recent paystub",
+        "a64ce174-8810-43fb-896b-e16fd3e211b5|W-2s — last 2 years — additional",
+        "fcdfe909-9e59-45ad-838e-4e73e223797a|Bank statements — last 2 months — additional"
+      ],
+      "cachedIncome": 5102
+    },
+    "53dcbba4-6c0d-4056-9eff-811f14e8b50e": {
+      "file": "FF-202607-1260",
+      "borrower": "Timothy Baily",
+      "candidates": [],
+      "cachedIncome": null
+    },
+    "ae8a00a6-d598-463e-8866-d725be7076fb": {
+      "file": "FF-202607-2355",
+      "borrower": "Harold Samuel Wrobel",
+      "candidates": [
+        "02e0179a-c170-40f3-ac14-cdd2f0120192|Bank statements — last 2 months — additional",
+        "1b69073d-e0f6-4468-b139-de53853a347a|2023 tax return",
+        "23bf354d-3d64-41a2-b647-064ba77d4a69|Mortgage statement",
+        "59ca9dee-96b0-4504-9e65-2407e85e41e4|2024 Tax return",
+        "a8b41d00-0d3d-409d-95a7-a478755a70e4|Bank statements — last 2 months"
+      ],
+      "cachedIncome": null
+    },
+    "48b961ec-3054-4982-a09e-4680bc68d613": {
+      "file": "FF-202607-5895",
+      "borrower": "Domingo Huerta",
+      "candidates": [],
+      "cachedIncome": null
+    },
+    "22d230cf-48e4-4738-b70d-d82db89ac70e": {
+      "file": "FF-202607-7963",
+      "borrower": "Corine Lucas",
+      "candidates": [
+        "0464eccf-c305-47ac-b83f-dc98aa96ae9f|Bank statements — last 2 months — additional — additional",
+        "1321e8d6-7591-4a81-a435-ed01d4e247a5|Bank statements — last 2 months — additional — additional",
+        "18a848bc-f2cb-41f0-bd9e-a56436b62556|Bank statements — last 2 months — additional — additional",
+        "1a965d45-c5f9-43cc-958d-dc03a8c816fa|Pay stubs — last 30 days",
+        "2b1a4710-09ca-4c15-9713-ddfbd133f0d0|Bank statements — last 2 months — additional — additional",
+        "3dc58e8c-5be5-4c66-8ecd-4508cf60077e|Bank statements — last 2 months — additional — additional",
+        "3f0e1c49-cd90-44ad-9742-7ae30c8656fb|Bank statements — last 2 months — additional — additional",
+        "4dfc1a59-27af-40c0-9a28-319d5ad359c6|Bank statements — last 2 months — additional — additional",
+        "4fa9738f-f541-4790-9efc-a9988e294f6e|Bank statements — last 2 months — additional — additional",
+        "5a3ea273-3289-43c3-9a54-60ca43b456b1|Bank statements — last 2 months — additional — additional",
+        "66da6bce-f924-45a9-b7d2-87f6777a1719|Bank statements — last 2 months",
+        "6abc40cc-123b-4c4f-a7f8-b8591a7c6d22|Bank statements — last 2 months — additional — additional",
+        "70b5554d-eab5-4433-8222-bd4ad965a058|Bank statements — last 2 months — additional — additional",
+        "7b745d09-9b86-4f64-bd59-418166fbd81b|Bank statements — last 2 months — additional",
+        "8e21aca6-ebe9-450b-9926-c7cd23726eef|Bank statements — last 2 months — additional — additional",
+        "9ac263b3-52b8-401a-a03f-c84fc2f63f47|Bank statements — last 2 months — additional — additional",
+        "a803fc52-4687-431f-bb4d-36e4c84ab9b2|Bank statements — last 2 months — additional — additional",
+        "aac5ea67-fb9b-47a3-97f0-be3910d18f64|Mortgage statement",
+        "b144df5d-f6ab-4b00-94dd-f41282db85c4|Mortgage statement — additional",
+        "b6815af1-99c0-4b2f-bddf-0362479172a9|Bank statements — last 2 months — additional — additional",
+        "b861cd79-8e75-4882-bd48-49f04a51d655|Bank statements — last 2 months — additional — additional",
+        "bb9f8bc3-2901-426a-8669-1430d8565b34|Bank statements — last 2 months — additional — additional",
+        "cd8c2323-1c2a-416b-a08e-78cc60e370d0|Bank statements — last 2 months — additional — additional",
+        "d642e7b1-67c3-4ebb-b47f-b900aa68cde6|Bank statements — last 2 months — additional — additional",
+        "e099b6a1-1be0-46f0-98ab-7ee7e732e87d|Bank statements — last 2 months — additional — additional",
+        "e3adeefd-1390-429a-93dc-73eff32bd113|Bank statements — last 2 months — additional — additional",
+        "ea5cc7db-7df7-4e9f-8774-8b5ee41609a6|Bank statements — last 2 months — additional — additional",
+        "eee89d38-2c03-440b-b326-397665332bae|Bank statements — last 2 months — additional",
+        "fb39ddd7-f99c-4ea4-bb50-60d477bb7a75|Bank statements — last 2 months — additional — additional"
+      ],
+      "cachedIncome": 10866
+    },
+    "87561748-ce06-4f94-9a8a-7a0eb0665604": {
+      "file": "FF-202607-8421",
+      "borrower": "Magali Lopez Villafuerte",
+      "candidates": [
+        "2ab7da7f-a8f4-42fb-b210-d6dc529d059c|Bank statements — last 2 months — additional",
+        "432a8d18-3fff-4b09-a4a5-e5c41964d071|W-2s — last 2 years",
+        "6973188f-db75-493a-ba9d-3d19dbd03cac|two recent paystub",
+        "78a543a9-bc39-4771-87e2-d121c2ea979b|W-2s — last 2 years — additional",
+        "7f78074a-345c-43e2-9abb-90a66b135830|two recent paystub — additional",
+        "7fb6e381-1bd2-4c5e-9933-6eff689a9332|Recent paystub",
+        "90809e3f-f4b7-4243-ab36-6ca18cd9f10e|2025 w2",
+        "b8e135b6-69f1-45e0-adfc-cd92f44db482|tax return 2024",
+        "c7f930eb-95c9-4ce6-9654-560e94e2f589|Tax returns — last 2 years — additional",
+        "cbc0a8d6-95c9-45f0-8617-40abd899e41c|tax return 2025",
+        "d3ac1b8c-8d38-4176-af38-f775ab80273d|Bank statements — last 2 months",
+        "dd50c5f4-be38-49e0-93b2-e3ec3dfbc67c|2024 w2 — additional",
+        "e0dba8ce-f188-43d4-97a6-2cc28cbbc3cb|2024 w2",
+        "f4a04823-f2c0-490a-8d3c-06bb4746e1d7|Tax returns — last 2 years",
+        "ff24f69e-193d-422a-a296-daab3658dbb8|Pay stubs — last 30 days"
+      ],
+      "cachedIncome": 19753
+    }
+  }
+}

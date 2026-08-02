@@ -28,7 +28,19 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 const BUCKET = "loan-docs";
 const MEDIA = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"]);
-const MAX_DOCS = 8;
+// NOT A CAP. Nothing here limits how many documents are read — every income document on the
+// file is read (see the read loop below). This is only the PRIORITY WINDOW used to guarantee
+// a current pay stub is ordered near the front, because the prompt qualifies a wage-earner on
+// the current stub rather than W-2 Box 1.
+//
+// It was called MAX_DOCS with comments about a "budget", and on 2026-08-01 that name cost
+// Ramon real money: I read it, concluded an 8-document cap existed, and shipped a change to
+// INCOME_RE believing two extra documents could not displace anything. They were read, the
+// doc-set fingerprint moved, the stability cache missed, and the Wilson file re-rolled from a
+// settled $11,701 to $3,129. A constant that lies about what it does is a trap for whoever
+// reads it next. Ramon: "There's not supposed to be a document cap. We've gone over this time
+// and time again."
+const STUB_PRIORITY_WINDOW = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
@@ -45,7 +57,7 @@ const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|
 // Ramon, 2026-08-01: read the DD-214 and the certificate of eligibility on veteran files.
 //
 // The first attempt did this by adding those documents to INCOME_RE, which was wrong and
-// broke the Wilson file: MAX_DOCS orders the read but does NOT truncate it (HARD_MAX = 60),
+// broke the Wilson file: the priority window orders the read but does NOT truncate it,
 // so the two extra documents were actually fed to the vision reader, the doc-set fingerprint
 // changed, the stability cache missed, and a non-deterministic re-read replaced a settled
 // $11,701 with $3,129 — losing the co-borrower entirely. That cache exists precisely because
@@ -205,15 +217,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // "primary" and collapse onto borrower 1 (Rasja/Ashay income wrongly landed on Brijanae).
     const primaryNames = applicantNames.slice(0, 1);
     const coRosterNames = [...new Set([...applicantNames.slice(1), ...coBorrowers].map((s) => s.trim()).filter(Boolean))];
-    // Rank income docs so the MAX_DOCS budget spends on what actually SETS income — W-2s
-    // (base + 2-yr job history) and pay stubs (current base) first, bank statements last.
+    // ORDER the income docs so the ones that actually SET income are read first — W-2s
+    // (base + 2-yr job history) and pay stubs (current base) before bank statements. This is
+    // ordering only; every one of them is read.
     const isStub = (d: any) => /pay.?stub|check.?stub|paystub|earnings/i.test(`${d.name || ""} ${d.file_name || ""}`);
     const rank = (d: any): number => {
       const s = `${d.name || ""} ${d.file_name || ""}`.toLowerCase();
       if (/w-?2/.test(s)) return 0;                                   // W-2s: income + 2-yr job history
       if (/1099|k-?1/.test(s)) return 1;
       // A lease outranks everything on a DSCR file (it IS the income) and costs little to
-      // read, so it never gets squeezed out of the MAX_DOCS budget by a stack of statements.
+      // read, so it is never ordered behind a stack of statements.
       if (/lease|rent.?roll|rental.?agreement|1007|1025|market.?rent/.test(s)) return 1;
       if (/pay.?stub|check.?stub|paystub|earnings/.test(s)) return 2; // current base — the qualifying foundation
       if (/1040|tax.?return|schedule/.test(s)) return 3;
@@ -225,10 +238,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .sort((a: any, b: any) => rank(a) - rank(b));
     if (!candidates.length) return NextResponse.json({ error: "No income documents are uploaded on this file yet (W-2, pay stubs, 1099, bank statements). Request and collect them first." }, { status: 422 });
     // Reserve a slot for a pay stub so a W-2/1099-heavy file never buries the current
-    // stub past the MAX_DOCS window — the prompt qualifies a wage-earner on the current
+    // stub past the priority window — the prompt qualifies a wage-earner on the current
     // stub, never on W-2 Box 1.
     const firstStub = candidates.findIndex(isStub);
-    if (firstStub >= MAX_DOCS) { const [s] = candidates.splice(firstStub, 1); candidates.splice(MAX_DOCS - 1, 0, s); }
+    if (firstStub >= STUB_PRIORITY_WINDOW) { const [s] = candidates.splice(firstStub, 1); candidates.splice(STUB_PRIORITY_WINDOW - 1, 0, s); }
 
     // ── STABILITY CACHE ───────────────────────────────────────────────────────────
     // Fix (Ramon 2026-07-22: "income I verified last week is completely different this
@@ -275,7 +288,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // bytes): the SAME file attached to several checklist slots counts once, while two
     // genuinely-distinct files that happen to share a filename BOTH survive (filename
     // dedup would wrongly drop one — e.g. a May and a June stub both named "paystub.pdf").
-    // Collect up to MAX_DOCS UNIQUE readable docs; skip truncated/corrupt PDFs and flag
+    // Read EVERY unique income document; skip truncated/corrupt PDFs and flag
     // them. Each doc's header + media block share a unique tag so dropping a rejected doc
     // removes BOTH (a header left behind would keep the request non-empty and let a
     // doc-less call through with $0 income).
@@ -286,14 +299,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const docBufs: { name: string; buf: Buffer; mediaType: string }[] = [];
     const read: string[] = [];
     const unreadable: string[] = [];
-    const overflow: string[] = [];             // only the HARD_MAX runaway guard now
+    const overflow: string[] = [];             // only the runaway guard can populate this
     const seenHash = new Set<string>();
     // Sized so a 24-MONTH bank-statement file (24 statements + W-2s/stubs/IDs) never drops a
     // doc; anything beyond is FLAGGED (overflow), never silently dropped. Reads run pooled
     // (bounded concurrency) so a big file doesn't overload the API or the function timeout.
-    const HARD_MAX = 60;                        // runaway guard only (no real per-doc income cap)
+    // RUNAWAY GUARD, not a document cap. The largest real file today is 29 income documents
+    // (Corine Lucas); this sits far above anything a genuine loan file produces, so it never
+    // shapes an income number — it only stops a pathological file from hanging the function.
+    // Anything beyond it is FLAGGED on the result, never silently dropped.
+    const RUNAWAY_GUARD = 250;
     for (const d of candidates) {
-      if (docBufs.length >= HARD_MAX) { overflow.push(d.name || d.file_name || "document"); continue; }
+      if (docBufs.length >= RUNAWAY_GUARD) { overflow.push(d.name || d.file_name || "document"); continue; }
       const name = d.name || d.file_name || "document";
       const { data: blob, error } = await supabaseAdmin.storage.from(BUCKET).download(d.storage_path as string);
       if (error || !blob) { unreadable.push(name); continue; }
@@ -481,7 +498,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Documents we couldn't read (truncated/corrupt uploads) become flags so the LO knows income
     // evidence was skipped and can re-request a clean copy — never silently omitted.
     const unreadableFlags = unreadable.map((nm) => `Couldn't read "${nm}" — the file looks truncated or corrupt; income from it was NOT counted. Re-request a clean copy from the borrower.`);
-    const overflowFlags = overflow.length ? [`${overflow.length} income document(s) exceeded the ${HARD_MAX}-document read cap and were NOT counted this pass: ${overflow.slice(0, 8).join(", ")}.`] : [];
+    const overflowFlags = overflow.length ? [`${overflow.length} income document(s) exceeded the ${RUNAWAY_GUARD}-document runaway guard and were NOT counted this pass: ${overflow.slice(0, 8).join(", ")}.`] : [];
     // Flags are objects {text, addBackMonthly, borrower}: a flag that gates held-back income carries
     // the $ that OMITTING it adds. Normalize (accept legacy string flags too) so the UI wires Omit→+.
     const normFlag = (f: any) => typeof f === "string"
