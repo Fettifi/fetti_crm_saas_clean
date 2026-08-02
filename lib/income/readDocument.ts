@@ -94,6 +94,18 @@ export type DocRead = {
       largeDeposits?: { amount: number; description?: string | null }[];  // unusually large single credits
       endingBalance?: number | null;
       nsfCount?: number | null;          // NSF / overdraft / returned-item incidents in the period
+      // RECURRING GOVERNMENT / BENEFIT CREDITS. A Treasury ACH code identifies the income
+      // outright — "VACP TREAS 310 XXVA BENEF" IS VA disability compensation, and no other
+      // document on the file may state the amount. Paul Davis's $4,898.05/mo sat in this
+      // statement while the worksheet showed him at $750, because bank statements were only
+      // ever mined for the deposit-average METHOD and never for identified benefit income.
+      benefitDeposits?: {
+        amount: number;
+        description?: string | null;     // the printed ACH description, verbatim
+        date?: string | null;            // YYYY-MM-DD
+        benefitType?: "va_disability" | "social_security" | "ssi" | "military_pay" | "pension" | "other" | null;
+        payee?: string | null;           // which named account holder it belongs to, if shown
+      }[];
     }[];
   } | null;
   notes?: string;                       // one terse underwriter-relevant line
@@ -108,7 +120,7 @@ WORK THROUGH IT IN THIS ORDER:
 2) WHOSE document is it: read the EARNER / employee / provider / account-holder name EXACTLY as printed into personName (for an IHSS stub this is the PROVIDER, not the recipient). Read the last 4 of the SSN (if shown) into ssnLast4 — last 4 ONLY, never the full number. Read the person's city into addressCity if shown.
 3) EMPLOYER / STREAM: employerOrPayer — the FULL name exactly as printed, INCLUDING any parent district / payroll entity shown alongside the site or division (if a stub prints a parent district or payroll entity alongside a site/campus/division, include BOTH). Never shorten it and never drop the parent — the same job must read the same way on every document, or one job is counted as two. ein (if shown). caseOrRecipient = any recipient name or case/account number that distinguishes this income source (IHSS recipient + case #, or a bank account last-4). streamId = a stable key combining employer + EIN + case/recipient. IHSS RULE (hard): the streamId for an IHSS document is ALWAYS "IHSS|case#<the printed case number>" — key on the CASE NUMBER, never the recipient's name (name spellings vary between documents; the case number never does). Put the recipient's name in caseOrRecipient and notes. incomeCategory — classify by whether there is a STABLE BASE, not by whether any variable pay exists: wage_salaried = ANY W-2 job with a steady salary OR a regular hourly rate (a corrections officer, nurse, warehouse worker, etc. is wage_salaried EVEN IF the stub shows overtime, shift differential, holiday or bonus on top — a stable base rate makes it salaried). wage_variable = ONLY a job with NO stable base: gig / IHSS in-home care / tips-only / piece-rate / commission-only / day-labor where every check fluctuates with no underlying salary or fixed rate. self_employment = 1099 / Schedule C. fixed_benefit = SSA / pension / disability / annuity. When unsure between salaried and variable for a W-2 job that prints a regular rate, choose wage_salaried.
 4) PERIOD & CURRENCY (critical — this tells the engine if the income is ONGOING or a job the borrower LEFT): for a pay stub read payPeriodStart, payPeriodEnd, payDate (the check date), and ytdThroughDate — all YYYY-MM-DD, exactly as printed. Set isFinalCheck=true only if it says final/last/termination/severance. Read hireDate if printed. For a W-2/1099/return set taxYear.
-5) FIGURES, EXACTLY AS PRINTED (never rounded, never derived): payFrequency (infer from the pay-period dates: two dates in one month=semimonthly; ~14 days apart=biweekly; ~7=weekly; one/month=monthly). regularPerPeriod (regular pay this period, EXCLUDING overtime), otPerPeriod (overtime/other variable this period), grossPerPeriod (total gross this period), ytdRegular, ytdGross. *** ytdGross MUST BE GROSS EARNINGS YEAR-TO-DATE, NEVER A TAXABLE YTD. *** A stub prints several year-to-date columns and only ONE is gross earnings: take \"GROSS EARN'S YTD\" / \"YTD Gross\" / \"Total Gross YTD\". NEVER take \"YTD Taxable\", \"Taxable Federal/State YTD\" or \"YTD Fed Taxable\" — taxable is gross MINUS pre-tax deductions (retirement, health, 125-plan), so it is always smaller and using it UNDERSTATES the borrower's income. If only a taxable YTD is printed and no gross YTD, set ytdGross null rather than substituting it. SANITY CHECK: read the YTD figure off THIS document only. Never carry a number over from another document, and never adjust one figure to agree with another — each document is read on its own and a separate engine compares them. If a stub prints both a gross YTD and a taxable YTD, the gross one is the LARGER of the two. W-2: w2Box1 (taxable wages), w2Box5 (medicare wages). Self-employment: selfEmploymentNet (net after expenses for the year, from Sch C line 31 or the 1099 amount). Benefit: monthlyBenefit, benefitType, continuanceMonthsRemaining (null if lifetime), monthsReceived (support/alimony), nonTaxable (true if the benefit is non-taxable). 1040: isJointReturn=true if Married-Filing-Jointly. BANK STATEMENT — read it FULLY into the bankStatement object (these documents can QUALIFY income on bank-statement loan programs, so precision matters): institution, accountLast4 (last 4 of the account number), accountHolder EXACTLY as printed (a business/entity name means accountType "business"; a person's name on a consumer account means "personal"), and ONE months[] entry PER STATEMENT MONTH contained in this document (a PDF may hold 2+ monthly statements — emit each month separately): periodStart, periodEnd (YYYY-MM-DD), totalDeposits (the statement's printed total deposits/credits for that period), transfersIn (the portion of deposits that are TRANSFERS from another account — look for "transfer from", "online transfer", "xfer"), excludedDeposits (credits that are clearly NOT income: loan/advance proceeds, tax refunds, returned/reversed items, merchant refunds), largeDeposits (each unusually large single credit with its printed description), endingBalance, nsfCount (NSF / insufficient-funds / overdraft-item incidents). Also set bankMonthlyDeposits = the average monthly deposits as a cross-check. P&L STATEMENT — read into pnl: netIncome (the NET/bottom line for the period, exactly as printed), grossRevenue, months the statement covers (e.g. a Jan–Dec P&L = 12), preparer (the CPA/EA/tax-preparer name if shown; "self-prepared" if it's the borrower's own), preparerSigned (true ONLY if a third-party preparer signed/issued it).
+5) FIGURES, EXACTLY AS PRINTED (never rounded, never derived): payFrequency (infer from the pay-period dates: two dates in one month=semimonthly; ~14 days apart=biweekly; ~7=weekly; one/month=monthly). regularPerPeriod (regular pay this period, EXCLUDING overtime), otPerPeriod (overtime/other variable this period), grossPerPeriod (total gross this period), ytdRegular, ytdGross. *** ytdGross MUST BE GROSS EARNINGS YEAR-TO-DATE, NEVER A TAXABLE YTD. *** A stub prints several year-to-date columns and only ONE is gross earnings: take \"GROSS EARN'S YTD\" / \"YTD Gross\" / \"Total Gross YTD\". NEVER take \"YTD Taxable\", \"Taxable Federal/State YTD\" or \"YTD Fed Taxable\" — taxable is gross MINUS pre-tax deductions (retirement, health, 125-plan), so it is always smaller and using it UNDERSTATES the borrower's income. If only a taxable YTD is printed and no gross YTD, set ytdGross null rather than substituting it. SANITY CHECK: read the YTD figure off THIS document only. Never carry a number over from another document, and never adjust one figure to agree with another — each document is read on its own and a separate engine compares them. If a stub prints both a gross YTD and a taxable YTD, the gross one is the LARGER of the two. W-2: w2Box1 (taxable wages), w2Box5 (medicare wages). Self-employment: selfEmploymentNet (net after expenses for the year, from Sch C line 31 or the 1099 amount). Benefit: monthlyBenefit, benefitType, continuanceMonthsRemaining (null if lifetime), monthsReceived (support/alimony), nonTaxable (true if the benefit is non-taxable). 1040: isJointReturn=true if Married-Filing-Jointly. BANK STATEMENT — read it FULLY into the bankStatement object (these documents can QUALIFY income on bank-statement loan programs, so precision matters): institution, accountLast4 (last 4 of the account number), accountHolder EXACTLY as printed (a business/entity name means accountType "business"; a person's name on a consumer account means "personal"), and ONE months[] entry PER STATEMENT MONTH contained in this document (a PDF may hold 2+ monthly statements — emit each month separately): periodStart, periodEnd (YYYY-MM-DD), totalDeposits (the statement's printed total deposits/credits for that period), transfersIn (the portion of deposits that are TRANSFERS from another account — look for "transfer from", "online transfer", "xfer"), excludedDeposits (credits that are clearly NOT income: loan/advance proceeds, tax refunds, returned/reversed items, merchant refunds), largeDeposits (each unusually large single credit with its printed description), endingBalance, nsfCount (NSF / insufficient-funds / overdraft-item incidents), and benefitDeposits — EVERY recurring GOVERNMENT or BENEFIT credit, which you must look for explicitly on every statement. The U.S. Treasury ACH descriptor names the program outright, so these are documented income even when no award letter is on file: "VACP TREAS 310" / "XXVA BENEF" = VA disability compensation (benefitType "va_disability"); "SSA TREAS 310" = Social Security; "SSI TREAS 310" = SSI; "DFAS"/"USAF"/"ARMY"/"NAVY" active-duty pay = military_pay; a named pension administrator = pension. For each, record the amount, the description EXACTLY as printed, the date, benefitType, and — on a JOINT account — which named holder it belongs to if the descriptor says. Do NOT put these in largeDeposits instead; they are separate and they matter. Also set bankMonthlyDeposits = the average monthly deposits as a cross-check. P&L STATEMENT — read into pnl: netIncome (the NET/bottom line for the period, exactly as printed), grossRevenue, months the statement covers (e.g. a Jan–Dec P&L = 12), preparer (the CPA/EA/tax-preparer name if shown; "self-prepared" if it's the borrower's own), preparerSigned (true ONLY if a third-party preparer signed/issued it).
 6) RENTAL DOCUMENT (lease / rent_roll / appraisal_1007) — read it into rentalUnits[], ONE ENTRY PER UNIT (a rent roll listing 4 units = 4 entries; a duplex lease covering 2 units = 2 entries; a single-family lease = 1 entry). For each: propertyAddress (the street address the rent is for), unit (apt/unit designator if named), and then EITHER the lease facts OR the market rent — never both from the same document:
    • On a LEASE or RENT ROLL: leaseRent = the BASE rent exactly as printed (EXCLUDE pet rent, parking, utility reimbursements, late fees, and any one-off charge), leaseRentFrequency = the period that figure is stated for ("monthly" unless the document says otherwise — set "annual" for a yearly figure, "weekly" for weekly), leaseStartDate and leaseEndDate (YYYY-MM-DD), isMonthToMonth=true for a month-to-month or holdover tenancy, tenantName. Do NOT convert the rent to monthly yourself — report it as printed and say which period it is; the engine converts.
    • On a 1007/1025: marketRent = the appraiser's opinion of monthly market rent for that unit. NEVER put a market rent in leaseRent, and never put a lease amount in marketRent — a separate engine compares the two and takes the lesser, so swapping them changes the qualifying income.
@@ -254,11 +266,70 @@ export function toDocFact(r: DocRead): DocFact {
 // rent roll listing four units, or a 1007 covering both halves of a duplex, is genuinely
 // several income facts: rentalIncome.ts matches each unit to its own market rent and sums the
 // doors, which it cannot do if four units arrive collapsed into a single fact.
+/**
+ * A recurring Treasury benefit credit on a bank statement IS documented income — the ACH
+ * descriptor names the program, so "VACP TREAS 310 XXVA BENEF" can only be VA disability
+ * compensation. Turn each distinct benefit stream into its own DocFact so the engine's
+ * existing fixed-benefit path counts it (and grosses up the non-taxable ones) instead of the
+ * money being visible on the statement and absent from the worksheet.
+ *
+ * Paul Davis (FF-202606-4509, 2026-08-01): $4,898.05/mo of VA compensation sat in the ...8447
+ * statement while the file qualified him at $750. Bank statements had only ever been mined
+ * for the deposit-AVERAGE method, so an identified benefit passed straight through.
+ *
+ * Highest observed amount per stream wins rather than summing — several statement months show
+ * the SAME monthly benefit, and adding them would multiply one payment by the month count.
+ */
+function benefitFactsFromBank(r: DocRead, base: DocFact): DocFact[] {
+  const months = r.bankStatement?.months || [];
+  if (!months.length) return [];
+  const byStream = new Map<string, DocFact>();
+  const last4 = r.bankStatement?.accountLast4 || "";
+  for (const m of months) {
+    for (const d of (m?.benefitDeposits || [])) {
+      const amt = typeof d?.amount === "number" && isFinite(d.amount) ? d.amount : null;
+      if (!amt || amt <= 0) continue;
+      const type = d.benefitType || "other";
+      // Military PAY is wages, not a benefit, and is documented by an LES — never fold it in
+      // here or it would be counted as a lifetime non-taxable benefit.
+      if (type === "military_pay") continue;
+      const nonTaxable = type === "va_disability" || type === "ssi";
+      const payer = type === "va_disability" ? "U.S. Dept of Veterans Affairs"
+        : type === "social_security" || type === "ssi" ? "Social Security Administration"
+        : (d.description || "benefit payer");
+      const key = `${type}|${last4}`;
+      const prev = byStream.get(key);
+      if (prev && (prev.monthlyBenefit ?? 0) >= amt) continue;
+      byStream.set(key, {
+        ...base,
+        file: `${base.file} — ${type === "va_disability" ? "VA compensation" : type} deposit`,
+        docType: type === "va_disability" ? "va_award" : type === "pension" ? "pension" : "ssa_award",
+        incomeCategory: "fixed_benefit",
+        personName: d.payee || base.personName || r.bankStatement?.accountHolder || null,
+        employerOrPayer: payer,
+        streamId: `benefit|${type}|${last4}`,
+        monthlyBenefit: amt,
+        benefitType: type === "va_disability" ? "va_disability" : type,
+        nonTaxable,
+        // VA compensation and Social Security are indefinite; the >= 3-year continuance test
+        // treats null as lifetime, which is correct and must not be guessed at.
+        continuanceMonthsRemaining: null,
+        notes: `documented by recurring bank deposit: "${(d.description || "").slice(0, 60)}"${d.date ? ` on ${d.date}` : ""}`,
+        // Not a rental or wage doc — clear anything inherited from the statement itself.
+        grossPerPeriod: null, regularPerPeriod: null, ytdGross: null, ytdRegular: null,
+        w2Box1: null, w2Box5: null, selfEmploymentNet: null, taxYear: null, payFrequency: null,
+      });
+    }
+  }
+  return [...byStream.values()];
+}
+
 export function toDocFacts(r: DocRead): DocFact[] {
   const base = toDocFact(r);
+  const benefits = benefitFactsFromBank(r, base);
   const units = Array.isArray(r.rentalUnits) ? r.rentalUnits.filter(Boolean) : [];
-  if (!units.length) return [base];
-  return units.map((u, i) => ({
+  if (!units.length) return [base, ...benefits];
+  const unitFacts: DocFact[] = units.map((u, i) => ({
     ...base,
     // Keep the file label unique per unit so the per-document table doesn't show N identical rows.
     file: units.length > 1 ? `${base.file} — ${u.unit ? `Unit ${u.unit}` : u.propertyAddress || `unit ${i + 1}`}` : base.file,
@@ -274,4 +345,5 @@ export function toDocFacts(r: DocRead): DocFact[] {
     isShortTermRental: u.isShortTermRental ?? false,
     trailing12GrossRent: u.trailing12GrossRent ?? null,
   }));
+  return [...unitFacts, ...benefits];
 }

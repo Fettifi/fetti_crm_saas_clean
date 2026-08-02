@@ -44,7 +44,7 @@ const STUB_PRIORITY_WINDOW = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-08-01-employer-merge-ytd-gross";
+const LOGIC_VERSION = "2026-08-01-va-benefit-deposits";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" is deliberately GENERIC — a Chase/Wells file is rarely named
 // "bank statement"; the per-doc reader classifies, and a non-income statement is harmless.
@@ -75,7 +75,7 @@ const VA_INCOME_RE = /\bva\b[\s_.-]*(?:award|benefit|comp)|disability[\s_.-]*awa
 /** An advisory flag when a veteran's status documents are on file but the award letter that
  *  actually states the money is not. Appended to BOTH the fresh and cached responses, so it
  *  shows without ever invalidating a settled income figure. */
-function veteranFlag(docs: any[], loanType: string): { text: string; addBackMonthly: number; borrower: 1 | 2 } | null {
+function veteranFlag(docs: any[], loanType: string, vaCounted?: number | null): { text: string; addBackMonthly: number; borrower: 1 | 2 } | null {
   const named = (d: any) => `${d?.name || ""} ${d?.file_name || ""}`;
   const status = (docs || []).filter((d: any) => d?.storage_path && VA_STATUS_RE.test(named(d)));
   if (!status.length) return null;
@@ -83,6 +83,17 @@ function veteranFlag(docs: any[], loanType: string): { text: string; addBackMont
   if (hasIncomeDoc) return null;
   const grossUp = loanType === "fha" ? 1.15 : 1.25;
   const which = [...new Set(status.map((d: any) => (/dd.?214/i.test(named(d)) ? "DD-214" : "COE")))].join(" + ");
+  // The compensation may already be counted off a recurring Treasury deposit on a bank
+  // statement (VACP TREAS 310). Saying "none of it is counted" in that case would be false and
+  // would send the LO chasing a document for income already in the worksheet — but the award
+  // letter is still the document that proves the amount and continuance, so still ask.
+  if (vaCounted && vaCounted > 0) {
+    return {
+      text: `${which} on file — veteran on this loan. VA compensation of ${"$" + Math.round(vaCounted).toLocaleString()}/mo IS counted, documented by the recurring VA Treasury deposit on the bank statement and grossed up ×${grossUp} as non-taxable. Still request the VA award/benefit letter to confirm the exact amount and continuance for the file.`,
+      addBackMonthly: 0,
+      borrower: 1,
+    };
+  }
   const who = String(status[0]?.name || "").replace(VA_STATUS_RE, "").replace(/\b(va|paul|the)\b/gi, "").trim();
   return {
     text: `${which} on file${who ? ` (${who})` : ""} — veteran on this loan. Neither document states a dollar amount: the DD-214 proves service and the COE proves entitlement (a funding-fee EXEMPTION on it means service-connected disability compensation is being paid). Request the VA award/benefit letter — it is non-taxable and grosses up ×${grossUp} — or the LES for BAH/BAS. None of it is counted yet.`,
@@ -265,7 +276,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             // The veteran advisory is metadata-derived, so it is layered onto the cached
             // payload rather than baked into the fingerprint — it can appear without
             // re-reading anything and without changing a settled income number.
-            const vf = veteranFlag((docs || []) as any[], loanType);
+            const cachedVa = (((cached.payload as any).breakdown) || [])
+              .filter((l: any) => /veterans affairs/i.test(String(l.label || "")))
+              .reduce((sum: number, l: any) => sum + (Number(l.monthly) || 0), 0);
+            const vf = veteranFlag((docs || []) as any[], loanType, cachedVa);
             const payload = vf
               ? { ...cached.payload, flags: [...((cached.payload as any).flags || []), vf] }
               : cached.payload;
@@ -563,7 +577,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       rentalUnits: rental?.units || null };
     const verifiedAt = new Date().toISOString();
     await setSetting(CACHE_KEY, JSON.stringify({ fingerprint, verifiedAt, payload })).catch(() => {});
-    const vf = veteranFlag((docs || []) as any[], loanType);
+    const vaCounted = (computed.breakdown || [])
+      .filter((l: any) => /veterans affairs/i.test(String(l.label || "")))
+      .reduce((sum: number, l: any) => sum + (Number(l.monthly) || 0), 0);
+    const vf = veteranFlag((docs || []) as any[], loanType, vaCounted);
     const out = vf ? { ...payload, flags: [...((payload as any).flags || []), vf] } : payload;
     return NextResponse.json({ ...out, cached: false, verifiedAt });
   } catch (e: any) {
