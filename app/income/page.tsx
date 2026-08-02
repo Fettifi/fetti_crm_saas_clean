@@ -46,18 +46,30 @@ export default function IncomeCalcPage() {
   const [liabs, setLiabs] = useState<Liab[]>([]);
   const [crBusy, setCrBusy] = useState(false);
   const [crErr, setCrErr] = useState("");
+  // NOT-READ warnings are a separate channel from errors on purpose: a partially-read report
+  // returns 200 OK, so routing these through crErr (which only fires on !res.ok) is how they
+  // were being lost. They must sit next to the DTI they distort.
+  const [crWarn, setCrWarn] = useState<string[]>([]);
 
   async function uploadCreditReport(files: FileList | null) {
     if (!files || !files.length) return;
-    setCrBusy(true); setCrErr("");
+    setCrBusy(true); setCrErr(""); setCrWarn([]);
     try {
       const fd = new FormData();
-      for (const f of Array.from(files).slice(0, 4)) fd.append("files", f);
+      // SEND EVERY FILE. This used to .slice(0, 4) while the server guard is 25 — so an 8-page
+      // report uploaded as 8 images posted 4, the server saw 4, no overflow was detected at any
+      // layer, and the missing tradelines silently UNDERSTATED DTI on a document that tells the
+      // borrower what they qualify for. The server is the one place a cap belongs, because it is
+      // the only one that can report what it dropped.
+      for (const f of Array.from(files)) fd.append("files", f);
       const res = await fetch("/api/income/credit-report", { method: "POST", body: fd });
       const j = await res.json();
       if (!res.ok) { setCrErr(j?.error || "Couldn't read that report."); return; }
       setLiabs((prev) => [...prev, ...(j.liabilities || [])]);
       if (j.borrower && !borrowerName) setBorrowerName(j.borrower);
+      // Every "we did not read this" the route can produce. Dropping these made a partially-read
+      // report indistinguishable from a complete one.
+      setCrWarn([j.warning, j.formatWarning, j.tradelineWarning].filter(Boolean) as string[]);
     } catch { setCrErr("Upload failed — please try again."); } finally { setCrBusy(false); }
   }
   const updLiab = (id: string, patch: Partial<Liab>) => setLiabs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -204,6 +216,9 @@ export default function IncomeCalcPage() {
                 </div>
               </div>
               {crErr && <p className="text-xs text-red-300 mt-2">{crErr}</p>}
+              {crWarn.map((w, i) => (
+                <p key={i} className="text-xs text-amber-300 mt-2">{w} DTI is understated until you add the missing rows by hand.</p>
+              ))}
               {liabs.length > 0 && (
                 <div className="mt-3 space-y-1.5">
                   {liabs.map((l) => (

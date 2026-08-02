@@ -96,15 +96,21 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   const [liabBusy, setLiabBusy] = useState(false);
   const [liabErr, setLiabErr] = useState("");
   const [liabDocs, setLiabDocs] = useState<string[]>([]);
+  // Same separate channel as /income: a partially-read credit report returns 200 OK, so a
+  // warning routed through liabErr (set only on !r.ok) never reaches the screen.
+  const [liabWarn, setLiabWarn] = useState<string[]>([]);
   async function pullCreditLiabilities() {
     if (!fileId) return;
-    setLiabBusy(true); setLiabErr("");
+    setLiabBusy(true); setLiabErr(""); setLiabWarn([]);
     try {
       const r = await fetch(`/api/los/files/${fileId}/credit-liabilities`, { method: "POST" });
       const j = await r.json();
       if (!r.ok) { setLiabErr(j?.error || "Couldn't read the credit report."); return; }
       setLiabs(j.liabilities || []);
       setLiabDocs(j.docsRead || []);
+      // The route builds these expressly so a document it could not read cannot be silent; this
+      // component was throwing all of them away, which made a half-read report look complete.
+      setLiabWarn([j.warning, j.tradelineWarning].filter(Boolean) as string[]);
     } catch { setLiabErr("Read failed — please try again."); } finally { setLiabBusy(false); }
   }
   const updLiab = (id: string, patch: Partial<CreditLiab>) => setLiabs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -617,6 +623,9 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
             </button>
           )}
           {liabErr && <p className="text-[11px] text-red-300 mt-1">{liabErr}</p>}
+          {liabWarn.map((w, i) => (
+            <p key={i} className="text-[11px] text-amber-300 mt-1">{w} DTI is understated until the missing rows are added by hand.</p>
+          ))}
         </div>
         <div>
           <label className={lbl}>Taxes + ins + HOA /mo {escrowEstimated && escrowKnown && <span className="text-amber-500/80" title={metrics?.zip ? `Taxes + insurance estimated from ZIP ${metrics.zip} (same rates as the Quick Pricer)` : "Estimated"}>est.{metrics?.zip ? ` · ${metrics.zip}` : ""}</span>}</label>
