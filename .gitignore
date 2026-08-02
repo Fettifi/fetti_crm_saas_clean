@@ -11,5 +11,7 @@ public/*.pdf
 scratchpad/
 tsconfig.tsbuildinfo
 
-# Redacted borrower training data — NEVER commit
-dataset/
+# Redacted borrower training data — NEVER commit.
+# LEADING SLASH IS LOAD-BEARING: a bare "dataset/" matches at ANY depth and silently
+# excluded scripts/dataset/build.ts too, so the miner never got committed.
+/dataset/
