@@ -1,5 +1,5 @@
 {
-  "logicVersion": "2026-08-01-veteran-attribution",
+  "logicVersion": "2026-08-01-override-exemplars",
   "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
   "files": {
     "c1097a06-8a5e-4ff2-80e8-846710dc44a8": {

@@ -8,6 +8,7 @@
 import type { DocRead } from "@/lib/income/readDocument";
 import type { QualifyResult } from "@/lib/income/docFacts";
 import { qcDoctrineFor } from "@/lib/income/programs";
+import { overrideGuidance } from "@/lib/income/overrideExemplars";
 
 export type VerifyFinding = { severity: "high" | "medium" | "low"; issue: string; borrower?: 1 | 2 };
 
@@ -60,7 +61,10 @@ export async function verifyWorksheet(
       body: JSON.stringify({
         model,
         max_tokens: 2500,
-        system: VERIFY_SYSTEM,
+        // Ramon's own reversals, appended at the call site rather than baked into the constant:
+        // VERIFY_SYSTEM stays a readable literal, and the one place the prompt is assembled is
+        // the one place to look when QC behaviour changes.
+        system: VERIFY_SYSTEM + overrideGuidance(),
         messages: [{ role: "user", content: userText }],
         tools: [{
           name: "report_qc",

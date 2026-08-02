@@ -44,7 +44,7 @@ const STUB_PRIORITY_WINDOW = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
-const LOGIC_VERSION = "2026-08-01-veteran-attribution";
+const LOGIC_VERSION = "2026-08-01-override-exemplars";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" is deliberately GENERIC — a Chase/Wells file is rarely named
 // "bank statement"; the per-doc reader classifies, and a non-income statement is harmless.
