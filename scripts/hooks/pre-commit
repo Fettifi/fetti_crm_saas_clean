@@ -1,0 +1,77 @@
+#!/bin/sh
+# INCOME GUARD — runs before every commit that touches the income engine.
+#
+# WHY THIS EXISTS. Ramon, 2026-08-01: "You're supposed to be getting smarter and learning with
+# every pass because all this stuff is supposed to be stored in your memory, but you often
+# forget and don't seem to be checking your streams before making decisions."
+#
+# He is right, and a written lesson does not fix it. On 2026-08-01 a memory that said "test the
+# WIRING not the label" was already on file when a constant named MAX_DOCS = 8 was read,
+# believed, and used to justify a change that re-rolled a settled $11,701 income to $3,129 on a
+# live client file. The note existed. It was not consulted at the moment of the decision.
+#
+# So the rule stops depending on anyone remembering it. This hook runs whether the committer is
+# a fresh session that has never heard of the Wilson file, another agent, or a human at a
+# terminal. Prose reminds; a gate refuses.
+#
+# Escape hatch when you genuinely need it:  git commit --no-verify
+
+CHANGED=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$CHANGED" ] && exit 0
+
+# Only the paths that can move a borrower's qualifying income.
+WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'verify-income' -e 'scripts/verify-employer-merge' -e 'scripts/verify-benefit-deposits' -e 'scripts/verify-income-stability')
+[ -z "$WATCHED" ] && exit 0
+
+echo ""
+echo "── income guard ──────────────────────────────────────────────"
+printf '%s\n' "$WATCHED" | sed 's/^/   touched: /'
+echo ""
+
+FAILED=""
+
+# Offline, deterministic, ZERO API calls. These always run.
+for GUARD in verify:employer verify:benefits; do
+  printf "   %-18s " "$GUARD"
+  OUT=$(npm run --silent "$GUARD" 2>&1)
+  if [ $? -eq 0 ]; then
+    echo "PASS"
+  else
+    echo "FAIL"
+    FAILED="$FAILED $GUARD"
+    printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+done
+
+# Needs the database + .env.local. Skip cleanly where they are absent (CI, a fresh clone)
+# rather than blocking a commit for a reason the committer cannot act on.
+if [ -f .env.local ]; then
+  printf "   %-18s " "verify:income"
+  OUT=$(npm run --silent verify:income 2>&1)
+  if [ $? -eq 0 ]; then
+    echo "PASS"
+  else
+    echo "FAIL"
+    FAILED="$FAILED verify:income"
+    printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+else
+  echo "   verify:income      SKIPPED (no .env.local — cannot reach the database)"
+fi
+
+if [ -n "$FAILED" ]; then
+  echo ""
+  echo "   COMMIT BLOCKED —$FAILED"
+  echo ""
+  echo "   A failure here is not automatically a bug: adding a real income document SHOULD"
+  echo "   change a file. The point is that it can never happen without somebody seeing it."
+  echo "   If every change listed above is intended, re-baseline and commit again:"
+  echo "       npm run verify:income -- --save"
+  echo "   To bypass deliberately:  git commit --no-verify"
+  echo "──────────────────────────────────────────────────────────────"
+  exit 1
+fi
+
+echo "   all guards passed"
+echo "──────────────────────────────────────────────────────────────"
+exit 0
