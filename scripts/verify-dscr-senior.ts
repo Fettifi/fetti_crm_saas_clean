@@ -12,7 +12,7 @@
 // went unworked for a full remediation cycle — which is why those lists now get adjudicated.
 //
 //   npx tsx scripts/verify-dscr-senior.ts
-import { computeDeskMetrics, LOAN_BOX, type DeskInput } from "../lib/underwritingDesk";
+import { computeDeskMetrics, sanitizeInput, enteredNum, LOAN_BOX, type DeskInput } from "../lib/underwritingDesk";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -80,6 +80,44 @@ chk(first.dscr === firstAgain.dscr && first.maxLoan === firstAgain.maxLoan && fi
 //      borrower's quoted payment for the new loan.
 chk(senior.pitia === none.pitia,
   "PITIA still reports the NEW loan's own payment; the senior is added in the ratio, not to the quote");
+
+// ── 9. THE ROUTE BOUNDARY. Everything above tests computeDeskMetrics, and the FIRST version of
+//      this guard stopped there — so it passed while the server silently threw the LO's typed
+//      senior payment away, because sanitizeInput never read the field. Same blind spot as the
+//      AVM and senior-lien guards: the stage that DROPS a field is the stage that must be tested.
+const body = {
+  loanType: "dscr", lienPosition: 2, asIsValue: 600000, loanAmount: 120000,
+  monthlyRent: "0", existingLiens: "300000", existingLienPayment: "1400",
+};
+const si = sanitizeInput(body);
+chk(si.existingLienPayment === 1400,
+  "sanitizeInput CARRIES the LO's typed senior payment (it was dropping it entirely)");
+chk(si.monthlyRent === 0,
+  "sanitizeInput preserves a typed $0 rent — `numOr(x) || undefined` collapsed it to undefined");
+chk(sanitizeInput({ ...body, existingLienPayment: "0" }).existingLienPayment === 0,
+  "a $0 senior payment survives the boundary (deferred / forbearance)");
+chk(sanitizeInput({ ...body, existingLienPayment: "" }).existingLienPayment === undefined
+  && sanitizeInput({ ...body, monthlyRent: "" }).monthlyRent === undefined,
+  "an EMPTY box is still undefined — blank must not become zero either");
+chk(sanitizeInput({ ...body, existingLienPayment: "-500" }).existingLienPayment === undefined
+  && sanitizeInput({ ...body, monthlyRent: "abc" }).monthlyRent === undefined,
+  "negative / non-numeric are refused at the boundary");
+
+// enteredNum is the rule itself — test it directly, not only through its callers.
+chk(enteredNum("0") === 0 && enteredNum(0) === 0, "enteredNum keeps zero");
+chk(enteredNum("") === undefined && enteredNum(null) === undefined && enteredNum(undefined) === undefined,
+  "enteredNum treats blank as unset");
+// The trap inside the fix: stripping non-numerics leaves "", and Number("") is 0 — so garbage
+// was becoming a STATED zero, i.e. "this unit is vacant". Reject, never reinterpret.
+for (const junk of ["abc", "$", "--", ".", "N/A", "n/a", "TBD"]) {
+  if (enteredNum(junk) !== undefined) chk(false, `enteredNum(${JSON.stringify(junk)}) = ${enteredNum(junk)} — garbage must NOT become a stated zero`);
+}
+chk(true, "non-numeric text is rejected rather than reinterpreted as $0 (which would read as 'vacant')");
+
+// End to end through the boundary: the typed payment must reach the ratio.
+const viaRoute = computeDeskMetrics({ ...si, monthlyRent: 3200 } as DeskInput);
+chk(viaRoute.seniorPayment === 1400 && !viaRoute.seniorPaymentEstimated,
+  "end to end: the payment typed on the screen reaches the DSCR, unestimated");
 
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). A DSCR that ignores the first mortgage passes deals the property cannot carry.\n`); process.exit(1); }

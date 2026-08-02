@@ -343,3 +343,47 @@ export function deskUrlaSeed(input: DeskInput, purpose: string, result?: any) {
     },
   };
 }
+
+const _numOr = (v: any, d = 0): number => { const n = Number(String(v ?? "").replace(/[^0-9.\-]/g, "")); return isFinite(n) ? n : d; };
+const _str = (v: any, max = 200): string => String(v ?? "").trim().slice(0, max);
+
+/** A figure the user ACTUALLY STATED, preserving zero.
+ *
+ *  `numOr(x) || undefined` was the shape throughout this route, and it is why the $0-rent rule
+ *  never worked in production: numOr("0") is 0, and `0 || undefined` is undefined, so the guard
+ *  downstream — the one whose comment reads "test for entered, never for truthy" — could never
+ *  see a zero. Two truthiness filters, one on the client and one here, defeated it before it ran.
+ *  $0 rent means VACANT and $0 senior payment means deferred; both are statements, not blanks. */
+export function enteredNum(v: any): number | undefined {
+  if (v === "" || v == null) return undefined;
+  // STRIP FIRST, THEN CHECK IT LEFT SOMETHING. `_numOr("abc")` strips to "" and Number("") is 0,
+  // so garbage was becoming a STATED zero — which on rent reads as "the unit is vacant". A
+  // coercion that turns nonsense into a meaningful value is worse than one that rejects it.
+  const cleaned = String(v).replace(/[^0-9.\-]/g, "");
+  if (cleaned === "" || cleaned === "-" || cleaned === ".") return undefined;
+  const n = Number(cleaned);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+/** Server-side coercion of a Desk request body. Lives here, not in the route, so the guard can
+ *  exercise the stage that actually drops a field — the lesson from the AVM and senior-lien
+ *  fixes, both of which shipped a guard blind to the layer where the bug lived. */
+export function sanitizeInput(b: any): DeskInput {
+  const lt = String(b?.loanType || "dscr") as DeskLoanType;
+  return {
+    address: _str(b?.address), city: _str(b?.city, 80), state: _str(b?.state, 2).toUpperCase(), zip: _str(b?.zip, 10).replace(/[^0-9]/g, "").slice(0, 5),
+    borrower: _str(b?.borrower, 120),
+    loanType: (LOAN_BOX[lt] ? lt : "dscr"),
+    loanPurpose: (["Purchase", "Refinance", "CashOutRefinance"].includes(b?.loanPurpose) ? b.loanPurpose : undefined),
+    lienPosition: Number(b?.lienPosition) === 2 ? 2 : 1,
+    loanAmount: _numOr(b?.loanAmount), asIsValue: _numOr(b?.asIsValue), arv: _numOr(b?.arv) || undefined,
+    existingLiens: _numOr(b?.existingLiens) || undefined, rehabBudget: _numOr(b?.rehabBudget) || undefined,
+    // ZERO-PRESERVING. These two are statements about the deal, not blanks.
+    monthlyRent: enteredNum(b?.monthlyRent),
+    existingLienPayment: enteredNum(b?.existingLienPayment),
+    propertyType: _str(b?.propertyType, 40), occupancy: (["investment", "owner", "second_home"].includes(b?.occupancy) ? b.occupancy : "investment"),
+    fico: _numOr(b?.fico) || undefined, ratePct: _numOr(b?.ratePct) || undefined, termYears: _numOr(b?.termYears) || undefined,
+    hoaMonthly: _numOr(b?.hoaMonthly) || undefined, taxRatePct: _numOr(b?.taxRatePct) || undefined, insRatePct: _numOr(b?.insRatePct) || undefined,
+    targetDscr: _numOr(b?.targetDscr) || undefined,
+  };
+}

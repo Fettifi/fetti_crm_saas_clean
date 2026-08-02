@@ -61,7 +61,10 @@ export default function UnderwritingDesk() {
     // forbearance / interest deferred), and treating it as unset would silently re-estimate.
     existingLienPayment: f.existingLienPayment !== "" && f.existingLienPayment != null ? num(f.existingLienPayment) : undefined,
     rehabBudget: num(f.rehabBudget) || undefined,
-    monthlyRent: num(f.monthlyRent) || undefined, propertyType: f.propertyType, occupancy: f.occupancy,
+    // Zero-preserving: `num(x) || undefined` here was the FIRST of the two truthiness filters
+    // that made the $0-rent rule unreachable. A typed 0 means the unit is vacant.
+    monthlyRent: f.monthlyRent !== "" && f.monthlyRent != null ? num(f.monthlyRent) : undefined,
+    propertyType: f.propertyType, occupancy: f.occupancy,
     fico: num(f.fico) || undefined, ratePct: num(f.ratePct) || undefined, termYears: num(f.termYears) || 30,
     hoaMonthly: num(f.hoaMonthly) || undefined, targetDscr: num(f.targetDscr) || undefined,
   }), [f]);

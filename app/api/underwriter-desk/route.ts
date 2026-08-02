@@ -18,7 +18,7 @@ import { resolveLocation } from "@/lib/propertyData";
 import { getLenders } from "@/lib/pricing/lenders";
 import { taxLookupFor } from "@/lib/underwrite/taxLinks";
 import { createLoanFileFromLead } from "@/lib/los";
-import { computeDeskMetrics, LOAN_BOX, TITLE_SYSTEM, UNDERWRITE_SYSTEM, PROPERTY_WEB_SYSTEM, type DeskInput, type DeskLoanType, type WebPropertyPull, deskUrlaSeed, deskProductLabel } from "@/lib/underwritingDesk";
+import { computeDeskMetrics, LOAN_BOX, TITLE_SYSTEM, UNDERWRITE_SYSTEM, PROPERTY_WEB_SYSTEM, type DeskInput, type DeskLoanType, type WebPropertyPull, deskUrlaSeed, deskProductLabel, sanitizeInput } from "@/lib/underwritingDesk";
 import { buildUnderwritingDeskPdf } from "@/lib/underwritingDeskPdf";
 import { searchWeb } from "@/lib/integrations/search";
 
@@ -33,23 +33,6 @@ const ACS_VARS = "B19013_001E,B25077_001E,B25064_001E"; // median income, home v
 const numOr = (v: any, d = 0): number => { const n = Number(String(v ?? "").replace(/[^0-9.\-]/g, "")); return isFinite(n) ? n : d; };
 const str = (v: any, max = 200): string => String(v ?? "").trim().slice(0, max);
 
-function sanitizeInput(b: any): DeskInput {
-  const lt = String(b?.loanType || "dscr") as DeskLoanType;
-  return {
-    address: str(b?.address), city: str(b?.city, 80), state: str(b?.state, 2).toUpperCase(), zip: str(b?.zip, 10).replace(/[^0-9]/g, "").slice(0, 5),
-    borrower: str(b?.borrower, 120),
-    loanType: (LOAN_BOX[lt] ? lt : "dscr"),
-    loanPurpose: (["Purchase", "Refinance", "CashOutRefinance"].includes(b?.loanPurpose) ? b.loanPurpose : undefined),
-    lienPosition: Number(b?.lienPosition) === 2 ? 2 : 1,
-    loanAmount: numOr(b?.loanAmount), asIsValue: numOr(b?.asIsValue), arv: numOr(b?.arv) || undefined,
-    existingLiens: numOr(b?.existingLiens) || undefined, rehabBudget: numOr(b?.rehabBudget) || undefined,
-    monthlyRent: numOr(b?.monthlyRent) || undefined,
-    propertyType: str(b?.propertyType, 40), occupancy: (["investment", "owner", "second_home"].includes(b?.occupancy) ? b.occupancy : "investment"),
-    fico: numOr(b?.fico) || undefined, ratePct: numOr(b?.ratePct) || undefined, termYears: numOr(b?.termYears) || undefined,
-    hoaMonthly: numOr(b?.hoaMonthly) || undefined, taxRatePct: numOr(b?.taxRatePct) || undefined, insRatePct: numOr(b?.insRatePct) || undefined,
-    targetDscr: numOr(b?.targetDscr) || undefined,
-  };
-}
 
 // Census ACS market (median income / home value / gross rent) by ZCTA, latest vintage.
 async function acsMarket(zip?: string) {
