@@ -16,6 +16,7 @@ import { resolveLocation } from "@/lib/propertyData";
 import { taxLookupFor } from "@/lib/underwrite/taxLinks";
 import { qualifyDeal } from "@/lib/underwrite/dealQualifier";
 import { underwriteOne, DEFAULT_ASSUMPTIONS, type PropertyRow } from "@/lib/underwrite/engine";
+import { carryingCosts, dealAssumptions, entered, overriddenAssumptions } from "@/lib/underwrite/dealInputs";
 import { pullPropertyFromWeb, pullNeighborhood, acsMarket, callClaudeJSON } from "@/lib/underwrite/webIntel";
 
 export const runtime = "nodejs";
@@ -61,9 +62,16 @@ export async function POST(req: NextRequest) {
     const rehabBudget = num(body?.rehabBudget) || 0;
     const inputArv = num(body?.arv) || 0;
     const inputRent = num(body?.monthlyRent) || 0;
+    // CARRYING COSTS THE INVESTOR ACTUALLY KNOWS. Until now there was no input for any of these
+    // anywhere on the screen, and insurance was hardcoded null so it was ALWAYS modelled — an
+    // investor holding the real tax bill and a bound premium had no way to use them, on the one
+    // tool whose entire job is "should I buy this?". Coercion lives in lib/underwrite/dealInputs
+    // so the guard tests what ships rather than a copy of these rules.
+    const { taxesAnnual: inTaxes, insuranceAnnual: inIns, hoaMonthly: inHoa } = carryingCosts(body);
     const propertyType = str(body?.propertyType, 40) || "SFR";
     if (!address && !zip) return NextResponse.json({ error: "Enter a property address." }, { status: 422 });
-    if (!purchasePrice) return NextResponse.json({ error: "Enter a potential purchase price." }, { status: 422 });
+    // A NEGATIVE price passed this guard and produced a negative cap rate presented as analysis.
+    if (!purchasePrice || purchasePrice < 0) return NextResponse.json({ error: "Enter a potential purchase price." }, { status: 422 });
 
     const one = [address, city, state, zip].filter(Boolean).join(", ");
 
@@ -87,18 +95,28 @@ export async function POST(req: NextRequest) {
     //    to the web value estimate (as-is), rent to the web rent estimate — clearly sourced.
     const effArv = inputArv || Number(web?.estimatedValue) || Number(web?.lastSalePrice) || 0;
     const arvSource = inputArv ? "entered" : (web?.estimatedValue ? `web:${web.valueBasis || "estimate"}` : web?.lastSalePrice ? "web:recent sale" : "none");
-    const effRent = inputRent || Number(web?.estimatedRent) || 0;
-    const rentSource = inputRent ? "entered" : (web?.estimatedRent ? "web:Rent Zestimate" : "none");
+    // $0 rent is a real statement (vacant / owner-occupied at purchase), so test for ENTERED.
+    const rentEntered = entered(body?.monthlyRent);
+    const effRent = rentEntered ? Number(body.monthlyRent) : (Number(web?.estimatedRent) || 0);
+    const rentSource = rentEntered ? "entered" : (web?.estimatedRent ? "web:Rent Zestimate" : "none");
 
     // 4) Deterministic economics for every strategy (the numbers the AI must anchor to).
     const propertyRow: PropertyRow = {
       id: "analyze", address: address || geo?.standardized || "", city: city || geo?.city || null, state: st || null, zip: zip || null,
       county: loc?.countyName || null, property_type: propertyType, units: null,
       price: purchasePrice, rent_monthly: effRent || null,
-      taxes_annual: Number(web?.annualPropertyTax) || null, insurance_annual: null, hoa_monthly: Number(web?.hoaMonthly) || null,
+      // Entered figure wins; then the web pull; then the engine's %-of-price fallback (which
+      // flags itself as an estimate).
+      taxes_annual: inTaxes ?? (Number(web?.annualPropertyTax) || null),
+      insurance_annual: inIns,
+      hoa_monthly: inHoa ?? (Number(web?.hoaMonthly) || null),
       rehab_budget: rehabBudget || null, arv: effArv || null, back_tax_status: "unknown", notes: str(body?.notes, 400) || null,
     };
-    const assumptions = { ...DEFAULT_ASSUMPTIONS };
+    // THE DEAL TERMS ARE ASSUMPTIONS TOO. Rate, target DSCR, max LTV, vacancy, management,
+    // maintenance and closing costs were all fixed house defaults, so an investor with a real
+    // quoted rate or a real management contract could not model their own deal.
+    const assumptions = dealAssumptions(body);
+    const assumptionsOverridden = overriddenAssumptions(body);
     const qualify = qualifyDeal(propertyRow, assumptions);   // flip / rental / brrrr requirements + verdicts
     const hold = underwriteOne(propertyRow, assumptions);    // NOI, cap rate, cash-on-cash, cashflow, max loan
 
@@ -113,6 +131,14 @@ export async function POST(req: NextRequest) {
         hold: { noi_annual: hold.noi_annual, cap_rate_pct: hold.cap_rate_pct, max_loan: hold.max_loan, monthly_cashflow: hold.monthly_cashflow, cash_on_cash_pct: hold.cash_on_cash_pct, dscr_at_max_loan: hold.dscr_at_max_loan, verdict: hold.verdict, flags: hold.flags },
       },
       assumptions,
+      // WHOSE TERMS THESE ARE. Without this the brief reads identically whether the investor
+      // supplied a real quoted rate or we assumed one.
+      assumptionsOverridden,
+      carryingCostSource: {
+        taxes: inTaxes != null ? "entered" : (Number(web?.annualPropertyTax) ? "web" : "estimated %-of-price"),
+        insurance: inIns != null ? "entered" : "estimated %-of-price",
+        hoa: inHoa != null ? "entered" : (Number(web?.hoaMonthly) ? "web" : "none on file"),
+      },
     };
     let analysis: any = null;
     try { analysis = await callClaudeJSON(INVESTOR_SYSTEM, [{ type: "text", text: "Analyze this deal for me as the buyer:\n" + JSON.stringify(brief) }], 3500); }

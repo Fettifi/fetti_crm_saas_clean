@@ -25,7 +25,14 @@ const vTone = (v?: string) => {
 };
 
 export default function DealAnalyzerPage() {
-  const [f, setF] = useState<any>({ address: "", city: "", state: "", zip: "", purchasePrice: "", rehabBudget: "", arv: "", monthlyRent: "", propertyType: "SFR" });
+  const [f, setF] = useState<any>({ address: "", city: "", state: "", zip: "", purchasePrice: "", rehabBudget: "", arv: "", monthlyRent: "", propertyType: "SFR",
+    taxesAnnual: "", insuranceAnnual: "", hoaMonthly: "",
+    ratePct: "", amortYears: "", targetDscr: "", maxLtvPct: "", vacancyPct: "", mgmtPct: "", maintenancePct: "", closingCostPct: "" });
+  // House defaults, shown as placeholders so an untouched box still says what is driving the
+  // analysis. Kept in sync with DEFAULT_ASSUMPTIONS in lib/underwrite/engine.ts.
+  const DEF: Record<string, string> = { ratePct: "7.99", amortYears: "30", targetDscr: "1.10", maxLtvPct: "65", vacancyPct: "5", mgmtPct: "8", maintenancePct: "5", closingCostPct: "3" };
+  const [termsOpen, setTermsOpen] = useState(false);
+  const anyTerm = Object.keys(DEF).some((k) => String(f[k] ?? "") !== "");
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
   const [running, setRunning] = useState(false);
   const [err, setErr] = useState("");
@@ -40,7 +47,12 @@ export default function DealAnalyzerPage() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           address: f.address, city: f.city, state: f.state, zip: f.zip, propertyType: f.propertyType,
-          purchasePrice: num(f.purchasePrice), rehabBudget: num(f.rehabBudget), arv: num(f.arv), monthlyRent: num(f.monthlyRent),
+          purchasePrice: num(f.purchasePrice), rehabBudget: num(f.rehabBudget), arv: num(f.arv),
+          // Pass the RAW strings for anything where "" must mean "use the estimate" and "0" must
+          // mean zero — num("") and num("0") are both 0, which would erase that distinction.
+          monthlyRent: f.monthlyRent, taxesAnnual: f.taxesAnnual, insuranceAnnual: f.insuranceAnnual, hoaMonthly: f.hoaMonthly,
+          ratePct: f.ratePct, amortYears: f.amortYears, targetDscr: f.targetDscr, maxLtvPct: f.maxLtvPct,
+          vacancyPct: f.vacancyPct, mgmtPct: f.mgmtPct, maintenancePct: f.maintenancePct, closingCostPct: f.closingCostPct,
         }),
       });
       const j = await res.json();
@@ -102,6 +114,51 @@ export default function DealAnalyzerPage() {
           <div><label className={lbl}>ARV <span className="text-slate-600">(after repair)</span></label><CurrencyInput value={f.arv} onChange={(v) => set("arv", v)} className={inp} placeholder="$ auto if blank" /></div>
           <div><label className={lbl}>Expected rent / mo</label><CurrencyInput value={f.monthlyRent} onChange={(v) => set("monthlyRent", v)} className={inp} placeholder="$ auto if blank" /></div>
         </div>
+        {/* CARRYING COSTS — the figures an investor already holds. Blank = we estimate it. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div><label className={lbl}>Property taxes / yr <span className="text-slate-600">(the real bill)</span></label><CurrencyInput value={f.taxesAnnual} onChange={(v) => set("taxesAnnual", v)} className={inp} placeholder="$ estimated if blank" /></div>
+          <div><label className={lbl}>Insurance / yr <span className="text-slate-600">(bound premium)</span></label><CurrencyInput value={f.insuranceAnnual} onChange={(v) => set("insuranceAnnual", v)} className={inp} placeholder="$ estimated if blank" /></div>
+          <div><label className={lbl}>HOA / mo</label><CurrencyInput value={f.hoaMonthly} onChange={(v) => set("hoaMonthly", v)} className={inp} placeholder="$ 0 if none" /></div>
+        </div>
+
+        {/* DEAL TERMS — house defaults until the investor has their own. */}
+        <div className="border border-slate-800 rounded-xl">
+          <button onClick={() => setTermsOpen((v) => !v)} className="w-full flex items-center justify-between px-3 py-2">
+            <span className="text-[11px] uppercase tracking-wide text-slate-500">
+              Deal terms &amp; assumptions{anyTerm ? <span className="ml-2 text-emerald-400 normal-case tracking-normal">· yours</span> : <span className="ml-2 text-slate-600 normal-case tracking-normal">· Fetti defaults</span>}
+            </span>
+            <span className="text-[11px] text-emerald-400">{termsOpen ? "hide" : "edit"}</span>
+          </button>
+          {termsOpen && (
+            <div className="px-3 pb-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {([
+                  ["ratePct", "Note rate %"], ["amortYears", "Amortization (yrs)"],
+                  ["targetDscr", "Target DSCR"], ["maxLtvPct", "Max LTV %"],
+                  ["vacancyPct", "Vacancy %"], ["mgmtPct", "Management %"],
+                  ["maintenancePct", "Maintenance %"], ["closingCostPct", "Closing costs %"],
+                ] as [string, string][]).map(([k, label]) => (
+                  <div key={k}>
+                    <label className={lbl}>{label}</label>
+                    <input
+                      type="text" inputMode="decimal" value={f[k]}
+                      onChange={(e) => { const v = e.target.value.replace(/[^0-9.]/g, ""); if ((v.match(/\./g) || []).length <= 1) set(k, v); }}
+                      placeholder={DEF[k]}
+                      className={`${inp} text-right ${String(f[k] ?? "") !== "" ? "border-emerald-600/70 text-emerald-300" : ""}`}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <p className="text-[11px] text-slate-500">Grey = the Fetti screen default. Type your own and the whole analysis recomputes against it.</p>
+                {anyTerm && (
+                  <button onClick={() => setF((p: any) => ({ ...p, ...Object.fromEntries(Object.keys(DEF).map((k) => [k, ""])) }))} className="text-[11px] text-emerald-400 hover:text-emerald-300 whitespace-nowrap ml-3">reset to defaults</button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={analyze} disabled={running} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2">{running ? <Loader2 className="w-4 h-4 animate-spin" /> : "🔍"}{running ? "Analyzing the deal…" : "Analyze this deal"}</button>
           <span className="text-[11px] text-slate-500">Auto-pulls value, rent, comps, and the market from the address. Leave ARV / rent blank to auto-fill.</span>

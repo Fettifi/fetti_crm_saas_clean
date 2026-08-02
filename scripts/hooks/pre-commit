@@ -35,7 +35,7 @@ PRICER=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/closingCosts' -e 'lib/pricer
 MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingDesk' -e 'scripts/verify-mi')
 # The portfolio grid's per-property actuals: an editor that stops short of the roll-up looks
 # fixed and is not.
-UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite')
+UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite' -e 'deal-analyzer' -e 'scripts/verify-deal-analyzer')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
 [ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
 
@@ -66,11 +66,13 @@ if [ -n "$PAYLOAD" ]; then
 fi
 
 if [ -n "$UW" ]; then
-  printf "   %-18s " "verify:underwrite"
-  OUT=$(npm run --silent verify:underwrite 2>&1)
-  if [ $? -eq 0 ]; then echo "PASS"; else
-    echo "FAIL"; FAILED="$FAILED verify:underwrite"; printf '%s\n' "$OUT" | sed 's/^/      /'
-  fi
+  for G in verify:underwrite verify:deal; do
+    printf "   %-18s " "$G"
+    OUT=$(npm run --silent "$G" 2>&1)
+    if [ $? -eq 0 ]; then echo "PASS"; else
+      echo "FAIL"; FAILED="$FAILED $G"; printf '%s\n' "$OUT" | sed 's/^/      /'
+    fi
+  done
 fi
 
 if [ -n "$MI" ]; then
