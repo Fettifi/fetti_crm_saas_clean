@@ -127,7 +127,7 @@ Each DocFact:
  "taxYear":<year of a W2/1099/return, or the year of a pay stub|null>,
  "payFrequency":"weekly|biweekly|semimonthly|monthly|null (infer from the stub's pay-period dates: two dates in one month=semimonthly; ~14 days apart=biweekly; one/month=monthly)",
  "regularPerPeriod":<REGULAR pay this period, EXCLUDING overtime|null>, "otPerPeriod":<overtime/other variable this period|null>, "grossPerPeriod":<total gross this period|null>,
- "ytdRegular":<YTD regular|null>, "ytdGross":<YTD gross|null>, "ytdThroughDate":"<YYYY-MM-DD of the stub's pay date|null>",
+ "ytdRegular":<YTD regular|null>, "ytdGross":<YTD GROSS EARNINGS year-to-date — see the YTD rule below|null>, "ytdThroughDate":"<YYYY-MM-DD of the stub's pay date|null>",
  "w2Box1":<W2 box 1 taxable wages|null>, "w2Box5":<W2 box 5 medicare wages|null>,
  "selfEmploymentNet":<net self-employment for the year from a 1099 (Sch 1) or Schedule C|null>,
  "monthlyBenefit":<SSA/pension/disability monthly amount|null>, "benefitType":"<social_security|ssdi|pension|va_disability|annuity|child_support|alimony|null>", "continuanceMonthsRemaining":<months the benefit is documented to continue, null if lifetime/indefinite>, "monthsReceived":<months of documented receipt (child support/alimony), null otherwise>, "nonTaxable":<true if the benefit is non-taxable|false>,
@@ -144,6 +144,11 @@ Each DocFact:
 
 BORROWER ASSIGNMENT: you are given the named applicant(s). Assign each document to the borrower whose NAME is printed on it. The named list is OFTEN incomplete or lists one person twice — a person who has their OWN income document here is a real borrower even if not on that list; the FIRST distinct person is borrower 1, a genuinely DIFFERENT second person is borrower 2. A spouse who appears ONLY inside a joint 1040 (no income doc of their own) is NOT a borrower — still emit the 1040 DocFact with isJointReturn=true, but do not invent a borrower for them.
 STREAM IDs: give the SAME streamId to every document for the same job (a stub, its W2, its transcript all share it). Give DIFFERENT streamIds to genuinely different jobs — including one IHSS provider's different recipients (each recipient's case number makes a distinct streamId).
+YTD GROSS vs YTD TAXABLE — READ THE LABEL, THEY ARE DIFFERENT NUMBERS. A stub prints several year-to-date columns and only ONE of them is gross earnings. Put GROSS EARNINGS year-to-date in ytdGross ("GROSS EARN'S YTD", "YTD Gross", "Total Gross YTD"). NEVER put a YTD TAXABLE figure there ("YTD Taxable", "Taxable Federal/State YTD", "YTD Fed Taxable") — taxable is gross MINUS pre-tax deductions (retirement, health premiums, 125-plan), so it is always smaller and using it understates the borrower's income. If the stub shows only a taxable YTD and no gross YTD, set ytdGross null rather than substituting the taxable one.
+  SANITY CHECK before you answer: YTD can only go UP as the pay date goes later. On the Jazmine Wilson file (2026-08-01) two stubs from one employer were read as YTD 37,689 on 06-10 and 37,553 on 06-25 — a YTD that went DOWN, because the second one picked the taxable column instead of the 40,818 gross. That impossible pair is the signature of this mistake. If your two figures imply YTD falling over time, you have taken the wrong column.
+
+EMPLOYER NAME — write the FULL name exactly as printed, including any parent district / payroll entity shown alongside the site or division (e.g. "SCHOOL DISTRICT OF LOS ANGELES COUNTY - 73502 SANTA MONICA COM COLLEGE"). Do not shorten it and do not drop the parent, so the same job reads the same way on every stub.
+
 MILITARY / VETERAN DOCUMENTS — read these whenever they appear, and DO NOT invent a dollar figure that is not printed:
 • DD-214 (Certificate of Release or Discharge): docType "dd214". Set isVeteran, serviceCharacter and the service dates. A DD-214 shows NO ongoing income — leave every income field null. Never treat a separation/severance figure on it as monthly income.
 • Certificate of Eligibility (COE, VA Form 26-1880 output): docType "va_coe". Set vaEntitlementAmount and — most important — vaFundingFeeExempt. Entitlement is an ELIGIBILITY amount, NOT income: never put it in monthlyBenefit. If the COE says the veteran is exempt from the funding fee, that means they receive service-connected disability compensation, so set vaFundingFeeExempt true even though this document does not state the dollar amount.
@@ -250,6 +255,55 @@ const FREQ: Record<string, number> = { weekly: 52, biweekly: 26, semimonthly: 24
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;   // half-up to cents
 const rd = (n: number) => Math.round(n + Number.EPSILON);                  // half-up to dollar
 const num = (v: any): number | null => (typeof v === "number" && isFinite(v) ? v : null);
+/**
+ * Do two employer stems (already lowercased, punctuation-stripped, `stem\u0000identity`)
+ * describe the SAME employer? Exact equality is handled by the caller; this covers the two
+ * ways one employer prints differently across documents.
+ *
+ * Deliberately conservative — a wrong MERGE silently drops a real second job, so every rule
+ * below demands substantial agreement:
+ *   • CONTAINMENT: one name contains the other outright, a parent district printed before or
+ *     after the site. Requires >= 12 contiguous shared characters.
+ *   • ABBREVIATION: same word count, and every word of one is a prefix of the matching word
+ *     of the other with >= 3 characters. This is exactly how IRS wage transcripts truncate
+ *     ("extr reac tale" vs "extreme reach talent"), and it cannot match two unrelated names
+ *     without them agreeing word-for-word from the first letters.
+ */
+export function sameEmployerStem(a: string, b: string): boolean {
+  const [sa, ia = ""] = String(a).split("\u0000");
+  const [sb, ib = ""] = String(b).split("\u0000");
+  if (ia !== ib) return false;                 // IHSS case/recipient must match exactly
+  if (!sa || !sb) return false;
+  if (sa === sb) return true;
+  // CONTAINMENT, not just prefix. The parent entity can print BEFORE the site as easily as
+  // after: Jazmine Wilson's two stubs read "SANTA MONICA COM COLLEGE" and "SCHOOL DISTRICT OF
+  // LOS ANGELES COUNTY - 73502 SANTA MONICA COM COLLEGE", where the shared part sits at the
+  // END of one and the START of the other. A prefix test misses that and counts one job twice.
+  // 12 contiguous shared characters is a lot of coincidence to demand.
+  const MIN_CONTAIN = 12;
+  const [shortName, longName] = sa.length <= sb.length ? [sa, sb] : [sb, sa];
+  if (shortName.length >= MIN_CONTAIN && longName.includes(shortName)) return true;
+  return false;
+}
+
+/** Token-wise abbreviation test, run on the SPACED names before stems are squashed. */
+export function isAbbrevOf(a: string, b: string): boolean {
+  const norm = (x: string) => String(x || "").toLowerCase().replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(incorporated|inc|corporation|corp|company|co|llc|llp|lp|ltd|the|of|and|dba|na|usa)\b/g, " ")
+    .replace(/\s+/g, " ").trim();
+  const ta = norm(a).split(" ").filter(Boolean), tb = norm(b).split(" ").filter(Boolean);
+  if (ta.length < 2 || ta.length !== tb.length) return false;
+  let abbreviated = false;
+  for (let i = 0; i < ta.length; i++) {
+    const x = ta[i], y = tb[i];
+    if (x === y) continue;
+    const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+    if (short.length < 3 || !long.startsWith(short)) return false;
+    abbreviated = true;
+  }
+  return abbreviated;
+}
+
 const streamKey = (f: DocFact) => (f.streamId && f.streamId.trim())
   ? f.streamId.trim().toLowerCase()
   : `${(f.employerOrPayer || "?").toLowerCase().trim()}|${(f.ein || "").trim()}`;
@@ -362,6 +416,7 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
     // One canonical stream per employer stem. The first stream seen for a stem wins as the
     // anchor; prefer one with current evidence so the merged stream keeps its stub.
     const byStem = new Map<string, string>();               // employer stem -> canonical stream key
+    const stemRaw = new Map<string, string>();               // employer stem -> its RAW printed name
     const ordered = [...wageStreams.keys()].sort((a, z) => {
       const ea = hasCurrentEvidence(wageStreams.get(a)!) ? 0 : 1;
       const ez = hasCurrentEvidence(wageStreams.get(z)!) ? 0 : 1;
@@ -370,13 +425,32 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
     for (const k of ordered) {
       const sf = wageStreams.get(k);
       if (!sf) continue;
-      const stem = empStem(sf.find((f) => f.employerOrPayer)?.employerOrPayer);
+      const rawEmp = String(sf.find((f) => f.employerOrPayer)?.employerOrPayer || "");
+      const stem = empStem(rawEmp);
       if (stem.length < 4) continue;
       // Key on employer + identity, so IHSS|recipient-John and IHSS|recipient-Ophelia stay
       // apart while three plain LACMTA stubs collapse into one.
       const stem2 = stem + "\u0000" + streamIdentity(k, sf);
-      const prior = [...byStem.entries()].find(([st]) => st === stem2);
-      if (!prior) { byStem.set(stem2, k); continue; }
+      // Exact stem equality is not enough — the SAME employer prints differently on different
+      // documents, and each variant spawned a phantom second job (Wilson, 2026-08-01):
+      //   • "Santa Monica Com College" on one stub vs "Santa Monica Com College (School
+      //     District of Los Angeles County)" on the next. One job, counted twice:
+      //     $6,803 + $3,129 = $9,932/mo for a borrower whose own YTD says ~$7,000.
+      //   • "EXTREME REACH TALENT, INC." on a W-2 vs "EXTR REAC TALE INC" on the IRS wage
+      //     transcript, which truncates every word to four characters. Paul's 2024 history
+      //     never merged with his 2025 W-2, so a continuing job read as brand new with no
+      //     history and only $750/mo counted.
+      // So a stem also matches when one is a PREFIX of the other (parent district appended),
+      // or when it is a token-wise ABBREVIATION of the other (transcript truncation). The
+      // identity suffix (IHSS case/recipient) must still match exactly, so genuinely separate
+      // assignments under one payer never collapse.
+      const prior = [...byStem.entries()].find(([st]) =>
+        st === stem2 ||
+        sameEmployerStem(st, stem2) ||
+        // Abbreviation is tested on the RAW printed names, because squashing to a stem
+        // destroys the word boundaries the transcript truncation depends on.
+        (st.split("\u0000")[1] === stem2.split("\u0000")[1] && isAbbrevOf(stemRaw.get(st) || "", rawEmp)));
+      if (!prior) { byStem.set(stem2, k); stemRaw.set(stem2, rawEmp); continue; }
       const target = prior[1];
       if (target === k) continue;
       wageStreams.get(target)!.push(...sf);                  // same employer ⇒ same job
