@@ -10,3 +10,6 @@ public/*.pdf
 .claude/settings.local.json
 scratchpad/
 tsconfig.tsbuildinfo
+
+# Redacted borrower training data — NEVER commit
+dataset/
