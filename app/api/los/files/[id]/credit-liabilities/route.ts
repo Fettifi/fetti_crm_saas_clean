@@ -12,7 +12,13 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 const BUCKET = "loan-docs";
 const MEDIA = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"]);
-const MAX_DOCS = 4;
+// NOT a cap on what gets read — a runaway guard only, and anything beyond it is FLAGGED on the
+// response rather than dropped. It was MAX_DOCS = 4 with a bare .slice(), which silently threw
+// away a borrower's 5th credit document: no error, no flag, just liabilities missing from the
+// file. That is the same failure that cost Ramon a client file on 2026-08-01 — a cap whose name
+// reads like a policy and whose behaviour is a silent deletion. A borrower with a thick file or
+// a joint tri-merge routinely has more than four.
+const CREDIT_DOC_GUARD = 25;
 const CREDIT_RE = /credit\s*report|tri.?merge|equifax|experian|trans.?union|bureau|credco|xactus|factual\s*data|meridianlink|credit\b/i;
 
 function mediaTypeFor(name: string): string {
@@ -34,8 +40,9 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       .select("id, name, category, file_name, storage_path, status")
       .eq("loan_file_id", id).not("storage_path", "is", null);
     const creditDocs = (docs || [])
-      .filter((d: any) => d.storage_path && CREDIT_RE.test(`${d.name || ""} ${d.file_name || ""} ${d.category || ""}`))
-      .slice(0, MAX_DOCS);
+      .filter((d: any) => d.storage_path && CREDIT_RE.test(`${d.name || ""} ${d.file_name || ""} ${d.category || ""}`));
+    const creditOverflow = creditDocs.slice(CREDIT_DOC_GUARD).map((d: any) => d.name || d.file_name || "document");
+    creditDocs.length = Math.min(creditDocs.length, CREDIT_DOC_GUARD);
     if (!creditDocs.length) {
       return NextResponse.json({ error: "No credit report found in this file's documents — upload one to the file (name it 'Credit report'), or use the upload on /income." }, { status: 404 });
     }
@@ -70,6 +77,12 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       liabilities,
       includedMonthly: liabilities.filter((l: CreditLiability) => l.include).reduce((s: number, l: CreditLiability) => s + l.monthly, 0),
       docsRead: read,
+      // Never silent. If the runaway guard ever trims a document, the caller is told which one
+      // and how many, so "liabilities are missing" can never be a mystery.
+      overflowDocs: creditOverflow,
+      warning: creditOverflow.length
+        ? `${creditOverflow.length} credit document(s) exceeded the ${CREDIT_DOC_GUARD}-document read guard and were NOT included: ${creditOverflow.slice(0, 6).join(", ")}.`
+        : undefined,
     });
   } catch (e: any) {
     console.error("[credit-liabilities] error:", e?.message || e);
