@@ -21,6 +21,7 @@ import {
   underwritePortfolio, DEFAULT_ASSUMPTIONS,
   type PropertyRow, type Assumptions, type UnderwriteResult, type PortfolioSummary, type BackTaxStatus,
 } from "@/lib/underwrite/engine";
+import { commitNumericText, numericBoxValue } from "@/lib/numericInput";
 import { taxWorklist, type TaxLookup } from "@/lib/underwrite/taxLinks";
 import { qualifyDeal } from "@/lib/underwrite/dealQualifier";
 
@@ -435,6 +436,7 @@ export default function UnderwritePage() {
         const b64 = String(reader.result || "").split(",")[1] || "";
         if (!b64) throw new Error("Empty file.");
         const j = await api({ action: "parse", filename: f.name, file_b64: b64 });
+        resetBaseline();   // a new portfolio replaces the old baseline
         setRows(j.rows || []);
         setMapping(j.mapping || {});
         setBaseAssump(DEFAULT_ASSUMPTIONS);
@@ -458,9 +460,20 @@ export default function UnderwritePage() {
   // Without it the grid could not tell a corrected figure from an imported one, and neither could
   // the LO looking at 40 doors.
   const baseline = useRef<Map<string, PropertyRow>>(new Map());
+  // RESET ON A NEW PORTFOLIO. Row ids are positional (p0, p1, ...) and REPEAT between imports, so
+  // a ref that only ever accumulates would compare the second portfolio's rows against the FIRST
+  // portfolio's values — every row falsely "edited", and reverting would write another deal's
+  // numbers into this one. Keyed on the identity of the loaded set, not on row count.
   useEffect(() => {
     for (const r of rows) if (!baseline.current.has(r.id)) baseline.current.set(r.id, { ...r });
   }, [rows]);
+  // Cleared EXPLICITLY wherever a new portfolio replaces the current one — see the resetBaseline()
+  // calls below. Row ids are positional (p0, p1, ...) and REPEAT between imports, so a ref that
+  // only ever accumulates would compare the second portfolio against the FIRST one's values:
+  // every row falsely "edited", and a per-row revert would write another deal's numbers into
+  // this one. Inferring "this is a new portfolio" from the rows themselves needs a heuristic;
+  // the load sites already KNOW, so they say so.
+  const resetBaseline = useCallback(() => { baseline.current.clear(); }, []);
   const editedFields = useCallback((r: PropertyRow): string[] => {
     const b = baseline.current.get(r.id);
     if (!b) return [];
@@ -477,7 +490,7 @@ export default function UnderwritePage() {
     const raw = String(v).replace(/[^0-9.]/g, "");
     setRows((p) => p.map((r) => {
       if (r.id !== id) return r;
-      if (raw === "") return { ...r, [field]: null };
+      if (raw === "" || raw === ".") return { ...r, [field]: null };
       const n = parseFloat(raw);
       if (!Number.isFinite(n) || n < 0) return r;
       return { ...r, [field]: n };
@@ -531,6 +544,7 @@ export default function UnderwritePage() {
       const p = j.portfolio;
       if (!p) throw new Error("Portfolio not found.");
       const a: Assumptions = { ...DEFAULT_ASSUMPTIONS, ...(p.assumptions || {}) };
+      resetBaseline();   // a new portfolio replaces the old baseline
       setRows(p.rows || []);
       setBaseAssump(a);
       setAStr(Object.fromEntries(EDITABLE.map((x) => [x.key, String(a[x.key])])));
@@ -1034,6 +1048,11 @@ function ActualsEditor({
   onNum: (id: string, field: keyof PropertyRow, v: string) => void;
   onRevert: (id: string) => void;
 }) {
+  // DRAFT TEXT, committed number. A controlled input whose value is String(theNumber) erases the
+  // decimal point the instant it is typed: "4800." parses to 4800, re-renders as "4800", and the
+  // next keystroke makes 48005. The user does not get a rejected entry, they get a WRONG number.
+  // Keep what they typed on screen; commit the parsed value underneath.
+  const [draft, setDraft] = useState<Record<string, string>>({});
   // What the engine WOULD use if the box is empty — shown as the placeholder so an untouched
   // field still tells the truth about the number driving the deal.
   const est = (k: keyof PropertyRow): string => {
@@ -1064,10 +1083,15 @@ function ActualsEditor({
               </span>
               <input
                 type="text" inputMode="numeric"
-                value={v == null ? "" : String(v)}
+                value={numericBoxValue(draft[String(f.key)], v)}
                 placeholder={est(f.key)}
                 aria-label={`${f.label} — ${f.hint}`}
-                onChange={(e) => onNum(r.id, f.key, e.target.value)}
+                onChange={(e) => {
+                  const c = commitNumericText(e.target.value);
+                  setDraft((d) => ({ ...d, [String(f.key)]: c.text }));
+                  onNum(r.id, f.key, c.value == null ? "" : String(c.value));
+                }}
+                onBlur={() => setDraft((d) => { const n = { ...d }; delete n[String(f.key)]; return n; })}
                 className={`w-full bg-slate-900 border rounded px-2 py-1 text-[12px] text-right focus:outline-none focus:border-emerald-500 ${
                   wasEdited ? "border-emerald-600/70 text-emerald-300" : isEst ? "border-amber-700/40 text-amber-200 placeholder:text-amber-700/60" : "border-slate-800 text-slate-200 placeholder:text-slate-600"
                 }`}

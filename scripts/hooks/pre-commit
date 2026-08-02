@@ -61,6 +61,14 @@ fi
 
 # Any client screen or API route can introduce the sent-but-never-read divergence, so this one
 # is keyed on the broad surface rather than a single feature.
+NUMIN=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/numericInput' -e 'UnderwriterApp' -e 'app/income/' -e 'scripts/verify-numeric-input')
+if [ -n "$NUMIN" ]; then
+  printf "   %-18s " "verify:numeric-input"
+  OUT=$(npm run --silent verify:numeric-input 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:numeric-input"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
 PAYLOAD=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
 if [ -n "$PAYLOAD" ]; then
   printf "   %-18s " "verify:payloads"

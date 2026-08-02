@@ -10,6 +10,7 @@
 import { useMemo, useState } from "react";
 import { DollarSign, Info, Plus, X, AlertTriangle } from "lucide-react";
 import CurrencyInput from "@/components/ui/CurrencyInput";
+import { commitNumericText, numericBoxValue } from "@/lib/numericInput";
 import {
   computeIncome, computeDti, maxHousingPayment, maxLoanFromPayment, miAnnualFactor, SOURCE_META, sourceMonthlyDetail,
   type IncomeSource, type SourceType, type LoanType,
@@ -50,6 +51,10 @@ export default function IncomeCalcPage() {
   // returns 200 OK, so routing these through crErr (which only fires on !res.ok) is how they
   // were being lost. They must sit next to the DTI they distort.
   const [crWarn, setCrWarn] = useState<string[]>([]);
+  // DRAFT TEXT for the per-source override boxes. A controlled input whose value is the parsed
+  // NUMBER erases the decimal point as it is typed: "6." parses to 6, re-renders as "6", and the
+  // next keystroke yields 65. The LO does not see a rejected entry — they get a wrong figure.
+  const [ovrText, setOvrText] = useState<Record<string, string>>({});
 
   async function uploadCreditReport(files: FileList | null) {
     if (!files || !files.length) return;
@@ -200,18 +205,21 @@ export default function IncomeCalcPage() {
                             </label>
                             <input
                               type="text" inputMode="decimal"
-                              value={s.overrideMonthly ?? ""}
+                              value={numericBoxValue(ovrText[s.id], s.overrideMonthly)}
                               placeholder={`${Math.round(g.monthly).toLocaleString()} — ${g.basis}`}
                               aria-label="Your qualifying monthly figure for this source"
                               onChange={(e) => {
-                                const raw = e.target.value.replace(/[^0-9.-]/g, "");
-                                update(s.id, { overrideMonthly: raw === "" ? null : (Number.isFinite(Number(raw)) ? Number(raw) : null) });
+                                // allowNegative: a rental override can legitimately be a LOSS.
+                                const c = commitNumericText(e.target.value, { allowNegative: true });
+                                setOvrText((t) => ({ ...t, [s.id]: c.text }));
+                                update(s.id, { overrideMonthly: c.value });
                               }}
+                              onBlur={() => setOvrText((t) => { const n = { ...t }; delete n[s.id]; return n; })}
                               className={`${inp} ${on ? "border-emerald-600/70 text-emerald-300" : "placeholder:text-slate-600"}`}
                             />
                           </div>
                           {on && (
-                            <button onClick={() => update(s.id, { overrideMonthly: null })} className="text-[11px] text-emerald-400 hover:text-emerald-300 pb-2.5 whitespace-nowrap">
+                            <button onClick={() => { setOvrText((t) => { const n = { ...t }; delete n[s.id]; return n; }); update(s.id, { overrideMonthly: null }); }} className="text-[11px] text-emerald-400 hover:text-emerald-300 pb-2.5 whitespace-nowrap">
                               use guideline
                             </button>
                           )}
