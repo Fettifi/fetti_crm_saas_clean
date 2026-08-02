@@ -112,51 +112,14 @@ export type QualifyResult = {
 // The AI extraction prompt — Stage 1. Reads the uploaded income documents and returns a
 // DocFact for each. NO qualifying math, NO judgment about what counts — just the printed
 // facts, one object per document, attributed to the right borrower and income stream.
-export const EXTRACT_SYSTEM = `You read U.S. mortgage income documents and EXTRACT THE FACTS ON EACH ONE into JSON. You do NOT compute qualifying income, do NOT decide what counts, do NOT average — a separate deterministic engine does all math. Your ONLY job: turn each document into an accurate DocFact with the numbers exactly as printed.
+// NOTE — the old batch extraction prompt lived here (EXTRACT_SYSTEM) and was DELETED on
+// 2026-08-01. It had zero importers: the per-document rebuild moved reading into
+// lib/income/readDocument.ts READ_ONE_SYSTEM, which is the ONLY prompt that runs. It cost a
+// full cycle today — asked to fix how a pay stub's YTD column is read, I edited this one,
+// shipped it, and nothing changed, because nothing calls it. A dead prompt that still looks
+// authoritative is the same trap as a constant that lies about what it does.
+// >>> Reading rules belong in lib/income/readDocument.ts. <<<
 
-Output ONLY: {"docFacts":[DocFact, ...]}  — one DocFact per DISTINCT document you can read (skip a page that is a duplicate of one you already captured).
-
-Each DocFact:
-{"file":"<the '--- Document: X ---' label this came from>",
- "docType":"paystub|w2|1099nec|1099misc|schedule_c|tax_return_1040|wage_income_transcript|bank_statement|ssa_award|pension|disability|voe|lease|rent_roll|appraisal_1007|dd214|va_coe|va_award|military_les|other",
- "personName":"<name printed on the doc>",
- "borrower":<1 or 2 — see BORROWER ASSIGNMENT>,
- "incomeCategory":"<wage_salaried = a steady base salary/hourly rate (may have some OT/bonus on top) | wage_variable = FLUCTUATING hourly / gig / IHSS / piece-rate with NO stable base (hours & pay vary each period) | self_employment = 1099/Schedule C | fixed_benefit = SSA/pension/disability/annuity | null if not an income doc>",
- "employerOrPayer":"<employer/payer name>", "ein":"<EIN if shown|null>",
- "streamId":"<a stable key for this INCOME STREAM = employer + any case/recipient/account number, e.g. 'CoreCivic' or 'IHSS#1837869'>",
- "taxYear":<year of a W2/1099/return, or the year of a pay stub|null>,
- "payFrequency":"weekly|biweekly|semimonthly|monthly|null (infer from the stub's pay-period dates: two dates in one month=semimonthly; ~14 days apart=biweekly; one/month=monthly)",
- "regularPerPeriod":<REGULAR pay this period, EXCLUDING overtime|null>, "otPerPeriod":<overtime/other variable this period|null>, "grossPerPeriod":<total gross this period|null>,
- "ytdRegular":<YTD regular|null>, "ytdGross":<YTD GROSS EARNINGS year-to-date — see the YTD rule below|null>, "ytdThroughDate":"<YYYY-MM-DD of the stub's pay date|null>",
- "w2Box1":<W2 box 1 taxable wages|null>, "w2Box5":<W2 box 5 medicare wages|null>,
- "selfEmploymentNet":<net self-employment for the year from a 1099 (Sch 1) or Schedule C|null>,
- "monthlyBenefit":<SSA/pension/disability monthly amount|null>, "benefitType":"<social_security|ssdi|pension|va_disability|annuity|child_support|alimony|null>", "continuanceMonthsRemaining":<months the benefit is documented to continue, null if lifetime/indefinite>, "monthsReceived":<months of documented receipt (child support/alimony), null otherwise>, "nonTaxable":<true if the benefit is non-taxable|false>,
- "isJointReturn":<true if this 1040 is Married-Filing-Jointly (combined figures)|false>,
- "yearsAtCurrentEmployer":<whole years at this employer if determinable|null>,
- "propertyAddress":"<street address the rent is for — lease/rent roll/1007 only|null>", "unit":"<unit or apt designator if the doc names one|null>",
- "leaseMonthlyRent":<the rent AS PRINTED on a lease or rent-roll row|null>, "leaseRentFrequency":"monthly|weekly|biweekly|semimonthly|annual (the period that rent figure is stated for; monthly if not stated)", "leaseStartDate":"<YYYY-MM-DD|null>", "leaseEndDate":"<YYYY-MM-DD|null>", "isMonthToMonth":<true if the tenancy is month-to-month/holdover|false>, "tenantName":"<tenant on the lease|null>",
- "marketRent":<the APPRAISER'S opinion of market rent — Form 1007/1025 only, never a lease amount|null>,
- "isVeteran":<true if a DD-214 shows service with a discharge that is not dishonorable|null>, "serviceCharacter":"<character of service exactly as printed, e.g. Honorable|null>", "serviceStartDate":"<YYYY-MM-DD|null>", "serviceEndDate":"<YYYY-MM-DD|null>",
- "vaFundingFeeExempt":<COE only: true if it states the veteran is EXEMPT from the VA funding fee|false|null>, "vaEntitlementAmount":<COE entitlement figure|null>, "vaDisabilityRating":<disability percent if stated|null>,
- "bahMonthly":<LES Basic Allowance for Housing per month|null>, "basMonthly":<LES Basic Allowance for Subsistence per month|null>,
- "isShortTermRental":<true for Airbnb/VRBO/short-term operating statements|false>, "trailing12GrossRent":<trailing-12-month gross for a short-term rental|null>,
- "notes":"<one terse line: anything an underwriter needs, e.g. 'recipient John R', 'declining YoY', 'partial year'>"}
-
-BORROWER ASSIGNMENT: you are given the named applicant(s). Assign each document to the borrower whose NAME is printed on it. The named list is OFTEN incomplete or lists one person twice — a person who has their OWN income document here is a real borrower even if not on that list; the FIRST distinct person is borrower 1, a genuinely DIFFERENT second person is borrower 2. A spouse who appears ONLY inside a joint 1040 (no income doc of their own) is NOT a borrower — still emit the 1040 DocFact with isJointReturn=true, but do not invent a borrower for them.
-STREAM IDs: give the SAME streamId to every document for the same job (a stub, its W2, its transcript all share it). Give DIFFERENT streamIds to genuinely different jobs — including one IHSS provider's different recipients (each recipient's case number makes a distinct streamId).
-YTD GROSS vs YTD TAXABLE — READ THE LABEL, THEY ARE DIFFERENT NUMBERS. A stub prints several year-to-date columns and only ONE of them is gross earnings. Put GROSS EARNINGS year-to-date in ytdGross ("GROSS EARN'S YTD", "YTD Gross", "Total Gross YTD"). NEVER put a YTD TAXABLE figure there ("YTD Taxable", "Taxable Federal/State YTD", "YTD Fed Taxable") — taxable is gross MINUS pre-tax deductions (retirement, health premiums, 125-plan), so it is always smaller and using it understates the borrower's income. If the stub shows only a taxable YTD and no gross YTD, set ytdGross null rather than substituting the taxable one.
-  SANITY CHECK before you answer: YTD can only go UP as the pay date goes later. On the Jazmine Wilson file (2026-08-01) two stubs from one employer were read as YTD 37,689 on 06-10 and 37,553 on 06-25 — a YTD that went DOWN, because the second one picked the taxable column instead of the 40,818 gross. That impossible pair is the signature of this mistake. If your two figures imply YTD falling over time, you have taken the wrong column.
-
-EMPLOYER NAME — write the FULL name exactly as printed, including any parent district / payroll entity shown alongside the site or division (e.g. "SCHOOL DISTRICT OF LOS ANGELES COUNTY - 73502 SANTA MONICA COM COLLEGE"). Do not shorten it and do not drop the parent, so the same job reads the same way on every stub.
-
-MILITARY / VETERAN DOCUMENTS — read these whenever they appear, and DO NOT invent a dollar figure that is not printed:
-• DD-214 (Certificate of Release or Discharge): docType "dd214". Set isVeteran, serviceCharacter and the service dates. A DD-214 shows NO ongoing income — leave every income field null. Never treat a separation/severance figure on it as monthly income.
-• Certificate of Eligibility (COE, VA Form 26-1880 output): docType "va_coe". Set vaEntitlementAmount and — most important — vaFundingFeeExempt. Entitlement is an ELIGIBILITY amount, NOT income: never put it in monthlyBenefit. If the COE says the veteran is exempt from the funding fee, that means they receive service-connected disability compensation, so set vaFundingFeeExempt true even though this document does not state the dollar amount.
-• VA benefit / award letter: docType "va_award". THIS is the document with the money. Put the monthly compensation in monthlyBenefit, set benefitType "va_disability", nonTaxable true, and vaDisabilityRating if a percent is shown. VA disability is generally lifetime — leave continuanceMonthsRemaining null unless the letter states an end date.
-• Military Leave & Earnings Statement (LES): docType "military_les". Base pay goes in the normal wage fields (regularPerPeriod / grossPerPeriod / payFrequency) because it IS taxable. Put BAH in bahMonthly and BAS in basMonthly — those are non-taxable allowances and are handled separately; do NOT also fold them into grossPerPeriod, or they get counted twice.
-
-RENTAL DOCUMENTS (lease / rent roll / Form 1007-1025): on an investment deal the RENT is the qualifying income, so read these as carefully as a paystub. Emit ONE DocFact PER UNIT — a rent roll listing 4 units is 4 DocFacts, each with its own propertyAddress/unit/leaseMonthlyRent; a duplex lease covering 2 units is 2 DocFacts. Put the LEASE amount in leaseMonthlyRent and the APPRAISER'S market-rent opinion in marketRent — never the same number in both, and never a 1007's market rent in leaseMonthlyRent (a separate engine compares them, and swapping them changes the qualifying rent). leaseMonthlyRent is the BASE monthly rent only — exclude pet rent, parking, utility reimbursements and one-off fees. Report the rent EXACTLY as printed and set leaseRentFrequency to the period it is stated for — do NOT convert it to monthly yourself; the engine does that. Leave incomeCategory null and set borrower to the property owner/landlord named on the document (borrower 1 if unclear) — rental docs belong to the property, not to a person's employment.
-RULES: numbers EXACTLY as printed (never rounded/derived). Never assign a joint 1040's combined wages to one person — capture it as a joint-return fact. Extract only what you can SEE; null otherwise. JSON only.`;
 
 // ── DETERMINISTIC BORROWER ASSIGNMENT ────────────────────────────────────────────────
 // The model reads a printed NAME reliably, but its per-doc `borrower` NUMBER flip-flops
