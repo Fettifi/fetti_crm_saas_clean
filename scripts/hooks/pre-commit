@@ -30,12 +30,15 @@ AUTH=$(printf '%s\n' "$CHANGED" | grep -F -e 'proxy.ts' -e 'scripts/verify-auth-
 # engine, so the advisor saw one number and the borrower was handed another. Offline and
 # deterministic, so it costs nothing to make it unforgettable.
 PRICER=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/closingCosts' -e 'lib/pricerPdf' -e 'app/api/pricer/' -e 'scripts/verify-pricer')
+# lib/pricer.ts owns PITIA and mortgage insurance — the file where a VA borrower was being
+# quoted MI that does not exist on a VA loan.
+MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingDesk' -e 'scripts/verify-mi')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
-printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" | grep -v '^$' | sed 's/^/   touched: /'
+printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" | grep -v '^$' | sed 's/^/   touched: /'
 echo ""
 
 FAILED=""
@@ -56,6 +59,14 @@ if [ -n "$PAYLOAD" ]; then
   OUT=$(npm run --silent verify:payloads 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:payloads"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+if [ -n "$MI" ]; then
+  printf "   %-18s " "verify:mi"
+  OUT=$(npm run --silent verify:mi 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:mi"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
 fi
 

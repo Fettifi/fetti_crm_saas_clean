@@ -58,6 +58,8 @@ export async function POST(req: NextRequest) {
       loanAmount: b.loanAmount != null ? Number(b.loanAmount) : undefined,
       termMonths: Number(b.termMonths) || 360,
       state: stateIn, hoaMonthly: Number(b.hoaMonthly) || 0, includePMI: b.includePMI !== false,
+      // Without this the PDF charged conventional PMI on VA/USDA/DSCR loans.
+      loanType: String(b.loanType || "conv30"),
       taxRatePct: taxOverAnnual > 0 && taxBasis > 0 ? (taxOverAnnual / taxBasis) * 100 : (useLocRates ? loc.taxRatePct : undefined),
       insRatePct: insOverAnnual > 0 && insBasis > 0 ? (insOverAnnual / insBasis) * 100 : (useLocRates ? loc.insRatePct : undefined),
     };

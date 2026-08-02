@@ -114,14 +114,14 @@ export default function PricerPage() {
     ? {
         // Refinance: value is the deal basis (tax/ins/LTV) and the loan amount is direct.
         price: num(value), value: num(value) || undefined, loanAmount: num(refiLoan),
-        termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI,
+        termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI, loanType,
         taxRatePct: taxRatePctEff, insRatePct: insRatePctEff,
       }
     : {
         price: num(price), value: num(value) || undefined, down: num(down),
-        termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI,
+        termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI, loanType,
         taxRatePct: taxRatePctEff, insRatePct: insRatePctEff,
-      }), [isRefi, refiLoan, price, value, down, term, state, hoa, includePMI, taxRatePctEff, insRatePctEff]);
+      }), [isRefi, refiLoan, price, value, down, term, state, hoa, includePMI, loanType, taxRatePctEff, insRatePctEff]);
 
   const pre = useMemo(() => estimatePITIA({ ...base, ratePct: 0 }), [base]);
   const credit = creditValueToFico(creditVal);

@@ -107,6 +107,9 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
     price: value || loan, value: value || undefined, loanAmount: loan,
     ratePct, termMonths: termYears * 12, state: input.state || undefined,
     hoaMonthly: Number(input.hoaMonthly) || 0, includePMI: box.usesIncome,
+    // The Desk underwrites VA and FHA deals too. Without the program, a VA borrower here got
+    // the conventional PMI ladder — mortgage insurance a VA loan does not carry.
+    loanType: input.loanType,
     taxRatePct: Number(input.taxRatePct) || undefined, insRatePct: Number(input.insRatePct) || undefined,
   });
   // Hard money / bridge / fix&flip pay INTEREST-ONLY (loan × rate ÷ 12), not amortized —

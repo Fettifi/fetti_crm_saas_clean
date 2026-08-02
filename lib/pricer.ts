@@ -52,7 +52,55 @@ export function zipToState(zip?: string): string | null {
   return null;
 }
 
-// Estimated PMI annual rate (% of loan) by LTV — conventional only, LTV > 80%.
+/** Normalize the screen's loan-type ids ("conv30", "fha30", "dscr30", "nonqm") to a program. */
+export function miProgram(loanType?: string | null): "conventional" | "fha" | "va" | "usda" | "none" {
+  const t = String(loanType || "").toLowerCase();
+  if (!t) return "conventional";
+  if (t.startsWith("fha")) return "fha";
+  if (t.startsWith("va")) return "va";
+  if (t.startsWith("usda")) return "usda";
+  // DSCR, bank-statement, non-QM, bridge and hard money carry NO monthly mortgage insurance —
+  // that risk is priced into the note rate, not billed as a separate monthly line.
+  if (/^(dscr|bank|nonqm|non_qm|bridge|hard)/.test(t)) return "none";
+  return "conventional";
+}
+
+/** MONTHLY MORTGAGE INSURANCE RATE (% of loan per year), BY PROGRAM.
+ *
+ *  This used to be `pmiRate(ltv)` with no loan-type input at all, under a comment that claimed
+ *  "conventional only" while nothing enforced it. Every program got the conventional LTV ladder:
+ *    - a VA borrower was quoted monthly MI that DOES NOT EXIST on a VA loan (VA charges a
+ *      one-time funding fee and no monthly premium), inflating PITIA and understating what the
+ *      veteran qualifies for — on the same tool that just learned to read a COE;
+ *    - FHA got the conventional ladder instead of its own annual MIP;
+ *    - DSCR / non-QM got MI they never pay.
+ *  A comment is not a constraint. Each program is judged by ITS OWN method. */
+export function miRate(ltv: number, loanType?: string | null, termMonths?: number): number {
+  // The caller in estimatePITIA always passes the real term, which is authoritative. For a direct
+  // call that omits it, infer from the program id ("fha15") rather than silently pricing a 15-yr
+  // FHA at 30-yr MIP — the term changes the premium by more than 3x at low LTV.
+  const term = termMonths && termMonths > 0 ? termMonths : (/15$/.test(String(loanType || "")) ? 180 : 360);
+  switch (miProgram(loanType)) {
+    case "none":
+      return 0;
+    case "va":
+      // No monthly MI on a VA loan, at any LTV, ever. The funding fee is a one-time charge and
+      // is handled by the closing-cost engine.
+      return 0;
+    case "usda":
+      // USDA annual guarantee fee: 0.35% of the loan, for the life of the loan, LTV-independent.
+      return 0.35;
+    case "fha":
+      // FHA annual MIP. 30-yr: 0.55% over 95% LTV, 0.50% at or under. 15-yr terms are lower.
+      // Charged regardless of LTV — an FHA borrower at 75% LTV still pays MIP.
+      return term <= 180 ? (ltv > 90 ? 0.40 : 0.15) : (ltv > 95 ? 0.55 : 0.50);
+    default:
+      return pmiRate(ltv);
+  }
+}
+
+// Estimated PMI annual rate (% of loan) by LTV — CONVENTIONAL ladder, LTV > 80%.
+// Kept exported for the conventional path and existing callers; new code wants miRate().
 export function pmiRate(ltv: number): number {
   if (ltv <= 80) return 0;
   if (ltv <= 85) return 0.30;
@@ -71,6 +119,9 @@ export type PricerInput = {
   state?: string | null;   // 2-letter
   hoaMonthly?: number;
   includePMI?: boolean;
+  /** Program id from the screen ("conv30" | "fha30" | "va30" | "usda30" | "dscr30" | …).
+   *  Mortgage insurance is program-specific; without this every loan got conventional PMI. */
+  loanType?: string | null;
   // ZIP-accurate overrides (from lib/propertyData via /api/pricer/location). When
   // provided (> 0), these win over the state-level tables below.
   taxRatePct?: number;     // effective property-tax rate, % of value / yr
@@ -98,7 +149,7 @@ export function estimatePITIA(i: PricerInput) {
   const taxMonthly = (i.price || value) * (taxRate / 100) / 12;
   const insMonthly = value * (insRate / 100) / 12;
 
-  const pmiAnnual = i.includePMI ? pmiRate(ltv) : 0;
+  const pmiAnnual = i.includePMI ? miRate(ltv, i.loanType, n) : 0;
   const pmiMonthly = pmiAnnual > 0 ? (loan * (pmiAnnual / 100)) / 12 : 0;
 
   const hoa = i.hoaMonthly || 0;

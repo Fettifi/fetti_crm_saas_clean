@@ -19,6 +19,7 @@
     "verify:patterns": "npx tsx scripts/verify-patterns.ts",
     "verify:auth": "npx tsx scripts/verify-auth-gate.ts",
     "verify:payloads": "npx tsx scripts/verify-payloads.ts",
+    "verify:mi": "npx tsx scripts/verify-mi.ts",
     "verify:pricer": "npx tsx scripts/verify-pricer.ts",
     "verify:pricer-pdf": "npx tsx scripts/verify-pricer-pdf.ts",
     "verify:synthetic": "npx tsx scripts/verify-synthetic-guard.ts",
