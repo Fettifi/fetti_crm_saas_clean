@@ -23,6 +23,7 @@ import { rateLimit } from "@/lib/rateLimit";
 import { logActivity } from "@/lib/activity";
 import { senderFrom } from "@/lib/notify/mailFrom";
 import { isDisposableDomain, FREEMAIL_DOMAINS } from "@/lib/disposableDomains";
+import { isSyntheticLead } from "@/lib/synthetic";
 import crypto from "crypto";
 import { COMMS_PERSONA } from "@/lib/markPersona";
 
@@ -588,6 +589,10 @@ export async function autoPromoteIfQuarantined(leadId: string, trigger: string):
 /** Gray-band verification email — template only, zero OpenAI, the self-promote path. */
 export async function sendVerificationEmail(lead: any): Promise<boolean> {
   try {
+    // THE LANE THE HEALTHCHECK ACTUALLY TAKES. A probe carries a fake phone, so the
+    // shield quarantines it and /api/apply branches HERE — never through the pipeline.
+    // Guarding only the pipeline would have looked like a fix and changed nothing.
+    if (isSyntheticLead(lead)) return false;
     const key = process.env.RESEND_API_KEY, from = senderFrom();
     if (!key || !from || !lead?.email) return false;
     const raw = (lead.raw && typeof lead.raw === "object" ? lead.raw : {}) as Record<string, any>;
@@ -622,6 +627,7 @@ If that wasn't you, just ignore this email and nothing happens.</div>${signature
 /** Immediate owner email for Tier-1 gray quarantines only (the rest ride the digest). */
 export async function notifyQuarantine(lead: any, v: ShieldVerdict): Promise<void> {
   try {
+    if (isSyntheticLead(lead)) return;
     if (v.band !== "gray" || lead?.tier !== "Tier 1") return;
     const key = process.env.RESEND_API_KEY, from = senderFrom();
     const to = (process.env.LEAD_NOTIFY_EMAIL_TO || "ramon@fettifi.com").trim();

@@ -47,17 +47,39 @@ const LOOKALIKES = [
 ];
 for (const l of LOOKALIKES) ck(`does NOT catch ${l.label}`, !isSyntheticLead(l.lead));
 
-// ─── 3. WIRED: the predicate is called at BOTH chokepoints ─────────────────────
-// One chokepoint is a chokepoint you forget. This is the same two-list shape as the
-// auth gate and TCPA quiet hours, and it fails the same way: silently.
+// ─── 3. WIRED: the predicate is called at EVERY chokepoint ─────────────────────
+// One chokepoint is a chokepoint you forget. The first cut of this fix guarded only
+// runNewLeadPipeline — and the live probe never reached it, because a probe carries a
+// fake phone, so Lead Shield quarantines it and /api/apply takes a DIFFERENT branch.
+// The guard was real, correct, and on the wrong road. /api/apply has three exits and
+// each one sends something:
+//
+//   pass       → runNewLeadPipeline   (first touch, owner alert, Meta CAPI, 4 agents)
+//   quarantine → sendVerificationEmail + notifyQuarantine   ← what the probe hits
+//   returning  → notifyNewLead + respondToLead
+//
+// So the guard lives in the SENDING functions, where every lane has to pass through it.
 const CHOKEPOINTS: [string, string][] = [
-  ["lib/leadPipeline.ts", "runNewLeadPipeline — first touch, owner alert, agents"],
+  ["lib/leadPipeline.ts", "runNewLeadPipeline — clean-intake lane"],
   ["lib/metaCapi.ts", "sendMetaLeadEvent — pixel training"],
+  ["lib/notify/leadAlert.ts", "notifyNewLead — owner page (incl. Tier-1 voice pager)"],
+  ["lib/notify/leadResponder.ts", "respondToLead — borrower email/SMS"],
+  ["lib/leadShield.ts", "sendVerificationEmail + notifyQuarantine — quarantine lane"],
 ];
 for (const [file, what] of CHOKEPOINTS) {
   let src = "";
   try { src = readFileSync(path.join(process.cwd(), file), "utf8"); } catch { /* reported below */ }
   ck(`${file} calls isSyntheticLead()  [${what}]`, /isSyntheticLead\s*\(/.test(src));
+}
+// leadShield holds TWO senders; one grep would pass with the other left open.
+{
+  let src = "";
+  try { src = readFileSync(path.join(process.cwd(), "lib/leadShield.ts"), "utf8"); } catch { /* */ }
+  for (const fn of ["sendVerificationEmail", "notifyQuarantine"]) {
+    const at = src.indexOf(`export async function ${fn}`);
+    const body = at < 0 ? "" : src.slice(at, at + 1200);
+    ck(`leadShield.${fn}() checks isSyntheticLead`, /isSyntheticLead\s*\(/.test(body));
+  }
 }
 
 // ─── 1. OVER-MATCH against LIVE data — the direction that costs money ──────────

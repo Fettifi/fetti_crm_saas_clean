@@ -11,6 +11,7 @@
 //                      gated by app_settings HOTLEAD_VOICE_PAGE=on (default off)
 import { pageOwnerHotLead } from "@/lib/hotLead";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { isSyntheticLead } from "@/lib/synthetic";
 
 export type LeadAlert = {
   lead_id: string;
@@ -149,6 +150,14 @@ export async function notifyTeam(subject: string, body: string): Promise<{ sent:
 
 /** Fire all configured channels. Never throws; logs and continues per channel. */
 export async function notifyNewLead(lead: LeadAlert): Promise<{ sent: string[] }> {
+  // Never page a human about a lead that isn't a person. The health sweeps POST a probe
+  // to /api/apply daily; when one happens to score Tier 1 this is the hot-lead pager.
+  // Guarded HERE, not only at the caller, because three separate lanes in /api/apply
+  // reach this function (clean intake, returning lead, shield promotion).
+  if (isSyntheticLead(lead)) {
+    console.log(`[leadAlert] synthetic lead ${(lead as any)?.lead_id} — owner alert suppressed`);
+    return { sent: [] };
+  }
   const channels: Array<[string, () => Promise<void>]> = [
     ["webhook", () => viaWebhook(lead)],
     ["email", () => viaResend(lead)],

@@ -9,6 +9,7 @@ import { senderFrom } from "@/lib/notify/mailFrom";
 import { scrubSmsIsms, unsubUrl, renderTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
 import { cfg } from "@/lib/settings";
 import { logComms, isEmailSuppressed } from "@/lib/comms";
+import { isSyntheticLead } from "@/lib/synthetic";
 import { quietHoursFor, quietReason } from "@/lib/quietHours";
 import { COMMS_PERSONA } from "@/lib/markPersona";
 import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
@@ -147,6 +148,14 @@ async function smsLead(l: LeadContact, body: string) {
 
 /** Instantly respond to a lead via every configured channel. Never throws. */
 export async function respondToLead(lead: LeadContact): Promise<{ sent: string[] }> {
+  // A health-sweep probe is not a borrower. Its address is at a domain that does not
+  // resolve, so every send is a guaranteed hard bounce charged against the reputation of
+  // frank@fettifi.com — the mailbox real borrowers are answered from. Checked BEFORE the
+  // pause/governor gates so it cannot be re-opened by turning automation back on.
+  if (isSyntheticLead(lead)) {
+    console.log(`[leadResponder] synthetic lead ${lead?.id} — no borrower contact`);
+    return { sent: [] };
+  }
   // MASTER SHUTOFF for anything the system sends on its own. Returning no channels makes
   // every caller record "delivered on no channel" rather than pretend it sent.
   if (await automationPaused()) { console.warn("[leadResponder]", PAUSED_NOTE); return { sent: [] }; }
