@@ -28,7 +28,7 @@ WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'verify-income'
 AUTH=$(printf '%s\n' "$CHANGED" | grep -F -e 'proxy.ts' -e 'scripts/verify-auth-gate')
 # What leaves the building for a wholesale lender. An unlabelled AVM in a MISMO file is a
 # representation about a property that nobody at Fetti actually made.
-AVM=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/mismo' -e 'lib/urla.ts' -e 'underwriter-desk' -e 'scripts/verify-avm')
+AVM=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/mismo' -e 'lib/urla.ts' -e 'underwriter-desk' -e 'lib/underwritingDesk' -e 'scripts/verify-avm' -e 'scripts/verify-senior-lien')
 # The pricer produces a BORROWER-FACING dollar figure. Its own failure shape is already on
 # record: the PDF route accepted originationPct from the screen and never passed it to the
 # engine, so the advisor saw one number and the borrower was handed another. Offline and
@@ -70,11 +70,13 @@ if [ -n "$PAYLOAD" ]; then
 fi
 
 if [ -n "$AVM" ]; then
-  printf "   %-18s " "verify:avm"
-  OUT=$(npm run --silent verify:avm 2>&1)
-  if [ $? -eq 0 ]; then echo "PASS"; else
-    echo "FAIL"; FAILED="$FAILED verify:avm"; printf '%s\n' "$OUT" | sed 's/^/      /'
-  fi
+  for G in verify:avm verify:senior-lien; do
+    printf "   %-18s " "$G"
+    OUT=$(npm run --silent "$G" 2>&1)
+    if [ $? -eq 0 ]; then echo "PASS"; else
+      echo "FAIL"; FAILED="$FAILED $G"; printf '%s\n' "$OUT" | sed 's/^/      /'
+    fi
+  done
 fi
 
 if [ -n "$INCOV" ]; then

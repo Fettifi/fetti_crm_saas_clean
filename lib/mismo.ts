@@ -157,7 +157,34 @@ export function buildMismo34(u: Urla): string {
   loan += el("NoteAmount", money(l.amount), T(8));
   loan += el("NoteRatePercent", l.noteRatePercent, T(8));
   loan += `${T(7)}</TERMS_OF_LOAN>\n`;
-  loan += `${T(6)}</LOAN>\n${T(5)}</LOANS>\n`;
+  loan += `${T(6)}</LOAN>\n`;
+
+  // ---------- SENIOR LIEN (other financing on the subject) ----------
+  // A junior loan is sized off CLTV, not LTV, so the senior balance is the BINDING input — and it
+  // was being dropped between the Underwriting Desk and the export, handing a wholesale lender a
+  // file that could not reproduce the max loan the Desk had just computed. Delivered as a sibling
+  // LOAN with LoanRoleType="RelatedLoan", the standard MISMO 3.4 representation for other
+  // financing secured by the subject property.
+  const senior = Number(l.existingLienBalance) || 0;
+  if (senior > 0) {
+    loan += `${T(6)}<LOAN LoanRoleType="RelatedLoan" xlink:label="LOAN_SENIOR">\n`;
+    loan += `${T(7)}<LOAN_DETAIL>\n`;
+    loan += el("LoanAffordableIndicator", "false", T(8));
+    loan += `${T(7)}</LOAN_DETAIL>\n`;
+    if (Number(l.existingLienMonthlyPayment) > 0) {
+      loan += `${T(7)}<PAYMENT>\n${T(8)}<PAYMENT_RULE>\n`;
+      loan += el("InitialPrincipalAndInterestPaymentAmount", money(l.existingLienMonthlyPayment), T(9));
+      loan += `${T(8)}</PAYMENT_RULE>\n${T(7)}</PAYMENT>\n`;
+    }
+    loan += `${T(7)}<TERMS_OF_LOAN>\n`;
+    loan += el("BaseLoanAmount", money(senior), T(8));
+    // The senior lien is the FIRST, whatever position the subject loan occupies.
+    loan += el("LienPriorityType", "FirstLien", T(8));
+    loan += el("NoteAmount", money(senior), T(8));
+    loan += `${T(7)}</TERMS_OF_LOAN>\n`;
+    loan += `${T(6)}</LOAN>\n`;
+  }
+  loan += `${T(5)}</LOANS>\n`;
 
   // ---------- PARTIES ----------
   let parties = `${T(5)}<PARTIES>\n`;

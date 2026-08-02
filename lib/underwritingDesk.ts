@@ -1,3 +1,4 @@
+import { valueProvenance, rentProvenance } from "@/lib/urla";
 // UNDERWRITING DESK — the single-property underwriting engine. Pure, client-safe math
 // (no I/O) that composes the existing pricer + income calculators, plus the two AI
 // prompt templates used server-side (read an uploaded TitlePro/assessor profile; then
@@ -243,3 +244,64 @@ export type WebPropertyPull = {
   confidence?: "high" | "medium" | "low";
   notes?: string;
 };
+
+const LOANTYPE_URLA: Record<DeskLoanType, string> = {
+  dscr: "Other", fixflip: "Other", bridge: "Other", hardmoney: "Other",
+  commercial: "Other", conventional: "Conventional", fha: "FHA", second: "Other",
+};
+const OCC_URLA: Record<string, string> = { investment: "Investment", owner: "PrimaryResidence", second_home: "SecondHome" };
+
+// Human product label for the LOS file (drives the cockpit product line + the doc-checklist
+// / compliance routing in lib/los). Includes the purpose word so a refi/cash-out isn't
+// asked for a purchase contract, and flags 2nd position.
+export function deskProductLabel(input: DeskInput, purpose: string): string {
+  const box = LOAN_BOX[input.loanType];
+  const purposeWord = purpose === "Refinance" ? "Refinance" : purpose === "CashOutRefinance" ? "Cash-Out Refinance" : "Purchase";
+  return `${box.label}${input.lienPosition === 2 ? " 2nd Position" : ""} ${purposeWord}`.replace(/\s+/g, " ").trim();
+}
+
+// Build a COMPLETE structured 1003/URLA seed from the deal so assembleUrla() uses these
+// verbatim (seeded values win over derivation) — the whole underwrite transfers to the LOS
+// faithfully instead of being re-derived into a mislabeled "Purchase, Fixed, 360mo" default.
+export function deskUrlaSeed(input: DeskInput, purpose: string, result?: any) {
+  const box = LOAN_BOX[input.loanType];
+  const termMonths = box.interestOnly ? 12 : (input.termYears && input.termYears > 0 ? input.termYears : 30) * 12;
+  const addr = { street: input.address || undefined, city: input.city || undefined, state: input.state || undefined, zip: input.zip || undefined, country: "US" };
+  const hasAddr = !!(addr.street || addr.city || addr.state || addr.zip);
+  return {
+    borrowers: input.borrower ? [{ fullName: input.borrower }] : [],
+    property: {
+      address: hasAddr ? addr : undefined,
+      propertyType: input.propertyType || undefined,
+      occupancy: OCC_URLA[input.occupancy || "investment"] || "Investment",
+      presentValue: input.asIsValue || undefined,
+      expectedMonthlyRentalIncome: input.monthlyRent || undefined,
+      // The Desk BACKFILLS value and rent from a web pull when the LO leaves them blank, and the
+      // screen then writes them into the form — so by the time we get here an AVM figure is
+      // indistinguishable from a typed one. The underwrite response is the only place that still
+      // knows, so carry it: this is what stops a Zestimate being exported to a wholesale lender
+      // as if it were an appraised value.
+      valueSource: valueProvenance(result?.valueSource),
+      rentSource: rentProvenance(result?.rentSource),
+      afterRepairValue: input.arv || undefined,
+      rehabBudget: input.rehabBudget || undefined,
+    },
+    loan: {
+      purpose,
+      amount: input.loanAmount || undefined,
+      loanType: LOANTYPE_URLA[input.loanType] || "Other",
+      amortizationType: "Fixed",
+      termMonths,
+      noteRatePercent: input.ratePct || box.rate,
+      productDescription: `${box.label}${input.lienPosition === 2 ? " — 2nd Position" : ""}`,
+      interestOnly: box.interestOnly || undefined,
+      lienPosition: input.lienPosition,
+      // THE SENIOR LIEN. On a 2nd-position deal the Desk sizes off CLTV, so this is the binding
+      // input — and it was being dropped here, handing the lender a file that could not reproduce
+      // the max loan the Desk had just computed. Carried whenever there IS a senior balance,
+      // regardless of the lien-position selector, because a stated senior balance is a fact about
+      // the property either way.
+      existingLienBalance: Number(input.existingLiens) > 0 ? Number(input.existingLiens) : undefined,
+    },
+  };
+}

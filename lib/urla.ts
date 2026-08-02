@@ -94,6 +94,15 @@ export interface UrlaLoan {
   interestOnly?: boolean;            // qualifying payment is interest-only (hard money / bridge / flip)
   qualifyingRatePercent?: number;    // ARM/stress qualifying rate (≥ note rate)
   lienPosition?: number;             // 1 = first, 2 = junior (2nd / HELOC); binds CLTV
+  /** SENIOR LIEN BALANCE remaining on the subject property when THIS loan is junior.
+   *
+   *  This is the binding input for a 2nd-position deal — the Underwriting Desk sizes the loan off
+   *  CLTV, not LTV — and it was being dropped on the way to the LOS, so a wholesale lender
+   *  received a file that could not reproduce the Desk's own math. Exported as a MISMO
+   *  RelatedLoan, which is the standard representation for other financing on the subject. */
+  existingLienBalance?: number;
+  /** Monthly payment on that senior lien, when known — it is a real housing obligation. */
+  existingLienMonthlyPayment?: number;
 }
 
 export interface UrlaOriginator {
@@ -381,6 +390,10 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     productDescription: seeded.loan?.productDescription || lead?.loan_purpose || undefined,
     interestOnly: seeded.loan?.interestOnly ?? (shortTerm ? true : undefined),
     lienPosition: seeded.loan?.lienPosition ?? undefined,
+    // Must survive assembleUrla, the single borrower chokepoint — a field dropped here is dropped
+    // from every downstream export.
+    existingLienBalance: seeded.loan?.existingLienBalance ?? undefined,
+    existingLienMonthlyPayment: seeded.loan?.existingLienMonthlyPayment ?? undefined,
   };
 
   const assets: UrlaAsset[] = (seeded.assets && seeded.assets.length)
@@ -427,6 +440,11 @@ export function computeLoanMetrics(u: Urla) {
   const value = u.property?.presentValue || 0;
   const amount = u.loan?.amount || 0;
   const ltv = value ? (amount / value) * 100 : undefined;
+  // CLTV — the ratio a JUNIOR loan is actually sized against. Reporting LTV alone on a 2nd lien
+  // understates the real exposure by the whole senior balance, which is the number the
+  // Underwriting Desk itself binds on.
+  const seniorLien = Math.max(0, Number(u.loan?.existingLienBalance) || 0);
+  const cltv = value ? ((amount + seniorLien) / value) * 100 : undefined;
   const noteRate = u.loan?.noteRatePercent || 0;
   const qualRate = Math.max(noteRate, u.loan?.qualifyingRatePercent || 0); // qualify at the stress rate for ARMs
   const term = u.loan?.termMonths || 360;
@@ -466,7 +484,7 @@ export function computeLoanMetrics(u: Urla) {
   const round = (n?: number, d = 1) => (n === undefined ? undefined : Math.round(n * 10 ** d) / 10 ** d);
   return {
     monthlyIncome: round(monthlyIncome, 0), borrowerIncome: round(borrowerIncome, 0), rental: round(grossRent, 0),
-    value, amount, ltv: round(ltv), pi: round(pi, 0), pitia: round(pitia, 0), escrowKnown, escrowEstimated,
+    value, amount, ltv: round(ltv), cltv: round(cltv), seniorLien: seniorLien || undefined, pi: round(pi, 0), pitia: round(pitia, 0), escrowKnown, escrowEstimated,
     taxMonthly: round(taxMonthly, 0), insMonthly: round(insMonthly, 0), zip: zip || undefined, state: stAbbr || undefined,
     liabilities: round(liabilities, 0), frontDti: round(frontDti), backDti: round(backDti), dscr: round(dscr, 2), isInvestment, byBorrower,
   };
