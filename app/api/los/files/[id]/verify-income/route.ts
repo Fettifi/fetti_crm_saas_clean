@@ -507,8 +507,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // perDoc = the AUDIT TRAIL: what each document was read AS, WHOSE it is (name + borrower slot),
     // and its key figures — so the LO can see each document was identified and attributed, not
     // just "numbers added together". Sourced from the deterministic docFacts (post-assignment).
+    // streamId is reported per document because it is what decides whether two documents are
+    // ONE job or two, and it was invisible: on the Wilson file two stubs from the same
+    // employer produced different reader streamIds ("...|empJZ3585487" vs "...|Jazmine
+    // Wilson"), her one salary counted twice, and diagnosing it took a separate instrumented
+    // run. If the LO can see the stream key, a split job is obvious at a glance.
     const perDoc = docFacts.slice(0, 40).map((f) => ({
-      file: f.file, docType: f.docType,
+      file: f.file, docType: f.docType, streamId: f.streamId || null, incomeCategory: f.incomeCategory || null,
       source: [f.personName || "", f.borrower === 2 ? "co-borrower" : "borrower", f.employerOrPayer || f.streamId || ""].filter(Boolean).join(" · "),
       keyFigures: [
         f.grossPerPeriod != null ? `gross/pd $${f.grossPerPeriod}` : (f.regularPerPeriod != null ? `reg/pd $${f.regularPerPeriod}` : ""),

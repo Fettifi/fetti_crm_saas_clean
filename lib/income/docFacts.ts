@@ -502,7 +502,30 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
       // GIG / IHSS / fluctuating hourly — the whole check is variable, so qualify the
       // AVERAGE of documented totals (2-yr W-2 avg, else 1-yr, else YTD run-rate), blended
       // down conservatively when both a history and a current YTD exist. No base/OT split.
-      if (sf.some((f) => f.incomeCategory === "wage_variable")) {
+      // CROSS-DOCUMENT RECLASSIFICATION. incomeCategory is decided per DOCUMENT, and a single
+      // stub cannot reveal that pay varies — it shows one period with one rate, which reads as
+      // salaried every time. Only the engine sees the whole stream, so this is the engine's
+      // call to make.
+      //
+      // Jazmine Wilson (2026-08-01): two stubs from one school district, $6,803 and $3,129,
+      // both labelled wage_salaried because each looked stable on its own. The salaried path
+      // then qualified her on the most recent stub alone — $3,129/mo — and called the job
+      // "declining", while her own year-to-date ($40,818 through 25 June) says about $7,000.
+      // Public-sector and school-calendar pay does this routinely: period amounts move with
+      // assignments, stipends and pay-date counts.
+      //
+      // So: two or more stubs in ONE stream whose period gross differs by more than 15% is a
+      // variable stream by evidence, whatever the per-document label said, and it qualifies on
+      // the documented AVERAGE (YTD ÷ elapsed) rather than on whichever stub happens to be
+      // most recent. Under 15% is ordinary rounding/OT noise and stays salaried.
+      const streamStubs = sf.filter((f) => f.docType === "paystub" && num(f.grossPerPeriod) != null);
+      let variesAcrossStubs = false;
+      if (streamStubs.length >= 2) {
+        const grosses = streamStubs.map((f) => num(f.grossPerPeriod)!).filter((g) => g > 0);
+        const lo = Math.min(...grosses), hi = Math.max(...grosses);
+        variesAcrossStubs = lo > 0 && (hi - lo) / hi > 0.15;
+      }
+      if (sf.some((f) => f.incomeCategory === "wage_variable") || variesAcrossStubs) {
         // Variable/gig/IHSS stubs frequently carry only a GROSS or YTD figure (no separate
         // "regular" rate), so use a broader stub set here than the salaried `stubs` filter —
         // else a legit current IHSS case with only gross+YTD would silently drop to $0.
