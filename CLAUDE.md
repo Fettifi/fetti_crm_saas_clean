@@ -26,16 +26,22 @@ Before reasoning from any constant, comment or prompt name: **open the thing tha
 morning the Wilson file broke. The only question that counts: **did a borrower's NUMBER move,
 and is the new number defensible against the documents?**
 
-## 3. The income guards are free — run them
+## 3. The guards are free — run them
 
 ```bash
 npm run verify:income      # no file's doc set or settled number moves unseen
 npm run verify:employer    # one employer read two ways is ONE job (both directions)
 npm run verify:benefits    # documented benefit deposits reach the worksheet
+npm run verify:auth        # every apiProtected route is ALSO in config.matcher, or it is PUBLIC
 ```
 
-Zero API calls, seconds to run. A **git pre-commit hook** runs them on any commit touching
-`lib/income/**` or the verify-income route and will refuse the commit. Don't fight it:
+`verify:auth` is never a false alarm. `proxy.ts` requires each protected API in **two** lists,
+and `config.matcher`'s catch-all excludes `/api` — so a route in `apiProtected` alone is wide
+open. `/api/competitors` shipped that way once and was caught by review, not by a test.
+
+Zero API calls, milliseconds to seconds. A **git pre-commit hook** runs the income guards on
+any commit touching `lib/income/**` or the verify-income route, and `verify:auth` on any commit
+touching `proxy.ts` — and will refuse the commit. Don't fight it:
 
 - change intended? → `npm run verify:income -- --save`, then commit again
 - genuinely need to bypass? → `git commit --no-verify`

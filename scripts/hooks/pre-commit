@@ -22,17 +22,29 @@ CHANGED=$(git diff --cached --name-only --diff-filter=ACMR)
 
 # Only the paths that can move a borrower's qualifying income.
 WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'verify-income' -e 'scripts/verify-employer-merge' -e 'scripts/verify-benefit-deposits' -e 'scripts/verify-income-stability')
-[ -z "$WATCHED" ] && exit 0
+# The auth gate is a separate, cheaper concern: proxy.ts requires every protected API to be
+# listed in TWO places, and forgetting the second leaves the route fully public. Milliseconds.
+AUTH=$(printf '%s\n' "$CHANGED" | grep -F -e 'proxy.ts' -e 'scripts/verify-auth-gate')
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && exit 0
 
 echo ""
-echo "── income guard ──────────────────────────────────────────────"
-printf '%s\n' "$WATCHED" | sed 's/^/   touched: /'
+echo "── repo guard ────────────────────────────────────────────────"
+printf '%s\n' "$WATCHED" "$AUTH" | grep -v '^$' | sed 's/^/   touched: /'
 echo ""
 
 FAILED=""
 
+if [ -n "$AUTH" ]; then
+  printf "   %-18s " "verify:auth"
+  OUT=$(npm run --silent verify:auth 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:auth"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 # Offline, deterministic, ZERO API calls. These always run.
-for GUARD in verify:employer verify:benefits; do
+[ -z "$WATCHED" ] && GUARDS="" || GUARDS="verify:employer verify:benefits"
+for GUARD in $GUARDS; do
   printf "   %-18s " "$GUARD"
   OUT=$(npm run --silent "$GUARD" 2>&1)
   if [ $? -eq 0 ]; then
@@ -46,7 +58,7 @@ done
 
 # Needs the database + .env.local. Skip cleanly where they are absent (CI, a fresh clone)
 # rather than blocking a commit for a reason the committer cannot act on.
-if [ -f .env.local ]; then
+if [ -n "$WATCHED" ] && [ -f .env.local ]; then
   printf "   %-18s " "verify:income"
   OUT=$(npm run --silent verify:income 2>&1)
   if [ $? -eq 0 ]; then
@@ -56,7 +68,7 @@ if [ -f .env.local ]; then
     FAILED="$FAILED verify:income"
     printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
-else
+elif [ -n "$WATCHED" ]; then
   echo "   verify:income      SKIPPED (no .env.local — cannot reach the database)"
 fi
 
@@ -77,10 +89,20 @@ if [ -n "$FAILED" ]; then
   echo ""
   echo "   COMMIT BLOCKED —$FAILED"
   echo ""
-  echo "   A failure here is not automatically a bug: adding a real income document SHOULD"
-  echo "   change a file. The point is that it can never happen without somebody seeing it."
-  echo "   If every change listed above is intended, re-baseline and commit again:"
-  echo "       npm run verify:income -- --save"
+  case "$FAILED" in
+    *verify:auth*)
+      echo "   verify:auth is NEVER a false alarm — a route in apiProtected but missing from"
+      echo "   config.matcher is PUBLIC in production. Add the matcher entry named above."
+      ;;
+  esac
+  case "$FAILED" in
+    *verify:income*|*verify:employer*|*verify:benefits*)
+      echo "   An income failure is not automatically a bug: adding a real income document SHOULD"
+      echo "   change a file. The point is that it can never happen without somebody seeing it."
+      echo "   If every income change listed above is intended, re-baseline and commit again:"
+      echo "       npm run verify:income -- --save"
+      ;;
+  esac
   echo "   To bypass deliberately:  git commit --no-verify"
   echo "──────────────────────────────────────────────────────────────"
   exit 1

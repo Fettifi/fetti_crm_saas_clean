@@ -1,6 +1,15 @@
 #!/bin/sh
-# PreToolUse(Edit|Write) — put the income rules in front of Claude at the MOMENT it edits the
-# income engine, instead of leaving them in a memory file it has to think to open.
+# PreToolUse(Edit|Write) — put what this repo has already learned about a path in front of
+# whoever edits it, at the MOMENT they edit it, instead of leaving it in a file they have to
+# think to open.
+#
+# TWO LAYERS, and the first one is universal:
+#   1. LEDGER REPLAY (any path) — every failure this repo has recorded for this file, newest
+#      first, with a REPEAT marker when it has bitten more than once. Silent on a clean path.
+#   2. DOMAIN RULES (income engine) — the static rules for the one subsystem where a wrong
+#      number is a wrong loan.
+#
+# Layer 1 grows on its own: nobody writes the entry, the pre-commit guard records it.
 #
 # 2026-08-01: a memory saying "test the WIRING not the label" existed all day and was never
 # loaded at the moment of the decision. Claude read a constant named MAX_DOCS = 8, believed the
@@ -15,11 +24,6 @@
 FILE=$(jq -r '.tool_input.file_path // ""' 2>/dev/null)
 [ -z "$FILE" ] && exit 0
 
-case "$FILE" in
-  *lib/income/*|*verify-income*) ;;
-  *) exit 0 ;;
-esac
-
 # STEP 3 OF THE LOOP — replay what this repo has already learned about THIS path. Empty on a
 # clean file; on a path with a history it leads, because a failure that already happened here is
 # more useful than any rule written in advance.
@@ -32,6 +36,18 @@ fi
 $PAST
 
 "
+
+# Domain rules apply to the income engine only. Everything else gets ledger replay alone —
+# and if the ledger is empty too, the hook says nothing at all.
+INCOME=""
+case "$FILE" in
+  *lib/income/*|*verify-income*) INCOME=1 ;;
+esac
+if [ -z "$INCOME" ]; then
+  [ -z "$PAST" ] && exit 0
+  jq -n --arg past "$PAST" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $past}}'
+  exit 0
+fi
 
 jq -n --arg past "$PAST" --arg ctx 'INCOME ENGINE — this file decides a borrower'"'"'s qualifying income. Before you change it:
 
