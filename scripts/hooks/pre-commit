@@ -16,6 +16,7 @@
 #
 # Escape hatch when you genuinely need it:  git commit --no-verify
 
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 CHANGED=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -z "$CHANGED" ] && exit 0
 
@@ -60,6 +61,19 @@ else
 fi
 
 if [ -n "$FAILED" ]; then
+  # SELF-RECORDING. The block writes itself into the lesson ledger, scoped to the files that
+  # were actually touched, so the next edit to any of them replays this failure. Nobody decides
+  # to write it down; that decision is exactly what kept failing.
+  for G in $FAILED; do
+    printf '%s\n' "$WATCHED" | while read -r W; do
+      [ -z "$W" ] && continue
+      SCOPE=$(dirname "$W")
+      "$REPO_ROOT/scripts/hooks/lessons.sh" record \
+        --scope "$SCOPE" --kind "guard-block" \
+        --summary "$G blocked a commit touching $SCOPE — a settled income number would have moved." \
+        --detail "Run the guard and read what it names before editing here. If the change is intended: npm run verify:income -- --save" 2>/dev/null || true
+    done
+  done
   echo ""
   echo "   COMMIT BLOCKED —$FAILED"
   echo ""

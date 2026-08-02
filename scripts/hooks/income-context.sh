@@ -20,7 +20,20 @@ case "$FILE" in
   *) exit 0 ;;
 esac
 
-jq -n --arg ctx 'INCOME ENGINE — this file decides a borrower'"'"'s qualifying income. Before you change it:
+# STEP 3 OF THE LOOP — replay what this repo has already learned about THIS path. Empty on a
+# clean file; on a path with a history it leads, because a failure that already happened here is
+# more useful than any rule written in advance.
+REPO=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+PAST=""
+if [ -x "$REPO/scripts/hooks/lessons.sh" ]; then
+  PAST=$("$REPO/scripts/hooks/lessons.sh" for-file "$FILE" 2>/dev/null)
+fi
+[ -n "$PAST" ] && PAST="THIS PATH HAS A RECORD — these failures actually happened here:
+$PAST
+
+"
+
+jq -n --arg past "$PAST" --arg ctx 'INCOME ENGINE — this file decides a borrower'"'"'s qualifying income. Before you change it:
 
 1. READ WHAT THE CODE DOES, NEVER WHAT A NAME SAYS. MAX_DOCS was renamed to
    STUB_PRIORITY_WINDOW because it capped nothing and its name cost a real client file. If you
@@ -46,4 +59,4 @@ jq -n --arg ctx 'INCOME ENGINE — this file decides a borrower'"'"'s qualifying
 5. WHEN YOU FIND A DEFECT, ADD THE CASE BEFORE YOU FIX IT. Every real-world failure becomes a
    permanent assertion in scripts/verify-*.ts — that is the only thing that has ever stopped a
    repeat. A lesson written as prose does not run.' \
-  '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
+  '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: ($past + $ctx)}}'

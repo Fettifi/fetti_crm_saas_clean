@@ -93,6 +93,27 @@ worth an hour of Ramon's time, it is worth three lines in a test.
 This is the mechanism by which the system actually improves: the guards only ever grow, and
 they run whether or not anyone remembers why they exist.
 
+## 11. The repo remembers its own failures — `.claude/lessons.jsonl`
+
+The model does not learn between sessions. The repo does, and it does it without anyone
+deciding to write anything down:
+
+1. **Observe** — a guard blocks a commit
+2. **Record** — the failure writes itself into `.claude/lessons.jsonl`, scoped to the paths touched
+3. **Inject** — the next edit to any file in that scope gets the failure replayed, ahead of these rules
+4. **Escalate** — a recurrence bumps a counter and is marked `REPEAT`, because a thing that has
+   bitten three times reads differently from a thing that bit once
+
+`npm run lessons` shows the ledger, most-repeated first. Add one by hand when something is worth
+remembering that no guard caught:
+
+```bash
+./scripts/hooks/lessons.sh record --scope lib/income --kind incident \
+  --summary "what went wrong" --detail "what to do instead"
+```
+
+A `REPEAT` entry is the loudest signal in this repo: it means the previous fix did not hold.
+
 ## 10. Deploy and prove it
 
 `git push origin HEAD:main`, then poll `https://app.fettifi.com/api/version` until it serves
