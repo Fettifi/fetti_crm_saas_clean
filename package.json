@@ -18,6 +18,8 @@
     "verify:benefits": "npx tsx scripts/verify-benefit-deposits.ts",
     "verify:patterns": "npx tsx scripts/verify-patterns.ts",
     "verify:auth": "npx tsx scripts/verify-auth-gate.ts",
+    "verify:pricer": "npx tsx scripts/verify-pricer.ts",
+    "verify:pricer-pdf": "npx tsx scripts/verify-pricer-pdf.ts",
     "verify:synthetic": "npx tsx scripts/verify-synthetic-guard.ts",
     "dataset:check": "./scripts/dataset/train.sh check",
     "dataset:train": "./scripts/dataset/train.sh train",

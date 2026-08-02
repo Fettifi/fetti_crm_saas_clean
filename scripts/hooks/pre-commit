@@ -25,11 +25,16 @@ WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'verify-income'
 # The auth gate is a separate, cheaper concern: proxy.ts requires every protected API to be
 # listed in TWO places, and forgetting the second leaves the route fully public. Milliseconds.
 AUTH=$(printf '%s\n' "$CHANGED" | grep -F -e 'proxy.ts' -e 'scripts/verify-auth-gate')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && exit 0
+# The pricer produces a BORROWER-FACING dollar figure. Its own failure shape is already on
+# record: the PDF route accepted originationPct from the screen and never passed it to the
+# engine, so the advisor saw one number and the borrower was handed another. Offline and
+# deterministic, so it costs nothing to make it unforgettable.
+PRICER=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/closingCosts' -e 'lib/pricerPdf' -e 'app/api/pricer/' -e 'scripts/verify-pricer')
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
-printf '%s\n' "$WATCHED" "$AUTH" | grep -v '^$' | sed 's/^/   touched: /'
+printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" | grep -v '^$' | sed 's/^/   touched: /'
 echo ""
 
 FAILED=""
@@ -40,6 +45,16 @@ if [ -n "$AUTH" ]; then
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:auth"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
+fi
+
+if [ -n "$PRICER" ]; then
+  for G in verify:pricer verify:pricer-pdf; do
+    printf "   %-18s " "$G"
+    OUT=$(npm run --silent "$G" 2>&1)
+    if [ $? -eq 0 ]; then echo "PASS"; else
+      echo "FAIL"; FAILED="$FAILED $G"; printf '%s\n' "$OUT" | grep -v 'Warning\|fontkit' | sed 's/^/      /'
+    fi
+  done
 fi
 
 # Offline, deterministic, ZERO API calls. These always run.
@@ -93,6 +108,13 @@ if [ -n "$FAILED" ]; then
     *verify:auth*)
       echo "   verify:auth is NEVER a false alarm — a route in apiProtected but missing from"
       echo "   config.matcher is PUBLIC in production. Add the matcher entry named above."
+      ;;
+  esac
+  case "$FAILED" in
+    *verify:pricer*)
+      echo "   A pricer failure means a manual figure no longer reaches the borrower's bottom"
+      echo "   line, or the PDF no longer distinguishes a real quote from an estimate. Both are"
+      echo "   how a good-faith estimate becomes a complaint. Read the named check."
       ;;
   esac
   case "$FAILED" in
