@@ -18,6 +18,9 @@
     "verify:benefits": "npx tsx scripts/verify-benefit-deposits.ts",
     "verify:patterns": "npx tsx scripts/verify-patterns.ts",
     "verify:auth": "npx tsx scripts/verify-auth-gate.ts",
+    "dataset:check": "./scripts/dataset/train.sh check",
+    "dataset:train": "./scripts/dataset/train.sh train",
+    "dataset:eval": "npx tsx scripts/dataset/evaluate.ts",
     "dataset": "npx tsx scripts/dataset/build.ts",
     "lessons": "./scripts/hooks/lessons.sh list",
     "hooks:install": "git config core.hooksPath scripts/hooks && echo \"income guard installed\""
