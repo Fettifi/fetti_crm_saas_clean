@@ -26,6 +26,9 @@ WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'verify-income'
 # The auth gate is a separate, cheaper concern: proxy.ts requires every protected API to be
 # listed in TWO places, and forgetting the second leaves the route fully public. Milliseconds.
 AUTH=$(printf '%s\n' "$CHANGED" | grep -F -e 'proxy.ts' -e 'scripts/verify-auth-gate')
+# What leaves the building for a wholesale lender. An unlabelled AVM in a MISMO file is a
+# representation about a property that nobody at Fetti actually made.
+AVM=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/mismo' -e 'lib/urla.ts' -e 'underwriter-desk' -e 'scripts/verify-avm')
 # The pricer produces a BORROWER-FACING dollar figure. Its own failure shape is already on
 # record: the PDF route accepted originationPct from the screen and never passed it to the
 # engine, so the advisor saw one number and the borrower was handed another. Offline and
@@ -38,11 +41,11 @@ MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingD
 # fixed and is not.
 UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite' -e 'deal-analyzer' -e 'scripts/verify-deal-analyzer')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
-printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" "$UW" "$INCOV" | grep -v '^$' | sed 's/^/   touched: /'
+printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" "$UW" "$INCOV" "$AVM" | grep -v '^$' | sed 's/^/   touched: /'
 echo ""
 
 FAILED=""
@@ -63,6 +66,14 @@ if [ -n "$PAYLOAD" ]; then
   OUT=$(npm run --silent verify:payloads 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:payloads"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+if [ -n "$AVM" ]; then
+  printf "   %-18s " "verify:avm"
+  OUT=$(npm run --silent verify:avm 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:avm"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
 fi
 

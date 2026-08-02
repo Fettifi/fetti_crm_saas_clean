@@ -9,6 +9,7 @@
 // is enforced by proxy.ts (the /api/underwriter-desk prefix). Reuses the pricer + income
 // calculators and the same Anthropic vision pattern as verify-income.
 import { NextRequest, NextResponse } from "next/server";
+import { valueProvenance, rentProvenance } from "@/lib/urla";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { getSetting } from "@/lib/settings";
@@ -70,7 +71,7 @@ function deskProductLabel(input: DeskInput, purpose: string): string {
 // Build a COMPLETE structured 1003/URLA seed from the deal so assembleUrla() uses these
 // verbatim (seeded values win over derivation) — the whole underwrite transfers to the LOS
 // faithfully instead of being re-derived into a mislabeled "Purchase, Fixed, 360mo" default.
-function deskUrlaSeed(input: DeskInput, purpose: string) {
+function deskUrlaSeed(input: DeskInput, purpose: string, result?: any) {
   const box = LOAN_BOX[input.loanType];
   const termMonths = box.interestOnly ? 12 : (input.termYears && input.termYears > 0 ? input.termYears : 30) * 12;
   const addr = { street: input.address || undefined, city: input.city || undefined, state: input.state || undefined, zip: input.zip || undefined, country: "US" };
@@ -83,6 +84,13 @@ function deskUrlaSeed(input: DeskInput, purpose: string) {
       occupancy: OCC_URLA[input.occupancy || "investment"] || "Investment",
       presentValue: input.asIsValue || undefined,
       expectedMonthlyRentalIncome: input.monthlyRent || undefined,
+      // The Desk BACKFILLS value and rent from a web pull when the LO leaves them blank, and the
+      // screen then writes them into the form — so by the time we get here an AVM figure is
+      // indistinguishable from a typed one. The underwrite response is the only place that still
+      // knows, so carry it: this is what stops a Zestimate being exported to a wholesale lender
+      // as if it were an appraised value.
+      valueSource: valueProvenance(result?.valueSource),
+      rentSource: rentProvenance(result?.rentSource),
       afterRepairValue: input.arv || undefined,
       rehabBudget: input.rehabBudget || undefined,
     },
@@ -213,7 +221,7 @@ export async function POST(req: NextRequest) {
         stage: "Application", source: "underwriting_desk",
         // Full structured 1003 seed so the whole underwrite (loan type, lien, IO, term, rate,
         // ARV, rehab, rent, value, occupancy) lands in the LOS intact — not re-derived.
-        raw: { desk_underwrite: body.result || null, urla: deskUrlaSeed(input, purpose), created_by: "underwriting_desk" },
+        raw: { desk_underwrite: body.result || null, urla: deskUrlaSeed(input, purpose, body.result), created_by: "underwriting_desk" },
       }).select("*").single();
       if (le || !lead) return NextResponse.json({ error: le?.message || "lead create failed" }, { status: 500 });
       const file = await createLoanFileFromLead(lead);

@@ -93,8 +93,27 @@ export function buildMismo34(u: Urla): string {
   coll += el("PUDIndicator", "false", T(9));
   coll += `${T(8)}</PROPERTY_DETAIL>\n`;
   if (p.presentValue) {
+    // SAY HOW THIS VALUE WAS ARRIVED AT. The Underwriting Desk BACKFILLS the property value from a
+    // public-web automated valuation (a Zestimate) when the LO leaves it blank, and that figure
+    // was previously exported to a wholesale lender as a bare PropertyValuationAmount — visually
+    // and structurally identical to an appraised value. A lender who prices off it, or an
+    // investor who reads the file, has no way to know it is a model output.
+    //
+    // PropertyValuationMethodType is the MISMO 3.4 field for exactly this. UNKNOWN provenance
+    // emits "Other" with an explicit description rather than being silently omitted, because an
+    // absent method reads as "not applicable", not as "we do not know".
+    const METHOD: Record<string, { type: string; desc?: string }> = {
+      appraisal:     { type: "FullAppraisal" },
+      "recent-sale": { type: "Other", desc: "Recent recorded sale price from public records — not an appraisal" },
+      avm:           { type: "AutomatedValuationModel", desc: "Public-web automated valuation (AVM) — unverified, not an appraisal" },
+      entered:       { type: "Other", desc: "Value stated by the loan officer — no appraisal on file" },
+      unknown:       { type: "Other", desc: "Source of value not recorded — treat as unverified" },
+    };
+    const m = METHOD[String(p.valueSource || "unknown")] || METHOD.unknown;
     coll += `${T(8)}<PROPERTY_VALUATIONS>\n${T(9)}<PROPERTY_VALUATION>\n${T(10)}<PROPERTY_VALUATION_DETAIL>\n`;
     coll += el("PropertyValuationAmount", money(p.presentValue), T(11));
+    coll += el("PropertyValuationMethodType", m.type, T(11));
+    if (m.desc) coll += el("PropertyValuationMethodTypeOtherDescription", m.desc, T(11));
     coll += `${T(10)}</PROPERTY_VALUATION_DETAIL>\n${T(9)}</PROPERTY_VALUATION>\n${T(8)}</PROPERTY_VALUATIONS>\n`;
   }
   coll += `${T(7)}</SUBJECT_PROPERTY>\n${T(6)}</COLLATERAL>\n${T(5)}</COLLATERALS>\n`;
@@ -196,6 +215,15 @@ export function buildMismo34(u: Urla): string {
         parties += el("CurrentIncomeMonthlyTotalAmount", money(rentForFirst), T(14));
         parties += el("EmploymentIncomeIndicator", "false", T(14));
         parties += el("IncomeType", "NetRentalIncome", T(14));
+        // A RENT ZESTIMATE IS NOT A LEASE. Exported unlabelled it reads as documented rental
+        // income on a DSCR file, which is the number the whole loan qualifies on — see the
+        // lease-governs rule the income engine already enforces. Say what it is.
+        if (String(p.rentSource || "unknown") !== "entered") {
+          parties += el("IncomeDocumentationDescription",
+            p.rentSource === "lease" ? "Rent per executed lease"
+              : p.rentSource === "avm" ? "Estimated market rent from a public-web automated model — NOT a lease; verify before qualifying"
+              : "Rent source not recorded — unverified, verify before qualifying", T(14));
+        }
         parties += `${T(13)}</CURRENT_INCOME_ITEM_DETAIL>\n${T(12)}</CURRENT_INCOME_ITEM>\n`;
       }
       parties += `${T(11)}</CURRENT_INCOME_ITEMS>\n${T(10)}</CURRENT_INCOME>\n`;

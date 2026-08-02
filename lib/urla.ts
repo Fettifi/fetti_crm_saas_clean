@@ -72,6 +72,12 @@ export interface UrlaProperty {
   presentValue?: number; mixedUse?: YesNo; manufactured?: YesNo;
   expectedMonthlyRentalIncome?: number;
   afterRepairValue?: number;   // ARV — fix & flip / bridge / hard money
+  /** WHERE presentValue CAME FROM. An automated valuation (a Zestimate) and a real appraisal are
+   *  not the same fact, and a wholesale lender receiving a MISMO file has no way to tell them
+   *  apart unless we say so. Maps to MISMO PropertyValuationMethodType on export. */
+  valueSource?: "entered" | "avm" | "recent-sale" | "appraisal" | "unknown";
+  /** Same question for the rent. A Rent Zestimate is a model output, not a lease. */
+  rentSource?: "entered" | "avm" | "lease" | "unknown";
   rehabBudget?: number;        // renovation budget financed / brought in
   // Monthly escrow components — needed for a real PITIA / DSCR (undefined = unknown, NOT 0).
   monthlyPropertyTax?: number; hazardInsurance?: number; floodInsurance?: number; hoaDues?: number; monthlyMI?: number;
@@ -126,6 +132,29 @@ const STATE_MAP: Record<string, string> = {
   "south dakota": "SD", tennessee: "TN", texas: "TX", utah: "UT", vermont: "VT", virginia: "VA",
   washington: "WA", "west virginia": "WV", wisconsin: "WI", wyoming: "WY", "district of columbia": "DC",
 };
+/** Collapse a source string ("web:Rent Zestimate", "web:estimate", "web:recent sale", "entered")
+ *  into the provenance vocabulary the URLA/MISMO layer speaks.
+ *
+ *  ANYTHING UNRECOGNISED BECOMES "unknown", NEVER "entered". Guessing in the optimistic direction
+ *  is the entire bug this exists to prevent: it is how an automated valuation acquires a human
+ *  author it never had and goes to a wholesale lender looking like an appraisal. Lives here rather
+ *  than in the route so a guard can test the real function instead of a copy of its rules. */
+export function valueProvenance(src: any): "entered" | "avm" | "recent-sale" | "unknown" {
+  const s = String(src || "").toLowerCase();
+  if (s === "entered") return "entered";
+  if (s.includes("recent sale")) return "recent-sale";
+  if (s.startsWith("web")) return "avm";
+  return "unknown";
+}
+
+/** Rent has no "recent sale" concept — a comparable sale says nothing about the rent roll. */
+export function rentProvenance(src: any): "entered" | "avm" | "lease" | "unknown" {
+  const p = valueProvenance(src);
+  if (p === "entered") return "entered";
+  if (p === "avm") return "avm";
+  return String(src || "").toLowerCase().includes("lease") ? "lease" : "unknown";
+}
+
 export function normalizeState(s?: string): string | undefined {
   if (!s) return undefined;
   const t = s.trim();
@@ -313,6 +342,11 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     presentValue: seeded.property?.presentValue ?? num(lead?.property_value),
     expectedMonthlyRentalIncome: seeded.property?.expectedMonthlyRentalIncome ?? num(n["projected monthly rent"]),
     afterRepairValue: seeded.property?.afterRepairValue ?? undefined,
+    // Provenance must survive assembleUrla — this is the single borrower chokepoint, so a field
+    // dropped here is dropped from every downstream export. Default UNKNOWN, never "entered":
+    // an unlabelled figure must not acquire a human author it never had.
+    valueSource: seeded.property?.valueSource ?? "unknown",
+    rentSource: seeded.property?.rentSource ?? "unknown",
     rehabBudget: seeded.property?.rehabBudget ?? undefined,
     mixedUse: seeded.property?.mixedUse || "",
     manufactured: seeded.property?.manufactured || "",
