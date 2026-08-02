@@ -453,6 +453,46 @@ export default function UnderwritePage() {
   const setTaxStatus = useCallback((id: string, s: BackTaxStatus) => {
     setRows((p) => p.map((r) => (r.id === id ? { ...r, back_tax_status: s, back_tax_amount: s === "owed" ? r.back_tax_amount ?? null : null } : r)));
   }, []);
+  // BASELINE = the row as it first arrived from the spreadsheet. Captured on first sight of each
+  // id, so "edited" means "differs from what the sheet said" rather than "differs from a default".
+  // Without it the grid could not tell a corrected figure from an imported one, and neither could
+  // the LO looking at 40 doors.
+  const baseline = useRef<Map<string, PropertyRow>>(new Map());
+  useEffect(() => {
+    for (const r of rows) if (!baseline.current.has(r.id)) baseline.current.set(r.id, { ...r });
+  }, [rows]);
+  const editedFields = useCallback((r: PropertyRow): string[] => {
+    const b = baseline.current.get(r.id);
+    if (!b) return [];
+    return ACTUAL_FIELDS.map((f) => String(f.key)).filter((k) => {
+      const a = (r as any)[k], o = (b as any)[k];
+      return (a ?? null) !== (o ?? null);
+    });
+  }, []);
+
+  /** A NUMERIC FIELD THE LO TYPED. Empty string stores null, which re-engages the engine's
+   *  estimate — clearing the box IS the reset, same gesture as the pricer. Negative and
+   *  non-finite input is refused rather than flowed into a loan-sizing calculation. */
+  const setRowNum = useCallback((id: string, field: keyof PropertyRow, v: string) => {
+    const raw = String(v).replace(/[^0-9.]/g, "");
+    setRows((p) => p.map((r) => {
+      if (r.id !== id) return r;
+      if (raw === "") return { ...r, [field]: null };
+      const n = parseFloat(raw);
+      if (!Number.isFinite(n) || n < 0) return r;
+      return { ...r, [field]: n };
+    }));
+  }, []);
+
+  /** Put every field on this property back to what the spreadsheet said. */
+  const revertRow = useCallback((id: string) => {
+    const b = baseline.current.get(id);
+    if (!b) return;
+    setRows((p) => p.map((r) => (r.id === id
+      ? { ...r, ...Object.fromEntries(ACTUAL_FIELDS.map((f) => [f.key, (b as any)[f.key] ?? null])) }
+      : r)));
+  }, []);
+
   const setTaxAmount = useCallback((id: string, v: string) => {
     const n = parseFloat(v);
     setRows((p) => p.map((r) => (r.id === id ? { ...r, back_tax_amount: Number.isFinite(n) && n >= 0 ? n : null } : r)));
@@ -912,6 +952,7 @@ export default function UnderwritePage() {
                         key={x.id} x={x} r={r} open={open} assumptions={assumptions}
                         onToggle={() => setExpandedId(open ? null : x.id)}
                         onStatus={setTaxStatus} onAmount={setTaxAmount}
+                        onNum={setRowNum} onRevert={revertRow} edited={r ? editedFields(r) : []}
                       />
                     );
                   })}
@@ -959,15 +1000,102 @@ export default function UnderwritePage() {
 }
 
 // ============================================================================
+// PER-PROPERTY ACTUALS — the loan officer's own figures, per door.
+//
+// Ramon, 2026-08-02: "run the same override check on the other calculators" -> this grid was the
+// worst offender. Every underwriting input except back-tax status was READ-ONLY, so one wrong
+// cell in an imported spreadsheet could not be corrected at all: no way to enter the real tax
+// bill you just pulled from the treasurer, the rent the lease actually says, or a corrected
+// price. 16 of 25 modelled figures were untypeable.
+//
+// The engine already supported this (`p.taxes_annual ?? price * tax_fallback_pct`) and already
+// emitted taxes_estimated / insurance_estimated. Only the UI was missing, which is the purest
+// form of a mechanism that exists and does nothing.
+//
+// CLEARING A BOX REVERTS TO THE ESTIMATE, exactly as in the pricer: the field is stored as null,
+// the engine's `??` fallback re-engages, and the flag comes back. No separate reset to find.
+// ============================================================================
+const ACTUAL_FIELDS: { key: keyof PropertyRow; label: string; hint: string; annual?: boolean }[] = [
+  { key: "price", label: "Price / value", hint: "purchase price or current value basis" },
+  { key: "rent_monthly", label: "Gross rent / mo", hint: "scheduled rent from the lease" },
+  { key: "other_income_monthly", label: "Other income / mo", hint: "parking, laundry, storage" },
+  { key: "taxes_annual", label: "Taxes / yr", hint: "the real bill from the treasurer", annual: true },
+  { key: "insurance_annual", label: "Insurance / yr", hint: "the bound premium", annual: true },
+  { key: "hoa_monthly", label: "HOA / mo", hint: "association dues" },
+  { key: "rehab_budget", label: "Rehab budget", hint: "scope of work total" },
+  { key: "arv", label: "ARV", hint: "after-repair value" },
+];
+
+function ActualsEditor({
+  r, x, assumptions, edited, onNum, onRevert,
+}: {
+  r: PropertyRow; x: UnderwriteResult; assumptions: Assumptions;
+  edited: string[];
+  onNum: (id: string, field: keyof PropertyRow, v: string) => void;
+  onRevert: (id: string) => void;
+}) {
+  // What the engine WOULD use if the box is empty — shown as the placeholder so an untouched
+  // field still tells the truth about the number driving the deal.
+  const est = (k: keyof PropertyRow): string => {
+    const price = Number(r.price) || 0;
+    if (k === "taxes_annual") return Math.round((price * assumptions.tax_fallback_pct) / 100).toLocaleString();
+    if (k === "insurance_annual") return Math.round((price * assumptions.ins_fallback_pct) / 100).toLocaleString();
+    return "0";
+  };
+  return (
+    <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-2.5 mt-2" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="text-[11px] text-slate-500 font-semibold">Your figures for this property</div>
+        {edited.length > 0 && (
+          <button onClick={() => onRevert(r.id)} className="text-[10px] text-emerald-400 hover:text-emerald-300">
+            revert {edited.length} to the sheet
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+        {ACTUAL_FIELDS.map((f) => {
+          const v = r[f.key] as number | null | undefined;
+          const isEst = (f.key === "taxes_annual" && x.taxes_estimated) || (f.key === "insurance_annual" && x.insurance_estimated);
+          const wasEdited = edited.includes(String(f.key));
+          return (
+            <label key={String(f.key)} className="block" title={f.hint}>
+              <span className={`text-[10px] block mb-0.5 ${isEst ? "text-amber-400/80" : "text-slate-500"}`}>
+                {f.label}{isEst ? " (est.)" : ""}{wasEdited ? " ·edited" : ""}
+              </span>
+              <input
+                type="text" inputMode="numeric"
+                value={v == null ? "" : String(v)}
+                placeholder={est(f.key)}
+                aria-label={`${f.label} — ${f.hint}`}
+                onChange={(e) => onNum(r.id, f.key, e.target.value)}
+                className={`w-full bg-slate-900 border rounded px-2 py-1 text-[12px] text-right focus:outline-none focus:border-emerald-500 ${
+                  wasEdited ? "border-emerald-600/70 text-emerald-300" : isEst ? "border-amber-700/40 text-amber-200 placeholder:text-amber-700/60" : "border-slate-800 text-slate-200 placeholder:text-slate-600"
+                }`}
+              />
+            </label>
+          );
+        })}
+      </div>
+      <div className="text-[10px] text-slate-600 mt-1.5">
+        Amber = we estimated it. Type the real number and every metric, the portfolio roll-up and the exports recompute. Empty the box to go back to the estimate.
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Table row + expandable detail panel (module scope — contains inputs via BackTaxEditor)
 // ============================================================================
 function RowPair({
-  x, r, open, assumptions, onToggle, onStatus, onAmount,
+  x, r, open, assumptions, onToggle, onStatus, onAmount, onNum, onRevert, edited,
 }: {
   x: UnderwriteResult; r: PropertyRow | undefined; open: boolean; assumptions: Assumptions;
   onToggle: () => void;
   onStatus: (id: string, s: BackTaxStatus) => void;
   onAmount: (id: string, v: string) => void;
+  onNum: (id: string, field: keyof PropertyRow, v: string) => void;
+  onRevert: (id: string) => void;
+  edited: string[];
 }) {
   return (
     <>
@@ -979,6 +1107,7 @@ function RowPair({
           <div className="flex items-center gap-1.5 min-w-0">
             {open ? <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />}
             <span className="text-white truncate max-w-[260px]" title={x.address}>{x.address || "—"}</span>
+            {edited.length > 0 && <span className="text-[9px] uppercase text-emerald-400 shrink-0" title={`Your figures: ${edited.join(", ")}`}>edited</span>}
           </div>
         </td>
         <td className="px-3 py-2.5 text-right text-slate-300">{fm(r?.price)}</td>
@@ -1049,6 +1178,7 @@ function RowPair({
                     <div className="text-[10px] text-slate-600 mt-1.5">Owed amounts add straight to cash-needed and recompute live.</div>
                   </div>
                 )}
+                {r && <ActualsEditor r={r} x={x} assumptions={assumptions} edited={edited} onNum={onNum} onRevert={onRevert} />}
                 {r?.notes && (
                   <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-2.5 mt-2">
                     <div className="text-[11px] text-slate-500 font-semibold mb-1">Tax / title notes</div>
