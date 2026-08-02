@@ -36,9 +36,34 @@ export type ClosingCostInput = {
   financeGovFee?: boolean;       // finance UFMIP / VA fee / USDA fee (default true)
   closingDay?: number;           // day of month funds (default 15) — prepaid interest
   model?: Partial<FeeModel>;     // CLOSING_COST_MODEL overrides, merged server-side
+  /** MANUAL FIGURES, keyed by CostLine.key. Ramon, 2026-08-02: "allow me to adjust all line
+   *  items manually if i have the info while still providing estimates if i dont have it."
+   *  The LO fills in only what they actually have — a real title quote here, a real appraisal
+   *  there — and every other line keeps its estimate. */
+  overrides?: Record<string, number>;
 };
 
-export type CostLine = { label: string; amount: number; note?: string };
+/** What the fee builders push: just the label and the modelled amount. Keeping this separate
+ *  from CostLine means the ~25 push sites never have to know about keys or provenance, and a fee
+ *  added later becomes overridable for free instead of silently missing one. */
+export type RawLine = { label: string; amount: number; note?: string };
+
+export type CostLine = {
+  label: string;
+  amount: number;
+  note?: string;
+  /** Stable id for overriding this line. Derived from the label with the dynamic parts stripped
+   *  ("Origination fee (1.5% of loan amount)" -> "a_origination_fee"), so an override survives a
+   *  rate change, a price change, and any recompute. */
+  key: string;
+  /** FALSE once a real figure has been entered. Not cosmetic: this document goes to a borrower,
+   *  and presenting an estimate as a quoted number is how a good-faith estimate becomes a
+   *  complaint. */
+  estimated: boolean;
+  /** What the model computed, kept even when overridden, so the UI can show the delta and
+   *  clearing the override restores it. */
+  estimatedAmount?: number;
+};
 export type CostSection = { key: string; title: string; lines: CostLine[]; total: number };
 export type ClosingCostResult = {
   sections: CostSection[];
@@ -49,7 +74,12 @@ export type ClosingCostResult = {
   downPayment: number;
   credits: number;
   cashToClose: number;
-  meta: { state: string; county?: string | null; notes: string[] };
+  meta: {
+    state: string; county?: string | null; notes: string[];
+    /** Override keys that matched no line on THIS scenario. Surfaced so a manual figure can
+     *  never be silently ignored. */
+    unappliedOverrides: string[];
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -186,6 +216,56 @@ const NYC_FIPS = new Set(["36061", "36047", "36081", "36005", "36085"]);
 
 const r0 = (n: number) => Math.round(n);
 
+/** Strip the parts of a label that move with the deal: percentages, dollar amounts, day counts.
+ *  What remains identifies the FEE, not this instance of it.
+ *
+ *  SCOPED BY SECTION because the label alone is not unique: "Homeowner's insurance — 12 months"
+ *  (F, the prepaid year) and "Homeowner's insurance — 3 months" (G, the escrow cushion) are two
+ *  different charges whose words reduce to the same stem. Un-scoped, entering the real annual
+ *  premium would have silently overwritten the escrow deposit as well. A fee's RESPA section is
+ *  structural — it does not move with the rate, the price, or the program — so scoping keeps the
+ *  key stable while making a cross-section collision impossible by construction. */
+export function lineKey(label: string, section?: string): string {
+  const stem = String(label)
+    .replace(/\([^)]*\)/g, " ")                 // "(1.5% of loan amount)", "(~15 days @ $x/day)"
+    .replace(/[\d.,$%~]+/g, " ")
+    .replace(/[^a-zA-Z]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase()
+    .slice(0, 48) || "line";
+  return section ? `${section.toLowerCase()}_${stem}` : stem;
+}
+
+/** Apply the LO's manual figures and record provenance. Overrides are KEYED, not positional, so
+ *  a real title quote survives changing the rate, the price, or anything else that triggers a
+ *  recompute — which is the entire point: you type it once. */
+function applyOverrides(
+  lines: RawLine[],
+  overrides: Record<string, number> | undefined,
+  seen: Map<string, string>,
+  applied: Set<string>,
+  section: string,
+): CostLine[] {
+  return lines.map((l) => {
+    const key = lineKey(l.label, section);
+    // A silent key collision would route one line's override onto another line's amount. On a
+    // borrower-facing figure that is worse than having no override at all, so it is loud.
+    const prior = seen.get(key);
+    if (prior && prior !== l.label) {
+      throw new Error(`closingCosts: line key "${key}" collides between "${prior}" and "${l.label}" — give one of them a distinct label.`);
+    }
+    seen.set(key, l.label);
+    const manual = overrides?.[key];
+    // >= 0, not truthiness: $0 is a REAL answer (waived fee, lender-paid appraisal). Falsy-
+    // checking it away would be the Number(cfg())===0 bug in a new costume.
+    if (typeof manual === "number" && isFinite(manual) && manual >= 0) {
+      applied.add(key);
+      return { ...l, key, amount: Math.round(manual), estimated: false, estimatedAmount: l.amount };
+    }
+    return { ...l, key, estimated: true };
+  });
+}
+
 export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   // COERCE the owner-edited model: a hand-typed "850" (string) must never string-
   // concat into a $1.5B section total. Non-finite/negative values fall to defaults.
@@ -207,7 +287,7 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   const financeGov = i.financeGovFee !== false;
 
   // ---- A. Origination ----
-  const A: CostLine[] = [];
+  const A: RawLine[] = [];
   // Fetti's origination fee (broker compensation) = % of loan. Per-scenario override
   // (the pricer's adjustable field) wins; else the house default from the fee model.
   const origPct = Math.max(0, i.originationPct != null ? i.originationPct : m.originationPct);
@@ -219,7 +299,7 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   A.push({ label: "Processing fee", amount: m.processing });
 
   // ---- B. Services you cannot shop for ----
-  const B: CostLine[] = [];
+  const B: RawLine[] = [];
   B.push({ label: "Appraisal", amount: m.appraisal[i.loanType] ?? m.appraisal.conventional });
   B.push({ label: "Credit report", amount: m.creditReport });
   B.push({ label: "Flood certification", amount: m.floodCert });
@@ -251,7 +331,7 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   }
 
   // ---- C. Services you can shop for ----
-  const C: CostLine[] = [];
+  const C: RawLine[] = [];
   C.push({ label: "Lender's title insurance", amount: r0(Math.max(st.titleMin, loan / 1000 * st.titlePer1000)) });
   C.push({ label: st.attorney ? "Settlement / closing (attorney-supervised)" : "Escrow / settlement fee", amount: r0(m.settlementBase + price / 1000 * m.settlementPer1000) });
   if (st.attorney) C.push({ label: "Closing attorney", amount: m.attorneyFee });
@@ -259,7 +339,7 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   if (st.survey && purchase) C.push({ label: "Survey (customary in this state)", amount: m.surveyFee });
 
   // ---- E. Taxes & government fees ----
-  const E: CostLine[] = [];
+  const E: RawLine[] = [];
   E.push({ label: "Recording fees (deed + mortgage)", amount: st.recording });
   if (purchase && st.deedTaxPer1000 > 0 && st.deedBuyerShare > 0) {
     E.push({ label: "Transfer tax (buyer's customary share)", amount: r0(price / 1000 * st.deedTaxPer1000 * st.deedBuyerShare), note: st.note });
@@ -300,7 +380,7 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   }
 
   // ---- F. Prepaids ----
-  const F: CostLine[] = [];
+  const F: RawLine[] = [];
   const dailyInterest = loan * (i.ratePct / 100) / 365;
   const day = Math.min(28, Math.max(1, i.closingDay ?? 15));
   const daysPrepaid = 30 - day + 1;
@@ -308,7 +388,7 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   F.push({ label: "Homeowner's insurance — 12 months", amount: r0(i.insAnnual) });
 
   // ---- G. Initial escrow at closing ----
-  const G: CostLine[] = [];
+  const G: RawLine[] = [];
   if (escrowed) {
     const moTax = price * (i.taxRatePct / 100) / 12;
     const moIns = i.insAnnual / 12;
@@ -319,13 +399,23 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   }
 
   // ---- H. Other ----
-  const H: CostLine[] = [];
+  const H: RawLine[] = [];
   if (i.ownersTitle && purchase) {
     H.push({ label: "Owner's title insurance (optional)", amount: r0(Math.max(650, price / 1000 * (st.titlePer1000 * 1.15))) , note: "Owner's policy custom varies — SELLER pays it in much of CA/FL" });
   }
 
-  const sec = (key: string, title: string, lines: CostLine[]): CostSection =>
-    ({ key, title, lines, total: r0(lines.reduce((s, l) => s + l.amount, 0)) });
+  // ONE collision map and ONE applied set for the whole sheet. Checking per-section would miss
+  // the collision that actually matters: `overrides` is a FLAT key map, so two lines in DIFFERENT
+  // sections sharing a key would both silently take the same manual figure.
+  const seenKeys = new Map<string, string>();
+  const appliedKeys = new Set<string>();
+  const sec = (key: string, title: string, lines: RawLine[]): CostSection => {
+    // Resolve overrides BEFORE totalling. Totalling first and patching rows afterwards would show
+    // a corrected line above a stale total — the worst of both, and exactly the kind of
+    // internally inconsistent document that loses a borrower's trust.
+    const resolved = applyOverrides(lines, i.overrides, seenKeys, appliedKeys, key);
+    return { key, title, lines: resolved, total: r0(resolved.reduce((s, l) => s + l.amount, 0)) };
+  };
   const sections = [
     sec("A", "A · Origination charges", A),
     sec("B", "B · Services you cannot shop for", B),
@@ -335,6 +425,13 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
     sec("G", "G · Initial escrow at closing", G),
     ...(H.length ? [sec("H", "H · Other", H)] : []),
   ];
+  // AN OVERRIDE THAT MATCHES NOTHING IS THE FAILURE THAT LOOKS LIKE SUCCESS: the LO types a real
+  // title quote, the line it belonged to is gone (program switched, escrow waived, purchase ->
+  // refi), and the sheet prints the estimate while the LO believes their number is in it. Keep
+  // the value — it re-applies if that fee returns — but never let it be invisible.
+  const unappliedOverrides = Object.keys(i.overrides || {})
+    .filter((k) => !appliedKeys.has(k) && Number.isFinite(Number(i.overrides?.[k])));
+
   const tot = (k: string[]) => sections.filter((s) => k.includes(s.key)).reduce((s, x) => s + x.total, 0);
   const loanCosts = tot(["A", "B", "C"]);
   const otherCosts = tot(["E", "F", "G", "H"]);
@@ -347,10 +444,13 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   if (rawCredits > credits) notes.push(`Credits capped at total closing costs ($${credits.toLocaleString()}) — excess can't reduce the down payment; program interested-party limits also apply`);
   const cashToClose = r0(downPayment + totalClosingCosts - credits);
 
+  if (unappliedOverrides.length) {
+    notes.push(`${unappliedOverrides.length} manual figure(s) do not match any line on this scenario and were NOT applied (${unappliedOverrides.join(", ")}) — they are kept and re-apply if that fee returns.`);
+  }
   notes.push("Estimates for planning only — not a Loan Estimate or a commitment to lend; actual fees come from the title company, county, and final loan terms.");
   return {
     sections, loanCosts, otherCosts, totalClosingCosts, financedFees,
     downPayment, credits, cashToClose,
-    meta: { state: i.state, county: i.countyName, notes },
+    meta: { state: i.state, county: i.countyName, notes, unappliedOverrides },
   };
 }
