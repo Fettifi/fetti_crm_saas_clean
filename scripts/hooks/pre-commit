@@ -33,7 +33,7 @@ AUTH=$(printf '%s\n' "$CHANGED" | grep -F -e 'proxy.ts' -e 'scripts/verify-auth-
 PRICER=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/closingCosts' -e 'lib/pricerPdf' -e 'app/api/pricer/' -e 'scripts/verify-pricer')
 # lib/pricer.ts owns PITIA and mortgage insurance — the file where a VA borrower was being
 # quoted MI that does not exist on a VA loan.
-MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingDesk' -e 'scripts/verify-mi')
+MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingDesk' -e 'scripts/verify-mi' -e 'scripts/verify-financed-fee')
 # The portfolio grid's per-property actuals: an editor that stops short of the roll-up looks
 # fixed and is not.
 UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite' -e 'deal-analyzer' -e 'scripts/verify-deal-analyzer')
@@ -85,11 +85,13 @@ if [ -n "$UW" ]; then
 fi
 
 if [ -n "$MI" ]; then
-  printf "   %-18s " "verify:mi"
-  OUT=$(npm run --silent verify:mi 2>&1)
-  if [ $? -eq 0 ]; then echo "PASS"; else
-    echo "FAIL"; FAILED="$FAILED verify:mi"; printf '%s\n' "$OUT" | sed 's/^/      /'
-  fi
+  for G in verify:mi verify:financed-fee; do
+    printf "   %-18s " "$G"
+    OUT=$(npm run --silent "$G" 2>&1)
+    if [ $? -eq 0 ]; then echo "PASS"; else
+      echo "FAIL"; FAILED="$FAILED $G"; printf '%s\n' "$OUT" | sed 's/^/      /'
+    fi
+  done
 fi
 
 if [ -n "$PRICER" ]; then

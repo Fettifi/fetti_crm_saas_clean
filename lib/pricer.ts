@@ -109,6 +109,33 @@ export function pmiRate(ltv: number): number {
   return 0.90;
 }
 
+/** PITIA WITH A FINANCED GOVERNMENT FEE ROLLED IN.
+ *
+ *  FHA up-front MIP, the VA funding fee and the USDA guarantee fee are normally FINANCED — added
+ *  to the loan rather than paid in cash. The borrower amortizes them, so they raise the monthly
+ *  payment. The pricer computed PITIA on the base loan and only discovered the financed fee
+ *  afterwards, in the closing-cost engine, so page 1 of the borrower's PDF printed a payment on a
+ *  loan amount that is not the loan they would actually have.
+ *
+ *  Two things deliberately do NOT move with the fee:
+ *    - LTV stays on the BASE loan. That is how these programs work — the financed fee is excluded
+ *      from LTV, which is why a VA loan can be 100% LTV and still finance a funding fee. Inflating
+ *      LTV here would also push the rate estimate into the wrong LLPA tier.
+ *    - The cash figures (down payment, cash to close) are untouched: a FINANCED fee is not cash.
+ *
+ *  Mortgage insurance DOES move with it: FHA annual MIP and the USDA annual fee are charged on the
+ *  amortizing balance, which includes the financed up-front fee. VA has no monthly MI at all.
+ *
+ *  ONE implementation, called by both the screen and the PDF route — computing this twice is how
+ *  the two disagree, which is the failure this pricer has already produced once. */
+export function estimatePITIAFinanced(i: PricerInput, financedFees: number) {
+  const base = estimatePITIA(i);
+  const fee = Number(financedFees) || 0;
+  if (!(fee > 0)) return { ...base, financedFees: 0, baseLoan: base.loan };
+  const withFee = estimatePITIA({ ...i, loanAmount: base.loan + fee });
+  return { ...withFee, ltv: base.ltv, financedFees: fee, baseLoan: base.loan };
+}
+
 export type PricerInput = {
   price: number;           // purchase / sales price
   value?: number;          // appraised value (defaults to price)

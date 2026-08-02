@@ -12,6 +12,11 @@ export type PricerPdfData = {
   county?: string; taxSource?: "zcta" | "county" | "state" | "default" | "ca-prop13";
   taxIsActual?: boolean; insIsActual?: boolean;
   price: number; value?: number; down: number; loanAmount: number; ltv: number;
+  /** Financed FHA UFMIP / VA funding fee / USDA guarantee fee rolled into the loan (0 if none). */
+  financedFees?: number;
+  /** The loan BEFORE that fee — shown alongside so the borrower can see why the loan exceeds
+   *  price minus down payment, instead of finding an unexplained number. */
+  baseLoan?: number;
   loanType?: string; ratePct: number; rateIsOverride?: boolean; termMonths: number;
   pi: number; taxMonthly: number; insMonthly: number; pmiMonthly: number; hoa: number; total: number;
   taxRate: number; insRate: number;
@@ -81,8 +86,17 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
     ["Purchase / sales price", money(d.price)],
     ...(d.value && d.value !== d.price ? [["Appraised value", money(d.value)]] as [string, string][] : []),
     ["Down payment", `${money(d.down)}${downPct ? `  (${downPct.toFixed(1)}%)` : ""}`],
-    ["Loan amount", money(d.loanAmount)],
-    ["Loan-to-value (LTV)", `${d.ltv.toFixed(1)}%`],
+    // A borrower who sees a loan larger than price minus their down payment, with no line
+    // explaining it, reasonably assumes the document is wrong. Show the base, the fee, and the
+    // total — and say that the payment above is on the total.
+    ...(d.financedFees && d.financedFees > 0
+      ? ([
+          ["Base loan amount", money(d.baseLoan ?? d.loanAmount - d.financedFees)],
+          ["Government fee financed into the loan", `+ ${money(d.financedFees)}`],
+          ["Total loan amount (what the payment is based on)", money(d.loanAmount)],
+        ] as [string, string][])
+      : ([["Loan amount", money(d.loanAmount)]] as [string, string][])),
+    ["Loan-to-value (LTV)", `${d.ltv.toFixed(1)}%${d.financedFees && d.financedFees > 0 ? "  (on the base loan)" : ""}`],
     ...(d.loanType ? [["Loan type", d.loanType]] as [string, string][] : []),
     ["Estimated interest rate", `${d.ratePct}%${d.rateIsOverride ? " (advisor estimate)" : ""}`],
     ["Loan term", `${Math.round(d.termMonths / 12)} years`],

@@ -77,6 +77,30 @@ async function render(cc: any): Promise<string> {
   chk(cash(ov) === cash(pl) + (ACTUAL - line.amount),
     `cash to close ON THE PDF moved by exactly the override delta (${cash(pl).toLocaleString()} -> ${cash(ov).toLocaleString()})`);
 
+  // ── The financed government fee must be VISIBLE and EXPLAINED on page 1. A borrower who sees a
+  //    loan larger than price minus their down payment, with no line accounting for it, reasonably
+  //    concludes the document is wrong.
+  const FEE = 6755;
+  const finTxt = await pdfText(new Uint8Array(await buildPricerPdf({
+    borrowerName: "Internal Test", address: "1 Test Way", state: "FL", zip: "33101",
+    price: 400000, down: 14000, loanAmount: 386000 + FEE, ratePct: 6.5, termMonths: 360,
+    loanType: "fha30", pi: 2482, taxMonthly: 367, insMonthly: 200, pmiMonthly: 180, hoa: 0,
+    total: 3229, ltv: 96.5, financedFees: FEE, baseLoan: 386000,
+  } as any)));
+  chk(/Base loan amount/.test(finTxt), "the PDF shows the BASE loan amount");
+  chk(/Government fee financed into the loan/.test(finTxt), "and names the financed government fee as its own line");
+  chk(finTxt.includes(FEE.toLocaleString()), `and prints the fee itself ($${FEE.toLocaleString()})`);
+  chk(/Total loan amount \(what the payment is based on\)/.test(finTxt),
+    "and says explicitly that the quoted payment is based on the TOTAL loan");
+  chk(/96\.5%\s+\(on the base loan\)/.test(finTxt), "and labels LTV as being on the base loan");
+  const plainTxt = await pdfText(new Uint8Array(await buildPricerPdf({
+    borrowerName: "Internal Test", state: "CA", price: 450000, down: 90000, loanAmount: 360000,
+    ratePct: 6.5, termMonths: 360, loanType: "conv30", pi: 2275, taxMonthly: 431, insMonthly: 150,
+    pmiMonthly: 0, hoa: 0, total: 2856, ltv: 80,
+  } as any)));
+  chk(!/financed into the loan/.test(plainTxt) && /Loan amount/.test(plainTxt),
+    "a conventional quote shows a single plain Loan amount row — no fee language invented");
+
   console.log("");
   if (bad) { console.error(`FAIL — ${bad} problem(s). The borrower's document is the surface that matters.\n`); process.exit(1); }
   console.log("PASS — the borrower's PDF shows the actual figure, marks it, explains it, and totals it.\n");

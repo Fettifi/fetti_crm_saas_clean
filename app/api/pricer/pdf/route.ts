@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { estimatePITIA } from "@/lib/pricer";
+import { estimatePITIA, estimatePITIAFinanced } from "@/lib/pricer";
 import { buildPricerPdf } from "@/lib/pricerPdf";
 import { estimateRate, creditValueToFico, LOAN_TYPES } from "@/lib/rateEstimator";
 import { loadRateModel } from "@/lib/rateModelServer";
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
       ratePct = est.rate;
     }
 
-    const r = estimatePITIA({ ...baseInput, ratePct });
+    let r = estimatePITIA({ ...baseInput, ratePct });
     const loanTypeLabel = LOAN_TYPES.find((t) => t.value === loanType)?.label;
 
     // Page 2: closing-cost estimate (same engine as the screen — recomputed
@@ -104,6 +104,13 @@ export async function POST(req: NextRequest) {
           overrides: sanitizeOverrides(b.overrides),
         });
         closing = { sections: cc.sections, totalClosingCosts: cc.totalClosingCosts, downPayment: cc.downPayment, credits: cc.credits, cashToClose: cc.cashToClose, financedFees: cc.financedFees, notes: cc.meta.notes, county: useLocRates ? loc.countyName : null };
+        // THE FINANCED FEE IS PART OF THE LOAN THE BORROWER PAYS ON. It can only be known after
+        // the cost engine runs, so page 1's payment has to be recomputed once it is — otherwise
+        // the PDF quotes a monthly on a loan amount that does not exist. LTV and the rate stay on
+        // the BASE loan, which is how these programs size and price.
+        if (Number(cc.financedFees) > 0) {
+          r = estimatePITIAFinanced({ ...baseInput, ratePct }, cc.financedFees) as typeof r;
+        }
       } catch (e) { console.warn("[api/pricer/pdf] closing-cost section skipped:", e); }
     }
 
@@ -114,6 +121,7 @@ export async function POST(req: NextRequest) {
       taxSource: taxOverAnnual > 0 ? undefined : (useLocRates ? loc.taxSource : undefined),
       taxIsActual: taxOverAnnual > 0, insIsActual: insOverAnnual > 0,
       price, value: Number(b.value) || undefined, down: Number(b.down) || 0, loanAmount: r.loan, ltv: r.ltv,
+      financedFees: (r as any).financedFees || 0, baseLoan: (r as any).baseLoan ?? r.loan,
       loanType: loanTypeLabel, ratePct, rateIsOverride: !!b.rateIsOverride, termMonths: baseInput.termMonths,
       pi: r.pi, taxMonthly: r.taxMonthly, insMonthly: r.insMonthly, pmiMonthly: r.pmiMonthly, hoa: r.hoa, total: r.total,
       taxRate: r.taxRate, insRate: r.insRate,

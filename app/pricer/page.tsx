@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Calculator, MapPin, Download, Loader2, Sparkles, Pencil } from "lucide-react";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import AddressInput from "@/components/AddressInput";
-import { estimatePITIA, zipToState, PROPERTY_TAX_RATE } from "@/lib/pricer";
+import { estimatePITIA, estimatePITIAFinanced, zipToState, PROPERTY_TAX_RATE } from "@/lib/pricer";
 import {
   estimateRate, creditValueToFico, LOAN_TYPES, RATE_MODEL_DEFAULTS, type RateModel,
 } from "@/lib/rateEstimator";
@@ -134,6 +134,8 @@ export default function PricerPage() {
   const r = useMemo(() => estimatePITIA({ ...base, ratePct: effRate }), [base, effRate]);
 
   // ---- Closing costs (LE-shaped estimate; server engine uses ZIP + price) ----
+  // (rp — the payment the borrower actually makes — is derived below, once the closing-cost
+  //  engine has told us whether a government fee is being financed into the loan.)
   const [sellerCredit, setSellerCredit] = useState("");
   const [escrowWaived, setEscrowWaived] = useState(false);
   const [ownersTitle, setOwnersTitle] = useState(false);
@@ -199,6 +201,17 @@ export default function PricerPage() {
     } catch { alert("Connection error."); }
     setPdfBusy(false);
   }
+
+  // THE PAYMENT INCLUDES THE FINANCED FEE. FHA UFMIP / the VA funding fee / the USDA guarantee
+  // fee are added to the loan, so the borrower amortizes them. `r` above is the BASE calculation
+  // and stays that way — it is what sizes the fee and what the cc request is keyed on, so feeding
+  // the financed total back into it would iterate. `rp` is what the screen and the PDF quote.
+  const rp = useMemo(
+    () => (cc && Number(cc.financedFees) > 0
+      ? estimatePITIAFinanced({ ...base, ratePct: effRate }, Number(cc.financedFees))
+      : r),
+    [base, effRate, cc, r],
+  );
 
   const inp = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none";
   const lbl = "text-xs text-slate-400 mb-1 block";
@@ -327,17 +340,18 @@ export default function PricerPage() {
               </div>
               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-center">
                 <div className="text-[10px] uppercase text-slate-500">Loan amount</div>
-                <div className="text-2xl font-bold text-white mt-1">{r.loan ? money(r.loan) : "—"}</div>
+                <div className="text-2xl font-bold text-white mt-1">{rp.loan ? money(rp.loan) : "—"}</div>
+                {(rp as any).financedFees > 0 && <div className="text-[10px] text-slate-500 mt-0.5">incl. {money((rp as any).financedFees)} financed gov fee</div>}
               </div>
             </div>
 
             <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Monthly payment</div>
-            <Row label="Principal & interest" val={money(r.pi)} hint={`${effRate}% · ${term / 12} yr`} />
+            <Row label="Principal &amp; interest" val={money(rp.pi)} hint={`${effRate}% · ${term / 12} yr`} />
             <Row label="Property taxes" val={money(r.taxMonthly)} hint={taxHint} />
             <Row label="Homeowner's insurance" val={money(r.insMonthly)} hint={insHint} />
-            {r.pmiMonthly > 0 && <Row label="PMI (est.)" val={money(r.pmiMonthly)} hint={`LTV ${r.ltv.toFixed(0)}% · ${r.pmiAnnual}% / yr`} />}
+            {rp.pmiMonthly > 0 && <Row label="PMI (est.)" val={money(rp.pmiMonthly)} hint={`LTV ${rp.ltv.toFixed(0)}% · ${rp.pmiAnnual}% / yr`} />}
             {r.hoa > 0 && <Row label="HOA dues" val={money(r.hoa)} />}
-            <div className="mt-2"><Row label="Total monthly (PITIA)" val={money(r.total)} big accent /></div>
+            <div className="mt-2"><Row label="Total monthly (PITIA)" val={money(rp.total)} big accent /></div>
 
             {/* Closing costs & cash to close (LE-shaped, ZIP + price driven) */}
             {cc && (
@@ -366,7 +380,7 @@ export default function PricerPage() {
                   <span className="text-sm font-semibold text-emerald-400">Estimated cash to close</span>
                   <span className="text-2xl font-bold text-emerald-400">{money(cc.cashToClose)}</span>
                 </div>
-                {cc.financedFees > 0 && <p className="text-[11px] text-slate-500 mt-1">+ {money(cc.financedFees)} government fee financed into the loan (not cash due).</p>}
+                {cc.financedFees > 0 && <p className="text-[11px] text-slate-500 mt-1">+ {money(cc.financedFees)} government fee financed into the loan — not cash due, but it IS included in the monthly payment above.</p>}
                 {ccOpen && (
                   <div className="mt-3 space-y-2">
                     <div className="flex items-center justify-between">
