@@ -3,23 +3,35 @@
 // The autopilot + doctor health sweeps POST a fake lead to /api/apply every day to
 // prove the funnel still accepts leads. That test is worth keeping: it exercises the
 // real route, Lead Shield, scoring, dedupe and the DB write. What it must NOT do is
-// reach the outside world. Until now it did — 35 healthcheck leads between 2026-06-19
-// and 2026-07-29 each ran the FULL new-lead pipeline:
+// reach the outside world — a first-touch email to a domain that does not resolve, an
+// owner page about a borrower who does not exist, a Meta Lead conversion, four OpenAI
+// agent runs. Deleting the test ROW afterward, which the sweep does, undoes none of
+// that: the mail is sent, the pixel is trained, the spend is spent.
 //
-//   • first-touch email to an address at a domain that does not resolve
-//     (@fetti-internal.test) → a hard bounce on the frank@fettifi.com sending domain
-//   • an owner alert to Ramon (email + SMS + webhook) for a lead that does not exist —
-//     and on 2026-07-29 one scored Tier 1 (70), which is the hot-lead voice pager
-//   • a Lead event to the Meta Conversions API → the ad account optimizes toward, and
-//     reports, a conversion nobody made
-//   • four OpenAI agent runs (qualify → structure → process → close) per test lead
+// WHAT WAS ACTUALLY HAPPENING — stated precisely, because the first version of this
+// comment got it wrong and shipped. The 35 probes between 2026-06-19 and 2026-07-29
+// did NOT send any of that. Checked against activity_log: each one logged
+// shield.quarantine + lead.created and nothing else — no agent.ran, no comms.message.
+// Lead Shield scored the fake phone and non-resolving email above the quarantine
+// threshold and /api/apply took the quarantine branch, which skips the pipeline.
 //
-// Deleting the test ROW afterward — which the sweep does — cleans up none of that.
-// The emails are sent, the pixel is trained, the spend is spent.
+// The probes were contained. But nothing in the system had DECIDED to contain them,
+// and the containment rests on a runtime setting:
 //
-// So: one predicate, checked at two chokepoints (leadPipeline entry and
-// sendMetaLeadEvent), the same two-chokepoint shape used for TCPA quiet hours and the
-// email suppression list. One guard is a guard you forget to call.
+//   verdict = (mode === "enforce" && quarantine) || honeypotHit ? "quarantine" : "pass"
+//
+// SHIELD_MODE is an app_settings value with three states, and assessLead falls back to
+// "shadow" when the settings read throws. In shadow or off — a calibration window, a
+// bad settings row, a transient DB error — the same probe returns "pass" and takes the
+// full pipeline that same day. The safety margin was also thin in the other direction:
+// notifyQuarantine emails Ramon on band=gray AND Tier 1, and the 2026-07-29 probe
+// scored Tier 1 (70).
+//
+// So this is not a fix for damage already done. It is the difference between a probe
+// that happens to be stopped by a spam filter tuned for other reasons and a probe the
+// system refuses to contact on purpose. One predicate, checked at every sending
+// chokepoint — the same shape as TCPA quiet hours and the email suppression list.
+// One guard is a guard you forget to call.
 
 /** Reserved test domain. Nothing real is ever addressed here — .test is RFC 2606. */
 const SYNTHETIC_EMAIL_DOMAIN = /@fetti-internal\.test\s*$/i;

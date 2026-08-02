@@ -4,7 +4,7 @@
 // engine (lib/closingCosts) does the deterministic math. Auth-gated by the
 // /api/pricer matcher in proxy.ts (internal sales tool).
 import { NextRequest, NextResponse } from "next/server";
-import { estimateClosingCosts, type ClosingCostInput, type LoanType, type Purpose } from "@/lib/closingCosts";
+import { estimateClosingCosts, sanitizeOverrides, type ClosingCostInput, type LoanType, type Purpose } from "@/lib/closingCosts";
 import { resolveLocation } from "@/lib/propertyData";
 import { zipToState, PROPERTY_TAX_RATE, INSURANCE_RATE } from "@/lib/pricer";
 import { cfg } from "@/lib/settings";
@@ -71,6 +71,8 @@ export async function POST(req: NextRequest) {
       vaExempt: b.vaExempt === true,
       financeGovFee: b.financeGovFee !== false,
       closingDay: Number(b.closingDay) || undefined,
+      // The LO's own figures for lines they actually have a quote for.
+      overrides: sanitizeOverrides(b.overrides),
       model,
     };
     const result = estimateClosingCosts(input);

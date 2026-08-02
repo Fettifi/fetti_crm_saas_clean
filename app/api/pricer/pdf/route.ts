@@ -4,7 +4,7 @@ import { buildPricerPdf } from "@/lib/pricerPdf";
 import { estimateRate, creditValueToFico, LOAN_TYPES } from "@/lib/rateEstimator";
 import { loadRateModel } from "@/lib/rateModelServer";
 import { resolveLocation } from "@/lib/propertyData";
-import { estimateClosingCosts, type LoanType } from "@/lib/closingCosts";
+import { estimateClosingCosts, sanitizeOverrides, type LoanType } from "@/lib/closingCosts";
 import { cfg } from "@/lib/settings";
 
 // Pricer loan-type ids ("conv30", "fha30", "dscr30"…) → closing-cost engine types.
@@ -95,6 +95,11 @@ export async function POST(req: NextRequest) {
           pointsPct: Number(b.pointsPct) || 0, sellerCredit: Number(b.sellerCredit) || 0, lenderCredit: Number(b.lenderCredit) || 0,
           escrowWaived: b.escrowWaived === true, ownersTitle: b.ownersTitle === true,
           vaExempt: b.vaExempt === true, model: ccModel,
+          // The screen sends originationPct and this route used to DROP it, so an advisor who
+          // adjusted origination saw one number on screen and handed the borrower a PDF with the
+          // house default. The borrower-facing document has to agree with the screen it came from.
+          originationPct: b.originationPct != null && b.originationPct !== "" ? Number(b.originationPct) : undefined,
+          overrides: sanitizeOverrides(b.overrides),
         });
         closing = { sections: cc.sections, totalClosingCosts: cc.totalClosingCosts, downPayment: cc.downPayment, credits: cc.credits, cashToClose: cc.cashToClose, financedFees: cc.financedFees, notes: cc.meta.notes, county: useLocRates ? loc.countyName : null };
       } catch (e) { console.warn("[api/pricer/pdf] closing-cost section skipped:", e); }

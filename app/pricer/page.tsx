@@ -136,6 +136,16 @@ export default function PricerPage() {
   const [origPct, setOrigPct] = useState("1"); // Fetti's origination fee (% of loan) — adjustable per deal
   const [cc, setCc] = useState<any>(null);
   const [ccOpen, setCcOpen] = useState(true);
+  // MANUAL FIGURES, keyed by CostLine.key. Held as the clean numeric STRINGS CurrencyInput emits
+  // so that clearing the box is itself the "reset to estimate" gesture — no separate control to
+  // find, and no way to end up with a blank field that is still secretly overriding the line.
+  const [ovr, setOvr] = useState<Record<string, string>>({});
+  const ovrNums = useMemo(() => {
+    const o: Record<string, number> = {};
+    for (const [k, v] of Object.entries(ovr)) if (v !== "" && Number.isFinite(Number(v))) o[k] = Number(v);
+    return o;
+  }, [ovr]);
+  const ovrCount = Object.keys(ovrNums).length;
   const dealBasis = isRefi ? num(value) : num(price);   // the $ the deal is priced against
   useEffect(() => {
     if (!dealBasis || !r.loan || !state) { setCc(null); return; }
@@ -148,11 +158,12 @@ export default function PricerPage() {
           ratePct: effRate, taxRatePct: taxRatePctEff, insAnnual: r.insMonthly * 12,
           sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
           originationPct: origPct === "" ? undefined : num(origPct),
+          overrides: ovrNums,
         }),
       }).then((res) => (res.ok ? res.json() : null)).then((j) => setCc(j?.ok ? j : null)).catch(() => setCc(null));
     }, 350);
     return () => { clearTimeout(t); ctl.abort(); };
-  }, [dealBasis, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct]);
+  }, [dealBasis, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct, ovrNums]);
 
   async function downloadPdf() {
     if (isRefi ? (!num(value) || !num(refiLoan)) : !num(price)) {
@@ -172,6 +183,7 @@ export default function PricerPage() {
           ratePct: effRate, rateIsOverride: rateOverride, termMonths: term, hoaMonthly: num(hoa), includePMI,
           sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
           originationPct: origPct === "" ? undefined : num(origPct),
+          overrides: ovrNums,
         }),
       });
       if (res.ok) {
@@ -353,12 +365,40 @@ export default function PricerPage() {
                 {cc.financedFees > 0 && <p className="text-[11px] text-slate-500 mt-1">+ {money(cc.financedFees)} government fee financed into the loan (not cash due).</p>}
                 {ccOpen && (
                   <div className="mt-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] text-slate-500">Have a real quote? Type it over any line — the rest stay estimates.</p>
+                      {ovrCount > 0 && (
+                        <button onClick={() => setOvr({})} className="text-[11px] text-emerald-400 hover:text-emerald-300 whitespace-nowrap ml-2">
+                          reset {ovrCount} to estimate{ovrCount > 1 ? "s" : ""}
+                        </button>
+                      )}
+                    </div>
+                    {/* A manual figure that matched no line must never be invisible — that is the
+                        LO believing their number is in a document that does not contain it. */}
+                    {cc.meta?.unappliedOverrides?.length > 0 && (
+                      <p className="text-[11px] text-amber-400">
+                        {cc.meta.unappliedOverrides.length} figure(s) you entered do not apply to this scenario (the fee is not charged here). They are kept and will come back if it is.
+                      </p>
+                    )}
                     {cc.sections.map((s: any) => s.lines.length > 0 && (
                       <div key={s.key}>
                         <div className="text-[10px] uppercase text-emerald-500/80 mb-0.5">{s.title}</div>
-                        {s.lines.map((l: any, i: number) => (
-                          <div key={i} className="flex justify-between text-[12px] text-slate-400">
-                            <span className="pr-2" title={l.note || ""}>{l.label}</span><span className="text-slate-300">{money(l.amount)}</span>
+                        {s.lines.map((l: any) => (
+                          <div key={l.key} className="flex items-center justify-between gap-2 py-[1px]">
+                            <span className="text-[12px] text-slate-400 pr-1 flex-1 min-w-0 truncate" title={l.note || l.label}>
+                              {l.label}
+                              {l.estimated === false && <span className="ml-1.5 text-[9px] uppercase tracking-wide text-emerald-400">actual</span>}
+                            </span>
+                            {/* Grey placeholder = our estimate. Type over it and the figure becomes
+                                yours (and prints to the borrower marked CONFIRMED). Empty the box to
+                                go back to the estimate. */}
+                            <CurrencyInput
+                              value={ovr[l.key] ?? ""}
+                              onChange={(v) => setOvr((o) => { const n = { ...o }; if (v === "") delete n[l.key]; else n[l.key] = v; return n; })}
+                              placeholder={Math.round(l.estimatedAmount ?? l.amount).toLocaleString()}
+                              aria-label={`${l.label} — enter the actual figure if you have it`}
+                              className={`w-24 rounded-md border py-[2px] pr-2 text-[12px] text-right bg-slate-900/70 focus:outline-none focus:border-emerald-500 ${l.estimated === false ? "border-emerald-600/70 text-emerald-300 font-semibold" : "border-slate-800 text-slate-300 placeholder:text-slate-500"}`}
+                            />
                           </div>
                         ))}
                       </div>

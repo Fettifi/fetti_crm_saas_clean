@@ -18,7 +18,7 @@ export type PricerPdfData = {
   officerName?: string; officerNmls?: string; date?: string;
   // Optional page 2: LE-shaped closing-cost estimate (from lib/closingCosts).
   closing?: {
-    sections: { key: string; title: string; lines: { label: string; amount: number; note?: string }[]; total: number }[];
+    sections: { key: string; title: string; lines: { label: string; amount: number; note?: string; estimated?: boolean }[]; total: number }[];
     totalClosingCosts: number; downPayment: number; credits: number; cashToClose: number;
     financedFees: number; notes: string[]; county?: string | null;
   };
@@ -157,11 +157,23 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
     }
     y2 += 8;
 
+    // MARK CONFIRMED FIGURES. When the advisor has a real quote for a line, this document must
+    // not present it in the same voice as a modelled guess — and, just as important, must not let
+    // the borrower read the whole sheet as confirmed because a few lines are. Labelling the
+    // confirmed ones is what keeps the rest honestly an estimate.
+    const anyConfirmed = c.sections.some((s) => s.lines.some((l) => l.estimated === false));
+    if (anyConfirmed) {
+      for (const ln of wrap("Lines marked (CONFIRMED) are actual figures supplied by the provider for this transaction. Every other line is an estimate.", font, 8, CW)) {
+        p2.drawText(safe(ln), { x: M, y: H - y2 - 8, size: 8, font, color: GREY }); y2 += 11;
+      }
+      y2 += 6;
+    }
+
     for (const s of c.sections) {
       if (!s.lines.length) continue;
       ensure(60); // keep a section header with at least its first rows
       t2(s.title.toUpperCase(), 8.5, bold, EMERALD); y2 += 13;
-      s.lines.forEach((ln, i) => row2(ln.label, money(ln.amount), i, ln.note));
+      s.lines.forEach((ln, i) => row2(ln.label + (ln.estimated === false ? "  (CONFIRMED)" : ""), money(ln.amount), i, ln.note));
       row2(`Section ${s.key} total`, money(s.total), 1);
       y2 += 8;
     }

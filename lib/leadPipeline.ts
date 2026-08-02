@@ -40,7 +40,9 @@ export async function runNewLeadPipeline(newLead: any, opts: PipelineOpts = {}):
     const reason = syntheticReason(newLead);
     console.log(`[leadPipeline] synthetic lead ${newLead?.id} — no outbound side effects (${reason})`);
     // Log it so the skip is VISIBLE. A silent guard is indistinguishable from a guard
-    // that never runs, and that is exactly how the original bug hid for six weeks.
+    // that never runs — and this lane is the one a probe normally never reaches, since
+    // the shield quarantines it upstream. Without this row there is no way to tell
+    // "the guard held" from "the guard was never on the road."
     try {
       await logActivity({
         entity_type: "lead", entity_id: newLead.id, lead_id: newLead.id, actor: "system",

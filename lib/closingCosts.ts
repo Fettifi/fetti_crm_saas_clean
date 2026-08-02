@@ -236,6 +236,25 @@ export function lineKey(label: string, section?: string): string {
   return section ? `${section.toLowerCase()}_${stem}` : stem;
 }
 
+/** Coerce an untrusted overrides map from a request body into something the engine can use.
+ *  Keys come back to us from OUR OWN response, so anything else is either stale or hostile: drop
+ *  non-numeric, negative and non-finite values rather than letting them reach a borrower-facing
+ *  figure, and bound the map so a request body cannot carry an unbounded object. */
+export function sanitizeOverrides(raw: any): Record<string, number> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(k)) continue;
+    const n = Number(v);
+    // >= 0 only. A NEGATIVE fee would silently reduce cash to close and could make a scenario
+    // look affordable that is not.
+    if (!Number.isFinite(n) || n < 0 || n > 10_000_000) continue;
+    out[k] = Math.round(n);
+    if (Object.keys(out).length >= 64) break;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** Apply the LO's manual figures and record provenance. Overrides are KEYED, not positional, so
  *  a real title quote survives changing the rate, the price, or anything else that triggers a
  *  recompute — which is the entire point: you type it once. */
