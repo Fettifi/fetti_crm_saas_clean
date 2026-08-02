@@ -52,6 +52,10 @@ export type DeskInput = {
   asIsValue: number;           // as-is value / purchase price
   arv?: number;                // after-repair value (flip/bridge)
   existingLiens?: number;      // senior lien balance(s) — drives CLTV, critical for 2nd position
+  /** MONTHLY DEBT SERVICE on that senior lien. The property pays it every month out of the same
+   *  rent, so on a junior deal DSCR is meaningless without it. Entered from the borrower's
+   *  mortgage statement; estimated (and flagged) when the LO does not have it yet. */
+  existingLienPayment?: number;
   rehabBudget?: number;
   monthlyRent?: number;        // gross rent (DSCR / commercial)
   propertyType?: string;       // SFR | 2-4 unit | condo | multifamily | commercial | land
@@ -80,7 +84,10 @@ export type DeskMetrics = {
   cltv: number | null;         // (loan + senior liens) / value  — binding for 2nd position
   ltarv: number | null;        // loan / ARV (fix&flip) — the binding LTV for ARV loans
   cltarv: number | null;       // (loan + senior liens) / ARV
-  dscr: number | null;         // rent / PITIA
+  dscr: number | null;         // rent / TOTAL property debt service (junior PITIA + senior lien)
+  /** The senior lien's monthly payment used in that ratio, and whether we had to estimate it. */
+  seniorPayment: number;
+  seniorPaymentEstimated: boolean;
   maxLoanByLTV: number;        // value × box.maxLTV (or ARV for flip)
   maxLoanByDSCR: number | null;
   maxLoan: number;             // binding of the above
@@ -93,6 +100,14 @@ const round = (n: number) => Math.round(n);
 
 /** Pure underwriting metrics from the deal inputs + resolved tax/insurance rates. Runs
  *  identically in the browser (live preview) and on the server. */
+/** Standard amortizing monthly payment. Used to estimate a senior lien's debt service when the
+ *  LO has not supplied it — never to replace a figure they did. */
+function monthlyAmortizing(principal: number, ratePct: number, months: number): number {
+  const r = ratePct / 100 / 12;
+  if (!(principal > 0) || !(months > 0)) return 0;
+  return r > 0 ? (principal * r * Math.pow(1 + r, months)) / (Math.pow(1 + r, months) - 1) : principal / months;
+}
+
 export function computeDeskMetrics(input: DeskInput): DeskMetrics {
   const box = LOAN_BOX[input.loanType] || LOAN_BOX.dscr;
   const value = Math.max(0, Number(input.asIsValue) || 0);
@@ -121,7 +136,25 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
   const cltv = value > 0 ? +(((loan + senior) / value) * 100).toFixed(1) : null;
   const ltarv = arv && arv > 0 ? +((loan / arv) * 100).toFixed(1) : null;
   const cltarv = arv && arv > 0 ? +(((loan + senior) / arv) * 100).toFixed(1) : null; // combined LTARV for ARV loans
-  const dscr = box.usesRental && input.monthlyRent ? dscrExact(Number(input.monthlyRent), pitia) : null;
+  // ── SENIOR DEBT SERVICE ───────────────────────────────────────────────────────────────────
+  // A junior loan does not relieve the property of the FIRST mortgage. The rent has to cover
+  // both, so measuring DSCR against the new payment alone overstates it — badly. Measured on a
+  // real case: a $120k second behind a $300k senior at $3,200 rent reported DSCR 1.72 and PASSED
+  // a 1.10 box; including the senior's ~$1,625/mo the true figure is 0.92 and it FAILS. That is
+  // a deal marked approvable that is not, sized off a ratio the property cannot support.
+  //
+  // The LO's own figure wins (it is on the borrower's mortgage statement). Absent that, estimate
+  // AMORTIZING at an assumed rate — the conservative direction, since an interest-only guess
+  // would understate the payment and re-inflate the very ratio this fixes — and FLAG it.
+  const SENIOR_ASSUMED_RATE = 6.5;
+  const seniorEntered = input.existingLienPayment != null && Number(input.existingLienPayment) >= 0;
+  const seniorPaymentEstimated = senior > 0 && !seniorEntered;
+  const seniorPayment = senior <= 0 ? 0
+    : seniorEntered ? round(Number(input.existingLienPayment))
+    : round(monthlyAmortizing(senior, SENIOR_ASSUMED_RATE, 360));
+  // TOTAL monthly debt service the PROPERTY carries — the honest denominator.
+  const totalDebtService = round(pitia + seniorPayment);
+  const dscr = box.usesRental && input.monthlyRent ? dscrExact(Number(input.monthlyRent), totalDebtService) : null;
 
   // Max loan the box supports: LTV cap (on ARV for flip, else as-is value), and — for
   // rental products — the DSCR-supported loan on the gross rent. A junior loan (2nd
@@ -133,8 +166,13 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
     ? Math.max(0, round(capBasis * (box.maxCLTV / 100) - senior))
     : round(capBasis * (box.maxLTV / 100));
   const escrowMonthly = round(p.taxMonthly + p.insMonthly + (Number(input.hoaMonthly) || 0));
+  // The rent available to service the NEW loan is what is left after the senior lien is paid —
+  // otherwise the DSCR-supported loan size is overstated by exactly the same error as the ratio.
+  const dscrBudget = Number(input.monthlyRent) / targetDscr - seniorPayment;
   const maxLoanByDSCR = box.usesRental && input.monthlyRent
-    ? maxLoanFromPayment(Number(input.monthlyRent) / targetDscr, escrowMonthly, ratePct, termYears * 12, 20, 0).maxLoan
+    ? (dscrBudget > escrowMonthly
+        ? maxLoanFromPayment(dscrBudget, escrowMonthly, ratePct, termYears * 12, 20, 0).maxLoan
+        : 0)   // the rent cannot even cover the senior lien plus escrow — it supports no new loan
     : null;
   const maxLoan = maxLoanByDSCR != null ? Math.min(maxLoanByLTV, round(maxLoanByDSCR)) : maxLoanByLTV;
   const cashInDeal = round((box.usesARV ? (value + (Number(input.rehabBudget) || 0)) : value) - loan);
@@ -153,7 +191,7 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
     box, value, arv, ratePct, termYears,
     pi, taxMonthly: round(p.taxMonthly), insMonthly: round(p.insMonthly),
     hoaMonthly: Number(input.hoaMonthly) || 0, pitia,
-    ltv, cltv, ltarv, cltarv, dscr,
+    ltv, cltv, ltarv, cltarv, dscr, seniorPayment, seniorPaymentEstimated,
     maxLoanByLTV, maxLoanByDSCR: maxLoanByDSCR != null ? round(maxLoanByDSCR) : null,
     maxLoan, headroom: round(maxLoan - loan), cashInDeal, fits,
   };

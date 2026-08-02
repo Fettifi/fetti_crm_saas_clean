@@ -56,7 +56,11 @@ export default function UnderwritingDesk() {
     loanType: f.loanType, loanPurpose: f.loanPurpose || ((f.loanType === "second" || Number(f.lienPosition) === 2) ? "CashOutRefinance" : "Purchase"),
     lienPosition: (f.loanType === "second" || Number(f.lienPosition) === 2) ? 2 : 1,
     loanAmount: num(f.loanAmount), asIsValue: num(f.asIsValue), arv: num(f.arv) || undefined,
-    existingLiens: num(f.existingLiens) || undefined, rehabBudget: num(f.rehabBudget) || undefined,
+    existingLiens: num(f.existingLiens) || undefined,
+    // The senior lien's actual payment. Not "|| undefined": $0 is meaningful (a senior in
+    // forbearance / interest deferred), and treating it as unset would silently re-estimate.
+    existingLienPayment: f.existingLienPayment !== "" && f.existingLienPayment != null ? num(f.existingLienPayment) : undefined,
+    rehabBudget: num(f.rehabBudget) || undefined,
     monthlyRent: num(f.monthlyRent) || undefined, propertyType: f.propertyType, occupancy: f.occupancy,
     fico: num(f.fico) || undefined, ratePct: num(f.ratePct) || undefined, termYears: num(f.termYears) || 30,
     hoaMonthly: num(f.hoaMonthly) || undefined, targetDscr: num(f.targetDscr) || undefined,
@@ -196,6 +200,20 @@ export default function UnderwritingDesk() {
           {box.usesARV && <div><label className={lbl}>ARV (after repair)</label><CurrencyInput value={f.arv || ""} onChange={(v) => set("arv", v)} className={inp} placeholder="$" /></div>}
           {box.usesARV && <div><label className={lbl}>Rehab budget</label><CurrencyInput value={f.rehabBudget || ""} onChange={(v) => set("rehabBudget", v)} className={inp} placeholder="$" /></div>}
           {(lien2 || f.existingLiens) && <div><label className={lbl}>Senior lien balance{lien2 ? " (for CLTV)" : ""}</label><CurrencyInput value={f.existingLiens || ""} onChange={(v) => set("existingLiens", v)} className={inp} placeholder="$" /></div>}
+          {/* THE SENIOR'S PAYMENT DRIVES DSCR. The property pays it out of the same rent as the
+              new loan, so without it the ratio is measured against the junior payment alone and
+              a deal that fails the box reads as passing. Estimated when blank, and said so. */}
+          {!!num(f.existingLiens) && (
+            <div>
+              <label className={lbl}>Senior lien payment / mo</label>
+              <CurrencyInput
+                value={f.existingLienPayment ?? ""}
+                onChange={(v) => set("existingLienPayment", v)}
+                className={inp}
+                placeholder={`$${Math.round(m.seniorPayment || 0).toLocaleString()} est.`}
+              />
+            </div>
+          )}
           {!lien2 && !f.existingLiens && <div><label className={lbl}>Existing liens (optional)</label><CurrencyInput value={f.existingLiens || ""} onChange={(v) => set("existingLiens", v)} className={inp} placeholder="$0" /></div>}
           {box.usesRental && <div><label className={lbl}>Gross rent / mo</label><CurrencyInput value={f.monthlyRent || ""} onChange={(v) => set("monthlyRent", v)} className={inp} placeholder="$/mo" /></div>}
           {box.usesRental && <div><label className={lbl}>Target DSCR</label><select value={f.targetDscr || box.minDSCR} onChange={(e) => set("targetDscr", e.target.value)} className={inp}><option value={1.25}>1.25</option><option value={1.10}>1.10</option><option value={1.0}>1.00</option><option value={0.75}>0.75 (low-DSCR)</option></select></div>}
@@ -266,6 +284,17 @@ export default function UnderwritingDesk() {
               {m.box?.usesARV && input.arv ? <Metric label="ARV" value={money(input.arv)} /> : <Metric label="Rate" value={m.ratePct + "%"} />}
               {coreTiles(m).map((t, i) => <Metric key={i} label={t.label} value={t.value} tone={t.tone} />)}
             </div>
+            {/* DSCR here is rent over the property's TOTAL debt service. When the senior payment
+                was estimated rather than entered, the pass/fail rests on that estimate — say so
+                next to the number, not in a footnote nobody reads. */}
+            {m.seniorPayment > 0 && (
+              <div className={`mt-3 text-[11px] rounded-lg px-3 py-2 ${m.seniorPaymentEstimated ? "bg-amber-500/10 text-amber-300" : "bg-slate-800/60 text-slate-300"}`}>
+                DSCR is measured against the property&apos;s TOTAL debt service — this loan plus the senior lien&apos;s {money(m.seniorPayment)}/mo
+                {m.seniorPaymentEstimated
+                  ? " (ESTIMATED at 6.5% amortizing — enter the real payment from the borrower's mortgage statement to firm this up)."
+                  : " (as entered)."}
+              </div>
+            )}
             {m.box && <div className={`mt-3 text-[11px] rounded-lg px-3 py-2 ${m.fits?.overall ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}>Program box ({m.box.label}): {m.box.usesARV ? `≤ ${m.box.maxLTV}% LTARV (loan-to-ARV)` : `≤ ${m.box.maxLTV}% LTV, ≤ ${m.box.maxCLTV}% CLTV`}{m.box.minDSCR ? `, ≥ ${m.box.minDSCR} DSCR` : ""} — {m.fits?.overall ? "fits as structured." : "outside the box — see restructure below."}</div>}
           </div>
 
