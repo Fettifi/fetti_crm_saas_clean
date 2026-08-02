@@ -11,7 +11,7 @@ import { useMemo, useState } from "react";
 import { DollarSign, Info, Plus, X, AlertTriangle } from "lucide-react";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import {
-  computeIncome, computeDti, maxHousingPayment, maxLoanFromPayment, miAnnualFactor, SOURCE_META,
+  computeIncome, computeDti, maxHousingPayment, maxLoanFromPayment, miAnnualFactor, SOURCE_META, sourceMonthlyDetail,
   type IncomeSource, type SourceType, type LoanType,
 } from "@/lib/income";
 
@@ -184,6 +184,41 @@ export default function IncomeCalcPage() {
                       </div>
                     )}
 
+                    {/* THE LOAN OFFICER'S OWN FIGURE. Not one engine-derived income number on
+                        this screen could be typed over — not the 2-yr average, the 75% rental
+                        factor, the gross-up or the continuance exclusion — even though the LOS
+                        twin has exactly this control. Blank = use the guideline calculation. */}
+                    {(() => {
+                      const g = sourceMonthlyDetail({ ...s, overrideMonthly: null }, loanType);
+                      const on = s.overrideMonthly != null;
+                      return (
+                        <div className="flex items-end gap-2">
+                          <div className="flex-1">
+                            <label className={lbl}>
+                              Your qualifying figure <span className="text-slate-600">/mo</span>
+                              {on && <span className="ml-1.5 text-[10px] uppercase text-emerald-400">yours</span>}
+                            </label>
+                            <input
+                              type="text" inputMode="decimal"
+                              value={s.overrideMonthly ?? ""}
+                              placeholder={`${Math.round(g.monthly).toLocaleString()} — ${g.basis}`}
+                              aria-label="Your qualifying monthly figure for this source"
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/[^0-9.-]/g, "");
+                                update(s.id, { overrideMonthly: raw === "" ? null : (Number.isFinite(Number(raw)) ? Number(raw) : null) });
+                              }}
+                              className={`${inp} ${on ? "border-emerald-600/70 text-emerald-300" : "placeholder:text-slate-600"}`}
+                            />
+                          </div>
+                          {on && (
+                            <button onClick={() => update(s.id, { overrideMonthly: null })} className="text-[11px] text-emerald-400 hover:text-emerald-300 pb-2.5 whitespace-nowrap">
+                              use guideline
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {meta.canGrossUp && <label className="flex items-center gap-2 text-[11px] text-slate-300"><input type="checkbox" checked={!!s.nonTaxable} onChange={(e) => update(s.id, { nonTaxable: e.target.checked })} className="accent-emerald-500" /> Documented non-taxable — gross up ×{r.grossUp}</label>}
                     {meta.expirationEligible && (
                       <div className="flex items-center gap-3 flex-wrap">
@@ -279,7 +314,7 @@ export default function IncomeCalcPage() {
               <div key={l.id} className="flex items-start justify-between gap-3 py-2 border-b border-slate-800/50">
                 <div>
                   <div className="text-sm text-slate-300">{coBorrower && <span className="text-[10px] text-slate-500 mr-1">B{l.borrower}</span>}{l.label}</div>
-                  <div className="text-[11px] text-slate-500">{l.basis}</div>
+                  <div className={`text-[11px] ${l.overridden ? "text-emerald-400" : "text-slate-500"}`}>{l.basis}</div>
                   {l.flag && <div className="text-[11px] text-amber-400/90 flex items-start gap-1 mt-0.5"><AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />{l.flag}</div>}
                 </div>
                 <div className={`text-base font-bold whitespace-nowrap ${l.monthly < 0 ? "text-amber-400" : "text-white"}`}>{money(l.monthly)}/mo</div>

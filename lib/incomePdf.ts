@@ -14,7 +14,7 @@ export type WorksheetData = {
   date?: string;
   loanType?: string;
   audience?: "lender" | "borrower";   // borrower copy omits the internal verification report + flags
-  result: { monthlyTotal: number; annualTotal: number; derivedDebts?: number; lines: { label: string; basis: string; monthly: number; flag?: string }[]; warnings?: string[] };
+  result: { monthlyTotal: number; annualTotal: number; derivedDebts?: number; lines: { label: string; basis: string; monthly: number; flag?: string; overridden?: boolean }[]; warnings?: string[] };
   report?: { perDoc?: { file?: string; docType?: string; source?: string; keyFigures?: string }[]; crossChecks?: string[]; flags?: string[]; confidence?: string; notes?: string };
   docsRead?: string[];
   qualification?: { mode?: string; label?: string; maxPITIA?: number; maxPI?: number; maxLoan?: number; maxPrice?: number; ratioLabel?: string; ratioValue?: string; verdict?: string };
@@ -82,11 +82,16 @@ export async function buildIncomeWorksheetPdf(d: WorksheetData): Promise<Uint8Ar
   y -= 44;
 
   // Income breakdown
-  heading("Income breakdown (by underwriting rule)");
+  // A LINE THE LOAN OFFICER SET IS NOT "an underwriting rule", and the heading must not claim it
+  // is. The borrower copy suppresses per-line flags by design (internal verification notes are
+  // not theirs to read), so an override disclosed only through a flag would be invisible to the
+  // one person being told what they qualify for. It goes in the label, on both copies.
+  const anyOverride = (d.result.lines || []).some((l) => l.overridden);
+  heading(anyOverride ? "Income breakdown (by underwriting rule, with loan officer figures)" : "Income breakdown (by underwriting rule)");
   for (const l of (d.result.lines || []).filter((x) => x.monthly !== 0 || x.flag)) {
     ensure(22);
     const amt = money(l.monthly) + "/mo";
-    dt(l.label, { x: M, y: y - 9, size: 9.5, font: bold, color: l.monthly < 0 ? AMBER : SLATE });
+    dt(l.label + (l.overridden ? "  (loan officer's figure)" : ""), { x: M, y: y - 9, size: 9.5, font: bold, color: l.monthly < 0 ? AMBER : SLATE });
     dt(amt, { x: W - M - font.widthOfTextAtSize(amt, 9.5), y: y - 9, size: 9.5, font: bold, color: l.monthly < 0 ? AMBER : SLATE });
     y -= 12;
     para(l.basis, 8, font, GREY);

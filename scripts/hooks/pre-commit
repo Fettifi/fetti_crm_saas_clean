@@ -21,6 +21,7 @@ CHANGED=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -z "$CHANGED" ] && exit 0
 
 # Only the paths that can move a borrower's qualifying income.
+INCOV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income.ts' -e 'lib/incomePdf' -e 'app/income/' -e 'IncomeQualifier' -e 'scripts/verify-income-overrides')
 WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'verify-income' -e 'scripts/verify-employer-merge' -e 'scripts/verify-benefit-deposits' -e 'scripts/verify-income-stability')
 # The auth gate is a separate, cheaper concern: proxy.ts requires every protected API to be
 # listed in TWO places, and forgetting the second leaves the route fully public. Milliseconds.
@@ -37,11 +38,11 @@ MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingD
 # fixed and is not.
 UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite' -e 'deal-analyzer' -e 'scripts/verify-deal-analyzer')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
-printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" "$UW" | grep -v '^$' | sed 's/^/   touched: /'
+printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" "$UW" "$INCOV" | grep -v '^$' | sed 's/^/   touched: /'
 echo ""
 
 FAILED=""
@@ -62,6 +63,14 @@ if [ -n "$PAYLOAD" ]; then
   OUT=$(npm run --silent verify:payloads 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:payloads"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+if [ -n "$INCOV" ]; then
+  printf "   %-18s " "verify:income-override"
+  OUT=$(npm run --silent verify:income-override 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:income-override"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
 fi
 

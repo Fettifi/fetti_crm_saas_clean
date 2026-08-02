@@ -349,7 +349,23 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   function worksheetBody(audience: "lender" | "borrower") {
     const effLines = allLines
       .filter((l: any) => l.included && !excluded.has(l.borrower))
-      .map((l: any) => ({ label: l.label, basis: l.basis, monthly: l.monthly, flag: l.flag }));
+      .map((l: any) => ({ label: l.label, basis: l.basis, monthly: l.monthly, flag: l.flag, overridden: l.overridden }));
+    // RECONCILE A TYPED TOTAL TO ITS OWN BREAKDOWN. The headline was being replaced by the LO's
+    // figure while the lines below it were left untouched, so the worksheet's parts did not sum
+    // to its total — on a document that goes to a borrower and into a loan file. Silence is the
+    // worst option: it reads as arithmetic nobody can follow. Disclose the difference as its own
+    // line, so the breakdown adds up AND the adjustment is visible and attributable.
+    const lineSum = effLines.reduce((a: number, l: any) => a + (Number(l.monthly) || 0), 0);
+    const delta = Math.round((income - lineSum) * 100) / 100;
+    if (incomeEditedRef.current && incomeInput.trim() !== "" && Math.abs(delta) >= 1) {
+      effLines.push({
+        label: "Loan officer adjustment to qualifying income",
+        basis: `entered by the loan officer — the calculated breakdown totals ${money(lineSum)}/mo`,
+        monthly: delta,
+        overridden: true,
+        flag: "Qualifying income set by the loan officer, not by the document calculation",
+      });
+    }
     // The underwriting copy records the LO's flag decisions (accepted → still a
     // condition; omitted → reviewed + why), so the override is documented on the file.
     const annotatedFlags = ((verified?.report?.flags || []) as any[]).map((f, idx) => {

@@ -41,6 +41,17 @@ export type IncomeSource = {
   pitia?: number;          // rental only: the property's PITIA to net 75%-gross against
   hasEndDate?: boolean;    // expiration-eligible income: has a defined end date
   continuanceMonths?: number; // months the income will still be received
+  /** THE LOAN OFFICER'S OWN MONTHLY FIGURE for this source, replacing the guideline calculation.
+   *
+   *  Ramon, 2026-08-02: "do all three." Until now not ONE engine-derived income figure on
+   *  /income could be typed over — not the 2-yr average, not the 75% rental factor, not the
+   *  gross-up, not the continuance exclusion — even though the LOS twin has exactly that control.
+   *  An underwriter who has read the file and knows the correct qualifying figure had no way to
+   *  state it, so the number that went to the borrower stayed the tool's guess.
+   *
+   *  null / undefined = use the guideline calculation. A NUMBER (including 0, and including a
+   *  negative for a rental loss) is the LO's figure and wins. */
+  overrideMonthly?: number | null;
 };
 
 // UI/labels + behavior flags per type. canGrossUp restricted to income that is
@@ -68,11 +79,41 @@ const pos = (n?: number) => (typeof n === "number" && isFinite(n) && n > 0 ? n :
 const signed = (n?: number) => (typeof n === "number" && isFinite(n) ? n : 0); // keeps negatives (losses)
 const pvFactor = (r: number, n: number) => (r > 0 ? (1 - Math.pow(1 + r, -n)) / r : n); // present-value annuity factor
 
-export type SourceDetail = { monthly: number; basis: string; flag?: string; isRentalLoss?: boolean };
+export type SourceDetail = {
+  monthly: number; basis: string; flag?: string; isRentalLoss?: boolean;
+  /** True when the LO's figure replaced the guideline calculation. */
+  overridden?: boolean;
+  /** What the guideline math produced, kept so the UI can show the delta, the PDF can disclose
+   *  it, and clearing the override restores it. */
+  guidelineMonthly?: number;
+};
 
 // Monthly qualifying figure for a single source. monthly may be NEGATIVE for a
 // self-employment loss (offsets income) or a net rental loss (routed to debts).
 export function sourceMonthlyDetail(s: IncomeSource, loanType: LoanType): SourceDetail {
+  // An LO override replaces the guideline RESULT, not its inputs — so the guideline figure is
+  // still computed and carried alongside. A number that silently loses what it replaced cannot
+  // be reviewed, cannot be undone, and cannot be disclosed on the worksheet.
+  const om = s.overrideMonthly;
+  if (om != null && Number.isFinite(Number(om))) {
+    const g = guidelineDetail(s, loanType);
+    const v = Number(om);
+    return {
+      monthly: v,
+      basis: "entered by the loan officer",
+      overridden: true,
+      guidelineMonthly: g.monthly,
+      // A rental override stays a rental for loss handling only if the LO's own number is
+      // negative; a positive override means they are stating it qualifies as income.
+      isRentalLoss: s.type === "rental" && v < 0,
+      flag: `Guideline calculation was $${Math.round(g.monthly).toLocaleString()}/mo (${g.basis}) — replaced by the loan officer's figure`,
+    };
+  }
+  return guidelineDetail(s, loanType);
+}
+
+/** The guideline calculation, untouched. Split out so an override can report what it replaced. */
+function guidelineDetail(s: IncomeSource, loanType: LoanType): SourceDetail {
   const grossUp = loanType === "fha" ? GROSSUP_FHA : GROSSUP_CONVENTIONAL;
   switch (s.type) {
     case "salary": return { monthly: pos(s.amount) / 12, basis: "annual ÷ 12" };
@@ -126,7 +167,7 @@ export function sourceMonthlyDetail(s: IncomeSource, loanType: LoanType): Source
 export function sourceMonthly(s: IncomeSource, loanType: LoanType): number { return sourceMonthlyDetail(s, loanType).monthly; }
 export function sourceBasis(s: IncomeSource, loanType: LoanType): string { return sourceMonthlyDetail(s, loanType).basis; }
 
-export type IncomeLine = { id: string; borrower: number; type: SourceType; label: string; monthly: number; basis: string; flag?: string; isRentalLoss?: boolean };
+export type IncomeLine = { id: string; borrower: number; type: SourceType; label: string; monthly: number; basis: string; flag?: string; isRentalLoss?: boolean; overridden?: boolean; guidelineMonthly?: number };
 export type IncomeResult = {
   monthlyTotal: number;       // qualifying income, clamped ≥ 0
   annualTotal: number;
@@ -141,7 +182,7 @@ export function computeIncome(sources: IncomeSource[], loanType: LoanType): Inco
   const grossUp = loanType === "fha" ? GROSSUP_FHA : GROSSUP_CONVENTIONAL;
   const lines: IncomeLine[] = (sources || []).map((s) => {
     const d = sourceMonthlyDetail(s, loanType);
-    return { id: s.id, borrower: s.borrower || 1, type: s.type, label: SOURCE_META[s.type]?.label || s.type, monthly: d.monthly, basis: d.basis, flag: d.flag, isRentalLoss: d.isRentalLoss };
+    return { id: s.id, borrower: s.borrower || 1, type: s.type, label: SOURCE_META[s.type]?.label || s.type, monthly: d.monthly, basis: d.basis, flag: d.flag, isRentalLoss: d.isRentalLoss, overridden: d.overridden, guidelineMonthly: d.guidelineMonthly };
   });
 
   let incomeSum = 0;
