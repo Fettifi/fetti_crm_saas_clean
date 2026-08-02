@@ -15,7 +15,8 @@
     "verify:leadscore": "npx tsx scripts/verify-leadscore.ts",
     "verify:income": "npx tsx scripts/verify-income-stability.ts",
     "verify:employer": "npx tsx scripts/verify-employer-merge.ts",
-    "verify:benefits": "npx tsx scripts/verify-benefit-deposits.ts"
+    "verify:benefits": "npx tsx scripts/verify-benefit-deposits.ts",
+    "hooks:install": "git config core.hooksPath scripts/hooks && echo \"income guard installed\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
