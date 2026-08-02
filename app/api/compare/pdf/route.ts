@@ -3,7 +3,7 @@
 // Works on an unsaved (in-progress) comparison too. Auth-gated via /api/compare matcher.
 import { NextRequest, NextResponse } from "next/server";
 import { buildComparisonPdf } from "@/lib/comparePdf";
-import { getComparison, comparisonNumber, type Comparison } from "@/lib/compare";
+import { getComparison, comparisonNumber, mergeComparison, type Comparison } from "@/lib/compare";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,17 +11,10 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const b = await req.json();
-    const c: Comparison | null = b.id ? await getComparison(b.id) : null;
-    const comparison: Comparison = c || {
-      id: b.id || "draft",
-      number: b.number || comparisonNumber(),
-      borrowerName: b.borrowerName,
-      borrowerEmail: b.borrowerEmail,
-      note: b.note,
-      quotes: Array.isArray(b.quotes) ? b.quotes : [],
-      created_at: b.created_at || new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    // The screen's live state wins over the saved record — see mergeComparison. Loading by id
+    // and IGNORING the posted body printed the stale saved version of an edited comparison.
+    const stored: Comparison | null = b.id ? await getComparison(b.id) : null;
+    const comparison: Comparison = mergeComparison(stored, { ...b, number: b.number || comparisonNumber() });
     if (!comparison.quotes.length) return NextResponse.json({ error: "No quotes to compare yet." }, { status: 400 });
     const bytes = await buildComparisonPdf(comparison);
     const fname = `Fetti-Loan-Comparison-${comparison.number}.pdf`;

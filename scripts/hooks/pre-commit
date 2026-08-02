@@ -30,7 +30,8 @@ AUTH=$(printf '%s\n' "$CHANGED" | grep -F -e 'proxy.ts' -e 'scripts/verify-auth-
 # engine, so the advisor saw one number and the borrower was handed another. Offline and
 # deterministic, so it costs nothing to make it unforgettable.
 PRICER=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/closingCosts' -e 'lib/pricerPdf' -e 'app/api/pricer/' -e 'scripts/verify-pricer')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && exit 0
+PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
@@ -44,6 +45,17 @@ if [ -n "$AUTH" ]; then
   OUT=$(npm run --silent verify:auth 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:auth"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+# Any client screen or API route can introduce the sent-but-never-read divergence, so this one
+# is keyed on the broad surface rather than a single feature.
+PAYLOAD=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
+if [ -n "$PAYLOAD" ]; then
+  printf "   %-18s " "verify:payloads"
+  OUT=$(npm run --silent verify:payloads 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:payloads"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
 fi
 

@@ -4,7 +4,7 @@
 // Auth-gated via /api/compare matcher.
 import { NextRequest, NextResponse } from "next/server";
 import { buildComparisonPdf } from "@/lib/comparePdf";
-import { getComparison, saveComparison, genId, comparisonNumber, type Comparison, type CompareQuote } from "@/lib/compare";
+import { getComparison, saveComparison, genId, comparisonNumber, mergeComparison, type Comparison, type CompareQuote } from "@/lib/compare";
 import { logComms } from "@/lib/comms";
 import { logActivity } from "@/lib/activity";
 import { BRAND } from "@/lib/brand";
@@ -20,16 +20,18 @@ export async function POST(req: NextRequest) {
   try {
     const b = await req.json();
     const now = new Date().toISOString();
-    // Resolve to a persisted comparison (load by id, or create from the posted draft).
-    let comparison: Comparison | null = b.id ? await getComparison(b.id) : null;
-    if (!comparison) {
-      const quotes: CompareQuote[] = (Array.isArray(b.quotes) ? b.quotes : []).map((q: any) => ({ ...q, id: q.id || genId() }));
-      comparison = {
-        id: b.id || genId(), number: b.number || comparisonNumber(),
-        borrowerName: b.borrowerName, borrowerEmail: b.borrowerEmail, leadId: b.leadId ?? null, loanFileId: b.loanFileId ?? null,
-        note: b.note, quotes, emailed_to: [], created_at: now, updated_at: now,
-      };
-    }
+    // Resolve to a persisted comparison, with the LIVE SCREEN STATE WINNING over what was
+    // saved. This route used to load by id and ignore the posted body entirely, so
+    // "save -> fix a rate -> email borrower" put the STALE version in a borrower's inbox.
+    // Nothing about that failure was visible to the loan officer, which is what makes it the
+    // worst kind: it succeeds loudly and is wrong quietly.
+    const stored: Comparison | null = b.id ? await getComparison(b.id) : null;
+    const merged = mergeComparison(stored, { ...b, id: b.id || genId(), number: b.number || comparisonNumber() });
+    const comparison: Comparison = {
+      ...merged,
+      quotes: (merged.quotes as CompareQuote[]).map((q: any) => ({ ...q, id: q.id || genId() })),
+      created_at: merged.created_at || now,
+    };
     if (!comparison.quotes.length) return NextResponse.json({ error: "No quotes to send." }, { status: 400 });
 
     const to = String(b.to || comparison.borrowerEmail || "").trim();

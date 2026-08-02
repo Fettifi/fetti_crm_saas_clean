@@ -41,6 +41,40 @@ export type Comparison = {
   emailed_to?: string[];
 };
 
+/** MERGE THE LIVE SCREEN OVER THE SAVED RECORD.
+ *
+ *  Both the PDF route and the email route used to do `b.id ? await getComparison(b.id) : draft`,
+ *  which DISCARDS the entire posted body whenever the comparison has been saved once. The panel
+ *  posts the live editor state on every action, so the sequence "save -> correct a rate -> email
+ *  borrower" sent the borrower the stale saved version, with no error and no warning. That is the
+ *  same screen/document divergence that had the pricer PDF quoting a different origination fee
+ *  than the screen it came from — and here it reaches the borrower's inbox.
+ *
+ *  The posted body is what the loan officer is looking at, so it wins field by field. The stored
+ *  record supplies only what the screen does not carry (creation time, prior recipients). */
+export function mergeComparison(stored: Comparison | null, posted: any): Comparison {
+  const p = posted || {};
+  const has = (k: string) => p[k] !== undefined && p[k] !== null;
+  const now = new Date().toISOString();
+  return {
+    id: stored?.id || p.id || "draft",
+    number: stored?.number || p.number || "",
+    // An explicitly cleared field ("" for a name or note) is an edit, not an absence — only
+    // undefined/null falls back to the stored value.
+    borrowerName: has("borrowerName") ? p.borrowerName : stored?.borrowerName,
+    borrowerEmail: has("borrowerEmail") ? p.borrowerEmail : stored?.borrowerEmail,
+    leadId: has("leadId") ? p.leadId : stored?.leadId ?? null,
+    loanFileId: has("loanFileId") ? p.loanFileId : stored?.loanFileId ?? null,
+    note: has("note") ? p.note : stored?.note,
+    // Quotes are the document. Only fall back to storage when the caller sent no array at all
+    // (a re-send of a saved comparison); an empty array is caught by the caller's own guard.
+    quotes: Array.isArray(p.quotes) ? p.quotes : (stored?.quotes || []),
+    created_at: stored?.created_at || p.created_at || now,
+    updated_at: now,
+    emailed_to: stored?.emailed_to || [],
+  };
+}
+
 // The comparison-table rows (column header = the program/Option N). Order matters;
 // a row renders only if at least one quote has a value for it.
 export const COMPARE_ROWS: { label: string; key: keyof CompareQuote }[] = [
