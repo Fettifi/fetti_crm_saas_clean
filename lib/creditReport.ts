@@ -35,14 +35,35 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const numf = (v: unknown): number | null => { const n = Number(String(v ?? "").replace(/[^0-9.]/g, "")); return isFinite(n) && n > 0 ? Math.round(n) : null; };
 
 /** Deterministic underwriting normalization of the model's raw tradelines. */
+// Runaway guard, not an underwriting cap. It was 60 applied BEFORE closed accounts were
+// filtered, so on a thick or joint tri-merge every paid-off account consumed a slot and was
+// then discarded — the effective ceiling on OPEN, DTI-bearing tradelines was far below 60, and
+// nothing said so. Understated debt means understated DTI, which means a borrower approved for
+// a payment they cannot afford. This got MORE reachable on 2026-08-01 when the credit-document
+// intake was widened 4 -> 25 and all of it merges into ONE extraction feeding this function.
+const TRADELINE_GUARD = 400;
+
+/** How many obligations the runaway guard trimmed on the last extraction. Returned, never
+ *  stored on the module: one serverless instance serves concurrent requests, so a module-level
+ *  `let` would leak one borrower's overflow onto another borrower's response. */
+export function tradelineOverflowOf(ex: any): number {
+  const all = Array.isArray(ex?.tradelines) ? ex.tradelines : [];
+  const obligations = all.filter((t: any) => String(t?.status || "").toLowerCase() !== "closed");
+  return Math.max(0, obligations.length - TRADELINE_GUARD);
+}
+
 export function normalizeTradelines(ex: any): CreditLiability[] {
   const liabilities: CreditLiability[] = [];
-  for (const t of (Array.isArray(ex?.tradelines) ? ex.tradelines : []).slice(0, 60)) {
+  const all = Array.isArray(ex?.tradelines) ? ex.tradelines : [];
+  // FILTER FIRST, then guard: a closed account must never consume a slot that an open,
+  // payment-bearing tradeline needs.
+  const obligations = all.filter((t: any) => String(t?.status || "").toLowerCase() !== "closed");
+  for (const t of obligations.slice(0, TRADELINE_GUARD)) {
     const creditor = String(t.creditor || "").trim().slice(0, 60);
     if (!creditor) continue;
     const type = (["revolving", "installment", "mortgage", "auto", "student", "lease", "collection", "other"].includes(t.type) ? t.type : "other") as CreditLiability["type"];
     const status = (["open", "closed", "collection", "chargeoff", "disputed", "unknown"].includes(t.status) ? t.status : "unknown") as string;
-    if (status === "closed") continue; // no obligation — drop entirely
+    if (status === "closed") continue; // belt and braces — already filtered above
     const balance = numf(t.balance);
     let monthly = numf(t.monthly_payment) ?? 0;
     let note: string | undefined;
@@ -113,7 +134,7 @@ export function dedupeLiabilities(liabs: CreditLiability[]): CreditLiability[] {
 }
 
 /** Run the extraction over prepared Anthropic content blocks (documents/images). */
-export async function extractLiabilitiesFromBlocks(blocks: any[], key: string): Promise<{ borrower: string | null; liabilities: CreditLiability[] }> {
+export async function extractLiabilitiesFromBlocks(blocks: any[], key: string): Promise<{ borrower: string | null; liabilities: CreditLiability[]; tradelineOverflow: number }> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
@@ -133,5 +154,6 @@ export async function extractLiabilitiesFromBlocks(blocks: any[], key: string): 
   return {
     borrower: typeof ex?.borrower === "string" ? ex.borrower.slice(0, 60) : null,
     liabilities: normalizeTradelines(ex),
+    tradelineOverflow: tradelineOverflowOf(ex),
   };
 }

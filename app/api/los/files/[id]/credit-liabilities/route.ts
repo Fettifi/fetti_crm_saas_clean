@@ -64,7 +64,8 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     }
     if (!blocks.length) return NextResponse.json({ error: "The credit-report file couldn't be read from storage." }, { status: 422 });
 
-    const { liabilities } = await extractLiabilitiesFromBlocks(blocks, key);
+    const creditRes = await extractLiabilitiesFromBlocks(blocks, key);
+    const { liabilities } = creditRes;
     if (!liabilities.length) return NextResponse.json({ error: "No tradelines found on that report." }, { status: 422 });
 
     await logActivity({
@@ -80,6 +81,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       // Never silent. If the runaway guard ever trims a document, the caller is told which one
       // and how many, so "liabilities are missing" can never be a mystery.
       overflowDocs: creditOverflow,
+      ...(creditRes.tradelineOverflow ? { tradelineOverflow: creditRes.tradelineOverflow, tradelineWarning: `${creditRes.tradelineOverflow} tradeline(s) beyond the read guard were NOT counted — DTI is understated.` } : {}),
       warning: creditOverflow.length
         ? `${creditOverflow.length} credit document(s) exceeded the ${CREDIT_DOC_GUARD}-document read guard and were NOT included: ${creditOverflow.slice(0, 6).join(", ")}.`
         : undefined,
