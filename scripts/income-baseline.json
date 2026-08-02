@@ -1,6 +1,6 @@
 {
-  "logicVersion": "2026-08-01-va-benefit-deposits",
-  "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|tenanc|1007|1025|market[\\s_.-]*rent",
+  "logicVersion": "2026-08-01-veteran-attribution",
+  "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
   "files": {
     "c1097a06-8a5e-4ff2-80e8-846710dc44a8": {
       "file": "FF-202606-4509",
@@ -11,8 +11,10 @@
         "16b557d0-863b-4c2f-94d5-3b391acb0c79|Tax returns — last 2 years — additional",
         "30fc365e-fdc3-4a5e-85bd-361e7445dabb|Tax returns — last 2 years",
         "392e443e-408f-400a-9af3-168a8d4e1713|W-2s — last 2 years",
+        "3ac9379e-e46b-4bf3-aa57-9ae2a21e7a70|Paul VA COE",
         "3bb39038-98a7-4041-b88e-f8db0be85ce8|Recent pay stub",
         "419545e0-b35f-46b1-bbb9-6859179d4c8a|Bank statements — last 2 months — additional",
+        "477e0ab9-6133-46ed-931f-dcb1054d95f5|Paul DD214",
         "59e7e042-c497-4941-ab45-48b16c18da6e|2023 Tax return",
         "9908236e-6cd9-4a1c-bbe5-4ff08f2dfc7e|Pay stubs — last 30 days — additional",
         "9e8f738d-a932-49c0-a95a-c15998347376|Bank statements — last 2 months",
@@ -21,7 +23,7 @@
         "c475266d-6aac-42a3-b13e-fe7d80d97589|Bank statements — last 2 months — additional",
         "e434345f-0062-4761-bb7d-e29f1c4627af|Pay stubs — last 30 days — additional"
       ],
-      "cachedIncome": 7457
+      "cachedIncome": 13580
     },
     "6cd60248-6525-4fe6-a36b-e82541585271": {
       "file": "FF-202606-5978",

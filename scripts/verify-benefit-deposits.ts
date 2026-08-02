@@ -9,7 +9,7 @@
 // Runs with ZERO API calls. The reading is the model's job; this locks down what the code does
 // with what it read, which is where the money was actually being lost.
 import { toDocFacts } from "@/lib/income/readDocument";
-import { computeQualifyingIncome } from "@/lib/income/docFacts";
+import { computeQualifyingIncome, assignBorrowers } from "@/lib/income/docFacts";
 
 let fail = 0;
 const ck = (n: string, c: boolean, d = "") => { if (!c) fail++; console.log(`${c ? "PASS" : "FAIL"}  ${n}${d ? `  ${d}` : ""}`); };
@@ -67,6 +67,41 @@ ck("military PAY never becomes a benefit stream", !mil.some((f: any) => f.income
 const plain = toDocFacts({ ...read, bankStatement: { ...read.bankStatement, months: [
   { periodStart: "2026-05-01", periodEnd: "2026-05-31", totalDeposits: 9000, benefitDeposits: [] }] } } as any);
 ck("no benefits => one plain bank-statement fact", plain.length === 1 && plain[0].docType === "bank_statement", `${plain.length} facts`);
+
+// ── VETERAN ATTRIBUTION. VA compensation is the veteran's, even when the deposit lands in a
+//    joint account whose descriptor names the program and not the payee.
+const joint = toDocFacts(read).map((f: any) => ({ ...f, personName: "PAUL L DAVIS OR JAZMINE N WILSON" }));
+const withVet = [
+  ...joint,
+  { file: "PLDd214.pdf", docType: "dd214", borrower: 1, personName: "DAVIS PAUL LARON", isVeteran: true } as any,
+  { file: "download_coe.pdf", docType: "va_coe", borrower: 1, personName: "PAUL LAROI DAVIS", vaFundingFeeExempt: true } as any,
+];
+const assigned = assignBorrowers(withVet as any, { primary: ["Jazmine Wilson"], co: ["Paul L Davis"] });
+const vaFact = assigned.find((f: any) => f.benefitType === "va_disability");
+const vetFact = assigned.find((f: any) => f.docType === "dd214");
+ck("VA compensation follows the veteran, not the joint account default",
+   !!vaFact && !!vetFact && vaFact.borrower === vetFact.borrower, `VA=B${vaFact?.borrower} DD214=B${vetFact?.borrower}`);
+
+// Two veterans on one loan: nothing to infer, so the rule must NOT fire. The correct
+// comparison is against what assignBorrowers does on its OWN — not against the raw
+// pre-assignment default, which is a different thing entirely.
+// Controlled: BOTH runs carry the same documents and the same names, so the ONLY variable is
+// whether those two documents are VA status docs. Comparing against a run with fewer names
+// would just be measuring assignBorrowers' own fallback, not this rule.
+const roster2 = { primary: ["A One"], co: ["B Two"] };
+const control = assignBorrowers([
+  ...joint.map((f: any) => ({ ...f })),
+  { file: "d1", docType: "other", borrower: 1, personName: "A ONE" } as any,
+  { file: "d2", docType: "other", borrower: 2, personName: "B TWO" } as any,
+] as any, roster2);
+const twoVets = assignBorrowers([
+  ...joint.map((f: any) => ({ ...f })),
+  { file: "d1", docType: "dd214", borrower: 1, personName: "A ONE" } as any,
+  { file: "d2", docType: "dd214", borrower: 2, personName: "B TWO" } as any,
+] as any, roster2);
+const plainVaBorrower = control.find((f: any) => f.benefitType === "va_disability")!.borrower;
+const twoV = twoVets.find((f: any) => f.benefitType === "va_disability")!.borrower;
+ck("two veterans on one loan => the rule does not fire", twoV === plainVaBorrower, `two-vets B${twoV} vs normal B${plainVaBorrower}`);
 
 console.log(fail ? `\n${fail} FAILED` : "\nall passed");
 process.exit(fail ? 1 : 0);

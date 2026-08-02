@@ -155,6 +155,12 @@ export function makeBorrowerResolver(roster: { primary: string[]; co: string[] }
 
 // Returns a NEW facts array with borrower reassigned deterministically. `roster.primary` =
 // the named applicant(s) (borrower 1), `roster.co` = detected co-borrower name(s) (borrower 2).
+// Status documents. They prove a veteran is on the file but carry no dollar figure, so they
+// must NEVER pull a borrower into the income calculation on their own — a file holding only
+// a DD-214 has no documented income, and treating it as an income doc would qualify someone
+// on nothing. They are read for the flags below, not for math.
+const VA_STATUS_DOCS = new Set<DocType>(["dd214", "va_coe"]);
+
 export function assignBorrowers(facts: DocFact[], roster: { primary: string[]; co: string[] }): DocFact[] {
   const list = (facts || []).filter(Boolean);
   if (!list.length) return list;
@@ -208,6 +214,28 @@ export function assignBorrowers(facts: DocFact[], roster: { primary: string[]; c
     const s = ssn4(f); if (s.length !== 4) continue;
     if (borrowerOfName(f.personName) !== 0) continue;                          // don't override a confident name match
     const anchor = anchoredBySsn.get(s); if (anchor) f.borrower = anchor;      // a fallback doc joins its named same-SSN sibling
+  }
+
+  // VETERAN ATTRIBUTION. VA disability compensation is paid to the VETERAN — always. When it is
+  // documented by a deposit into a JOINT account ("PAUL L DAVIS OR JAZMINE N WILSON"), the
+  // descriptor names the program, never the payee, so name-matching cannot resolve it and it
+  // falls to borrower 1 by default.
+  //
+  // On the Wilson file (2026-08-01) that put Paul's $6,123/mo of VA compensation on Jazmine's
+  // line. The dollar TOTAL was unaffected, but on a VA loan the veteran's identity is the whole
+  // file — entitlement, the funding-fee exemption, whose COE it is — and the 1003 was wrong.
+  //
+  // The DD-214 and the COE exist precisely to say who the veteran is, so when exactly ONE
+  // borrower has that evidence, VA compensation moves to them. Exactly one: with a DD-214 on
+  // each borrower (both served) there is nothing to infer, and guessing would be worse than the
+  // default.
+  const vetBorrowers = new Set(out.filter((f) => VA_STATUS_DOCS.has(f.docType)).map((f) => f.borrower));
+  if (vetBorrowers.size === 1) {
+    const veteran = [...vetBorrowers][0];
+    for (const f of out) {
+      const isVaComp = f.docType === "va_award" || (f.benefitType || "").toLowerCase() === "va_disability";
+      if (isVaComp) f.borrower = veteran;
+    }
   }
   return out;
 }
@@ -289,11 +317,6 @@ const SE_DOCS = new Set<DocType>(["schedule_c", "1099nec", "1099misc"]);
 const BENEFIT_DOCS = new Set<DocType>(["ssa_award", "pension", "disability", "va_award"]);
 // Docs that make a person a real borrower (a lone joint 1040 does NOT).
 const INDIVIDUAL_DOCS = new Set<DocType>(["paystub", "w2", "wage_income_transcript", "voe", "1099nec", "1099misc", "schedule_c", "ssa_award", "pension", "disability", "va_award", "military_les"]);
-// Status documents. They prove a veteran is on the file but carry no dollar figure, so they
-// must NEVER pull a borrower into the income calculation on their own — a file holding only
-// a DD-214 has no documented income, and treating it as an income doc would qualify someone
-// on nothing. They are read for the flags below, not for math.
-const VA_STATUS_DOCS = new Set<DocType>(["dd214", "va_coe"]);
 
 export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "conventional" | "fha" }): QualifyResult {
   const grossUp = opts.loanType === "fha" ? 1.15 : 1.25;
