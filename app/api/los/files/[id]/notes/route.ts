@@ -19,7 +19,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   try {
     const raw = await getSetting(keyFor(id));
-    if (!raw) return NextResponse.json({ ok: true, notes: "", updated_at: null });
+    if (!raw) return NextResponse.json({ ok: true, notes: "", updated_at: null});
     try {
       const j = JSON.parse(raw);
       return NextResponse.json({ ok: true, notes: String(j?.notes ?? ""), updated_at: j?.updated_at ?? null });
@@ -40,6 +40,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const body = await req.json().catch(() => ({} as any));
     if (typeof body?.notes !== "string") return NextResponse.json({ error: "notes must be a string" }, { status: 400 });
+    // Tell them. A long file history can reach 20k, and silently deleting the tail of an LO's
+    // own writing — with a 200 OK — is the same shape as the credit document that vanished.
+    const truncated = body.notes.length > MAX;
     const notes = body.notes.slice(0, MAX);
     const updated_at = new Date().toISOString();
 
@@ -58,7 +61,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         actor: "lo", action: "file.note_saved", detail: { chars: notes.length },
       }).catch(() => {});
     }
-    return NextResponse.json({ ok: true, updated_at });
+    return NextResponse.json({
+      ok: true,
+      updated_at,
+      truncated,
+      ...(truncated
+        ? { warning: `Your note exceeded the ${MAX.toLocaleString()}-character limit — everything past that was NOT saved. Shorten it or move older history elsewhere.` }
+        : {}),
+    });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }

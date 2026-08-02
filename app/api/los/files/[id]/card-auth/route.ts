@@ -163,7 +163,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Create / update a request (sets the blanket amount for this loan transaction).
-    const amount = Math.max(0, Math.round(Number(body?.amount) || 0));
+    // `Number(x) || 0` on a blank field yields 0, and 0 used to render the authorization as
+    // UNCAPPED ("the amounts shown to me") while the LOS displayed "blanket up to $0". An
+    // authorization with no ceiling must never be issuable by leaving a box empty.
+    const rawAmount = Number(body?.amount);
+    const amount = Number.isFinite(rawAmount) ? Math.max(0, Math.round(rawAmount)) : 0;
+    if (!(amount > 0)) {
+      return NextResponse.json({
+        error: "Enter the blanket amount (the maximum this borrower's card may be charged for this loan). A card authorization cannot be sent without a dollar ceiling.",
+      }, { status: 400 });
+    }
     const names = borrowerNames(lead, loanFile);
     const existing = auths[key];
     const scope = String(body?.scope || "Blanket — all fees for this loan transaction").slice(0, 200);

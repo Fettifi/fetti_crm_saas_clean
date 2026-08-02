@@ -91,7 +91,18 @@ export function purgeExpiredCvv(a?: CardAuth): CardAuth | undefined {
 
 // The blanket authorization language the borrower e-signs.
 export function blanketAuthText(fileNumber: string | undefined, amount: number): string {
-  const amt = amount > 0 ? `$${Math.round(amount).toLocaleString()}` : "the amounts shown to me";
+  // A blanket card authorization MUST carry a dollar ceiling. This used to fall back to "the
+  // amounts shown to me" whenever amount was 0 — and amount became 0 whenever the LO left the
+  // box blank, because the panel and the route both did `Number(...) || 0`. The result: the LOS
+  // showed "blanket up to $0" while the document the borrower actually e-signed authorized
+  // charges with NO CEILING, revocable only in writing, against a PAN we store encrypted.
+  //
+  // Refusing here rather than defaulting is deliberate: this text is the signed instrument, and
+  // there is no safe uncapped version of it. Callers must supply a real amount.
+  if (!(amount > 0)) {
+    throw new Error("blanketAuthText: a blanket card authorization requires a dollar ceiling — refusing to generate uncapped language.");
+  }
+  const amt = `$${Math.round(amount).toLocaleString()}`;
   return `I authorize ${BRAND.company} (NMLS #${BRAND.nmls}) to charge the credit/debit card I have provided for fees incurred in connection with my loan application${fileNumber ? ` (File ${fileNumber})` : ""} — including, but not limited to, the credit report fee, appraisal fee, and other third-party charges related to this loan transaction — up to a total of ${amt}. This is a BLANKET authorization that remains in effect for the duration of this loan transaction unless I revoke it in writing. I certify that I am the cardholder or am authorized to use this card.`;
 }
 

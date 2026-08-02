@@ -144,7 +144,11 @@ export async function getAccessToken(force = false): Promise<TokenResult> {
 
   if (!force) {
     const cached = await getSetting("OB_TOKEN");
-    const exp = Number(await getSetting("OB_TOKEN_EXP")) || 0;
+    // Unset/garbage -> 0 -> the freshness test below is false -> we refetch. That is the SAFE
+    // direction (a stale token is never reused), stated explicitly so the Number(cfg())->0
+    // detector can tell this apart from the class of bug where 0 means "no limit".
+    const expRaw = Number(await getSetting("OB_TOKEN_EXP"));
+    const exp = Number.isFinite(expRaw) ? expRaw : 0;
     if (cached && exp - Date.now() > 60000) {
       return { token: cached, ttlSec: Math.round((exp - Date.now()) / 1000), roles: decodeRoles(cached) };
     }
