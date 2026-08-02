@@ -83,6 +83,53 @@ for (const [file, what] of CHOKEPOINTS) {
 }
 
 // ─── 1. OVER-MATCH against LIVE data — the direction that costs money ──────────
+// ─── 4. FUNCTIONAL: the real sender actually refuses, proven against a CONTROL ──
+// A grep proves the line exists. This proves it STOPS a delivery.
+//
+// The first version of this check blanked every credential and asserted "sent nothing".
+// It passed with the guard deliberately disabled — with no channels configured there is
+// nothing to send either way, so it measured nothing at all. That is the same shape as
+// the bug this whole file exists for: a check that is green because it is inert.
+//
+// So the harness aims a REAL channel at a local listener and runs two leads through it:
+//   control   (normal email + source) → MUST arrive, or the harness itself is broken
+//   synthetic (probe email + source)  → MUST NOT arrive
+// The control is the load-bearing half. Without it, "nothing arrived" is unfalsifiable.
+async function functionalCheck() {
+  const http = await import("http");
+  const hits: string[] = [];
+  const server = http.createServer((req, res) => {
+    let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => { hits.push(b); res.writeHead(200).end("ok"); });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as any).port;
+
+  // Webhook is the only live channel; email/SMS stay off so a broken guard can never
+  // reach a real inbox or phone from a verification run.
+  for (const k of ["RESEND_API_KEY", "RESEND_ADMIN_KEY", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM"]) delete process.env[k];
+  process.env.LEAD_NOTIFY_WEBHOOK = `http://127.0.0.1:${port}/hook`;
+
+  try {
+    const { notifyNewLead } = await import("../lib/notify/leadAlert");
+    // Tier 3 on both: Tier 1 would take the hot-lead voice-page branch, which reads the
+    // database for a lead id that does not exist. Irrelevant to what is being measured.
+    const base = { full_name: "Guard Probe", phone: null, tier: "Tier 3", score: 10, loan_purpose: "purchase" };
+
+    const before = hits.length;
+    await notifyNewLead({ ...base, lead_id: "verify-control", email: "control@example.com", source: "website_apply" } as any);
+    const controlHits = hits.length - before;
+    ck("CONTROL: a normal lead DOES reach the alert channel", controlHits === 1,
+      controlHits === 1 ? "harness proven live" : `got ${controlHits} — harness is inert, the synthetic result below means nothing`);
+
+    const mid = hits.length;
+    await notifyNewLead({ ...base, lead_id: "verify-probe", email: "autopilot+probe@fetti-internal.test", source: "autopilot_healthcheck" } as any);
+    ck("SYNTHETIC: the probe does NOT reach the alert channel", hits.length - mid === 0, `${hits.length - mid} delivery attempt(s)`);
+  } finally {
+    delete process.env.LEAD_NOTIFY_WEBHOOK;
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+}
+
 async function liveOverMatchCheck() {
   const URL_ = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -105,7 +152,9 @@ async function liveOverMatchCheck() {
     misfires.length ? `${misfires.length} misfire(s): ${misfires.slice(0, 5).map((m) => `${m.id} <${m.email}> src=${m.source}`).join("; ")}` : `${rows.length} live leads checked`);
 }
 
-liveOverMatchCheck()
+functionalCheck()
+  .catch((e) => { fail++; console.log("FAIL  functional check threw:", e?.message || e); })
+  .then(liveOverMatchCheck)
   .catch((e) => { fail++; console.log("FAIL  live over-match check threw:", e?.message || e); })
   .then(() => {
     console.log(fail === 0 ? "\nAll synthetic-guard checks passed." : `\n${fail} check(s) FAILED.`);
