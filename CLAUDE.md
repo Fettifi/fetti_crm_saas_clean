@@ -93,6 +93,12 @@ worth an hour of Ramon's time, it is worth three lines in a test.
 This is the mechanism by which the system actually improves: the guards only ever grow, and
 they run whether or not anyone remembers why they exist.
 
+## 10. Deploy and prove it
+
+`git push origin HEAD:main`, then poll `https://app.fettifi.com/api/version` until it serves
+the new SHA. Vercel promotions can land staged — a green build is not a live deploy. Report the
+SHA you verified, not the one you pushed.
+
 ## 11. The repo remembers its own failures — `.claude/lessons.jsonl`
 
 The model does not learn between sessions. The repo does, and it does it without anyone
@@ -113,9 +119,3 @@ remembering that no guard caught:
 ```
 
 A `REPEAT` entry is the loudest signal in this repo: it means the previous fix did not hold.
-
-## 10. Deploy and prove it
-
-`git push origin HEAD:main`, then poll `https://app.fettifi.com/api/version` until it serves
-the new SHA. Vercel promotions can land staged — a green build is not a live deploy. Report the
-SHA you verified, not the one you pushed.
