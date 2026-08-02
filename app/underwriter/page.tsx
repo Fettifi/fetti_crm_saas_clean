@@ -5,7 +5,7 @@
 // drop in the TitlePro profile + county assessor printout, and get a full underwrite:
 // auto-pulled market data + AI-read title/tax + LTV/CLTV/DSCR/max-loan + fundability +
 // best wholesale lender + conditions — then create the LOS file and order title/escrow.
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, Upload, X, FileText, MapPin } from "lucide-react";
@@ -40,6 +40,10 @@ export default function UnderwritingDesk() {
   const [err, setErr] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
   const [fileBusy, setFileBusy] = useState(false);
+  // STALENESS. Editing a field after a run left the LIVE inputs sitting next to STALE server
+  // metrics in the same card, and "Create file" posted exactly that mix — live input, stale
+  // result — into a real loan file. The numbers a lender sees have to describe the same deal.
+  const [ranSig, setRanSig] = useState("");
 
   const box = LOAN_BOX[f.loanType as DeskLoanType] || LOAN_BOX.dscr;
   // A "2nd Position / HELOC" loan type IS a junior lien — treat it as 2nd position even if
@@ -69,6 +73,11 @@ export default function UnderwritingDesk() {
     if (fileRef.current) fileRef.current.value = "";
   }
 
+  // Snapshot on the commit that delivers a result, so the web-pull backfill applied in the same
+  // batch is already included — otherwise every successful run would mark itself stale instantly.
+  useEffect(() => { if (result) setRanSig(JSON.stringify(input)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [result]);
+  const stale = !!result && !!ranSig && ranSig !== JSON.stringify(input);
+
   async function runUnderwrite() {
     // Value is optional now — the Desk auto-pulls it from the address when left blank.
     if (!input.loanAmount) { setErr("Enter a loan amount to underwrite (value auto-pulls from the address)."); return; }
@@ -93,6 +102,7 @@ export default function UnderwritingDesk() {
 
   async function downloadPdf() {
     if (!result) return;
+    if (stale) { setErr("Inputs changed since this underwrite — re-run before exporting the PDF."); return; }
     setPdfBusy(true);
     try {
       const r = await fetch("/api/underwriter-desk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "pdf", result }) });
@@ -103,6 +113,9 @@ export default function UnderwritingDesk() {
   }
 
   async function createFile() {
+    // Belt and braces: the button is disabled when stale, but a loan file is the point of no
+    // return here — it goes to a wholesale lender — so the guard lives in the function too.
+    if (stale) { setErr("Inputs changed since this underwrite — re-run before creating the file."); return; }
     setFileBusy(true); setErr("");
     try {
       const r = await fetch("/api/underwriter-desk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create-file", input, result, docs }) });
@@ -231,7 +244,7 @@ export default function UnderwritingDesk() {
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={downloadPdf} disabled={pdfBusy} className="text-xs font-semibold bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg">{pdfBusy ? "…" : "⬇ Underwriting PDF"}</button>
-                <button onClick={createFile} disabled={fileBusy} className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg text-white">{fileBusy ? "Creating…" : "📂 Create file & order title →"}</button>
+                <button onClick={createFile} disabled={fileBusy || stale} title={stale ? "Re-run the underwrite first — the inputs have changed." : ""} className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3 py-1.5 rounded-lg text-white">{fileBusy ? "Creating…" : "📂 Create file & order title →"}</button>
               </div>
             </div>
             {uw.summary && <p className="text-sm text-slate-200 mt-3 leading-relaxed">{uw.summary}</p>}
@@ -242,6 +255,11 @@ export default function UnderwritingDesk() {
           {/* Metrics */}
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
             <div className="text-xs uppercase tracking-wide text-slate-500 mb-3">Computed metrics</div>
+            {stale && (
+              <div className="mb-3 text-[11px] rounded-lg px-3 py-2 bg-amber-500/10 text-amber-300">
+                Inputs have changed since this underwrite ran — these metrics describe the PREVIOUS numbers. Re-run to update. Create-file and PDF are disabled until you do.
+              </div>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <Metric label="Loan" value={money(input.loanAmount)} />
               <Metric label="Value" value={money(input.asIsValue)} />
