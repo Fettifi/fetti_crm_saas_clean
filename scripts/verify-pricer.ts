@@ -13,6 +13,7 @@
 //
 //   npx tsx scripts/verify-pricer.ts
 import { estimateClosingCosts, lineKey } from "../lib/closingCosts";
+import type { ClosingCostInput, LoanType, Purpose } from "../lib/closingCosts";
 
 let failures = 0;
 const fail = (m: string) => { console.error(`  FAIL  ${m}`); failures++; };
@@ -21,19 +22,23 @@ const ok = (m: string) => console.log(`  ok    ${m}`);
 // A deliberately WIDE sweep. Key collisions are label-shaped, so they appear only on the
 // scenario that happens to emit both labels — a narrow test would pass and production would throw.
 const STATES = ["CA", "FL", "MI", "TX", "NY", "IL", "AZ", "GA", "PA", "WA"];
-const TYPES = ["conventional", "fha", "va", "usda", "dscr", "hardmoney", "nonqm"];
-const scenarios: any[] = [];
+const TYPES: LoanType[] = ["conventional", "fha", "va", "usda", "dscr", "bank_statement", "bridge"];
+const PURPOSES: Purpose[] = ["purchase", "refi", "cashout"];
+const FIPS: Record<string, string> = { CA: "06037", IL: "17031", NY: "36061", FL: "12086" };
+const scenarios: ClosingCostInput[] = [];
 for (const state of STATES) {
   for (const loanType of TYPES) {
-    for (const purpose of ["purchase", "refinance"]) {
+    for (const purpose of PURPOSES) {
       for (const escrowWaived of [false, true]) {
-        for (const financeGovFee of [true, false]) {
+        for (const ownersTitle of [false, true]) {
           scenarios.push({
-            state, loanType, purpose, escrowWaived, financeGovFee,
+            state, loanType, purpose, escrowWaived, ownersTitle,
+            countyFips: FIPS[state] || null,
+            countyName: state === "CA" ? "Los Angeles" : null,
             price: 450000, loanAmount: purpose === "purchase" ? 360000 : 300000,
-            rate: 6.875, originationPct: 1.25, pointsPct: 0.5,
+            ratePct: 6.875, taxRatePct: 1.15, insAnnual: 1800,
+            originationPct: 1.25, pointsPct: 0.5, closingDay: 15,
             sellerCredit: 0, lenderCredit: 0,
-            countyName: state === "CA" ? "Los Angeles" : undefined,
           });
         }
       }
@@ -68,8 +73,12 @@ if (!failures) ok(`${scenarios.length} scenarios, ${lineCount} lines, ${allKeys.
 // This is the check that would have caught a UI-only override. For each line on a real scenario:
 // set a manual figure, then assert the SECTION TOTAL and CASH TO CLOSE both moved by exactly the
 // delta. An override that stops at the row is the "looks like it works" failure.
-const base = { state: "CA", countyName: "Los Angeles", loanType: "conventional", purpose: "purchase",
-  price: 450000, loanAmount: 360000, rate: 6.875, originationPct: 1.25, pointsPct: 0.5 };
+const base: ClosingCostInput = {
+  state: "CA", countyFips: "06037", countyName: "Los Angeles",
+  loanType: "conventional", purpose: "purchase",
+  price: 450000, loanAmount: 360000, ratePct: 6.875, taxRatePct: 1.15, insAnnual: 1800,
+  originationPct: 1.25, pointsPct: 0.5, closingDay: 15, ownersTitle: true,
+};
 const b = estimateClosingCosts(base as any);
 let moved = 0;
 for (const sec of b.sections) {
@@ -123,7 +132,7 @@ if (!ghost.meta.unappliedOverrides.includes("title_lenders_policy_on_mars")) {
 // ── 7. Keys must be STABLE across a recompute ──────────────────────────────────────────────────
 // The whole promise is "type it once." If the key moves when the rate or price changes, the
 // override silently detaches on the next keystroke.
-const shifted = estimateClosingCosts({ ...base, rate: 7.5, price: 610000, loanAmount: 488000, originationPct: 2 } as any);
+const shifted = estimateClosingCosts({ ...base, ratePct: 7.5, price: 610000, loanAmount: 488000, originationPct: 2, pointsPct: 1.75, closingDay: 27 });
 const bKeys = new Set(b.sections.flatMap((s) => s.lines).map((l) => l.key));
 const drifted = shifted.sections.flatMap((s) => s.lines).map((l) => l.key).filter((k) => !bKeys.has(k));
 if (drifted.length) fail(`keys drifted when rate/price/points changed: ${drifted.join(", ")} — overrides would silently detach`);
