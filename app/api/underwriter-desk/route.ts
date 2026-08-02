@@ -276,8 +276,14 @@ export async function POST(req: NextRequest) {
     // address alone still underwrites. The LO's typed numbers ALWAYS win when present.
     const effAsIs = input.asIsValue || Number(webPull?.estimatedValue) || Number(webPull?.lastSalePrice) || 0;
     const valueSource = input.asIsValue ? "entered" : (webPull?.estimatedValue ? `web:${webPull.valueBasis || "estimate"}` : webPull?.lastSalePrice ? "web:recent sale" : "none");
-    const effRent = input.monthlyRent || Number(webPull?.estimatedRent) || undefined;
-    const rentSource = input.monthlyRent ? "entered" : (webPull?.estimatedRent ? "web:Rent Zestimate" : "none");
+    // $0 IS A REAL ANSWER — it means the LO is telling us the unit is VACANT. A falsy check
+    // discards that statement and substitutes a Rent Zestimate, so the Desk returns a DSCR built
+    // on rent the property does not collect, and that number goes into a loan file and out to a
+    // wholesale lender. Same shape as the $0-override rule in the pricer: test for "entered",
+    // never for "truthy".
+    const rentEntered = input.monthlyRent != null && Number.isFinite(Number(input.monthlyRent)) && Number(input.monthlyRent) >= 0;
+    const effRent = rentEntered ? Number(input.monthlyRent) : (Number(webPull?.estimatedRent) || undefined);
+    const rentSource = rentEntered ? "entered" : (webPull?.estimatedRent ? "web:Rent Zestimate" : "none");
     if (!effAsIs) return NextResponse.json({ error: "Couldn't find a value for this address online — enter an as-is value / purchase price.", webPull }, { status: 422 });
 
     // 6) Deterministic metrics (value/rent may be web-backfilled; tax/ins from ZIP resolver).

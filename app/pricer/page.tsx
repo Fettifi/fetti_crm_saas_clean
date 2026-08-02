@@ -97,7 +97,11 @@ export default function PricerPage() {
   // Effective tax/insurance rate: an exact annual override (converted to a rate on
   // the same basis estimatePITIA uses) wins; else the ZIP-resolved rate; else the
   // engine's state-table fallback.
-  const taxBasis = num(price) || num(value) || 0;
+  // THE BASIS MUST BE WHAT THE ENGINE TAXES. estimatePITIA taxes the property VALUE on a refi
+  // and the PRICE on a purchase, so converting the LO's exact annual tax bill to a rate against
+  // `price` on a refinance divides the real bill by a stale purchase figure — the override is
+  // accepted, silently mis-scaled, and the borrower is quoted a tax payment nobody entered.
+  const taxBasis = (isRefi ? num(value) : num(price)) || num(price) || num(value) || 0;
   const insBasis = num(value) || num(price) || 0;
   const taxOver = num(taxOverride) > 0 && taxBasis > 0;
   const insOver = num(insOverride) > 0 && insBasis > 0;
