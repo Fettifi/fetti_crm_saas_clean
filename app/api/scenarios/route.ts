@@ -11,6 +11,7 @@ import {
   computeCltv,
   computeDscr,
   computePitia,
+  settleDerived,
 } from "@/lib/scenario";
 import type { Scenario } from "@/lib/scenario";
 import {
@@ -65,17 +66,17 @@ export async function POST(req: NextRequest) {
     if ("loan_file_id" in b) base.loan_file_id = b.loan_file_id || null;
     if (b.status) base.status = b.status;
 
-    // Recompute derived ratios when not explicitly provided.
-    if (base.ltv == null) base.ltv = computeLtv(base);
-    // CLTV is RE-derived whenever a first-lien balance is present, not just when blank: the
-    // balance and the loan amount both move while an LO works a second, and a stale hand-typed
-    // CLTV is worse than none. An explicit CLTV with no first lien behind it is left alone.
-    { const c = computeCltv(base); if (c != null) base.cltv = c; }
-    // PITIA and DSCR are RE-derived whenever their inputs exist, not just when blank — the
-    // components move while an LO works the deal and a stale hand-typed total is worse than
-    // none (same rule as CLTV above).
-    { const p = computePitia(base); if (p != null) base.monthly_piti = p; }
-    { const d = computeDscr(base); if (d != null) base.dscr = d; else if (base.dscr == null) base.dscr = null; }
+    // ── DERIVED RATIOS ────────────────────────────────────────────────────────────────────────
+    // A derived number must not outlive the inputs that produced it. Clearing the rent used to
+    // leave the OLD DSCR on the scenario — and on the wholesaler PDF — describing a deal whose
+    // inputs are gone. Re-deriving "when the inputs exist" is not enough: the failure case is
+    // exactly when they DON'T.
+    //
+    // The hard part is that the editor echoes every field back on save, so an incoming value is
+    // ambiguous — it may be the LO's own figure or our own previous output. `derived` records what
+    // we produced, which resolves it: matches what we last derived -> ours (clear it when its
+    // inputs go); differs -> the LO typed it (leave it alone, and stop calling it derived).
+    settleDerived(base, (existing as any)?.derived);
 
     const scenario = await saveScenario(base);
 

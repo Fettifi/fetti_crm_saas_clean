@@ -22,6 +22,8 @@
     "verify:income-override": "npx tsx scripts/verify-income-overrides.ts",
     "verify:deal": "npx tsx scripts/verify-deal-analyzer.ts",
     "verify:underwrite": "npx tsx scripts/verify-underwrite-overrides.ts",
+    "verify:scenario": "npx tsx scripts/verify-scenario-derived.ts",
+    "verify:compare-pdf": "npx tsx scripts/verify-compare-pdf.ts",
     "verify:senior-lien": "npx tsx scripts/verify-senior-lien.ts",
     "verify:avm": "npx tsx scripts/verify-avm-provenance.ts",
     "verify:financed-fee": "npx tsx scripts/verify-financed-fee.ts",

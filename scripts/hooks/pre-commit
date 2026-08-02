@@ -28,6 +28,7 @@ WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'verify-income'
 AUTH=$(printf '%s\n' "$CHANGED" | grep -F -e 'proxy.ts' -e 'scripts/verify-auth-gate')
 # What leaves the building for a wholesale lender. An unlabelled AVM in a MISMO file is a
 # representation about a property that nobody at Fetti actually made.
+DOCS=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/scenario' -e 'app/api/scenarios' -e 'lib/comparePdf' -e 'lib/compareTypes' -e 'scripts/verify-scenario' -e 'scripts/verify-compare')
 AVM=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/mismo' -e 'lib/urla.ts' -e 'underwriter-desk' -e 'lib/underwritingDesk' -e 'scripts/verify-avm' -e 'scripts/verify-senior-lien')
 # The pricer produces a BORROWER-FACING dollar figure. Its own failure shape is already on
 # record: the PDF route accepted originationPct from the screen and never passed it to the
@@ -41,11 +42,11 @@ MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingD
 # fixed and is not.
 UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite' -e 'deal-analyzer' -e 'scripts/verify-deal-analyzer')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
-printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" "$UW" "$INCOV" "$AVM" | grep -v '^$' | sed 's/^/   touched: /'
+printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" "$UW" "$INCOV" "$AVM" "$DOCS" | grep -v '^$' | sed 's/^/   touched: /'
 echo ""
 
 FAILED=""
@@ -67,6 +68,16 @@ if [ -n "$PAYLOAD" ]; then
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:payloads"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
+fi
+
+if [ -n "$DOCS" ]; then
+  for G in verify:scenario verify:compare-pdf; do
+    printf "   %-18s " "$G"
+    OUT=$(npm run --silent "$G" 2>&1)
+    if [ $? -eq 0 ]; then echo "PASS"; else
+      echo "FAIL"; FAILED="$FAILED $G"; printf '%s\n' "$OUT" | grep -v 'Warning\|fontkit' | sed 's/^/      /'
+    fi
+  done
 fi
 
 if [ -n "$AVM" ]; then

@@ -95,6 +95,17 @@ export type Scenario = {
   exit_strategy?: string | null;   // Flip / Refinance / Hold (bridge/flip)
   seasoning_months?: number | null;
 
+  /** WHAT WE DERIVED, and what value we produced.
+   *
+   *  Without this the engine cannot tell an LO's own figure from its own stale output: the editor
+   *  echoes every field back on save, so a DSCR we computed last time is indistinguishable from
+   *  one somebody typed. That is why deleting the rent used to leave the OLD DSCR sitting on the
+   *  scenario — and on the wholesaler PDF — describing inputs that are no longer there.
+   *
+   *  Rule: if the incoming value matches what we last derived, the number is OURS, so when its
+   *  inputs disappear we clear it. If it differs, the LO typed it and we leave it alone. */
+  derived?: Record<string, number> | null;
+
   // Story / extra notes for the wholesaler
   notes?: string | null;
 
@@ -295,6 +306,42 @@ export function computePitia(s: Partial<Scenario>): number | null {
   const i = num(s.insurance_monthly) ?? 0;
   const h = num(s.hoa_monthly) ?? 0;
   return Math.round((pi + t + i + h) * 100) / 100;
+}
+
+/** SETTLE THE DERIVED RATIOS against the inputs that are actually present.
+ *
+ *  A derived number must not outlive its inputs: clearing the rent used to leave the previously
+ *  computed DSCR on the scenario — and on the PDF that goes to a wholesale lender — describing a
+ *  deal whose inputs are gone. Re-deriving "whenever the inputs exist" is not the fix, because
+ *  the failure case is exactly when they DON'T.
+ *
+ *  The hard part is that the editor echoes every field back on save, so an incoming value is
+ *  ambiguous — it may be the LO's own figure or our own previous output. `scenario.derived`
+ *  records what WE produced, which resolves it: matches what we last derived -> ours (clear it
+ *  when its inputs go); differs -> the LO typed it, leave it alone and stop claiming it.
+ *
+ *  Lives here, not in the route, so the guard exercises the SHIPPING logic instead of a
+ *  transcription of it — the rule learned twice over on the AVM and senior-lien fixes. */
+export function settleDerived<T extends Partial<Scenario>>(base: T, priorDerived?: Record<string, number> | null): T {
+  const prior = priorDerived || {};
+  const next: Record<string, number> = {};
+  const settle = (key: "ltv" | "cltv" | "monthly_piti" | "dscr", computed: number | null) => {
+    const incoming = (base as any)[key];
+    const last = prior[key];
+    // Tolerance, not equality — these are rounded on the way out and re-parsed on the way in.
+    const isOurs = incoming == null || (last != null && Math.abs(Number(incoming) - last) < 0.0051);
+    if (computed != null) { (base as any)[key] = computed; next[key] = computed; return; }
+    if (isOurs) { (base as any)[key] = null; return; }
+    // else: an LO-stated figure with no inputs behind it — kept, but no longer claimed as ours.
+  };
+  settle("ltv", computeLtv(base));
+  settle("cltv", computeCltv(base));
+  settle("monthly_piti", computePitia(base));
+  // DSCR reads the PITIA settled above, so it MUST come after it — otherwise clearing the taxes
+  // clears the payment but leaves the ratio that was built on it.
+  settle("dscr", computeDscr(base));
+  (base as any).derived = Object.keys(next).length ? next : null;
+  return base;
 }
 
 export function computeDscr(s: Partial<Scenario>): number | null {

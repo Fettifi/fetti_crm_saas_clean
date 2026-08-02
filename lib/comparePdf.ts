@@ -26,9 +26,17 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
   // any Unicode (em-dashes, bullets, curly quotes, ★) which would THROW. Normalize the
   // common ones and strip anything else to printable ASCII so the PDF never crashes.
   const safe = (s: string) => String(s ?? "")
-    .replace(/[‘’‚‛]/g, "'").replace(/[“”„]/g, '"')
-    .replace(/[–—―]/g, "-").replace(/…/g, "...")
-    .replace(/[•★☆✓✔·]/g, "*").replace(/[^\x20-\x7E]/g, "");
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E]/g, '"')
+    // EVERY dash-like character, INCLUDING U+2212 MINUS and the Unicode hyphens. The previous
+    // list stopped at en/em dash, so the final `[^\x20-\x7E]` strip DELETED a minus sign
+    // outright — turning "-$1,200" into "$1,200" on a document a borrower reads. A lender's
+    // extracted quote text is exactly where a typographic minus comes from. Losing a sign is
+    // not a formatting nit; it reverses the number.
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u00A0\u2007\u202F\u2009\u200A]/g, " ")   // non-breaking / thin spaces
+    .replace(/[\u2022\u2605\u2606\u2713\u2714\u00B7]/g, "*")
+    .replace(/[^\x20-\x7E]/g, "");
   const yAt = (size: number) => H - cur - size;
   const text = (str: string, size: number, f = font, color = SLATE, x = M) => page.drawText(safe(str), { x, y: yAt(size), size, font: f, color });
   const center = (str: string, size: number, f = font, color = SLATE) => { const s = safe(str); page.drawText(s, { x: (W - f.widthOfTextAtSize(s, size)) / 2, y: yAt(size), size, font: f, color }); };
@@ -69,53 +77,73 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
   cur += 4;
 
   // ---- Comparison table (columns = quotes) ----
-  const quotes = (c.quotes || []).slice(0, 6);
-  const N = Math.max(1, quotes.length);
-  const labelW = 120;
-  const usable = CW - labelW;
-  const colW = usable / N;
-  const fs = N <= 3 ? 9 : N === 4 ? 8 : 7.5;
-  const colX = (i: number) => M + labelW + i * colW;
+  // SIX IS A LAYOUT LIMIT, NOT A DATA LIMIT. More than six columns on a letter page is
+  // unreadable — but the previous code expressed that as `.slice(0, 6)`, so a borrower sent
+  // seven options received six and was told nothing. The grid on screen has no cap, so the LO
+  // had no way to know either. Chunk onto continuation pages instead: the constraint is real,
+  // silently dropping the borrower's options to satisfy it is not.
+  const MAX_COLS_PER_PAGE = 6;
+  const all = c.quotes || [];
+  const chunks: typeof all[] = [];
+  for (let i = 0; i < Math.max(1, all.length); i += MAX_COLS_PER_PAGE) chunks.push(all.slice(i, i + MAX_COLS_PER_PAGE));
 
-  // Only show rows at least one quote populates.
-  const rows = COMPARE_ROWS.filter((r) => quotes.some((q) => { const v = (q as any)[r.key]; return v != null && v !== ""; }));
+  chunks.forEach((quotes, ci) => {
+    const N = Math.max(1, quotes.length);
+    const labelW = 120;
+    const usable = CW - labelW;
+    const colW = usable / N;
+    const fs = N <= 3 ? 9 : N === 4 ? 8 : 7.5;
+    const colX = (i: number) => M + labelW + i * colW;
+    const offset = ci * MAX_COLS_PER_PAGE;
 
-  ensure(40 + rows.length * (fs + 9));
-  const tableTop = cur;
+    // Only show rows at least one quote ON THIS PAGE populates.
+    const rows = COMPARE_ROWS.filter((r) => quotes.some((q) => { const v = (q as any)[r.key]; return v != null && v !== ""; }));
 
-  // Header band: program / "Option N" per column, recommended in emerald.
-  const headerH = 34;
-  page.drawRectangle({ x: M, y: H - cur - headerH + 4, width: CW, height: headerH, color: HEADBG });
-  text("Loan terms", fs, bold, GREY, M + 6);
-  quotes.forEach((q, i) => {
-    const rec = !!q.recommended;
-    const head = (q.program || `Option ${i + 1}`);
-    wrap(head, bold, fs + 1, colW - 10).slice(0, 2).forEach((ln, li) =>
-      page.drawText(ln, { x: colX(i) + 6, y: H - cur - 13 - li * (fs + 2), size: fs + 1, font: bold, color: rec ? EMERALD : SLATE }));
-    if (rec) page.drawText("* Recommended", { x: colX(i) + 6, y: H - cur - 13 - 2 * (fs + 2), size: Math.max(6, fs - 2), font, color: EMERALD });
-  });
-  cur += headerH;
+    if (ci > 0) { page = doc.addPage([W, H]); cur = M; }
+    if (chunks.length > 1) {
+      // Say which options this page holds, so the set reads as one comparison rather than as
+      // unrelated sheets.
+      text(`Options ${offset + 1}\u2013${offset + quotes.length} of ${all.length}${ci > 0 ? " (continued)" : ""}`, 9, bold, GREY);
+      cur += 16;
+    }
+    ensure(40 + rows.length * (fs + 9));
+    const tableTop = cur;
 
-  // Data rows.
-  rows.forEach((r, ri) => {
-    const valLines = quotes.map((q) => wrap(cellValue(q, r.key), font, fs, colW - 10).slice(0, 3));
-    const maxLines = Math.max(1, ...valLines.map((a) => a.length));
-    const rh = 7 + maxLines * (fs + 3);
-    if (ri % 2) page.drawRectangle({ x: M, y: H - cur - rh + 4, width: CW, height: rh, color: LIGHT });
-    page.drawText(safe(r.label), { x: M + 6, y: H - cur - 12, size: fs, font, color: GREY });
+    // Header band: program / "Option N" per column, recommended in emerald.
+    const headerH = 34;
+    page.drawRectangle({ x: M, y: H - cur - headerH + 4, width: CW, height: headerH, color: HEADBG });
+    text("Loan terms", fs, bold, GREY, M + 6);
     quotes.forEach((q, i) => {
-      const recCol = !!q.recommended;
-      valLines[i].forEach((ln, li) =>
-        page.drawText(ln, { x: colX(i) + 6, y: H - cur - 12 - li * (fs + 3), size: fs, font: bold, color: recCol ? EMERALD : SLATE }));
+      const rec = !!q.recommended;
+      // Numbering continues across pages — "Option 1" appearing twice would read as a duplicate.
+      const head = (q.program || `Option ${offset + i + 1}`);
+      wrap(head, bold, fs + 1, colW - 10).slice(0, 2).forEach((ln, li) =>
+        page.drawText(ln, { x: colX(i) + 6, y: H - cur - 13 - li * (fs + 2), size: fs + 1, font: bold, color: rec ? EMERALD : SLATE }));
+      if (rec) page.drawText("* Recommended", { x: colX(i) + 6, y: H - cur - 13 - 2 * (fs + 2), size: Math.max(6, fs - 2), font, color: EMERALD });
     });
-    cur += rh;
-  });
+    cur += headerH;
 
-  // Borders + column separators.
-  page.drawRectangle({ x: M, y: H - cur + 4, width: CW, height: cur - tableTop, borderColor: BORDER, borderWidth: 1, color: undefined });
-  page.drawLine({ start: { x: M + labelW, y: H - tableTop }, end: { x: M + labelW, y: H - cur + 4 }, thickness: 0.5, color: BORDER });
-  for (let i = 1; i < N; i++) page.drawLine({ start: { x: colX(i), y: H - tableTop }, end: { x: colX(i), y: H - cur + 4 }, thickness: 0.5, color: BORDER });
-  cur += 18;
+    // Data rows.
+    rows.forEach((r, ri) => {
+      const valLines = quotes.map((q) => wrap(cellValue(q, r.key), font, fs, colW - 10).slice(0, 3));
+      const maxLines = Math.max(1, ...valLines.map((a) => a.length));
+      const rh = 7 + maxLines * (fs + 3);
+      if (ri % 2) page.drawRectangle({ x: M, y: H - cur - rh + 4, width: CW, height: rh, color: LIGHT });
+      page.drawText(safe(r.label), { x: M + 6, y: H - cur - 12, size: fs, font, color: GREY });
+      quotes.forEach((q, i) => {
+        const recCol = !!q.recommended;
+        valLines[i].forEach((ln, li) =>
+          page.drawText(ln, { x: colX(i) + 6, y: H - cur - 12 - li * (fs + 3), size: fs, font: bold, color: recCol ? EMERALD : SLATE }));
+      });
+      cur += rh;
+    });
+
+    // Borders + column separators.
+    page.drawRectangle({ x: M, y: H - cur + 4, width: CW, height: cur - tableTop, borderColor: BORDER, borderWidth: 1, color: undefined });
+    page.drawLine({ start: { x: M + labelW, y: H - tableTop }, end: { x: M + labelW, y: H - cur + 4 }, thickness: 0.5, color: BORDER });
+    for (let i = 1; i < N; i++) page.drawLine({ start: { x: colX(i), y: H - tableTop }, end: { x: colX(i), y: H - cur + 4 }, thickness: 0.5, color: BORDER });
+    cur += 18;
+  });
 
   // ---- Footer ----
   ensure(54);
