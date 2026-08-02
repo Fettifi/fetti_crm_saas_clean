@@ -16,6 +16,7 @@ import { magicApplyLink } from "@/lib/magicLink";
 import { cfg } from "@/lib/settings";
 import { markReplyViolates } from "@/lib/markCompliance";
 import { sendMetaLeadEvent } from "@/lib/metaCapi";
+import { isSyntheticLead, syntheticReason } from "@/lib/synthetic";
 import { advanceLeadStage } from "@/lib/leadStage";
 import { applyQualification } from "@/lib/qualify";
 
@@ -30,6 +31,26 @@ export type PipelineOpts = {
 };
 
 export async function runNewLeadPipeline(newLead: any, opts: PipelineOpts = {}): Promise<void> {
+  // CHOKEPOINT 1 — a health-sweep probe is not a customer. It has already done the
+  // only job it has (proved /api/apply accepts a lead, through the real route: shield,
+  // scoring, dedupe, DB write, 201). Everything past this line reaches the outside
+  // world — a real email, a page to Ramon, a Meta conversion, four paid agent runs —
+  // and none of it is undone by deleting the test row afterward. See lib/synthetic.ts.
+  if (isSyntheticLead(newLead)) {
+    const reason = syntheticReason(newLead);
+    console.log(`[leadPipeline] synthetic lead ${newLead?.id} — no outbound side effects (${reason})`);
+    // Log it so the skip is VISIBLE. A silent guard is indistinguishable from a guard
+    // that never runs, and that is exactly how the original bug hid for six weeks.
+    try {
+      await logActivity({
+        entity_type: "lead", entity_id: newLead.id, lead_id: newLead.id, actor: "system",
+        action: "lead.synthetic_skipped",
+        detail: { reason, source: newLead?.source || null, skipped: ["first_touch", "owner_alert", "meta_capi", "agents"] },
+      });
+    } catch { /* best-effort */ }
+    return;
+  }
+
   const full_name = newLead.full_name || null;
   const email = newLead.email || null;
   const phone = newLead.phone || null;

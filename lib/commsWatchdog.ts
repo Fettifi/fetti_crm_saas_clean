@@ -16,6 +16,7 @@ import { magicApplyLink } from "@/lib/magicLink";
 import { cfg, getSetting, setSetting } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
 import { getMessages } from "@/lib/phoneMessages";
+import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 const GRACE_MS = 10 * 60000;        // give the real-time path 10 minutes before stepping in
@@ -53,7 +54,7 @@ async function pageOwner(text: string) {
 }
 
 export async function runCommsWatchdog(): Promise<{ answered: number; firstTouched: number; paged: number }> {
-  let answered = 0, firstTouched = 0, paged = 0, deferred = 0;
+  let answered = 0, firstTouched = 0, paged = 0, deferred = 0, heldQuiet = 0, suppressed = 0;
   const since = new Date(Date.now() - LOOKBACK_MS).toISOString();
 
   // ---------- 1) Unanswered inbound SMS ----------
@@ -96,6 +97,18 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
         const appLink = /application|processing|underwriting|approved|clear|closed|won|funded|dead|lost/.test(stage) ? null : magicApplyLink(lead as any);
         const calendlyUrl = (await cfg("CALENDLY_URL")) || null;
         const r = await markConciergeReply({ lead, history, fileLink, appLink, firstAiReply: firstAi, calendlyUrl, missingDocs, knownFacts, expertise: expertiseFor(lead, history[history.length - 1]?.content || "") });
+        // A DELIBERATE HOLD IS NOT A FAILURE. The quiet-hours case below already says this
+        // ("paging Ramon at 1am about a deferral we chose would turn a compliance guard into an
+        // alert-fatigue machine") — and the same is true of the master pause, a governor denial
+        // and the converted-client rule. It was never generalised, so with automation paused
+        // this leg paged Ramon EVERY 15 MINUTES about Charletha Osborne, who has an ACTIVE LOAN
+        // FILE. 25 pages in one day, each one the system correctly declining to send.
+        if (!r.ok && (r as any).held) {
+          heldQuiet++;
+          await logActivity({ entity_type: "lead", entity_id: leadId, lead_id: leadId, actor: "system",
+            action: "watchdog.held", detail: { reason: r.detail } }).catch(() => {});
+          continue;
+        }
         if (!r.ok || !r.reply) throw new Error(r.detail || "no reply generated");
         const s = await sendSms((lead as any).phone, r.reply, { state: (lead as any).state });
         // A quiet-hours HOLD is not a failure — the lead stays unanswered so the next run
@@ -107,6 +120,13 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
         await logActivity({ entity_type: "lead", entity_id: leadId, lead_id: leadId, actor: "agent:mark", action: "watchdog.answered", detail: { waitedMin: Math.round((Date.now() - new Date(inAt).getTime()) / 60000) } });
         answered++;
       } catch (e: any) {
+        // THROTTLE. Even a real failure must not page once per cron cycle: the condition
+        // persists until a human acts, so an un-throttled page is guaranteed to repeat forever.
+        // One page per lead per 24h — enough to be told, not enough to be trained to ignore.
+        const { data: recentPage } = await supabaseAdmin.from("activity_log")
+          .select("id").eq("lead_id", leadId).eq("action", "watchdog.paged")
+          .gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString()).limit(1);
+        if (recentPage && recentPage.length) { suppressed++; continue; }
         paged++;
         await pageOwner(`⚠️ UNANSWERED LEAD REPLY — ${(lead as any).full_name || "Unknown"} (${(lead as any).phone}) texted ${new Date(inAt).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })} PT and the AI could not respond (${e?.message}). Reply personally: ${APP_URL}/conversations`);
         await logActivity({ entity_type: "lead", entity_id: leadId, lead_id: leadId, actor: "system", action: "watchdog.paged", detail: { reason: e?.message } });
@@ -146,8 +166,27 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
           firstTouched++;
           await logActivity({ entity_type: "lead", entity_id: (l as any).id, lead_id: (l as any).id, actor: "system", action: "watchdog.first_touch", detail: { channels: res.sent } });
         } else {
-          paged++;
-          await pageOwner(`⚠️ LEAD NEVER CONTACTED — ${(l as any).full_name || "Unknown"} came in ${new Date((l as any).created_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })} PT and no channel could reach them. ${APP_URL}/leads`);
+          // res.sent is EMPTY for two completely different reasons and this treated them the
+          // same: (a) we deliberately declined — automation paused, governor denied, converted
+          // client; (b) we genuinely could not reach them. Only (b) is worth a human's phone.
+          // With automation paused, (a) is every lead, every cycle.
+          const paused = await automationPaused();
+          if (paused) {
+            heldQuiet++;
+            await logActivity({ entity_type: "lead", entity_id: (l as any).id, lead_id: (l as any).id,
+              actor: "system", action: "watchdog.held", detail: { reason: PAUSED_NOTE, leg: "first_touch" } }).catch(() => {});
+          } else {
+            const { data: recent } = await supabaseAdmin.from("activity_log")
+              .select("id").eq("lead_id", (l as any).id).eq("action", "watchdog.paged")
+              .gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString()).limit(1);
+            if (recent && recent.length) { suppressed++; }
+            else {
+              paged++;
+              await logActivity({ entity_type: "lead", entity_id: (l as any).id, lead_id: (l as any).id,
+                actor: "system", action: "watchdog.paged", detail: { leg: "first_touch" } }).catch(() => {});
+              await pageOwner(`⚠️ LEAD NEVER CONTACTED — ${(l as any).full_name || "Unknown"} came in ${new Date((l as any).created_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })} PT and no channel could reach them. ${APP_URL}/leads`);
+            }
+          }
         }
       } catch (e: any) { console.error("[watchdog] first-touch retry failed for", (l as any).id, e?.message); }
     }
@@ -207,5 +246,7 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
     }
   } catch (e) { console.error("[watchdog] confirm sweep failed:", e); }
 
-  return { answered, firstTouched, paged, deferred, calledBack, confirmCalls } as any;
+  // heldQuiet/suppressed are RETURNED, not swallowed: a silenced alert must still be
+  // countable, or quieting the noise becomes its own blind spot.
+  return { answered, firstTouched, paged, deferred, heldQuiet, suppressed, calledBack, confirmCalls } as any;
 }

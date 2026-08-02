@@ -169,18 +169,21 @@ export async function markConciergeReply(opts: {
   missingDocs?: string[];    // the file's open required docs — lets Mark answer "what's left?" precisely
   knownFacts?: string[];     // persisted conversation memory (lead.raw.concierge_facts)
   expertise?: string[];      // topic-matched teaching nuggets (expertiseFor)
-}): Promise<{ ok: boolean; reply?: string; flagged?: boolean; detail: string }> {
+  // `held` = we DELIBERATELY chose not to reply (automation paused, governor denied, nothing to
+  // answer). That is the system working, and a caller must never escalate it to a human as a
+  // failure. Only an unexpected error is a failure.
+}): Promise<{ ok: boolean; reply?: string; flagged?: boolean; held?: boolean; detail: string }> {
   // MASTER SHUTOFF. Callers all gate on `ok && reply`, so this silently declines to
   // auto-reply — the inbound message is still logged and still alerts Ramon, it just
   // doesn't get an AI answer. See lib/automationGate.ts.
-  if (await automationPaused()) return { ok: false, detail: PAUSED_NOTE };
+  if (await automationPaused()) return { ok: false, held: true, detail: PAUSED_NOTE };
   // Checked BEFORE spending a model call: if the last word in the thread is already ours,
   // the borrower has said nothing new and there is nothing to answer. That single rule is
   // what would have stopped Dawn receiving three near-identical IRS-transcript messages in
   // twelve hours without having typed a word between them.
   {
     const d = await authorizeSend({ leadId: opts.lead?.id, kind: "reply", body: "" });
-    if (!d.allow) return { ok: false, detail: `governor: ${d.reason}` };
+    if (!d.allow) return { ok: false, held: true, detail: `governor: ${d.reason}` };
   }
   try {
     const key = process.env.OPENAI_API_KEY; // optional now — Claude is primary, OpenAI is the fallback
@@ -188,7 +191,7 @@ export async function markConciergeReply(opts: {
       .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
       .slice(-14)
       .map((m) => ({ role: m.role, content: m.content.slice(0, 1200) }));
-    if (!history.length || history[history.length - 1].role !== "user") return { ok: false, detail: "no inbound to answer" };
+    if (!history.length || history[history.length - 1].role !== "user") return { ok: false, held: true, detail: "no inbound to answer" };
 
     const messages = [{ role: "system", content: systemPrompt(opts.lead, opts.fileLink, opts.firstAiReply, opts.calendlyUrl, opts.appLink, opts.missingDocs, opts.knownFacts, opts.expertise) }, ...history];
     // HIGHEST MODEL FIRST (Ramon, 2026-07-12: each conversation is potentially

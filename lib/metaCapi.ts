@@ -4,6 +4,7 @@
 // hashed before it leaves our server, per Meta's requirements. Best-effort: never
 // throws into the request path, and safely no-ops if the pixel/token isn't configured.
 import { cfg, setSetting } from "@/lib/settings";
+import { isSyntheticLead } from "@/lib/synthetic";
 import crypto from "crypto";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
@@ -53,6 +54,10 @@ export async function ensurePixel(): Promise<{ id: string | null; detail: string
 // Fire a server-side "Lead" conversion event for a CRM lead.
 export async function sendMetaLeadEvent(lead: any, opts?: { sourceUrl?: string; eventTime?: number }): Promise<{ ok: boolean; detail: string }> {
   try {
+    // CHOKEPOINT 2 — never train the pixel on a lead that isn't a person. The pipeline
+    // already stops synthetic leads upstream; this is the backstop for every future
+    // caller, because "the caller checks" is how a guard quietly stops covering things.
+    if (isSyntheticLead(lead)) return { ok: false, detail: "synthetic lead — CAPI event suppressed" };
     const pixel = await cfg("META_PIXEL_ID");
     const token = (await cfg("META_CAPI_TOKEN")) || (await cfg("META_USER_TOKEN")) || (await cfg("META_ACCESS_TOKEN"));
     if (!pixel || !token) return { ok: false, detail: "pixel/token not configured" };
