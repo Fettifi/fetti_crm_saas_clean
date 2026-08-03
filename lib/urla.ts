@@ -495,7 +495,11 @@ export function urlaCompleteness(u: Urla): { missing: string[]; present: string[
   const b = u.borrowers[0] || {};
   const checks: [string, boolean][] = [
     ["Borrower legal name", !!(b.firstName && b.lastName)],
-    ["Borrower SSN", !!b.ssn],
+    // NINE DIGITS OR IT IS NOT AN SSN. A truthy check counted "6789" — the last 4 — as a
+    // complete SSN and reported the 1003 ready to submit. Real mortgage documents are often
+    // masked at the source (an IRS Tax Return TRANSCRIPT prints XXX-XX-1234 by design; a filed
+    // 1040 copy prints all nine), so a partial reaching this field is normal, not exotic.
+    ["Borrower SSN (all 9 digits)", String(b.ssn || "").replace(/\D/g, "").length === 9],
     ["Date of birth", !!b.dob],
     ["Citizenship", !!b.citizenship],
     ["Marital status", !!b.maritalStatus],

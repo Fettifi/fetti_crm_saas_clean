@@ -120,7 +120,11 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
       const fd = new FormData(); fd.append("doc", f);
       const r = await fetch(`/api/los/extract?file=${id}`, { method: "POST", body: fd });
       const j = await r.json();
-      if (r.ok) { await load(); setOcr(`✓ Filled from ${j.docType || "document"}.`); }
+      if (r.ok) {
+        await load();
+        const lost = [...(j.failed || []), ...(j.skipped || [])];
+        setOcr(lost.length ? `⚠️ NOT read: ${lost.join("; ")}.` : `✓ Filled from ${j.docType || "document"}.`);
+      }
       else setOcr("⚠️ " + (j.error || "Couldn't read it."));
     } catch { setOcr("⚠️ Upload failed."); }
     setTimeout(() => setOcr(null), 5000);
@@ -135,7 +139,13 @@ export default function Form1003({ params }: { params: Promise<{ id: string }> }
       if (r.ok) {
         await load();
         const types = [...new Set((j.read || []).map((x: any) => x.docType).filter(Boolean))].join(", ");
-        setPull(j.count ? `✓ Filled the 1003 from ${j.count} document${j.count > 1 ? "s" : ""}${types ? ` (${types})` : ""}.` : "Read the documents, but no new fields could be pulled.");
+        // SAY WHAT DID NOT GET READ. The API has always returned `failed` and `skipped`; this
+        // screen showed neither, so a tax return that failed to parse still produced
+        // "✓ Filled the 1003 from 3 documents" and the LO had no way to know the SSN never
+        // arrived. A silent miss on a 1003 is worse than a loud failure.
+        const lost = [...(j.failed || []), ...(j.skipped || [])];
+        const note = lost.length ? `  ⚠️ NOT read: ${lost.join("; ")}.` : "";
+        setPull((j.count ? `✓ Filled the 1003 from ${j.count} document${j.count > 1 ? "s" : ""}${types ? ` (${types})` : ""}.` : "Read the documents, but no new fields could be pulled.") + note);
       } else setPull("⚠️ " + (j.error || "Couldn't read the documents."));
     } catch { setPull("⚠️ Failed."); }
     setPulling(false);

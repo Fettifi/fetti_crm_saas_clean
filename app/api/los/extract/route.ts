@@ -118,7 +118,11 @@ async function extractOne(key: string, buf: Buffer, mediaType: string, rosterHin
     headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || "claude-opus-4-8",
-      max_tokens: 4000,
+      // A full 1040 with schedules, several REO properties and a liability list does not fit in
+      // 4,000 tokens of JSON. When it overflowed, the reply was cut mid-object, the brace match
+      // below failed, extractOne returned null, and the ENTIRE document was filed as unreadable —
+      // silently. That is a tax return carrying the SSN being dropped with a green checkmark.
+      max_tokens: 16000,
       system: SYSTEM,
       messages: [{ role: "user", content: [block, { type: "text", text: `${hint}Extract the URLA fields you can read. Always include the person's name on the object you return so it can be filed under the right borrower. JSON only.` }] }],
     }),
@@ -126,6 +130,9 @@ async function extractOne(key: string, buf: Buffer, mediaType: string, rosterHin
   });
   const j = await res.json();
   if (!res.ok) throw new Error(j?.error?.message || `Anthropic ${res.status}`);
+  // A truncated reply is a FAILURE, not an empty read. Say so out loud rather than letting a
+  // half-parsed object merge partial fields over complete ones.
+  if (j?.stop_reason === "max_tokens") throw new Error("document too dense to read in one pass (output truncated)");
   const txt = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").replace(/```json/gi, "").replace(/```/g, "").trim();
   const m = txt.match(/\{[\s\S]*\}/);
   try { return JSON.parse(m ? m[0] : txt); } catch { return null; }
@@ -185,7 +192,23 @@ function mergeIntoUrla(cur: any, ex: any): any {
       }                                                   // income doc) — don't fork a phantom borrower
     }
     if (!cur.borrowers[slot]) cur.borrowers[slot] = {};
+    // A MASKED SSN MUST NEVER OVERWRITE A COMPLETE ONE.
+    //
+    // Ramon, 2026-08-03: "why is it only giving me the last four?" deepMerge returns the SOURCE
+    // for a scalar, so the LAST document read wins — and plenty of real mortgage documents print
+    // the SSN masked. An IRS Tax Return TRANSCRIPT shows XXX-XX-1234 by design (a filed 1040
+    // copy shows all nine), as do many W-2 reprints and most 1099s. The reader faithfully reads
+    // what is printed, so a transcript uploaded AFTER the 1040 silently replaced nine digits
+    // with four, and nothing on the 1003 said the field was partial. Completeness only goes up.
+    const priorSsn = cur.borrowers[slot]?.ssn;
     cur.borrowers[slot] = deepMerge(cur.borrowers[slot], person);
+    if (normSsn(priorSsn).length === 9 && normSsn(cur.borrowers[slot]?.ssn).length !== 9) {
+      cur.borrowers[slot].ssn = priorSsn;                       // keep the complete one
+    }
+    // A partial that arrives with nothing better on file is KEPT — the last 4 is still worth
+    // having — but it must not COUNT as a complete SSN. That is decided by urlaCompleteness
+    // reading the digit count of the value itself, not by a flag set here: a second name for
+    // the same fact is exactly what drifts apart and lets a field look filled when it is not.
   }
   if (Array.isArray(ex?.assets) && ex.assets.length)
     cur.assets = dedupeBy([...(cur.assets || []), ...ex.assets], (a) => `${a.institution || ""}|${a.type || ""}|${a.accountNumber || a.balance || ""}`);
@@ -223,7 +246,13 @@ export async function POST(req: NextRequest) {
         .select("id, name, file_name, storage_path, status")
         .eq("loan_file_id", fileId).in("status", READABLE_STATUS).not("storage_path", "is", null);
       if (!body.all && body.docId) q = q.eq("id", String(body.docId));
-      const { data: docs } = await q.limit(15);
+      // NEVER TRUNCATE SILENTLY. The cap is real (each document is a separate vision call), but
+      // a file with 16 documents used to read 15 and report complete success on all of them.
+      const CAP = 15;
+      const { data: docs } = await q.limit(CAP + 1);
+      let overflow = 0;
+      if (docs && docs.length > CAP) { overflow = docs.length - CAP; docs.length = CAP; }
+      if (overflow) skipped.push(`${overflow} more document(s) on this file were NOT read — read them in a second pass`);
       if (!docs || !docs.length) {
         return NextResponse.json({ error: "No uploaded documents on this file to read yet." }, { status: 400 });
       }

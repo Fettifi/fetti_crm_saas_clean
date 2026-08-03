@@ -41,6 +41,7 @@ MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingD
 # The portfolio grid's per-property actuals: an editor that stops short of the roll-up looks
 # fixed and is not.
 UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite' -e 'deal-analyzer' -e 'scripts/verify-deal-analyzer')
+SSN=$(printf '%s\n' "$CHANGED" | grep -F -e 'los/extract' -e '1003/page' -e 'lib/urla.ts' -e 'scripts/verify-ssn-merge')
 # WHO IS A REAL PERSON. The Shield verdict now decides whether a lead is nurtured at all, so a
 # band written wrongly either silences a borrower or clears a bot. On 2026-08-02 a backfill
 # wrote a verdict outside the declared union on 190 rows, collapsed the whole "watch" tier into
@@ -116,6 +117,14 @@ if [ -n "$INCOV" ]; then
   OUT=$(npm run --silent verify:income-override 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:income-override"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+if [ -n "$SSN" ]; then
+  printf "   %-18s " "verify:ssn-merge"
+  OUT=$(npm run --silent verify:ssn-merge 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:ssn-merge"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
 fi
 

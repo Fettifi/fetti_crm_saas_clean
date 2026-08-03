@@ -49,7 +49,8 @@
     "verify:income-payload": "tsx scripts/verify-income-payload.ts",
     "verify:persona": "tsx scripts/verify-persona.ts",
     "verify:shield-verdict": "tsx scripts/verify-shield-verdict.ts",
-    "verify:automation-status": "tsx scripts/verify-automation-status.ts"
+    "verify:automation-status": "tsx scripts/verify-automation-status.ts",
+    "verify:ssn-merge": "tsx scripts/verify-ssn-merge.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
