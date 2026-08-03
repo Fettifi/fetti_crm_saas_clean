@@ -35,6 +35,18 @@ import crypto from "crypto";
 export type SendKind =
   | "reply"        // answering something the borrower just said — the only kind we want a lot of
   | "proactive"    // we speak first: follow-up, re-engagement. Rationed hard.
+  // A RE-ENGAGEMENT TOUCH ON A LEAD WHO FINISHED THE 90-DAY CADENCE AND NEVER REPLIED.
+  //
+  // Ramon, 2026-08-02: "exempt it". The reactivation lane is the plan for mining the dormant
+  // book now that ad spend is zero, and it had never delivered one message — the drip alone
+  // consumes the whole lifetime cap, so every reactivation was denied the moment it came due.
+  //
+  // It is exempt from the LIFETIME CAP AND NOTHING ELSE. Every other rule still binds: it does
+  // not reach a lead who has replied, a converted client, an opt-out, a suppressed address, or
+  // outside TCPA quiet hours, and identical copy going to two people is still a blast. Its own
+  // 45-day throttle and the r1→r2→r3 rotation (r3 says "genuinely the last one" and never
+  // repeats) are what ration it instead.
+  | "reactivation"
   | "operational"; // a specific thing their live file needs (missing docs). Not marketing.
 
 export type Decision = { allow: true } | { allow: false; reason: string };
@@ -61,11 +73,17 @@ export const PROACTIVE_LIFETIME_CAP = 7;
 // client's own file forward and is not marketing. Drip, re-engagement and AI concierge
 // replies all stop the moment someone becomes a client.
 export const OPERATIONAL_KINDS = new Set<SendKind>(["operational"]);
+/** We-speak-first kinds. Every marketing rule binds on all of these; only the LIFETIME CAP
+ *  distinguishes them, and only for reactivation. */
+export const MARKETING_KINDS = new Set<SendKind>(["proactive", "reactivation"]);
 
 /** Minimum gap between any two automated messages to the same person, any channel. */
 export const COOLDOWN_HOURS: Record<SendKind, number> = {
   reply: 0,          // a reply is invited by definition; rule 3 stops it running away
   proactive: 96,     // 4 days. A human does not chase a stranger daily.
+  // Uncapped in LIFETIME terms, so the floor between two of them is deliberately wide — this
+  // is the rule doing the rationing now that the lifetime cap does not.
+  reactivation: 30 * 24,
   operational: 72,   // 3 days between "here's what your file still needs"
 };
 /** A body identical to one sent to a DIFFERENT lead inside this window is a blast. */
@@ -241,7 +259,7 @@ export function evaluateThreadRules(input: { kind: SendKind; thread: LoggedMessa
 
   // 4. THEY REPLIED ⇒ NO MORE MARKETING. A live human owns this conversation now. Proactive
   //    drip on someone who is already talking to us is the behaviour Ramon called harassment.
-  if (input.kind === "proactive" && everReplied) {
+  if (MARKETING_KINDS.has(input.kind) && everReplied) {
     return { allow: false, reason: "they have replied — a person owns this thread now" };
   }
 
@@ -267,6 +285,8 @@ export function evaluateThreadRules(input: { kind: SendKind; thread: LoggedMessa
   // replies — both-channel leads reply 20.6%, email-only 0% — and it did so by an accident of
   // logging granularity that nobody decided. Group by minute: the email and the SMS of one
   // touch are written together.
+  // Deliberately `=== "proactive"`, not MARKETING_KINDS: reactivation is the one kind exempt
+  // from the LIFETIME cap (Ramon, 2026-08-02). Its 30-day cooldown above is what limits it.
   if (input.kind === "proactive") {
     const isProactive = (m: LoggedMessage) => (m.kind || "").startsWith("proactive") || (m.kind || "") === "nurture";
     const minutes = new Set(

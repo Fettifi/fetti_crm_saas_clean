@@ -161,7 +161,14 @@ export async function respondToLead(lead: LeadContact): Promise<{ sent: string[]
   // messages that caused the complaint fail these rules (scripts/verify-governor.ts).
   {
     const k = String(lead.kind || "first_touch");
-    const govKind: SendKind = k === "doc_chase" ? "operational" : k === "ai_reply" ? "reply" : "proactive";
+    // "reactivation" is its own governor kind: exempt from the LIFETIME cap and from nothing
+    // else (Ramon, 2026-08-02). Everything below still binds — replied, converted, opted out,
+    // quiet hours, blast fingerprint — and it carries a 30-day cooldown of its own.
+    const govKind: SendKind =
+      k === "doc_chase" ? "operational"
+      : k === "ai_reply" ? "reply"
+      : k === "reactivation" ? "reactivation"
+      : "proactive";
     const d = await authorizeSend({ leadId: lead.id, kind: govKind, body: (lead.message || "") + " " + (lead.emailBody || ""), smsBody: lead.message || "", emailBody: lead.emailBody || "" });
     if (!d.allow) { console.warn(`[leadResponder] held (${k}):`, d.reason); return { sent: [] }; }
   }

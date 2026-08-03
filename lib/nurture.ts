@@ -173,14 +173,9 @@ if (STEPS.length > PROACTIVE_LIFETIME_CAP) {
 // STRICTLY greater than the cadence, every reactivation send is denied the moment it becomes
 // due. That lane is the stated plan for mining the dormant database now that ad spend is zero,
 // and it has never delivered a single message. Say so at load rather than letting it look busy.
-if (REACTIVATION.length && STEPS.length >= PROACTIVE_LIFETIME_CAP) {
-  console.warn(
-    `[nurture] REACTIVATION CAN NEVER FIRE: the drip alone uses ${STEPS.length} of ` +
-    `PROACTIVE_LIFETIME_CAP=${PROACTIVE_LIFETIME_CAP} touches, so a lead reaching the ` +
-    `reactivation lane is already at the cap. Raise the cap above ${STEPS.length}, or accept ` +
-    `that the drip is the whole cadence.`,
-  );
-}
+// Reactivation is EXEMPT from the lifetime cap (Ramon, 2026-08-02) — it is rationed by its own
+// 30-day governor cooldown and the ~45-day lane throttle instead. Nothing to warn about here
+// any more; the check that remains above is the drip-vs-cap one, which still matters.
 
 
 /** How many proactive touches this lead has ACTUALLY received, counted from the message log
@@ -571,7 +566,10 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       const finishLine = ctaR.sms;
       const emailT = renderTouch(EMAIL_TOUCHES[REACTIVATION_KEYS[rIdx]] || EMAIL_TOUCHES.r1, l);
       const res = await respondToLead({
-        id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
+        // kind "reactivation" -> govKind "reactivation": exempt from the proactive LIFETIME cap
+        // and from nothing else. Sending this as "nurture" is why the lane never fired — the
+        // drip had already spent all the lifetime touches by the time a lead reached it.
+        id: l.id, kind: "reactivation", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
         message: msg + finishLine + bookLine,                        // SMS copy
         emailSubject: emailT.subject,                                 // email copy
         emailBody: emailT.body + ctaR.email + textMeLine + optInLineFor(l as any),

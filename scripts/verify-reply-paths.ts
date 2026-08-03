@@ -133,8 +133,8 @@ console.log(`\nREPLY PATHS — a pause is not a delete\n`);
   const nurture = code("lib/nurture.ts");
   chk(/STEPS\.length > PROACTIVE_LIFETIME_CAP/.test(nurture),
     "a cadence longer than the cap is announced at load — 7 steps against a cap of 3 meant steps 4-7 could never be delivered to anyone");
-  chk(/REACTIVATION CAN NEVER FIRE/.test(nurture),
-    "and so is the separate case where the drip alone exhausts the cap, leaving the reactivation lane dead");
+  chk(/kind: "reactivation"/.test(nurture),
+    "and the reactivation lane sends under its OWN governor kind — sending it as \"nurture\" is why it never fired");
 }
 
 // ── THE CAP AND THE CADENCE, as configured today. Ramon set the cap to 7 on 2026-08-02 so the
@@ -155,6 +155,38 @@ console.log(`\nREPLY PATHS — a pause is not a delete\n`);
   const at = (n: number) => evaluateThreadRules({ kind: "proactive", thread: mk(n), now: new Date(Date.UTC(2026, 7, 2)) }).allow;
   chk(at(cap - 1), `a lead with ${cap - 1} both-channel touches can still receive the last one (cap ${cap})`);
   chk(!at(cap), `and is denied at ${cap} — the cap binds on TOUCHES, not on the ${cap * 2} logged rows`);
+}
+
+// ── REACTIVATION IS EXEMPT FROM THE LIFETIME CAP — AND FROM NOTHING ELSE.
+//    Ramon, 2026-08-02: "exempt it". The lane is the plan for mining the dormant book now that
+//    ad spend is zero, and it had never delivered one message because the drip alone consumed
+//    the whole cap. The danger in an exemption is that it quietly widens, so the exact edge is
+//    asserted here: it escapes rule 6 and every other rule still binds.
+{
+  const NOW = new Date(Date.UTC(2026, 7, 2));
+  const touches = (n: number) => {
+    const t: any[] = [];
+    for (let i = 0; i < n; i++) {
+      const at = new Date(Date.UTC(2026, 3, 1 + i, 16)).toISOString();
+      t.push({ direction: "outbound", at, kind: "nurture", body: "e" });
+      t.push({ direction: "outbound", at, kind: "nurture", body: "s" });
+    }
+    return t;
+  };
+  const run = (kind: any, thread: any[]) => evaluateThreadRules({ kind, thread, now: NOW });
+  const cap = PROACTIVE_LIFETIME_CAP;
+
+  chk(!run("proactive", touches(cap)).allow, `a proactive touch is still capped at ${cap}`);
+  chk(run("reactivation", touches(cap)).allow, "but reactivation is allowed past it — the exemption works");
+  chk(run("reactivation", touches(30)).allow, "and stays allowed at 30 prior touches — it is a LIFETIME exemption, not a bigger number");
+
+  // The rules that must NOT have been widened along with it.
+  const replied = [...touches(cap), { direction: "inbound", at: new Date(Date.UTC(2026, 3, 20)).toISOString(), kind: "reply", body: "W-2" }];
+  chk(!run("reactivation", replied).allow,
+    "a lead who REPLIED is still off-limits — reaching them is the exact harassment case the governor exists for");
+  const recent = [{ direction: "outbound", at: new Date(Date.UTC(2026, 6, 25, 16)).toISOString(), kind: "nurture", body: "x" }];
+  chk(!run("reactivation", recent).allow, "and its own 30-day cooldown still binds, which is what rations it now");
+  chk(run("reactivation", []).allow, "a clean thread is allowed, so the lane can actually run");
 }
 
 // ── RR-6. The drip step is bounded by what was actually SENT.
