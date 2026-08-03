@@ -9,12 +9,14 @@
 // Usage:  <CurrencyInput value={f.loan_amount} onChange={(v) => set("loan_amount", v)} className={field} />
 import React from "react";
 
-function formatDisplay(value: string | number | null | undefined, allowCents: boolean): string {
+export function formatDisplay(value: string | number | null | undefined, allowCents: boolean): string {
   if (value === null || value === undefined) return "";
   let s = String(value);
   if (s === "") return "";
   s = s.replace(/[^\d.]/g, "");
-  if (!allowCents) s = s.replace(/\./g, "");
+  // TRUNCATE at the point, never DELETE it. Deleting concatenates the cents onto the
+  // dollars — "425000.00" became 42500000 — so the box showed a figure 100x what was typed.
+  if (!allowCents) s = s.split(".")[0];
   const dot = s.indexOf(".");
   const intRaw = dot === -1 ? s : s.slice(0, dot);
   const dec = dot === -1 ? "" : s.slice(dot + 1).replace(/\./g, "");
@@ -25,9 +27,11 @@ function formatDisplay(value: string | number | null | undefined, allowCents: bo
 }
 
 // Strip to a clean numeric string the rest of the app already understands.
-function toClean(input: string, allowCents: boolean): string {
+export function toClean(input: string, allowCents: boolean): string {
   let s = input.replace(/[^\d.]/g, "");
-  if (!allowCents) return s.replace(/\./g, "");
+  // The whole-dollar field keeps the INTEGER part. A pasted "$425,000.00" is $425,000,
+  // never $42,500,000 — see scripts/verify-currency-input.ts.
+  if (!allowCents) return s.split(".")[0];
   const dot = s.indexOf(".");
   if (dot !== -1) s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, "");
   return s;

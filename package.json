@@ -40,7 +40,8 @@
     "dataset:eval": "npx tsx scripts/dataset/evaluate.ts",
     "dataset": "npx tsx scripts/dataset/build.ts",
     "lessons": "./scripts/hooks/lessons.sh list",
-    "hooks:install": "git config core.hooksPath scripts/hooks && echo \"income guard installed\""
+    "hooks:install": "git config core.hooksPath scripts/hooks && echo \"income guard installed\"",
+    "verify:currency-input": "tsx scripts/verify-currency-input.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

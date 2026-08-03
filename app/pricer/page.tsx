@@ -450,6 +450,9 @@ export default function PricerPage() {
                                 yours (and prints to the borrower marked CONFIRMED). Empty the box to
                                 go back to the estimate. */}
                             <CurrencyInput
+                              // A real quoted fee has cents ($1,275.50). Whole-dollar mode would
+                              // truncate them off a figure the LO is about to print as CONFIRMED.
+                              allowCents
                               value={ovr[l.key] ?? ""}
                               onChange={(v) => setOvr((o) => { const n = { ...o }; if (v === "") delete n[l.key]; else n[l.key] = v; return n; })}
                               placeholder={Math.round(l.estimatedAmount ?? l.amount).toLocaleString()}
@@ -479,7 +482,8 @@ export default function PricerPage() {
                         <label className={lbl}>Mortgage insurance / mo <span className="text-slate-600">(your quote)</span></label>
                         {/* MI was the ONLY PITIA component with no override — on/off was the whole
                             control, so a real MI quote could not be entered. $0 = lender-paid. */}
-                        <CurrencyInput value={miOverride} onChange={setMiOverride} className={inp}
+                        {/* An MI quote is priced to the cent ($132.50); whole dollars would drop it. */}
+                        <CurrencyInput allowCents value={miOverride} onChange={setMiOverride} className={inp}
                           placeholder={`$${Math.round(rp.pmiMonthly || 0).toLocaleString()} est.`} />
                       </div>
                       <div><label className={lbl}>Seller credit</label><CurrencyInput value={sellerCredit} onChange={setSellerCredit} className={inp} placeholder="$0" /></div>
