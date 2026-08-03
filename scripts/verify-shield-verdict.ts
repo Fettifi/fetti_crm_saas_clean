@@ -72,6 +72,34 @@ console.log(`\nSHIELD VERDICT — a pass is a finding\n`);
     "and skips rows with neither an email nor a phone — there is no identity to screen, and 'junk' would libel a desk-created borrower");
 }
 
+// ── 5. A SCRIPT MUST LOAD .env BEFORE IT IMPORTS ANYTHING THAT READS IT.
+//    ESM hoists every import above the module body, so `dotenv.config()` in the body runs
+//    AFTER lib/supabaseAdminClient has already initialised — on an empty env, falling back to
+//    a mock whose .upsert() does not exist. On 2026-08-02 that made a Twilio Lookup backfill
+//    place all 174 PAID calls, write the results (its own client was fine), and then fail to
+//    populate the 90-day cache — so the live sweep would have bought all 174 again. The part
+//    that was billed worked, which is why it looked successful.
+for (const f of ["scripts/shield-lookup-backfill.ts", "scripts/shield-backfill.ts"]) {
+  const src = readFileSync(f, "utf8");
+  const firstImport = (src.match(/^import .*$/m) || [""])[0];
+  chk(/_env/.test(firstImport), `${f} imports ./_env FIRST (got: ${firstImport.slice(0, 46)})`);
+  chk(!/dotenv\.config/.test(src), `${f} does not call dotenv.config in the body, where it runs too late`);
+}
+{
+  const env = readFileSync("scripts/_env.ts", "utf8");
+  chk(/NEXT_PUBLIC_SUPABASE_URL = process\.env\.SUPABASE_URL/.test(env),
+    "and _env bridges SUPABASE_URL -> NEXT_PUBLIC_SUPABASE_URL, the name the admin client actually reads");
+}
+
+// ── 6. THE PAID LOOKUP MUST BE CACHED, or every sweep re-buys it.
+{
+  const src = readFileSync("scripts/shield-lookup-backfill.ts", "utf8");
+  chk(/lookupPhone/.test(src),
+    "the backfill reuses lib/leadShield.lookupPhone, so it shares the 90-day cache and the daily cap with the live sweep");
+  chk(/new Set\(needing\.map/.test(src),
+    "and looks up each DISTINCT number once rather than once per lead");
+}
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). A verdict decides whether a lead is worked at all now; a screen that forgets its passes silently withholds that decision.\n`); process.exit(1); }
 console.log(`PASS — a pass is recorded, a clean record claims no check it did not make, and the backfill cannot launder a flagged lead.\n`);

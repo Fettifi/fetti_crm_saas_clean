@@ -14,8 +14,7 @@
 //
 //   npx tsx scripts/shield-backfill.ts            # report only
 //   npx tsx scripts/shield-backfill.ts --apply    # write
-import * as dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
+import "./_env";
 import { createClient } from "@supabase/supabase-js";
 import { scoreSignals, checkPhonePattern, editDistance, type ShieldSignal } from "../lib/leadShield";
 import { leadReality } from "../lib/leadReality";
