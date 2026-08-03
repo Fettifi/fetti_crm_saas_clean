@@ -16,6 +16,7 @@ import { magicApplyLink } from "@/lib/magicLink";
 import { cfg, getSetting, setSetting } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
 import { getMessages } from "@/lib/phoneMessages";
+import { smsAllowed } from "@/lib/smsConsent";
 import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
@@ -53,7 +54,41 @@ async function pageOwner(text: string) {
   }
 }
 
-export async function runCommsWatchdog(): Promise<{ answered: number; firstTouched: number; paged: number }> {
+/**
+ * DRAIN THE QUIET-HOURS QUEUE.
+ *
+ * respondToLead now parks a held SMS on `raw.pending_sms` instead of discarding it. Something
+ * has to send it once the window opens, or the queue is just a nicer-looking version of the
+ * same silence. The watchdog already runs on a schedule and already knows about consent, so it
+ * is the natural drain. sendSms re-checks quiet hours itself, so a still-too-early attempt is
+ * simply re-deferred and stays queued.
+ */
+async function drainPendingSms(): Promise<number> {
+  let drained = 0;
+  const { data: rows } = await supabaseAdmin
+    .from("leads").select("id, phone, state, nurture_paused, raw")
+    .not("raw->pending_sms", "is", null).limit(200);
+  for (const l of (rows || []) as any[]) {
+    const pending = l.raw?.pending_sms;
+    if (!pending?.body || !l.phone) continue;
+    if (l.nurture_paused) continue;
+    if (await automationPaused()) break;             // the master shutoff outranks the queue
+    if (!smsAllowed(l.raw).ok) continue;             // consent may have been revoked while held
+    const res = await sendSms(l.phone, pending.body, { statusCallback: true, state: l.state ?? null });
+    if (res.deferred) continue;                      // still outside the window — leave it queued
+    const raw = { ...(l.raw || {}) };
+    delete raw.pending_sms;                          // sent OR permanently refused: stop holding it
+    await supabaseAdmin.from("leads").update({ raw }).eq("id", l.id);
+    if (res.ok) {
+      drained++;
+      await logComms({ leadId: l.id, channel: "sms", direction: "outbound", type: pending.kind || "first_touch", body: pending.body, to: l.phone, providerId: res.sid }).catch(() => {});
+      await logActivity({ entity_type: "lead", entity_id: l.id, lead_id: l.id, actor: "system", action: "sms.queue_drained", detail: { kind: pending.kind, held_since: pending.queued_at } }).catch(() => {});
+    }
+  }
+  return drained;
+}
+
+export async function runCommsWatchdog(): Promise<{ answered: number; firstTouched: number; paged: number; queueDrained?: number }> {
   let answered = 0, firstTouched = 0, paged = 0, deferred = 0, heldQuiet = 0, suppressed = 0;
   const since = new Date(Date.now() - LOOKBACK_MS).toISOString();
 
@@ -160,8 +195,18 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
           phone: smsOk ? (l as any).phone : null, loan_purpose: (l as any).loan_purpose, state: (l as any).state,
           message: "", appLink, emailSubject: emailT.subject, emailBody: emailT.body,
         });
-        raw.watchdog_first_touch = new Date().toISOString();
-        await supabaseAdmin.from("leads").update({ raw }).eq("id", (l as any).id);
+        // ONLY STAMP "HANDLED" IF SOMETHING WAS ACTUALLY SENT.
+        //
+        // This wrote watchdog_first_touch unconditionally — BEFORE checking res.sent — and the
+        // stamp is the selector's own exclusion key. So with automation paused, every lead the
+        // safety net looked at was permanently marked as caught by a net that sent nothing.
+        // A temporary pause became permanent silence: when it lifts, none of these leads are
+        // eligible again, because the net already believes it handled them. A never-miss
+        // backstop that consumes its own backlog is worse than no backstop at all.
+        if (res.sent.length) {
+          raw.watchdog_first_touch = new Date().toISOString();
+          await supabaseAdmin.from("leads").update({ raw }).eq("id", (l as any).id);
+        }
         if (res.sent.length) {
           firstTouched++;
           await logActivity({ entity_type: "lead", entity_id: (l as any).id, lead_id: (l as any).id, actor: "system", action: "watchdog.first_touch", detail: { channels: res.sent } });
@@ -248,5 +293,7 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
 
   // heldQuiet/suppressed are RETURNED, not swallowed: a silenced alert must still be
   // countable, or quieting the noise becomes its own blind spot.
-  return { answered, firstTouched, paged, deferred, heldQuiet, suppressed, calledBack, confirmCalls } as any;
+  // Drain last: anything queued earlier in THIS run is eligible the moment the window opens.
+  const queueDrained = await drainPendingSms().catch(() => 0);
+  return { answered, firstTouched, paged, deferred, heldQuiet, suppressed, calledBack, confirmCalls, queueDrained } as any;
 }

@@ -10,6 +10,8 @@ import { scrubSmsIsms, unsubUrl, renderTouch, EMAIL_TOUCHES } from "@/lib/notify
 import { cfg } from "@/lib/settings";
 import { logComms, isEmailSuppressed, sendSms } from "@/lib/comms";
 import { smsAllowed } from "@/lib/smsConsent";
+import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { logActivity } from "@/lib/activity";
 import { isSyntheticLead } from "@/lib/synthetic";
 import { quietHoursFor, quietReason } from "@/lib/quietHours";
 import { COMMS_PERSONA } from "@/lib/markPersona";
@@ -177,16 +179,35 @@ export async function respondToLead(lead: LeadContact): Promise<{ sent: string[]
   // Every automated text carries opt-out language (carrier requirement + TCPA hygiene).
   if (lead.phone && !/reply\s+stop/i.test(smsBody)) smsBody += " (Reply STOP to opt out.)";
   const sent: string[] = [];
+  let deferred: string | null = null;
   await Promise.all([
     emailLead(lead, body).then(async (r) => {
       if (r.ok) { sent.push("email"); if (lead.id) await logComms({ leadId: lead.id, channel: "email", direction: "outbound", type: kind, body: r.body || body, to: lead.email, providerId: r.id }).catch(() => {}); }
     }).catch((e) => console.warn("[responder] email", e)),
     smsLead(lead, smsBody).then(async (r) => {
       if (r.ok) { sent.push("sms"); if (lead.id) await logComms({ leadId: lead.id, channel: "sms", direction: "outbound", type: kind, body: smsBody, to: lead.phone, providerId: r.id }).catch(() => {}); }
+      // A QUIET-HOURS HOLD IS NOT A DECISION NOT TO SEND. `deferred` was computed, returned
+      // and then dropped on the floor here, so a lead who arrived at 8:01pm simply never got
+      // their opening text — on SMS, the channel that earns a reply from 21% of the leads that
+      // receive one, versus 1.2% for email. Queue it for the next run inside the window.
+      if ((r as any).deferred) deferred = "sms";
     }).catch((e) => console.warn("[responder] sms", e)),
   ]);
+  if (deferred && lead.id) {
+    try {
+      const { data: lr } = await supabaseAdmin.from("leads").select("raw").eq("id", lead.id).maybeSingle();
+      const raw = ((lr as any)?.raw && typeof (lr as any).raw === "object" ? { ...(lr as any).raw } : {}) as any;
+      // One pending touch per lead — a queue, not a spool. Re-holding just refreshes it.
+      raw.pending_sms = { kind, body: smsBody, queued_at: new Date().toISOString() };
+      await supabaseAdmin.from("leads").update({ raw }).eq("id", lead.id);
+      await logActivity({
+        entity_type: "lead", entity_id: lead.id, lead_id: lead.id, actor: "system",
+        action: "sms.queued_quiet_hours", detail: { kind, note: "held for the 8am-8pm recipient-local window" },
+      }).catch(() => {});
+    } catch (e) { console.warn("[responder] queue failed", e); }
+  }
   if (sent.length === 0) {
     console.log("[responder] no channels configured — lead not auto-contacted (team alert still sent).");
   }
-  return { sent };
+  return { sent, deferred: deferred || undefined } as { sent: string[]; deferred?: string };
 }

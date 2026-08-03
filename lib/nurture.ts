@@ -164,10 +164,31 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   try {
   // Look back a full year so the dormant database keeps getting reactivated,
   // not just leads from the last 30 days.
+  // A PAUSE MUST STILL COUNT WHAT IS WAITING.
+  //
+  // This returned all-zeros and logged "skipped", so the run looked IDENTICAL to a day with no
+  // work to do: considered 0, sent 0, ran true. Three days of that read as a healthy, quiet
+  // system while every new and promoted lead sat untouched — the same shape as the green doctor
+  // that hid 13 days of zero follow-up. Nobody could answer "how big is the backlog when we turn
+  // this back on?" because nothing measured it.
+  //
+  // Sending stays off. Counting is free, and it is what makes the pause a decision rather than
+  // a blind spot.
   if (await automationPaused()) {
     console.warn("[nurture]", PAUSED_NOTE);
-    await logActivity({ entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.skipped", detail: { reason: "automation_paused" } }).catch(() => {});
-    return { considered: 0, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0, ran: true, firstTouchesHeld: 0, dripSuppressedInProcess: 0 };
+    let waiting = 0;
+    try {
+      const cutoffP = new Date(Date.now() - 365 * 86400000).toISOString();
+      const { count } = await supabaseAdmin
+        .from("leads").select("id", { count: "exact", head: true })
+        .gte("created_at", cutoffP).eq("nurture_paused", false);
+      waiting = Number(count || 0);
+    } catch { /* the count is diagnostic; never let it break the pause */ }
+    await logActivity({
+      entity_type: "system", entity_id: "nurture", actor: "system", action: "cron.paused",
+      detail: { reason: "automation_paused", note: PAUSED_NOTE, leads_waiting: waiting },
+    }).catch(() => {});
+    return { considered: waiting, sent: 0, chased: 0, reactivated: 0, reviewsRequested: 0, ran: true, paused: true, leadsWaiting: waiting, firstTouchesHeld: 0, dripSuppressedInProcess: 0 } as any;
   }
   const cutoff = new Date(Date.now() - 365 * 86400000).toISOString();
   const { data: leads } = await supabaseAdmin

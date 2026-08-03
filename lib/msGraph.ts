@@ -70,30 +70,43 @@ export type GraphMessage = {
 // New messages in the watched mailbox's inbox with receivedDateTime strictly AFTER
 // sinceISO, oldest-first (so watermarking is monotonic). Plain-text body requested
 // via the Prefer header; falls back to stripping HTML if the server returns HTML.
+/** Folders we poll. A borrower's reply does not stop being a borrower's reply because
+ *  Outlook's filter guessed wrong — and a cold outbound drip is exactly the pattern that
+ *  gets a reply junked. One reply from an Application-stage borrower asking what he
+ *  qualified for sat unread in Junk from 2026-07-29, invisible to the CRM, because this
+ *  polled `mailFolders/inbox` alone. */
+const POLL_FOLDERS = ["inbox", "junkemail"] as const;
+
 export async function listInboxSince(sinceISO: string, top = 25): Promise<GraphMessage[]> {
   const token = await getGraphToken();
   if (!token) return [];
   const c = await graphCreds();
   const mbox = encodeURIComponent(c.mailbox);
-  const url =
-    `https://graph.microsoft.com/v1.0/users/${mbox}/mailFolders/inbox/messages` +
-    `?$filter=${encodeURIComponent(`receivedDateTime gt ${sinceISO}`)}` +
-    `&$orderby=${encodeURIComponent("receivedDateTime asc")}` +
-    `&$top=${Math.max(1, Math.min(50, top))}` +
-    `&$select=id,subject,from,receivedDateTime,body,bodyPreview`;
-  const r = await fetch(url, {
-    headers: {
-      authorization: `Bearer ${token}`,
-      Prefer: 'outlook.body-content-type="text"',
-      "content-type": "application/json",
-    },
-  });
-  if (!r.ok) {
-    console.error("[msGraph] list error", r.status, (await r.text().catch(() => "")).slice(0, 400));
-    return [];
+  const items: any[] = [];
+  for (const folder of POLL_FOLDERS) {
+    const url =
+      `https://graph.microsoft.com/v1.0/users/${mbox}/mailFolders/${folder}/messages` +
+      `?$filter=${encodeURIComponent(`receivedDateTime gt ${sinceISO}`)}` +
+      `&$orderby=${encodeURIComponent("receivedDateTime asc")}` +
+      `&$top=${Math.max(1, Math.min(50, top))}` +
+      `&$select=id,subject,from,receivedDateTime,body,bodyPreview`;
+    const r = await fetch(url, {
+      headers: {
+        authorization: `Bearer ${token}`,
+        Prefer: 'outlook.body-content-type="text"',
+        "content-type": "application/json",
+      },
+    });
+    if (!r.ok) {
+      // A missing Junk folder must not take the Inbox down with it.
+      console.error(`[msGraph] list error (${folder})`, r.status, (await r.text().catch(() => "")).slice(0, 400));
+      continue;
+    }
+    const j: any = await r.json().catch(() => ({}));
+    if (Array.isArray(j?.value)) items.push(...j.value);
   }
-  const j: any = await r.json().catch(() => ({}));
-  const items: any[] = Array.isArray(j?.value) ? j.value : [];
+  // Oldest first across both folders, so ingest order still matches arrival order.
+  items.sort((a, b) => String(a?.receivedDateTime || "").localeCompare(String(b?.receivedDateTime || "")));
   return items.map((m) => {
     let text: string = m?.body?.content || m?.bodyPreview || "";
     // If the Prefer header wasn't honored the body is HTML — strip tags.
