@@ -199,6 +199,31 @@ console.log(`\nREPLY PATHS — a pause is not a delete\n`);
     "and an error counting NEVER resets a lead's cadence to the start");
 }
 
+// ── IS IT A REAL PERSON? The drip screened for opt-outs, test emails and quarantine, and for
+//    nothing else. Measured across the drip-eligible set: 170 leads, FOUR carrying a "suspect"
+//    reality verdict — a honeypot hit, a name Shield rejected, a Twilio-invalid number, an
+//    11-digit fragment — every one of them eligible for all seven touches. With reactivation
+//    now exempt from the lifetime cap that means indefinitely.
+{
+  const nurture = code("lib/nurture.ts");
+  chk(/leadReality\(\{ raw: l\.raw/.test(nurture), "the drip asks whether the lead is a real person");
+  chk(/reality\.level === "suspect" \|\| reality\.level === "invalid"/.test(nurture),
+    "and refuses suspect / invalid leads");
+  chk(/logSkipped\(l\.id, "reality"/.test(nurture), "recording WHY, so a wrongly-screened lead is recoverable rather than silently dropped");
+  chk(!/level === "unverified"/.test(nurture),
+    "but NOT unverified — 166 of 170 have no Shield result stored, and blocking those would mute the whole database");
+}
+
+// The gate must sit ABOVE the reactivation lane, or the one send that is now uncapped is the
+// one that skips the check.
+{
+  const nurture = code("lib/nurture.ts");
+  const gate = nurture.indexOf('reality.level === "suspect"');
+  const reactivation = nurture.indexOf("REACTIVATION[rIdx]");
+  chk(gate > 0 && reactivation > gate,
+    "and it is evaluated BEFORE the reactivation lane — the uncapped path must not be the unguarded one");
+}
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). A lead that is never contacted cannot reply, and none of these failures are visible from the outside.\n`); process.exit(1); }
 console.log(`PASS — a pause is measured, a safety net does not consume its own backlog, and a hold is queued and drained.\n`);

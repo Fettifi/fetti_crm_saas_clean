@@ -10,6 +10,7 @@ import { respondToLead } from "@/lib/notify/leadResponder";
 import { cfg } from "@/lib/settings";
 import { PROACTIVE_LIFETIME_CAP } from "@/lib/conversation/governor";
 import { smsAllowed } from "@/lib/smsConsent";
+import { leadReality } from "@/lib/leadReality";
 import { logActivity } from "@/lib/activity";
 // EMAIL ≠ SMS: the msg() strings below are SMS copy ("Reply YES/STOP"). Emails get their
 // own panel-crafted personal notes (subject + body) from the email touch-set, keyed to
@@ -360,6 +361,24 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     if (!l.phone && !l.email) continue;
     // Internal test leads (shield e2e bots etc.) must never receive live sends.
     if (/@fetti-internal\.test$/i.test(l.email || "")) continue;
+    // ── IS THIS A REAL PERSON? ────────────────────────────────────────────────────────────
+    //
+    // Measured 2026-08-02 across the drip-eligible set: 170 leads, of which FOUR carried a
+    // "suspect" reality verdict — a honeypot hit, a name Shield rejected, a number Twilio
+    // reports invalid, an 11-digit fragment — and every one of them was still eligible for all
+    // seven touches. With the reactivation lane now exempt from the lifetime cap, "still
+    // eligible" means *indefinitely*, which is how a bot signup turns into a permanent send
+    // loop and how a Twilio-invalid number keeps burning delivery reputation.
+    //
+    // Shield quarantines the worst at intake (stage "Review", caught above). This is the tier
+    // below that: screened, not quarantined, but not credible enough to keep messaging. Route
+    // them to a human instead of to the drip. `unverified` is deliberately NOT blocked — 166 of
+    // the 170 have no Shield result stored at all, and silencing them would mute the database.
+    const reality = leadReality({ raw: l.raw, name: l.full_name, email: l.email, phone: l.phone });
+    if (reality.level === "suspect" || reality.level === "invalid") {
+      await logSkipped(l.id, "reality", l.nurture_step || 0, `${reality.level}: ${reality.reason}`);
+      continue;
+    }
     // TCPA: automated texts require EXPLICIT consent — the optional SMS checkbox
     // (raw.sms_consent === true) or a texted-in keyword opt-in (raw.consent.sms_optin).
     // UNDEFINED consent (Meta instant forms, legacy rows) = email-only. Never text
