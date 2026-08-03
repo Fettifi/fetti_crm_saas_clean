@@ -325,14 +325,16 @@ export function computePitia(s: Partial<Scenario>): number | null {
 export function settleDerived<T extends Partial<Scenario>>(base: T, priorDerived?: Record<string, number> | null): T {
   const prior = priorDerived || {};
   const next: Record<string, number> = {};
+  const close = (a: any, b: any) => a != null && b != null && Math.abs(Number(a) - Number(b)) < 0.0051;
   const settle = (key: "ltv" | "cltv" | "monthly_piti" | "dscr", computed: number | null) => {
     const incoming = (base as any)[key];
-    const last = prior[key];
-    // Tolerance, not equality — these are rounded on the way out and re-parsed on the way in.
-    const isOurs = incoming == null || (last != null && Math.abs(Number(incoming) - last) < 0.0051);
+    // OURS when: nothing was sent, OR it matches what we last derived, OR it matches what we would
+    // derive right now (the editor recomputes locally, so a first save echoes our own figure back
+    // before any `derived` map exists — without this every fresh scenario would look hand-typed).
+    const isOurs = incoming == null || close(incoming, prior[key]) || close(incoming, computed);
+    if (!isOurs) return;   // the LO stated this figure — leave it, and stop claiming it as ours
     if (computed != null) { (base as any)[key] = computed; next[key] = computed; return; }
-    if (isOurs) { (base as any)[key] = null; return; }
-    // else: an LO-stated figure with no inputs behind it — kept, but no longer claimed as ours.
+    (base as any)[key] = null;   // ours, and its inputs are gone
   };
   settle("ltv", computeLtv(base));
   settle("cltv", computeCltv(base));

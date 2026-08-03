@@ -375,22 +375,25 @@ function ScenarioDesk() {
       // PITIA is built from its parts, and DSCR divides by it — so touching any component
       // has to move both, live. Leaving them to refresh on save is what let a DSCR sit on
       // screen that contradicted the taxes and insurance printed right above it.
+      // CLEARING IS HALF THE JOB, and the client half was never written: `if (x != null)` only
+      // ever ASSIGNS, so deleting the rent left the old DSCR on screen until a save round-tripped
+      // it away. The server learned this in settleDerived; the editor has to agree, or the number
+      // the LO is reading while deciding is the stale one.
       if (key === "principal_interest" || key === "taxes_monthly" || key === "insurance_monthly" || key === "hoa_monthly") {
-        const p = computePitia(next);
-        if (p != null) (next as any).monthly_piti = p;
+        (next as any).monthly_piti = computePitia(next);
       }
       if (key === "principal_interest" || key === "taxes_monthly" || key === "insurance_monthly" || key === "hoa_monthly" || key === "monthly_piti" || key === "monthly_rent") {
-        const d = computeDscr(next);
-        if (d != null) (next as any).dscr = d;
+        (next as any).dscr = computeDscr(next);
       }
-      if (key === "first_lien_balance" || key === "loan_amount" || key === "as_is_value" || key === "purchase_price") {
+      // loan_purpose SELECTS the LTV basis (lesser-of on a purchase, as-is on a refi) — its whole
+      // job — and it was missing from every trigger, so picking Purchase vs Refinance left the
+      // ratio it governs stale on screen.
+      if (key === "first_lien_balance" || key === "loan_amount" || key === "as_is_value" || key === "purchase_price" || key === "loan_purpose") {
         // LTV has to move too. It only recomputed on the CLTV path before, so changing the
         // loan amount or the as-is value left a STALE LTV on screen — the ratio the LO is
         // actually reading while sizing the deal, and the one that lands on the PDF.
-        const v = computeLtv(next);
-        if (v != null) (next as any).ltv = v;
-        const c = computeCltv(next);
-        if (c != null) (next as any).cltv = c;
+        (next as any).ltv = computeLtv(next);
+        (next as any).cltv = computeCltv(next);
       }
       return next;
     });
@@ -461,12 +464,18 @@ function ScenarioDesk() {
     if (!selected || (!selectedIds.length && !extra)) return;
     setBusyAction("send");
     try {
+      // PERSIST THE EDITOR FIRST. The server builds the PDF and the email from the STORED
+      // scenario, so without this an LO who corrects a figure and hits Send ships the last SAVED
+      // numbers to outside lenders — silently, with a success message.
+      if (!(await saveScenario())) { setErr("Could not save the scenario — nothing was sent."); return; }
       const r = await fetch(`/api/scenarios/${selected.id}/send`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wholesaler_ids: selectedIds, extra_emails: extra ? [extra] : [] }),
       });
       const j = await r.json();
-      if (r.ok) { await loadScenarios(); setChecked({}); setDirectEmail(""); setFlash(`Sent to ${(j.sent || []).length} wholesaler(s) — replies go to ramon@fettifi.com.`); setTimeout(() => setFlash(null), 3500); }
+      if (r.ok) { await loadScenarios(); setChecked({}); setDirectEmail(""); const missed = j.notSent || [];
+        setFlash(`Sent to ${(j.sent || []).length} wholesaler(s) — replies go to ramon@fettifi.com.${missed.length ? ` NOT sent (no email on file): ${missed.join(", ")}.` : ""}`);
+        setTimeout(() => setFlash(null), missed.length ? 9000 : 3500); }
       else setErr(j.error || "Send failed.");
     } finally { setBusyAction(null); }
   }, [selected, selectedIds, directEmail, loadScenarios]);
@@ -498,24 +507,44 @@ function ScenarioDesk() {
 
   // --- pre-approval from winner ---------------------------------------------
   const issuePreapproval = useCallback(async () => {
-    if (!selected) return;
+    if (!selected || !draft) return;
     const winner = (selected.quotes || []).find((x) => x.is_winner);
     setBusyAction("preapproval");
     try {
+      // SAVE, THEN BUILD FROM THE EDITOR. This letter goes to a LISTING AGENT. It was built from
+      // `selected` — the last saved copy — so an unsaved correction never reached it and the
+      // agent received figures the LO had already fixed on screen.
+      if (!(await saveScenario())) { setErr("Could not save the scenario — no letter was issued."); return; }
+      const d = draft;
       const body = {
-        lead_id: selected.lead_id || undefined,
-        loan_file_id: selected.loan_file_id || undefined,
-        borrower_name: selected.borrower_name || "",
-        co_borrower: selected.co_borrower || "",
-        loan_type: selected.loan_type || "",
-        purchase_price: selected.purchase_price ?? "",
-        down_payment: selected.down_payment ?? "",
-        loan_amount: selected.loan_amount ?? "",
+        lead_id: d.lead_id || undefined,
+        loan_file_id: d.loan_file_id || undefined,
+        borrower_name: d.borrower_name || "",
+        co_borrower: d.co_borrower || "",
+        loan_type: d.loan_type || "",
+        purchase_price: d.purchase_price ?? "",
+        down_payment: d.down_payment ?? "",
+        loan_amount: d.loan_amount ?? "",
         interest_rate: winner?.rate != null ? String(winner.rate) + "%" : "",
-        term: winner?.term || selected.term || "",
-        property_address: selected.property_address || "",
-        occupancy: selected.occupancy === "Investment" ? "Investment" : selected.occupancy === "Primary Residence" ? "Primary residence" : selected.occupancy === "Second Home" ? "Second home" : "",
+        term: winner?.term || d.term || "",
+        property_address: d.property_address || "",
+        occupancy: d.occupancy === "Investment" ? "Investment" : d.occupancy === "Primary Residence" ? "Primary residence" : d.occupancy === "Second Home" ? "Second home" : "",
         conditions: winner?.conditions || undefined,
+        // extra_terms is a FLAT OBJECT, whitelisted by EXTRA_KEYS in /api/preapprovals — the
+        // letter reads x.points / x.lender_fees / x.prepay_penalty directly. It was never
+        // populated at all, so the letter printed a rate with no costs behind it, and had no way
+        // to measure LTV on the desk's own basis.
+        extra_terms: {
+          loan_purpose: d.loan_purpose || "",
+          // The desk measures against the LESSER of as-is and price on a purchase; send the basis
+          // AND the desk's own ratio so the letter cannot quietly compute a different one.
+          as_is_value: d.as_is_value != null ? String(d.as_is_value) : "",
+          ltv: d.ltv != null ? String(d.ltv) : "",
+          dscr: d.dscr != null ? String(d.dscr) : "",
+          points: winner?.points != null ? String(winner.points) : "",
+          lender_fees: winner?.lender_fees != null ? String(winner.lender_fees) : "",
+          prepay_penalty: winner?.prepay ? String(winner.prepay) : "",
+        },
       };
       const r = await fetch("/api/preapprovals", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),

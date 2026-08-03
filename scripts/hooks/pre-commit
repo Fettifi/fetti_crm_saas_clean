@@ -28,7 +28,7 @@ WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'verify-income'
 AUTH=$(printf '%s\n' "$CHANGED" | grep -F -e 'proxy.ts' -e 'scripts/verify-auth-gate')
 # What leaves the building for a wholesale lender. An unlabelled AVM in a MISMO file is a
 # representation about a property that nobody at Fetti actually made.
-DOCS=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/scenario' -e 'app/api/scenarios' -e 'lib/comparePdf' -e 'lib/compareTypes' -e 'scripts/verify-scenario' -e 'scripts/verify-compare')
+DOCS=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/scenario' -e 'app/api/scenarios' -e 'lib/comparePdf' -e 'lib/compareTypes' -e 'scripts/verify-scenario' -e 'scripts/verify-compare' -e 'lib/preapprovalPdf' -e 'app/api/preapprovals' -e 'scripts/verify-preapproval')
 AVM=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/mismo' -e 'lib/urla.ts' -e 'underwriter-desk' -e 'lib/underwritingDesk' -e 'scripts/verify-avm' -e 'scripts/verify-senior-lien' -e 'scripts/verify-dscr-senior')
 # The pricer produces a BORROWER-FACING dollar figure. Its own failure shape is already on
 # record: the PDF route accepted originationPct from the screen and never passed it to the
@@ -79,7 +79,7 @@ if [ -n "$PAYLOAD" ]; then
 fi
 
 if [ -n "$DOCS" ]; then
-  for G in verify:scenario verify:compare-pdf; do
+  for G in verify:scenario verify:preapproval verify:compare-pdf; do
     printf "   %-18s " "$G"
     OUT=$(npm run --silent "$G" 2>&1)
     if [ $? -eq 0 ]; then echo "PASS"; else

@@ -58,9 +58,22 @@ export async function buildPreApprovalPdf(l: any, extra?: any): Promise<Uint8Arr
   // appear only when captured — so a rich term sheet comes through COMPLETE on Fetti
   // letterhead, not dumped into "conditions". LTV is computed from amount/value.
   const x = extra && typeof extra === "object" ? extra : {};
-  const ltv = l.loan_amount && l.purchase_price && Number(l.purchase_price) > 0
-    ? `${Math.round((Number(l.loan_amount) / Number(l.purchase_price)) * 1000) / 10}%`
-    : (x.ltv ? String(x.ltv).trim() : null);
+  // LTV PRECEDENCE, and it was backwards. A STATED ltv — typed by the LO, or extracted from the
+  // lender's own term sheet, into a field labelled "auto if blank" — was unreachable, because the
+  // recomputed figure won whenever amount and price were both present. And the recomputation used
+  // PURCHASE PRICE alone, while the Scenario Desk measures against the LESSER of as-is value and
+  // price on a purchase (lib/scenario.ts ltvBasis). So the letter and the desk could print two
+  // different LTVs for one deal, and the lender's own number lost to ours.
+  //
+  // Stated wins. Otherwise compute on the SAME basis the desk uses.
+  const asIs = Number(x.as_is_value) > 0 ? Number(x.as_is_value) : null;
+  const price = Number(l.purchase_price) > 0 ? Number(l.purchase_price) : null;
+  const isPurchase = /purchase|acquisition/i.test(String(x.loan_purpose || "")) && !/refi/i.test(String(x.loan_purpose || ""));
+  const basis = (isPurchase && asIs != null && price != null) ? Math.min(asIs, price) : (asIs ?? price);
+  const stated = x.ltv != null && String(x.ltv).trim() !== "" ? String(x.ltv).trim() : null;
+  const ltv = stated
+    ? (stated.endsWith("%") ? stated : `${stated}%`)
+    : (l.loan_amount && basis ? `${Math.round((Number(l.loan_amount) / basis) * 1000) / 10}%` : null);
   const rows: [string, string][] = [];
   const opt = (k: string, v: any) => { const s = v == null ? "" : String(v).trim(); if (s) rows.push([k, s]); };
   rows.push(["Loan program", l.loan_type || "—"]);

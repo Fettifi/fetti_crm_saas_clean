@@ -81,6 +81,27 @@ const blank = settleAll({}, { id: "s2" });
 chk(blank.ltv === null && blank.dscr === null && blank.derived === null,
   "a blank scenario carries no ratios and no derived claim");
 
+// ── 9. AN LO-STATED RATIO MUST SURVIVE even when the inputs WOULD derive one. The first version
+//      of settleDerived only respected an LO figure when the derivation came back null, so with
+//      inputs present it silently overwrote whatever was typed — while the editor presented all
+//      four as ordinary editable fields. A box you can type in that discards your entry without
+//      a word is worse than a read-only one.
+const typedWithInputs = settleAll(full, { ...DEAL, ltv: 72, dscr: 1.05, monthly_piti: 3100 });
+chk(typedWithInputs.ltv === 72, "a typed LTV survives even though the inputs would derive 65");
+chk(typedWithInputs.dscr === 1.05, "a typed DSCR survives a live rent and payment");
+chk(typedWithInputs.monthly_piti === 3100, "a typed PITIA survives its own components");
+chk(!typedWithInputs.derived?.ltv && !typedWithInputs.derived?.dscr,
+  "and none of them is claimed as derived any more");
+
+// ── 10. THE FIRST-SAVE CASE. The editor recomputes locally, so a brand-new scenario echoes our
+//       own figure back before any `derived` map exists. That must still read as OURS, or every
+//       fresh scenario would look hand-typed and stop tracking its inputs forever.
+const firstSave = settleAll({}, { ...DEAL, ltv: 65, dscr: 1.5217, monthly_piti: 2760 });
+chk(firstSave.derived?.ltv === 65 && firstSave.derived?.monthly_piti === 2760,
+  "a first save echoing our own computed figures is recognised as DERIVED, not as hand-typed");
+const thenCleared = settleAll(firstSave, { ...DEAL, monthly_rent: null });
+chk(thenCleared.dscr === null, "so clearing the rent afterwards still clears the DSCR");
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). A ratio that outlives its inputs is a number on a wholesaler PDF that nothing supports.\n`); process.exit(1); }
 console.log(`PASS — derived ratios live and die with their inputs; the LO's own figures do not.\n`);

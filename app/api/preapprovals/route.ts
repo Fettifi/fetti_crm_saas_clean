@@ -11,7 +11,10 @@ import { setSetting } from "@/lib/settings";
 // Richer term-sheet fields the preapprovals table has no column for — persisted in
 // app_settings (keyed by letter id) and rendered on the letter so a full term sheet
 // comes through complete, not dropped.
-const EXTRA_KEYS = ["loan_purpose", "rate_type", "monthly_payment", "ltv", "points", "lender_fees", "prepay_penalty", "reserves", "dscr", "lock_period"];
+// as_is_value is carried so the LETTER can measure LTV on the SAME basis as the Scenario Desk
+// (lesser of as-is and price on a purchase). Without it the letter fell back to purchase price
+// alone and printed a different ratio than the desk that produced it.
+const EXTRA_KEYS = ["loan_purpose", "rate_type", "monthly_payment", "ltv", "points", "lender_fees", "prepay_penalty", "reserves", "dscr", "lock_period", "as_is_value"];
 
 const validEmail = (e: any) => typeof e === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 

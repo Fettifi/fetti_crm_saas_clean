@@ -39,9 +39,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const pdf = await buildScenarioPdf(scenario);
     const sent = await sendScenarioToWholesalers(scenario, pdf, selected);
 
-    // Record a "sent" quote per selected wholesaler.
+    // Record a "sent" quote ONLY for wholesalers the mailer actually reached. It returns the
+    // addresses it sent to and skips anyone with no email on file — the route was ignoring that
+    // and stamping "sent" on every selected row, so the scenario claimed the deal had been shopped
+    // to a lender that never received it. That is a false record on a file, and it is the kind
+    // that gets relied on ("we already sent it to them").
+    const reached = new Set((sent || []).map((e) => String(e).toLowerCase()));
     const now = new Date().toISOString();
+    const notSent: string[] = [];
     for (const w of selected) {
+      const email = String(w.email || "").toLowerCase();
+      if (!email || !reached.has(email)) { notSent.push(w.company || email || w.id); continue; }
       await upsertQuote(scenario.id, {
         id: genId(),
         wholesaler_id: w.id,
@@ -66,7 +74,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       });
     } catch (e) { console.warn("[scenario.send] activity log failed:", e); }
 
-    return NextResponse.json({ sent, scenario: saved });
+    // notSent is returned so the screen can NAME who was not reached, rather than a count that
+    // silently differs from the number the LO ticked.
+    return NextResponse.json({ sent, notSent, scenario: saved });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }
