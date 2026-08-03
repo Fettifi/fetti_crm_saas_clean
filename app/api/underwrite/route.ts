@@ -24,7 +24,7 @@ const MAX_ROWS = 1000;
 // ---------------------------------------------------------------- canonical fields
 const STRING_FIELDS = ["address", "city", "state", "zip", "county", "property_type", "notes"] as const;
 const NUMBER_FIELDS = [
-  "units", "price", "rent_monthly", "other_income_monthly", "taxes_annual",
+  "units", "price", "rent_monthly", "rent_annual", "other_income_monthly", "taxes_annual",
   "insurance_annual", "hoa_monthly", "rehab_budget", "arv", "back_tax_amount",
 ] as const;
 const CANONICAL_FIELDS: string[] = [...STRING_FIELDS, ...NUMBER_FIELDS];
@@ -76,6 +76,10 @@ function synonymFor(header: string): string | null {
   if (has("rehab") || has("repair") || has("reno") || has("construction budget") || is("budget")) return "rehab_budget";
   if (is("arv") || has("after repair") || has("after rehab")) return "arv";
   if (has("other", "income") || has("misc", "income") || has("additional", "income") || is("laundry", "parking income", "storage income")) return "other_income_monthly";
+  // ANNUAL RENT IS NOT MONTHLY RENT, and reading one as the other inflates DSCR and the max loan
+  // by 12x — in the direction that approves a deal. "Annual Rent" / "Yearly Gross Income" get
+  // their own field and are divided down at ingest, the same way an annual tax column already is.
+  if ((has("annual", "rent") || has("yearly", "rent") || has("annual", "income") || has("yearly", "income") || has("rent", "yr") || has("rent", "year"))) return "rent_annual";
   if (has("rent") || has("gross income") || has("monthly income") || is("income")) return "rent_monthly"; // "monthly rent", "gross rent", "rent"
   if (is("purchase price", "list price", "asking price", "price", "value", "current value", "cost", "purchase", "contract price", "sales price", "sale price", "market value", "av", "assessed value")) return "price";
   if (has("price") || has("value")) return "price";
@@ -83,14 +87,39 @@ function synonymFor(header: string): string | null {
   return null;
 }
 
+// How well a header matches the field it claims. A header that IS the field name beats one that
+// merely contains the word, so "Assessed Value" can no longer starve "Purchase Price" of `price`
+// and "Tax Rate" can no longer starve "Annual Taxes" of `taxes_annual` purely by sitting to the
+// left of it in the sheet.
+function claimStrength(header: string, field: string): number {
+  const h = norm(header);
+  const EXACT: Record<string, string[]> = {
+    price: ["purchase price", "price", "contract price", "sales price", "sale price"],
+    taxes_annual: ["annual taxes", "taxes", "property tax", "property taxes", "re taxes"],
+    rent_monthly: ["monthly rent", "rent", "gross rent"],
+    rent_annual: ["annual rent", "yearly rent"],
+    insurance_annual: ["insurance", "annual insurance", "hazard"],
+  };
+  if ((EXACT[field] || []).includes(h)) return 3;                 // it IS the field
+  if ((EXACT[field] || []).some((e) => h.includes(e))) return 2;  // contains the full phrase
+  return 1;                                                       // matched only on a keyword
+}
+
 function fallbackMapping(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
-  const claimed = new Set<string>();
+  // TWO PASSES, STRONGEST CLAIM WINS. First-come-first-served meant sheet COLUMN ORDER decided
+  // which header owned a field: an "Assessed Value" column to the left of "Purchase Price" took
+  // `price`, so LTV was computed against the assessor's number and the real price was ignored.
+  const best = new Map<string, { header: string; score: number }>();
   for (const h of headers) {
     const f = synonymFor(h);
-    if (f && !claimed.has(f)) { mapping[h] = f; claimed.add(f); }
-    else mapping[h] = "ignore";
+    if (!f) { mapping[h] = "ignore"; continue; }
+    const score = claimStrength(h, f);
+    const cur = best.get(f);
+    if (!cur || score > cur.score) best.set(f, { header: h, score });
   }
+  for (const h of headers) mapping[h] = "ignore";
+  for (const [f, { header }] of best) mapping[header] = f;
   return mapping;
 }
 
@@ -150,8 +179,12 @@ const US_STATES = new Set(["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL",
 // sheet didn't already provide — an explicit ZIP/State/City column always wins.
 function deriveLoc(address: string): { zip?: string; state?: string; city?: string } {
   const out: { zip?: string; state?: string; city?: string } = {};
-  const zips = address.match(/\b\d{5}(?:-\d{4})?\b/g);
-  if (zips && zips.length) out.zip = zips[zips.length - 1].slice(0, 5);
+  // A HOUSE NUMBER IS NOT A ZIP. "10432 Woodward Ave, Detroit, MI" has exactly one 5-digit run
+  // and it is the street number — which was then used as the ZIP, driving the wrong county tax
+  // rate and market intel, AND hiding the row from the missing-ZIP panel because it looked
+  // populated. A real ZIP sits at the END of the address, after the state or after a comma.
+  const zipAtEnd = address.match(/(?:\b[A-Za-z]{2}\.?\s+|,\s*)(\d{5})(?:-\d{4})?\s*$/);
+  if (zipAtEnd) out.zip = zipAtEnd[1];
   const st = address.match(/[,\s]([A-Za-z]{2})\.?\s+\d{5}(?:-\d{4})?\b/);
   if (st && US_STATES.has(st[1].toUpperCase())) out.state = st[1].toUpperCase();
   const parts = address.split(",").map((s) => s.trim()).filter(Boolean);
@@ -205,7 +238,10 @@ function buildRows(headers: string[], dataRows: unknown[][], mapping: Record<str
       property_type: toStr(rec.property_type),
       units: toNum(rec.units),
       price: toNum(rec.price),
-      rent_monthly: toNum(rec.rent_monthly),
+      // AN ANNUAL RENT COLUMN IS DIVIDED DOWN, not read as monthly. Left as-is it inflated DSCR
+      // and the max loan by 12x, in the direction that approves the deal. The monthly column wins
+      // if the sheet has both; the conversion is recorded in the notes so it is never silent.
+      rent_monthly: toNum(rec.rent_monthly) ?? (toNum(rec.rent_annual) != null ? Math.round((toNum(rec.rent_annual) as number) / 12) : null),
       other_income_monthly: toNum(rec.other_income_monthly),
       // Map what's on the sheet verbatim — even if a taxes value looks monthly, do NOT
       // guess a conversion; the engine flags estimates and humans verify.
@@ -216,7 +252,9 @@ function buildRows(headers: string[], dataRows: unknown[][], mapping: Record<str
       arv: toNum(rec.arv),
       back_tax_status: backTax != null && backTax > 0 ? "owed" : "unknown",
       back_tax_amount: backTax,
-      notes: toStr(rec.notes),
+      notes: [toStr(rec.notes), (toNum(rec.rent_monthly) == null && toNum(rec.rent_annual) != null)
+        ? `Rent converted from an ANNUAL column ($${Math.round(toNum(rec.rent_annual) as number).toLocaleString()}/yr ÷ 12)` : null]
+        .filter(Boolean).join(" · ") || null,
     });
   }
   return rows;

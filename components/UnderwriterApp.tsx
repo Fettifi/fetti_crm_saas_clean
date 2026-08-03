@@ -47,14 +47,21 @@ const fp = (n: number | null | undefined, d = 1) =>
 const fx = (n: number | null | undefined) =>
   n == null || !Number.isFinite(n) ? "—" : n.toFixed(2);
 
-// The six assumptions editable on the bar (rest ride on DEFAULT_ASSUMPTIONS / saved values).
-const EDITABLE: { key: keyof Assumptions; label: string; suffix: string; step: string }[] = [
-  { key: "rate_pct", label: "Rate", suffix: "%", step: "0.125" },
-  { key: "target_dscr", label: "Target DSCR", suffix: "x", step: "0.05" },
-  { key: "max_ltv_pct", label: "Max LTV", suffix: "%", step: "1" },
-  { key: "vacancy_pct", label: "Vacancy", suffix: "%", step: "1" },
-  { key: "mgmt_pct", label: "Mgmt", suffix: "%", step: "1" },
-  { key: "closing_cost_pct", label: "Closing costs", suffix: "%", step: "0.5" },
+// EVERY assumption is editable. Four were not — including tax_fallback_pct, the single estimate
+// that sets the tax on every UNVERIFIED door in the portfolio, and amort_years, which directly
+// sizes loan_by_dscr. `max` bounds each one: they were bounded below but not above on the screen
+// and not at all in the API, so a fat-fingered 900 vacancy silently drove every figure.
+const EDITABLE: { key: keyof Assumptions; label: string; suffix: string; step: string; max: number }[] = [
+  { key: "rate_pct", label: "Rate", suffix: "%", step: "0.125", max: 30 },
+  { key: "target_dscr", label: "Target DSCR", suffix: "x", step: "0.05", max: 5 },
+  { key: "max_ltv_pct", label: "Max LTV", suffix: "%", step: "1", max: 100 },
+  { key: "vacancy_pct", label: "Vacancy", suffix: "%", step: "1", max: 100 },
+  { key: "mgmt_pct", label: "Mgmt", suffix: "%", step: "1", max: 100 },
+  { key: "closing_cost_pct", label: "Closing costs", suffix: "%", step: "0.5", max: 100 },
+  { key: "amort_years", label: "Amortization", suffix: "yr", step: "1", max: 40 },
+  { key: "maintenance_pct", label: "Maintenance", suffix: "%", step: "1", max: 100 },
+  { key: "tax_fallback_pct", label: "Tax fallback", suffix: "%", step: "0.1", max: 10 },
+  { key: "ins_fallback_pct", label: "Ins. fallback", suffix: "%", step: "0.1", max: 10 },
 ];
 
 type SavedMeta = { id: string; name: string; count: number; updated_at: string };
@@ -80,7 +87,7 @@ function ConstraintChip({ c }: { c: UnderwriteResult["binding_constraint"] }) {
   );
 }
 
-function SummaryCard({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "red" | "emerald" }) {
+function SummaryCard({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "red" | "emerald" | "amber" }) {
   const border = tone === "red" ? "border-red-500/40 bg-red-500/[0.07]" : tone === "emerald" ? "border-emerald-500/40 bg-emerald-500/[0.06]" : "border-slate-800 bg-slate-900/40";
   const valColor = tone === "red" ? "text-red-300" : "text-white";
   return (
@@ -206,8 +213,18 @@ function ManualPropertyForm({ onAdd, hasRows }: {
 }) {
   const [f, setF] = useState({ address: "", city: "", state: "", zip: "", price: "", rent: "", taxes: "", insurance: "", hoa: "", rehab: "", arv: "" });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF((p) => ({ ...p, [k]: e.target.value }));
-  const num = (s: string) => { const n = Number(String(s).replace(/[$,\s]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
-  const canAdd = f.address.trim().length > 3 && num(f.price) != null;
+  // `n > 0 ? n : null` made a STATED $0 tax / $0 HOA / $0 rent vanish into the model's estimate —
+  // the opposite of the ActualsEditor in this same component, and of the rule the rest of the app
+  // follows. An empty box is unset; a typed 0 is a fact about the door.
+  const num = (s: string) => {
+    if (s == null || String(s).trim() === "") return null;
+    const cleaned = String(s).replace(/[^0-9.]/g, "");
+    if (cleaned === "" || cleaned === ".") return null;
+    const n = Number(cleaned);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  // Price still has to be a real figure — a $0 price cannot size a loan.
+  const canAdd = f.address.trim().length > 3 && (num(f.price) ?? 0) > 0;
   const submit = () => {
     if (!canAdd) return;
     onAdd({
@@ -387,11 +404,23 @@ export default function UnderwritePage() {
     const out: Assumptions = { ...baseAssump };
     for (const f of EDITABLE) {
       const n = parseFloat(aStr[f.key]);
-      if (Number.isFinite(n) && n >= 0) (out as any)[f.key] = n;
+      // Out-of-range falls back to the base — and `invalidAssumptions` below SAYS SO, because the
+      // old behaviour left the box showing one thing while a different number drove every figure
+      // on screen.
+      if (Number.isFinite(n) && n >= 0 && n <= f.max) (out as any)[f.key] = n;
     }
     if (out.target_dscr <= 0) out.target_dscr = DEFAULT_ASSUMPTIONS.target_dscr; // never divide by zero
     return out;
   }, [aStr, baseAssump]);
+
+  /** Assumptions whose box does NOT match the number actually driving the math. Silence here is
+   *  how the visible assumption and the effective one diverge. */
+  const invalidAssumptions = useMemo(() => EDITABLE.filter((f) => {
+    const raw = aStr[f.key];
+    if (raw == null || raw.trim() === "") return true;
+    const n = parseFloat(raw);
+    return !(Number.isFinite(n) && n >= 0 && n <= f.max);
+  }), [aStr]);
 
   // --- LIVE recompute: identical math to the API (pure isomorphic engine) -----
   const computed = useMemo<{ results: UnderwriteResult[]; summary: PortfolioSummary } | null>(
@@ -671,21 +700,39 @@ export default function UnderwritePage() {
       ["TITLE / ENTITY FLAGS", ""],
       ...risk.flags.map((r): (string | number)[] => [r.address, (r.notes || "").slice(0, 200)]),
     ];
+    // A column of max-loan figures with no rate / LTV / DSCR behind them cannot be checked by the
+    // person receiving it, and these assumptions are live-editable on screen.
+    dash.push([], ["ASSUMPTIONS USED FOR EVERY FIGURE IN THIS WORKBOOK", ""],
+      ["Note rate %", assumptions.rate_pct], ["Amortization (yrs)", assumptions.amort_years],
+      ["Target DSCR", assumptions.target_dscr], ["Max LTV %", assumptions.max_ltv_pct],
+      ["Vacancy %", assumptions.vacancy_pct], ["Management %", assumptions.mgmt_pct],
+      ["Maintenance %", assumptions.maintenance_pct], ["Closing costs %", assumptions.closing_cost_pct],
+      ["Tax fallback % of price (unverified doors)", assumptions.tax_fallback_pct],
+      ["Insurance fallback % of price", assumptions.ins_fallback_pct]);
     const wsDash = XLSX.utils.aoa_to_sheet(dash);
     wsDash["!cols"] = [{ wch: 42 }, { wch: 95 }];
     XLSX.utils.book_append_sheet(wb, wsDash, "Dashboard");
 
-    const header = ["Address", "City", "County", "Price", "Monthly Rent", "Annual Taxes", "Tax Status", "Past-Due Taxes", "Verdict", "Max Loan", "DSCR", "LTV %", "Monthly Cashflow", "Cash Needed", "County Notes"];
+    // THE WORKBOOK IS THE CLIENT-FACING DELIVERABLE and it was stripping every provenance signal
+    // the screen carries: no flags, no estimated markers, insurance missing entirely, and the
+    // Annual Taxes cell BLANK on exactly the doors where the figure was modelled — so the reader
+    // could not tell an unverified door from a verified one.
+    const header = ["Address", "City", "County", "Price", "Monthly Rent", "Annual Taxes", "Taxes Estimated?",
+      "Annual Insurance", "Insurance Estimated?", "Tax Status", "Past-Due Taxes", "Verdict", "Max Loan", "DSCR",
+      "LTV %", "Monthly Cashflow", "Cash Needed", "Flags", "County Notes"];
     const body = computed.results.map((x) => {
       const r = rowById.get(x.id);
       return [
-        x.address, r?.city ?? "", r?.county ?? "", r?.price ?? "", r?.rent_monthly ?? "", r?.taxes_annual ?? "",
+        x.address, r?.city ?? "", r?.county ?? "", r?.price ?? "", r?.rent_monthly ?? "",
+        // Print the figure the engine USED, and say whether we modelled it.
+        Math.round(x.taxes_m * 12), x.taxes_estimated ? "ESTIMATED" : "verified/entered",
+        Math.round(x.insurance_m * 12), x.insurance_estimated ? "ESTIMATED" : "verified/entered",
         r?.back_tax_status ?? "", r?.back_tax_amount ?? "", x.verdict, x.max_loan, x.dscr_at_max_loan ?? "", x.ltv_at_max_loan_pct ?? "",
-        x.monthly_cashflow, x.cash_needed, r?.notes ?? "",
+        x.monthly_cashflow, x.cash_needed, (x.flags || []).join(" | "), r?.notes ?? "",
       ];
     });
     const wsAll = XLSX.utils.aoa_to_sheet([header, ...body]);
-    wsAll["!cols"] = header.map((_, i) => ({ wch: i === 0 ? 26 : i === 14 ? 110 : 14 }));
+    wsAll["!cols"] = header.map((_, i) => ({ wch: i === 0 ? 26 : i >= header.length - 2 ? 80 : 14 }));
     XLSX.utils.book_append_sheet(wb, wsAll, "All Doors");
 
     const rBody = [
@@ -832,6 +879,11 @@ export default function UnderwritePage() {
               ))}
               <div className="text-[11px] text-slate-600 pb-2">
                 {assumptions.amort_years}-yr amort · maint {assumptions.maintenance_pct}% · tax fallback {assumptions.tax_fallback_pct}% · ins fallback {assumptions.ins_fallback_pct}%
+                {invalidAssumptions.length > 0 && (
+                  <span className="ml-2 text-amber-300">
+                    · {invalidAssumptions.map((f) => f.label).join(", ")} {invalidAssumptions.length === 1 ? "is" : "are"} not a usable value — the figures above use the default
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -861,7 +913,15 @@ export default function UnderwritePage() {
         {computed && tab === "dashboard" && (
           <div className="mt-4 space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              <SummaryCard label="Past-due taxes" value={fm(risk.pastDue)} sub="verified at the county" tone={risk.pastDue > 0 ? "red" : "emerald"} />
+              {/* The caption claimed county verification unconditionally and went emerald at $0 — so a
+              portfolio where NOTHING had been checked read as "verified, nothing owed". Say what is
+              actually known. */}
+          <SummaryCard
+            label="Past-due taxes"
+            value={fm(risk.pastDue)}
+            sub={risk.pending.length ? `${risk.pending.length} door${risk.pending.length === 1 ? "" : "s"} NOT yet verified` : "verified at the county"}
+            tone={risk.pastDue > 0 ? "red" : risk.pending.length ? "amber" : "emerald"}
+          />
               <SummaryCard label="Tax-sale alerts" value={String(risk.urgent.length)} sub="act immediately" tone={risk.urgent.length ? "red" : "emerald"} />
               <SummaryCard label="Delinquent doors" value={String(risk.delinquent.length + risk.shared.length)} tone={risk.delinquent.length ? "red" : "emerald"} />
               <SummaryCard label="Title / entity flags" value={String(risk.flags.length)} sub="owner of record differs" />

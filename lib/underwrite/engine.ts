@@ -97,10 +97,21 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 export function underwriteOne(p: PropertyRow, a: Assumptions): UnderwriteResult {
   const flags: string[] = [];
   const price = Number(p.price) || 0;
-  const rent = (Number(p.rent_monthly) || 0) + (Number(p.other_income_monthly) || 0);
+  // TWO DIFFERENT INCOME FIGURES, and conflating them inflated every DSCR-bound loan.
+  //   scheduledRent — the LEASE rent. This is what a lender sizes DSCR on, and what the comment
+  //     below already claimed was being used.
+  //   grossIncome  — lease rent PLUS parking / laundry / storage. Real money, so it belongs in
+  //     NOI, cap rate and cashflow — but it is not scheduled rent, and counting it in the DSCR
+  //     numerator raised the ratio, lifted max_loan on every DSCR-bound door, and contradicted
+  //     the lease-governs rule the income engine enforces elsewhere.
+  const scheduledRent = Number(p.rent_monthly) || 0;
+  const grossIncome = scheduledRent + (Number(p.other_income_monthly) || 0);
 
   if (!price) flags.push("No price/value on sheet — cannot size a loan");
-  if (!p.rent_monthly) flags.push("No rent on sheet — DSCR cannot be computed");
+  // `!p.rent_monthly` was truthiness, so a STATED $0 (a vacant door) read as "no rent on sheet" —
+  // a missing column and a vacancy are different facts and the flag has to say which.
+  if (p.rent_monthly == null) flags.push("No rent on sheet — DSCR cannot be computed");
+  else if (scheduledRent === 0) flags.push("Rent stated as $0 (vacant) — DSCR cannot be computed on this door");
 
   const taxes_estimated = p.taxes_annual == null && price > 0;
   const insurance_estimated = p.insurance_annual == null && price > 0;
@@ -110,7 +121,7 @@ export function underwriteOne(p: PropertyRow, a: Assumptions): UnderwriteResult 
   if (insurance_estimated) flags.push(`Insurance estimated at ${a.ins_fallback_pct}% of price — verify`);
   const taxes_m = taxesA / 12, insurance_m = insA / 12, hoa_m = Number(p.hoa_monthly) || 0;
 
-  const effective_income_m = rent * (1 - a.vacancy_pct / 100);
+  const effective_income_m = grossIncome * (1 - a.vacancy_pct / 100);
   const mgmt_m = effective_income_m * (a.mgmt_pct / 100);
   const maint_m = effective_income_m * (a.maintenance_pct / 100);
   const noi_annual = (effective_income_m - mgmt_m - maint_m) * 12 - taxesA - insA - hoa_m * 12;
@@ -118,7 +129,7 @@ export function underwriteOne(p: PropertyRow, a: Assumptions): UnderwriteResult 
 
   // Sizing: LTV cap vs DSCR floor (DSCR = gross rent / PITIA).
   const loan_by_ltv = price * (a.max_ltv_pct / 100);
-  const pi_max = rent / a.target_dscr - taxes_m - insurance_m - hoa_m; // max P&I the rent supports
+  const pi_max = scheduledRent / a.target_dscr - taxes_m - insurance_m - hoa_m; // max P&I the LEASE rent supports
   const loan_by_dscr = pi_max > 0 ? loanFromPayment(pi_max, a.rate_pct, a.amort_years) : 0;
   let max_loan = Math.max(0, Math.min(loan_by_ltv, loan_by_dscr));
   let binding: UnderwriteResult["binding_constraint"] = "none";
@@ -127,7 +138,7 @@ export function underwriteOne(p: PropertyRow, a: Assumptions): UnderwriteResult 
 
   const pi_at_max = monthlyPayment(max_loan, a.rate_pct, a.amort_years);
   const pitia = pi_at_max + taxes_m + insurance_m + hoa_m;
-  const dscr_at_max = pitia > 0 && rent > 0 ? r2(rent / pitia) : null;
+  const dscr_at_max = pitia > 0 && scheduledRent > 0 ? r2(scheduledRent / pitia) : null;
   const ltv_at_max = price > 0 ? r2((max_loan / price) * 100) : null;
 
   const backTaxOwed = p.back_tax_status === "owed" ? Number(p.back_tax_amount) || 0 : 0;
@@ -139,9 +150,9 @@ export function underwriteOne(p: PropertyRow, a: Assumptions): UnderwriteResult 
 
   if (p.back_tax_status === "unknown") flags.push("Back taxes UNVERIFIED — run title/tax check");
   if (backTaxOwed > 0) flags.push(`Back taxes OWED: $${backTaxOwed.toLocaleString()} (added to cash needed)`);
-  if (binding === "dscr" && price > 0 && rent > 0) flags.push(`DSCR is the binding constraint — rent caps the loan below ${a.max_ltv_pct}% LTV`);
+  if (binding === "dscr" && price > 0 && scheduledRent > 0) flags.push(`DSCR is the binding constraint — rent caps the loan below ${a.max_ltv_pct}% LTV`);
   if (max_loan === 0 && price > 0) flags.push("Rent cannot support any loan at the target DSCR");
-  if (monthly_cashflow < 0 && rent > 0) flags.push("NEGATIVE monthly cashflow at max loan");
+  if (monthly_cashflow < 0 && grossIncome > 0) flags.push("NEGATIVE monthly cashflow at max loan");
   if (cap_rate_pct != null && cap_rate_pct < 5) flags.push(`Cap rate ${cap_rate_pct}% — thin for the risk`);
 
   let verdict: UnderwriteResult["verdict"];
@@ -152,7 +163,7 @@ export function underwriteOne(p: PropertyRow, a: Assumptions): UnderwriteResult 
 
   return {
     id: p.id, address: p.address,
-    gross_income_m: r2(rent), effective_income_m: r2(effective_income_m),
+    gross_income_m: r2(grossIncome), effective_income_m: r2(effective_income_m),
     taxes_m: r2(taxes_m), taxes_estimated, insurance_m: r2(insurance_m), insurance_estimated, hoa_m: r2(hoa_m),
     noi_annual: Math.round(noi_annual), cap_rate_pct,
     loan_by_ltv: Math.round(loan_by_ltv), loan_by_dscr: Math.round(loan_by_dscr), max_loan,

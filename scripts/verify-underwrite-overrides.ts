@@ -105,6 +105,32 @@ const otherBase = base.results.find((r) => r.id === "b")!;
 chk(other.max_loan === otherBase.max_loan && other.taxes_m === otherBase.taxes_m,
   "editing one door changes ONLY that door — no bleed onto the other properties");
 
+// ── 8. DSCR IS SIZED ON LEASE RENT, not on rent plus parking and laundry. Conflating them
+//      raised the ratio, lifted max_loan on every DSCR-bound door, and contradicted the
+//      lease-governs rule the income engine enforces. Other income still belongs in NOI.
+const thin = [door("e", { price: 150000, rent_monthly: 900 })];
+const thinB = run(thin);
+const thinOther = run(thin.map((r) => ({ ...r, other_income_monthly: 400 })));
+chk(thinB.results[0].binding_constraint === "dscr", "control door is DSCR-bound so sizing can move");
+chk(thinOther.results[0].dscr_at_max_loan === thinB.results[0].dscr_at_max_loan,
+  "parking / laundry income does NOT raise DSCR (it is not scheduled lease rent)");
+chk(thinOther.results[0].max_loan === thinB.results[0].max_loan,
+  "and does NOT lift the DSCR-supported max loan");
+chk(thinOther.results[0].noi_annual > thinB.results[0].noi_annual,
+  `but it DOES raise NOI, because it is real money (${Math.round(thinB.results[0].noi_annual).toLocaleString()} -> ${Math.round(thinOther.results[0].noi_annual).toLocaleString()})`);
+chk(thinOther.results[0].gross_income_m > thinB.results[0].gross_income_m,
+  "and is reported in gross income");
+
+// ── 9. A STATED $0 RENT (vacant) is not the same fact as a MISSING rent column.
+const vacant = run([door("f", { rent_monthly: 0 })]);
+const missing = run([door("g", { rent_monthly: null })]);
+chk(vacant.results[0].flags.some((f) => /vacant/i.test(f)),
+  "a stated $0 rent is flagged as VACANT");
+chk(missing.results[0].flags.some((f) => /No rent on sheet/i.test(f)),
+  "a missing rent column is flagged as missing");
+chk(!vacant.results[0].flags.some((f) => /No rent on sheet/i.test(f)),
+  "and a vacancy is NOT reported as an absent column");
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). An editor that does not reach the roll-up is worse than a read-only grid, because it looks fixed.\n`); process.exit(1); }
 console.log(`PASS — per-property actuals reach the property, the roll-up and the exports.\n`);
