@@ -33,3 +33,22 @@ export function magicApplyLink(lead: { id: string; loan_purpose?: string | null 
   const goal = goalFor(lead.loan_purpose);
   return `${APP}/apply/form?lead=${encodeURIComponent(lead.id)}&t=${appLinkToken(lead.id)}${goal ? `&goal=${goal}` : ""}`;
 }
+
+// ── ONE-CLICK SMS OPT-IN ──────────────────────────────────────────────────────────────────
+//
+// 136 leads hold a valid 10-digit phone and no SMS consent — and email-only leads reply
+// 0 times out of 128, while leads who also get a text reply 20.6%. The only invitation we
+// ever made was a line of text in three of the seven email bodies ("Prefer to text? Text me
+// at …"): 228 sends carrying it produced exactly ONE consent grant. 0.9%.
+//
+// A texted-in keyword remains the strongest consent that exists and is untouched. This is
+// the second-best thing: one screen, the full disclosure, a genuinely unchecked box. The
+// token is scoped to opt-in specifically so a leaked apply link cannot grant consent.
+export function optInToken(leadId: string): string {
+  return crypto.createHmac("sha256", signingSecret() + ":smsoptin").update(leadId).digest("hex").slice(0, 16);
+}
+
+/** The lead's personal "yes, you may text me" link. */
+export function smsOptInLink(lead: { id: string }): string {
+  return `${APP}/optin/${encodeURIComponent(lead.id)}?t=${optInToken(lead.id)}`;
+}

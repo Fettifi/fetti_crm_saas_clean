@@ -73,6 +73,8 @@ type Body = {
 // so a tier means the same thing regardless of how the lead arrived.
 
 export async function POST(req: NextRequest) {
+  // Did THIS request flip SMS consent on for the first time? See the consent-flip branch.
+  let consentJustGranted = false;
   try {
     // Abuse protection: cap submissions per IP (generous so real users and
     // shared office IPs are never blocked; stops bulk spam). Fail-open. Trusted
@@ -246,11 +248,15 @@ export async function POST(req: NextRequest) {
       // MERGE raw so the multi-step application accumulates (contact step + the full
       // 1003 step: DOB, citizenship, employment, assets, SSN…). Previously `raw` was
       // excluded on update, so everything collected after the contact step was lost.
+      // Set inside the merge below; read by the returning-lead branch far downstream.
       const priorRaw = (existingRaw && typeof existingRaw === "object" ? existingRaw : {}) as Record<string, any>;
       const mergedRaw: Record<string, any> = { ...priorRaw, ...rawBody };
       // CONSENT IS A RATCHET: a later submission with the SMS box unchecked must never
       // erase a consent already on file — only STOP (sms/inbound) revokes. Restore the
       // original grant + its proof fields if the new payload would downgrade them.
+      // Did THIS submission turn SMS consent on for the first time? (Read before the ratchet
+      // below restores an older grant, or every resubmission would look like a fresh one.)
+      consentJustGranted = priorRaw.sms_consent !== true && mergedRaw.sms_consent === true;
       if (priorRaw.sms_consent === true && mergedRaw.sms_consent !== true) {
         mergedRaw.sms_consent = true;
         mergedRaw.sms_consent_at = priorRaw.sms_consent_at ?? mergedRaw.sms_consent_at;
@@ -472,6 +478,40 @@ export async function POST(req: NextRequest) {
           } catch (e) { console.warn("[/api/apply] instant-call trigger failed:", e); }
         });
       }
+    } else if (!quarantined && !promoteScheduled && consentJustGranted) {
+      // CONSENT THAT ARRIVES SECONDS AFTER THE FIRST TOUCH WAS NEVER ACTED ON.
+      //
+      // The two-step intake races its own first touch and the text always loses: step 1 creates
+      // the lead and fires an email-only first touch (SMS consent not yet given), step 2 posts
+      // the ticked box 16-39 seconds later. lib/leadPipeline.ts evaluates consent at the instant
+      // of intake, and the one path that could repair it — this returning-lead branch — was
+      // gated on `!app_completed`, which is exactly what the consent-carrying second submission
+      // sets. Proven: one lead's consent landed 39 seconds after her first-touch email and she
+      // got no SMS until the drip six days later; another waited two days. A lead whose second
+      // submission was NOT app_completed did get a text three minutes later through this branch,
+      // which is what shows the branch works and the exclusion is what stranded the rest.
+      //
+      // 15 leads hold sms_consent=true with an email-only first touch outside quiet hours; in 13
+      // the consent timestamp postdates the first-touch row. They belong in the 20.6%-reply
+      // both-channel bucket, and this is the moment of peak intent.
+      after(async () => {
+        try {
+          const { data: fresh } = await supabaseAdmin.from("leads").select("id, full_name, first_name, phone, state, loan_purpose, raw, nurture_paused").eq("id", data.id).maybeSingle();
+          if (!fresh || !(fresh as any).phone) return;
+          const { smsAllowed, messagingAllowed } = await import("@/lib/smsConsent");
+          if (!messagingAllowed(fresh as any).ok || !smsAllowed((fresh as any).raw).ok) return;
+          const { respondToLead } = await import("@/lib/notify/leadResponder");
+          const first = ((fresh as any).first_name || (fresh as any).full_name || "").split(" ")[0] || "there";
+          const purpose = prettyPurpose((fresh as any).loan_purpose);
+          await respondToLead({
+            id: (fresh as any).id, kind: "first_touch", name: (fresh as any).full_name,
+            email: null,                                   // email already went out — SMS leg only
+            phone: (fresh as any).phone, state: (fresh as any).state,
+            loan_purpose: (fresh as any).loan_purpose, raw: (fresh as any).raw,
+            message: `Hey ${first}, it's ${COMMS_PERSONA} at Fetti — thanks for the go-ahead to text. Quick one on the ${purpose}: is it already under contract, still hunting, or early research?`,
+          });
+        } catch (e) { console.warn("[/api/apply] consent-flip SMS failed:", e); }
+      });
     } else if (!quarantined && !promoteScheduled && !(body as any).app_completed) {
       // A KNOWN lead came back — strong signal. Alert the team AND text/email them a
       // warm check-in (throttled 1/24h — never a duplicate barrage).

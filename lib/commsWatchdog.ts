@@ -12,7 +12,7 @@ import { markConciergeReply, expertiseFor } from "@/lib/markConcierge";
 import { getLeadMessagesForAI, countRecentOutbound, sendSms, logComms } from "@/lib/comms";
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { renderFirstTouch } from "@/lib/notify/emailCopy";
-import { magicApplyLink } from "@/lib/magicLink";
+import { magicApplyLink , smsOptInLink } from "@/lib/magicLink";
 import { cfg, getSetting, setSetting } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
 import { getMessages } from "@/lib/phoneMessages";
@@ -188,7 +188,7 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
       try {
         const appLink = magicApplyLink(l as any);
         const calendly = ((await cfg("CALENDLY_URL")) || "").trim() || null;
-        const emailT = renderFirstTouch(l as any, { appLink, calendly });
+        const emailT = renderFirstTouch(l as any, { appLink, calendly, optInLink: smsAllowed((l as any).raw).ok ? null : smsOptInLink(l as any) });
         const smsOk = raw.sms_consent === true || raw.consent?.sms_optin === true;
         const res = await respondToLead({
           id: (l as any).id, kind: "first_touch", name: (l as any).full_name, email: (l as any).email,

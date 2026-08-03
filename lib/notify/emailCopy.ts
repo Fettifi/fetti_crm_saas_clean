@@ -236,7 +236,13 @@ export function purposeInsight(raw?: string | null): string {
  * Render the conversion first-touch email. Falls back to the classic template
  * when no app link is available (should be rare — every lead gets one).
  */
-export function renderFirstTouch(lead: EmailLead, opts: { appLink?: string | null; calendly?: string | null }): EmailTouch {
+export function renderFirstTouch(
+  lead: EmailLead,
+  // `optInLink` is the one-click SMS consent page. The first touch is the highest-attention
+  // email in the funnel and it was the ONE place the invitation to text never appeared —
+  // it ran only on three of the seven drip bodies.
+  opts: { appLink?: string | null; calendly?: string | null; optInLink?: string | null },
+): EmailTouch {
   if (!opts.appLink) return renderTouch(EMAIL_TOUCHES.first_touch, lead);
   const first = safeFirstName(lead);
   const greet = first ? `${first} — your` : "Your"; // broken merge = loudest automation tell
@@ -247,7 +253,9 @@ export function renderFirstTouch(lead: EmailLead, opts: { appLink?: string | nul
   // booking link — a third, heavier ask competing with the reply it had just requested. The two
   // drip templates that ever earned a reply asked ONE question with named options. Everything
   // here is now pointed at the reply; the calendar stays available on request, not as a rival CTA.
-  const ps = `P.S. Rather talk than type? Say the word and I'll call you.`;
+  const ps = opts.optInLink
+    ? `P.S. Rather text than type? Tap once and I'll text you instead: ${opts.optInLink}`
+    : `P.S. Rather talk than type? Say the word and I'll call you.`;
   // Identity/NMLS live in the signature footer (markSignatureLite) — body stays personal.
   return {
     subject: `your ${purpose}`,

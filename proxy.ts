@@ -116,7 +116,9 @@ export async function proxy(request: NextRequest) {
     }
 
     // Internal CRM pages — require login. Public marketing/borrower pages
-    // (/home, /apply, /quote, /start, /lending, /file, /portal, /privacy, /terms) are NOT listed.
+    // (/home, /apply, /quote, /start, /lending, /file, /optin, /portal, /privacy, /terms) are NOT
+    // listed. /optin is the one-click SMS consent page — a borrower reaches it from an email
+    // link and must never hit a login wall; it is gated by an HMAC token instead.
     const protectedRoutes = [
         '/leads', '/pipeline', '/settings', '/training', '/team',
         '/command', '/los', '/agents', '/partners', '/requests', '/automations', '/task-list', '/roadmap', '/dashboard', '/growth', '/content', '/doctor', '/preapprovals', '/rupee', '/pricing', '/funnel', '/ads', '/security', '/studio', '/esign', '/pricer', '/income', '/messages', '/scenarios', '/conversations', '/compare', '/show', '/competitors', '/realtors', '/tiktok-today', '/underwrite', '/underwriter', '/deal-analyzer', '/scout', '/lookup',

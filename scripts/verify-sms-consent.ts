@@ -17,6 +17,9 @@ import { readFileSync } from "fs";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
+/** Assert on CODE, not on the comments that describe the defect. */
+const code = (f: string) =>
+  readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
 
 console.log(`\nSMS CONSENT — one predicate, and it fails closed\n`);
 
@@ -120,6 +123,36 @@ for (const f of SEND_PATHS) {
   const sendBody = comms.slice(comms.indexOf("export async function sendSms"), comms.indexOf("export async function sendSms") + 3000);
   chk(/isPhoneSuppressed\(/.test(sendBody), "and sendSms consults it before every send");
   chk(!/deferred:\s*true[^\n]*suppress/i.test(sendBody), "a suppressed number is a refusal, never a retryable defer");
+}
+
+// ── 8. THE ONE-CLICK OPT-IN: a compliant way to ASK, and it must fail closed too.
+//    136 leads hold a valid phone and no SMS consent, and the only invitation we ever made
+//    was a line of text inside three of seven drip bodies — 228 sends, ONE grant, 0.9%.
+{
+  const route = code("app/api/optin/route.ts");
+  chk(/optInToken\(String\(id\)\)/.test(route), "the grant route verifies an HMAC token scoped to opt-in, not the apply token");
+  chk(/raw\.sms_optout_at\)\s*return/.test(route), "a link can never overturn a STOP already on file");
+  chk(/SMS_OPTIN_DISCLOSURE/.test(route), "and the disclosure the consumer read is stored verbatim as the artifact");
+
+  const page = readFileSync("app/optin/[id]/page.tsx", "utf8");
+  chk(/useState\(false\)/.test(page), "the consent box is UNCHECKED by default — a pre-ticked box is not consent");
+  chk(/disabled=\{!agreed/.test(page), "and the button cannot be pressed until it is ticked");
+
+  const nurture = code("lib/nurture.ts");
+  chk(/optInLineFor/.test(nurture), "the drip offers the link");
+  chk(/smsAllowed\(lead\.raw\)\.ok \? "" :/.test(nurture), "and never nags someone who already said yes");
+  const copy = code("lib/notify/emailCopy.ts");
+  chk(/optInLink/.test(copy), "the FIRST TOUCH carries it too — the highest-attention email, and the one place it never appeared");
+}
+
+// ── 9. CONSENT ARRIVING AFTER THE FIRST TOUCH MUST BE ACTED ON.
+//    The two-step intake races its own first touch and the text always lost: one lead's
+//    consent landed 39 seconds after her email and she got no SMS for six days.
+{
+  const apply = code("app/api/apply/route.ts");
+  chk(/consentJustGranted/.test(apply), "the apply route notices when a submission flips SMS consent on");
+  chk(/kind: "first_touch"/.test(apply) && /email: null/.test(apply),
+    "and fires the SMS leg only — the email already went out");
 }
 
 console.log("");

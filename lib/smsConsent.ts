@@ -66,6 +66,13 @@ export function messagingAllowed(lead: { nurture_paused?: boolean | null; raw?: 
   return { ok: true };
 }
 
+/** The disclosure shown on the one-click opt-in page — and stored verbatim as the artifact.
+ *  Mirrors the /apply wizard's SMS_CONSENT so the two paths grant the same thing. */
+export const SMS_OPTIN_DISCLOSURE =
+  "I agree that Fetti Financial Services LLC (NMLS #2267023) may send me account, application " +
+  "and appointment text messages (SMS) at the number on file. Consent is not a condition of any " +
+  "service. Message frequency varies; Msg & data rates may apply. Reply STOP to opt out, HELP for help.";
+
 /** Every automated SMS must tell the recipient how to stop it. Appended once, never doubled. */
 export const STOP_LINE = "Reply STOP to opt out.";
 export function withStopLine(body: string): string {

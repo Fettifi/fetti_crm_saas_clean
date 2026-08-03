@@ -9,12 +9,13 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { cfg } from "@/lib/settings";
 import { PROACTIVE_LIFETIME_CAP } from "@/lib/conversation/governor";
+import { smsAllowed } from "@/lib/smsConsent";
 import { logActivity } from "@/lib/activity";
 // EMAIL ≠ SMS: the msg() strings below are SMS copy ("Reply YES/STOP"). Emails get their
 // own panel-crafted personal notes (subject + body) from the email touch-set, keyed to
 // the same cadence — so an email never reads like a pasted text message again.
 import { renderTouch, EMAIL_TOUCHES, STEP_TOUCH, REACTIVATION_KEYS, prettyPurpose } from "@/lib/notify/emailCopy";
-import { magicApplyLink } from "@/lib/magicLink";
+import { magicApplyLink, smsOptInLink } from "@/lib/magicLink";
 import { setSetting } from "@/lib/settings";
 import { COMMS_PERSONA } from "@/lib/markPersona";
 import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
@@ -283,7 +284,14 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
   // the consent evidence on arrival, graduating the lead into the SMS drip.
   const twDigits = (process.env.TWILIO_FROM || "").replace(/\D/g, "");
   const tw10 = twDigits.length === 11 && twDigits.startsWith("1") ? twDigits.slice(1) : twDigits;
+  // THE INVITATION, MADE PROPERLY. A line of text saying "text me at …" ran on 228 sends and
+  // produced ONE consent grant — 0.9%. It asks the reader to do the work: open Messages, type
+  // the number, think of something to say. The one-click link does the asking instead, and the
+  // texted-in route stays because a consumer-initiated text is the strongest consent there is.
+  // Only offered to leads who do not already have SMS consent — never nag someone who said yes.
   const textMeLine = tw10.length === 10 ? `\n\nPrefer to text? Text me at (${tw10.slice(0, 3)}) ${tw10.slice(3, 6)}-${tw10.slice(6)} and we'll take it from there.` : "";
+  const optInLineFor = (lead: { id: string; raw?: any }) =>
+    smsAllowed(lead.raw).ok ? "" : `\n\nOr tap once and I'll text you instead: ${smsOptInLink(lead)}`;
   // Google Business Profile review link — fuels the local map pack. Reviews are the
   // #1 local ranking lever; we ask every funded borrower once (no incentive — Google/FTC).
   const reviewUrl = (await cfg("GBP_REVIEW_URL")) || "";
@@ -496,7 +504,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         const cta = applyCta(started, link);
         const finishLine = cta.sms;
         const emailT = renderTouch(EMAIL_TOUCHES[STEP_TOUCH[due.step]] || EMAIL_TOUCHES.d30, l);
-        const emailBody = emailT.body + cta.email + textMeLine;
+        const emailBody = emailT.body + cta.email + textMeLine + optInLineFor(l as any);
         const res = await respondToLead({
           id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
           message: due.msg(name, purpose) + finishLine + bookLine,   // SMS copy
@@ -553,7 +561,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
         message: msg + finishLine + bookLine,                        // SMS copy
         emailSubject: emailT.subject,                                 // email copy
-        emailBody: emailT.body + ctaR.email + textMeLine,
+        emailBody: emailT.body + ctaR.email + textMeLine + optInLineFor(l as any),
       });
       if ((res?.sent || []).length) {
         await supabaseAdmin.from("leads").update({ nurture_step: curStep + 1, last_nurture_at: new Date().toISOString() }).eq("id", l.id);

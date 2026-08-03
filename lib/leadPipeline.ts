@@ -9,10 +9,11 @@ import { notifyNewLead } from "@/lib/notify/leadAlert";
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { getAgent } from "@/lib/agents/agents";
 import { runAgent } from "@/lib/agents/runner";
+import { smsAllowed } from "@/lib/smsConsent";
 import { logActivity } from "@/lib/activity";
 import { runDealScreen, isInvestorDeal } from "@/lib/dealScreen";
 import { renderTouch, renderFirstTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
-import { magicApplyLink } from "@/lib/magicLink";
+import { magicApplyLink , smsOptInLink } from "@/lib/magicLink";
 import { cfg } from "@/lib/settings";
 import { markReplyViolates } from "@/lib/markCompliance";
 import { sendMetaLeadEvent } from "@/lib/metaCapi";
@@ -128,7 +129,7 @@ export async function runNewLeadPipeline(newLead: any, opts: PipelineOpts = {}):
     const calendly = ((await cfg("CALENDLY_URL")) || "").trim() || null;
     const emailT = appCompleted
       ? renderTouch(EMAIL_TOUCHES.first_touch, newLead)
-      : renderFirstTouch(newLead, { appLink, calendly });
+      : renderFirstTouch(newLead, { appLink, calendly, optInLink: smsAllowed((newLead as any).raw).ok ? null : smsOptInLink(newLead as any) });
     const smsDraft = appLink
       ? draftReply.replace(/\{app_link\}/g, appLink)
       : draftReply.replace(/[^.!?\n]*\{app_link\}[^.!?\n]*[.!?]?/g, "").trim();
