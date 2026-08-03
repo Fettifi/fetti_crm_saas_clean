@@ -181,17 +181,30 @@ export function estimatePITIA(i: PricerInput) {
   const n = i.termMonths || 360;
   const pi = loan > 0 ? (r > 0 ? (loan * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1) : loan / n) : 0;
 
-  const taxRate = (i.taxRatePct != null && i.taxRatePct > 0)
-    ? i.taxRatePct
+  // A STATED ZERO IS A FIGURE. `> 0` rejected it and substituted the state average, while the
+  // callers went on passing taxIsActual/insIsActual = true — so an abated or exempt property was
+  // quoted the model's tax and the borrower's PDF labelled that substituted number ", actual".
+  // This is the root gate: the "$0 is real" handling upstream in the page, the PDF route and the
+  // closing-cost route was all unreachable while this line rejected it.
+  const stated = (v: number | null | undefined) => v != null && Number.isFinite(Number(v)) && Number(v) >= 0;
+  const taxRate = stated(i.taxRatePct)
+    ? Number(i.taxRatePct)
     : (i.state ? (PROPERTY_TAX_RATE[i.state] ?? DEFAULT_TAX) : DEFAULT_TAX);
-  const insRate = (i.insRatePct != null && i.insRatePct > 0)
-    ? i.insRatePct
+  const insRate = stated(i.insRatePct)
+    ? Number(i.insRatePct)
     : (i.state ? (INSURANCE_RATE[i.state] ?? DEFAULT_INS) : DEFAULT_INS);
   const taxMonthly = (i.price || value) * (taxRate / 100) / 12;
   const insMonthly = value * (insRate / 100) / 12;
 
   const miOverridden = i.miMonthlyOverride != null && Number.isFinite(Number(i.miMonthlyOverride)) && Number(i.miMonthlyOverride) >= 0;
-  const pmiAnnual = i.includePMI ? miRate(ltv, i.loanType, n) : 0;
+  // "Include PMI estimate if LTV > 80%" IS A CONVENTIONAL-ONLY SWITCH. It was gating every
+  // program, so unticking it deleted FHA's annual MIP and USDA's annual guarantee fee — which
+  // are STATUTORY, charged regardless of LTV and regardless of what anyone ticks — from both the
+  // screen and the borrower's PDF. Probed on a $700k FHA at 96.5% LTV: $310/mo of real MIP
+  // vanished and the quoted payment fell from $5,746 to $5,436. VA and the non-QM products
+  // already return 0 from miRate(), so only conventional PMI is genuinely optional here.
+  const miOptional = miProgram(i.loanType) === "conventional";
+  const pmiAnnual = (miOptional && !i.includePMI) ? 0 : miRate(ltv, i.loanType, n);
   // An entered figure wins outright — including $0 for lender-paid MI, which the on/off switch
   // could express but not distinguish from "the model says none".
   const pmiMonthly = miOverridden ? Number(i.miMonthlyOverride)

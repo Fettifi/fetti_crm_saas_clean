@@ -344,7 +344,11 @@ export default function PricerPage() {
             <p className="text-[11px] text-slate-600 -mt-1">{isRefi
               ? "On a refi you usually HAVE these — pull the annual tax and insurance from the current mortgage statement / escrow analysis and enter them here; they override the ZIP estimate for an exact payment."
               : "Know the real numbers (tax bill, MLS listing, insurance quote)? Enter the annual amount and it overrides the estimate — exact figures for the borrower."}</p>
-            <label className="flex items-center gap-2 text-sm text-slate-300 pt-1"><input type="checkbox" checked={includePMI} onChange={(e) => setIncludePMI(e.target.checked)} className="accent-emerald-500" /> Include PMI estimate if LTV &gt; 80%</label>
+            <label className="flex items-center gap-2 text-sm text-slate-300 pt-1"><input type="checkbox" checked={includePMI} onChange={(e) => setIncludePMI(e.target.checked)} className="accent-emerald-500" /> Estimate conventional PMI above 80% LTV</label>
+            {/* The box only ever governed CONVENTIONAL PMI, but it read as though it governed all
+                mortgage insurance — and it used to delete FHA MIP and the USDA guarantee fee,
+                which are statutory. Say which programs it does not touch. */}
+            <p className="text-[11px] text-slate-500 -mt-1">FHA MIP, the USDA guarantee fee and VA (none) follow their own program rules and are not affected by this box.</p>
             <div className="pt-1"><label className={lbl}>Borrower name <span className="text-slate-600">(for the PDF)</span></label><input value={borrowerName} onChange={(e) => setBorrowerName(e.target.value)} className={inp} placeholder="Jane Smith" /></div>
           </div>
 

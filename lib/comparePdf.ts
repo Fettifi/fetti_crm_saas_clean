@@ -40,6 +40,12 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
     // fraction, so "6⅛%" reached the borrower as "6%" — an eighth of a point removed from a rate
     // on a comparison document. Same class as the U+2212 minus: a character-strip that changes a
     // number is not cosmetic.
+    // ...and the ASCII replacement needs a SEPARATING SPACE. Without it "6\u00BD%" printed as
+    // "61/2%" and "6\u215B%" as "61/8%" — the borrower cannot read six and a half percent back
+    // out of that, and "61" is a plausible-looking number in its own right. A fix that turns one
+    // wrong rate into a different wrong rate is not a fix. The space is only inserted after a
+    // digit, so a bare fraction still renders as "1/2".
+    .replace(/(?<=\d)\s*([\u00BC\u00BD\u00BE\u2150-\u215E])/g, " $1")
     .replace(/\u00BC/g, "1/4").replace(/\u00BD/g, "1/2").replace(/\u00BE/g, "3/4")
     .replace(/\u2150/g, "1/7").replace(/\u2151/g, "1/9").replace(/\u2152/g, "1/10")
     .replace(/\u2153/g, "1/3").replace(/\u2154/g, "2/3").replace(/\u2155/g, "1/5")
@@ -75,7 +81,16 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
     if (line) lines.push(line); return lines.length ? lines : [""];
   };
   const para = (str: string, size: number, f = font, color = SLATE, x = M, max = CW, gap = 1.45) => {
-    for (const ln of wrap(str, f, size, max)) { page.drawText(ln, { x, y: yAt(size), size, font: f, color }); cur += size * gap; }
+    for (const ln of wrap(str, f, size, max)) {
+      // A PARAGRAPH MUST PAGINATE. This drew every wrapped line unconditionally, so the LO's note
+      // to the borrower ran straight off the bottom of the page — measured at 19 of 60 sentences
+      // simply absent from the document, with no marker, no error, and nothing on screen to say
+      // so. The guard that was supposed to catch it filtered pdfjs items for y < 0, and pdfjs does
+      // not return text drawn below the media box, so that assertion could never fail.
+      if (cur + size * gap > H - M) { page = doc.addPage([W, H]); cur = M; }
+      page.drawText(ln, { x, y: yAt(size), size, font: f, color });
+      cur += size * gap;
+    }
   };
   const ensure = (needed: number) => { if (cur + needed > H - M) { page = doc.addPage([W, H]); cur = M; } };
 
@@ -140,10 +155,19 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
       return 7 + Math.max(1, ...lines) * (fs + 3);
     });
     ensure(40 + rowHeights.reduce((a, b) => a + b, 0));
-    const tableTop = cur;
-
-    // Header band: program / "Option N" per column, recommended in emerald.
+    // A CONTINUATION PAGE IS NOT A HEADLESS PAGE. The per-row backstop below used to add a page
+    // and keep drawing rows, while the header band sat outside the loop and was never re-emitted
+    // and the border rectangle was measured against a tableTop on the PREVIOUS page. Reproduced
+    // with 3 options carrying 74-character values — inside the 80-char intake cap, so reachable
+    // from AI extraction with no LO typing: page 3 of the borrower's document held Occupancy and
+    // Purpose in three unlabelled columns with no lender headings, and the page holding most of
+    // the table received no border and no column separators at all. Both are now per-page.
+    let tableTop = cur;
     const headerH = 34;
+
+    // Header band: program / "Option N" per column, recommended in emerald. Redrawn on every
+    // page the table spills onto, so no column is ever anonymous.
+    const drawHeaderBand = () => {
     page.drawRectangle({ x: M, y: H - cur - headerH + 4, width: CW, height: headerH, color: HEADBG });
     text("Loan terms", fs, bold, GREY, M + 6);
     quotes.forEach((q, i) => {
@@ -163,12 +187,31 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
       if (rec) page.drawText("* Recommended", { x: colX(i) + 6, y: H - cur - 13 - 2 * (fs + 2), size: Math.max(6, fs - 2), font, color: EMERALD });
     });
     cur += headerH;
+    };
+
+    // Borders + column separators for the segment of the table drawn on the CURRENT page.
+    const closeTable = () => {
+      page.drawRectangle({ x: M, y: H - cur + 4, width: CW, height: cur - tableTop, borderColor: BORDER, borderWidth: 1, color: undefined });
+      page.drawLine({ start: { x: M + labelW, y: H - tableTop }, end: { x: M + labelW, y: H - cur + 4 }, thickness: 0.5, color: BORDER });
+      for (let i = 1; i < N; i++) page.drawLine({ start: { x: colX(i), y: H - tableTop }, end: { x: colX(i), y: H - cur + 4 }, thickness: 0.5, color: BORDER });
+    };
+
+    drawHeaderBand();
 
     // Data rows.
     rows.forEach((r, ri) => {
       // Backstop: even with the measured budget above, a continuation page must be taken rather
-      // than drawing past the bottom margin.
-      if (cur + rowHeights[ri] > H - M) { page = doc.addPage([W, H]); cur = M; }
+      // than drawing past the bottom margin. Close the current page's table, start the next one,
+      // and REDRAW the header — a column with no lender name on it is unreadable.
+      if (cur + rowHeights[ri] > H - M) {
+        closeTable();
+        page = doc.addPage([W, H]);
+        cur = M;
+        text(`Options ${offset + 1}\u2013${offset + quotes.length} of ${all.length} (continued)`, 9, bold, GREY);
+        cur += 16;
+        tableTop = cur;
+        drawHeaderBand();
+      }
       // A cell cut to three lines with no marker dropped the tail of a long term — a prepayment
       // schedule, a lock description — from the borrower's copy with nothing to indicate it.
       const valLines = quotes.map((q) => {
@@ -199,10 +242,8 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
       cur += rh;
     });
 
-    // Borders + column separators.
-    page.drawRectangle({ x: M, y: H - cur + 4, width: CW, height: cur - tableTop, borderColor: BORDER, borderWidth: 1, color: undefined });
-    page.drawLine({ start: { x: M + labelW, y: H - tableTop }, end: { x: M + labelW, y: H - cur + 4 }, thickness: 0.5, color: BORDER });
-    for (let i = 1; i < N; i++) page.drawLine({ start: { x: colX(i), y: H - tableTop }, end: { x: colX(i), y: H - cur + 4 }, thickness: 0.5, color: BORDER });
+    // Borders + column separators for the final page of this chunk.
+    closeTable();
     cur += 18;
   });
 

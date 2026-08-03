@@ -77,6 +77,30 @@ chk(ccFinanced.financedFees > 0 && ccPaid.financedFees === 0, "electing to PAY t
 chk(ccPaid.cashToClose > ccFinanced.cashToClose,
   `paying it in cash raises cash to close (${money(ccFinanced.cashToClose)} financed vs ${money(ccPaid.cashToClose)} paid), while financing it raises the payment instead`);
 
+// ── A RATE-TERM VA REFINANCE IS AN IRRRL, AND ITS FUNDING FEE IS 0.50%.
+//    Every VA refi was charged the CASH-OUT tier. On a $500k loan that is $10,750 instead of
+//    $2,500 — financed, so the veteran was quoted a payment on a loan $8,250 too large, and
+//    because a financed fee never becomes a RawLine it could not be corrected by an override.
+{
+  const va: any = { state: "FL", countyFips: "12086", loanType: "va", price: 500000, ratePct: 6.5, taxRatePct: 1.1, insAnnual: 2400 };
+  const irrrl: any = estimateClosingCosts({ ...va, purpose: "refi", loanAmount: 500000 });
+  const cashout: any = estimateClosingCosts({ ...va, purpose: "cashout", loanAmount: 500000 });
+  const buy: any = estimateClosingCosts({ ...va, purpose: "purchase", loanAmount: 475000 });
+  const note = (cc: any) => (cc.meta.notes || []).find((n: string) => /VA/.test(n)) || "";
+
+  chk(irrrl.financedFees === 2500, `a VA rate-term refi is charged the IRRRL 0.50% (${money(irrrl.financedFees)}), not the cash-out tier (${money(cashout.financedFees)})`);
+  chk(/IRRRL/.test(note(irrrl)), `and the note NAMES it an IRRRL — "${note(irrrl)}"`);
+  chk(cashout.financedFees === 10750, `a VA CASH-OUT still pays 2.15% (${money(cashout.financedFees)}) — the fix must not under-charge the case that really owes it`);
+  chk(!/IRRRL/.test(note(cashout)), "and is not mislabelled an IRRRL");
+  chk(buy.financedFees > 0 && buy.financedFees < cashout.financedFees,
+    `a VA purchase still uses the down-payment tiers (${money(buy.financedFees)} at 5% down)`);
+
+  // AN EXEMPT VETERAN PAYS NOTHING, on any purpose. The IRRRL branch must not resurrect a fee
+  // for a service-connected-disability exemption.
+  const exempt: any = estimateClosingCosts({ ...va, purpose: "refi", loanAmount: 500000, vaExempt: true });
+  chk(exempt.financedFees === 0, "an exempt veteran is charged no funding fee on an IRRRL either");
+}
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). Quoting a payment on a loan amount that does not exist is a wrong monthly on a borrower-facing document.\n`); process.exit(1); }
 console.log(`PASS — the financed fee raises the loan and the payment, and leaves LTV and cash to close alone.\n`);

@@ -84,6 +84,51 @@ chk(estimatePITIA({ ...deal, loanType: "va30", miMonthlyOverride: 200 }).pmiMont
   chk(f.ltv === b.ltv, "and the reported LTV stays on the base loan, agreeing with the tier");
 }
 
+// ── A STATUTORY PREMIUM IS NOT AN "ESTIMATE" A CHECKBOX CAN DELETE.
+//    "Include PMI estimate if LTV > 80%" gated EVERY program, so unticking it removed FHA's
+//    annual MIP and USDA's annual guarantee fee — both charged by statute, regardless of LTV —
+//    from the screen and from the borrower's PDF. On a $700k FHA at 96.5% that is $310/mo of
+//    real money missing from a quoted payment.
+{
+  const hi: any = { price: 700000, down: 24500, loanAmount: 675500, ratePct: 6.5, termMonths: 360, state: "FL" };
+  const both = (loanType: string) => [
+    estimatePITIA({ ...hi, loanType, includePMI: true }),
+    estimatePITIA({ ...hi, loanType, includePMI: false }),
+  ];
+  const [fhaOn, fhaOff] = both("fha30");
+  chk(fhaOn.pmiMonthly > 0 && fhaOff.pmiMonthly === fhaOn.pmiMonthly,
+    `FHA annual MIP survives an unticked PMI box ($${Math.round(fhaOn.pmiMonthly)}/mo both ways) — it is statutory, not an estimate`);
+  chk(fhaOff.total === fhaOn.total,
+    `and the QUOTED PAYMENT is identical either way ($${Math.round(fhaOn.total)}) — the borrower is not shown $${Math.round(fhaOn.total - fhaOn.pmiMonthly)}`);
+
+  const [usdaOn, usdaOff] = both("usda30");
+  chk(usdaOn.pmiMonthly > 0 && usdaOff.pmiMonthly === usdaOn.pmiMonthly,
+    `the USDA annual guarantee fee survives it too ($${Math.round(usdaOn.pmiMonthly)}/mo)`);
+
+  const [vaOn, vaOff] = both("va30");
+  chk(vaOn.pmiMonthly === 0 && vaOff.pmiMonthly === 0, "VA still carries none, in either state of the box");
+
+  // CONVENTIONAL PMI IS the thing the box is for — it must stay switchable, or the fix has
+  // simply moved the defect to the other program.
+  const [cOn, cOff] = both("conv30");
+  chk(cOn.pmiMonthly > 0, `conventional PMI is charged above 80% LTV when the box is ticked ($${Math.round(cOn.pmiMonthly)}/mo)`);
+  chk(cOff.pmiMonthly === 0, "and IS removed when the LO unticks it — the box still does its actual job");
+}
+
+// ── A STATED $0 TAX / INSURANCE RATE IS A FIGURE, NOT A BLANK. The `> 0` gate substituted the
+//    state average for an abated or exempt property while the callers still flagged the number
+//    "actual", so the borrower's PDF labelled a modelled figure as their real tax bill.
+{
+  const d: any = { price: 700000, down: 140000, loanAmount: 560000, ratePct: 6.5, termMonths: 360, state: "FL", loanType: "conv30", includePMI: false };
+  const zero = estimatePITIA({ ...d, taxRatePct: 0, insRatePct: 0 });
+  const unset = estimatePITIA(d);
+  chk(zero.taxMonthly === 0 && zero.insMonthly === 0,
+    "a stated 0% tax / insurance rate APPLIES (abated or exempt property), rather than being replaced by the state model");
+  chk(unset.taxMonthly > 0 && unset.insMonthly > 0,
+    `and leaving them UNSET still uses the model ($${Math.round(unset.taxMonthly)}/mo tax, $${Math.round(unset.insMonthly)}/mo insurance) — blank and zero stay different facts`);
+  chk(zero.total < unset.total, "so the quoted payment reflects the abatement instead of a tax the borrower does not owe");
+}
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). Quoting a veteran mortgage insurance they will never pay is not a rounding error.\n`); process.exit(1); }
 console.log(`PASS — mortgage insurance follows the program, not one conventional ladder.\n`);

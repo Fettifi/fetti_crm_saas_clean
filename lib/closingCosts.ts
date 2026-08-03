@@ -332,16 +332,23 @@ export function estimateClosingCosts(i: ClosingCostInput): ClosingCostResult {
   }
   if (i.loanType === "va" && !i.vaExempt) {
     const downPct = purchase && price > 0 ? Math.max(0, (price - loan) / price) * 100 : 0;
-    // Down-payment tiers apply to PURCHASE only; VA cash-out is flat 2.15%/3.3%
-    // (a rate-term VA refi is usually an IRRRL at 0.5% — quoted separately).
-    const ff = !purchase
+    // A RATE-TERM VA REFINANCE IS AN IRRRL, AND THE IRRRL FEE IS 0.50%. Every refi was being
+    // charged the CASH-OUT tier (2.15% / 3.3%) — on a $500k loan that is $10,750 instead of
+    // $2,500, financed, so the veteran was quoted a payment on a loan $8,250 too large. The
+    // fee is financed and never becomes a RawLine, so it was not reachable by an override
+    // either. Down-payment tiers remain a PURCHASE concept.
+    const irrrl = i.purpose === "refi";
+    const ff = irrrl
+      ? 0.5
+      : !purchase
       ? (i.vaFirstUse !== false ? 2.15 : 3.3)
       : (i.vaFirstUse !== false)
       ? (downPct >= 10 ? 1.25 : downPct >= 5 ? 1.5 : 2.15)
       : (downPct >= 10 ? 1.25 : downPct >= 5 ? 1.5 : 3.3);
     const fee = r0(loan * ff / 100);
-    if (financeGov) { financedFees += fee; notes.push(`VA funding fee ${ff}% ($${fee.toLocaleString()}) financed into the loan`); }
-    else B.push({ label: `VA funding fee (${ff}%)`, amount: fee });
+    const label = irrrl ? `VA IRRRL funding fee ${ff}%` : `VA funding fee ${ff}%`;
+    if (financeGov) { financedFees += fee; notes.push(`${label} ($${fee.toLocaleString()}) financed into the loan`); }
+    else B.push({ label: `${label.replace(/ ([\d.]+)%$/, " ($1%)")}`, amount: fee });
   }
   if (i.loanType === "usda") {
     const fee = r0(loan * 0.01);

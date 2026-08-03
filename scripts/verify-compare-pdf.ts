@@ -12,7 +12,7 @@
 //
 //   npx tsx scripts/verify-compare-pdf.ts
 import { buildComparisonPdf } from "../lib/comparePdf";
-import type { Comparison, CompareQuote } from "../lib/compareTypes";
+import { COMPARE_ROWS, type Comparison, type CompareQuote } from "../lib/compareTypes";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -44,6 +44,19 @@ async function pdfText(bytes: Uint8Array): Promise<{ text: string; pages: number
     out += c.items.map((x: any) => x.str).join(" ") + "\n";
   }
   return { text: out.replace(/\s+/g, " "), pages: doc.numPages };
+}
+
+
+/** Text per PAGE — a whole-document string cannot tell you that page 3 lost its header band. */
+async function pdfPageTexts(bytes: Uint8Array): Promise<string[]> {
+  const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await pdfjs.getDocument({ data: bytes, useSystemFonts: true }).promise;
+  const out: string[] = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const c = await (await doc.getPage(i)).getTextContent();
+    out.push(c.items.map((x: any) => x.str).join(" ").replace(/\s+/g, " "));
+  }
+  return out;
 }
 
 const quote = (n: number, over: Partial<CompareQuote> = {}): CompareQuote => ({
@@ -114,43 +127,59 @@ const comparison = (quotes: CompareQuote[], over: Partial<Comparison> = {}): Com
   ))))).text;
   chk(/\.\.\./.test(trunc), "a cell cut for space is marked with an ellipsis rather than ending mid-sentence");
 
-  // ── 8. NOTHING MAY DRAW OFF THE PAGE.
+  // ── 8. EVERYTHING THE LO WROTE MUST REACH THE BORROWER.
   //
-  // HONEST NOTE ON THIS ONE: the round-3 auditor reported that the bounds guard budgeted ~16.5pt
-  // per row against ~38.5pt rows and therefore drew the table's bottom at NEGATIVE Y. I could not
-  // reproduce it. Measured minimum Y across 2, 4 and 6 columns with maximally tall content, with
-  // and without the change: 74 / 105 / 120 in every case, always on-page, identical either way —
-  // the footer's own ensure(54) takes the page break first. The row-height budget was still made
-  // accurate (it is strictly better and costs nothing) but the reported defect was NOT confirmed.
+  // I got this one wrong in round 3 and reported it as "not confirmed". My detector filtered
+  // pdfjs items for y < 0 — and pdfjs does not return text drawn below the media box, so that
+  // assertion could NEVER fail. A guard exercising the wrong layer turned a live defect into a
+  // closed one. para() drew every wrapped line unconditionally with no page-bottom check, and
+  // 19 of a 60-sentence note were simply absent from the borrower's document.
   //
-  // The assertion below is kept because it is a real invariant, and because it took two wrong
-  // attempts to write one that COULD see this class of bug at all: "the figure appears in the
-  // extracted text" passes on off-page content, since pdfjs extracts text at any coordinate.
-  // Position is the only thing that shows it.
-  // The scenario has to ACTUALLY overflow, or the check passes on the broken code too — my first
-  // version did exactly that. A long note pushes the table down the page and every row carries
-  // three wrapped lines, so the old ~16.5pt-per-row budget under-counts by more than a page.
-  const heavy = "5% year one, 4% year two, 3% year three, 2% year four, 1% year five, then open with no penalty and a sixty day written notice requirement";
-  const bulky = await pdfText(new Uint8Array(await buildComparisonPdf(comparison(
-    Array.from({ length: 4 }, (_, i) => quote(i + 1, {
-      prepay: heavy, lockDays: heavy, term: heavy, ltv: heavy,
-      lenderFees: heavy, apr: heavy, monthlyPI: heavy, pitia: heavy, points: heavy,
-      cashToClose: `$${40000 + i}`,
-    })),
-    { note: heavy + " " + heavy + " " + heavy },
-  ))));
-  const ys = await pdfItemYs(new Uint8Array(await buildComparisonPdf(comparison(
-    Array.from({ length: 4 }, (_, i) => quote(i + 1, {
-      prepay: heavy, lockDays: heavy, term: heavy, ltv: heavy,
-      lenderFees: heavy, apr: heavy, monthlyPI: heavy, pitia: heavy, points: heavy,
-      cashToClose: `$${40000 + i}`,
-    })),
-    { note: heavy + " " + heavy + " " + heavy },
-  ))));
-  const offPage = ys.filter((it) => it.y < 0 || it.y > it.h);
-  chk(offPage.length === 0,
-    `nothing is drawn outside the page bounds${offPage.length ? ` — ${offPage.length} item(s) at y=${offPage.slice(0, 3).map((o) => Math.round(o.y)).join(", ")}` : ""}`);
-  chk(bulky.text.includes("40000"), "and the figures are still present");
+  // COUNT THE CONTENT, do not measure a coordinate pdfjs will not report.
+  {
+    const sentences = Array.from({ length: 60 }, (_, i) => `Sentence number ${i + 1} explains a term of the loan in plain language for the borrower.`);
+    const { text: noteTxt, pages } = await pdfText(new Uint8Array(await buildComparisonPdf(comparison(
+      [quote(1), quote(2)], { note: sentences.join(" ") },
+    ))));
+    const missing = sentences.filter((_, i) => !noteTxt.includes(`Sentence number ${i + 1} `));
+    chk(missing.length === 0,
+      `all 60 sentences of the LO's note reach the PDF across its ${pages} page(s)${missing.length ? ` — ${missing.length} MISSING` : ""}`);
+  }
+
+  // ── 8b. A CONTINUATION PAGE IS NOT A HEADLESS PAGE. The per-row page break used to add a page
+  //     and keep drawing rows while the header band stayed outside the loop, so a borrower got
+  //     data cells in unlabelled columns with no lender names — reachable with values inside the
+  //     80-character intake cap, i.e. from AI extraction with no LO typing at all.
+  {
+    const wordy = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima";
+    const fat = (i: number) => {
+      const q: any = quote(i, {});
+      for (const r of COMPARE_ROWS) if (r.key !== "loanAmount") q[r.key] = wordy;
+      q.program = `Lender ${i}`;
+      return q;
+    };
+    const bytes = new Uint8Array(await buildComparisonPdf(comparison([fat(1), fat(2), fat(3)])));
+    const per = await pdfPageTexts(bytes);
+    let headless = 0;
+    per.forEach((t, i) => {
+      const hasRows = /Occupancy|Purpose|Points|Prepay|Rate lock|Cash to close/i.test(t);
+      if (hasRows && !(/Loan terms/.test(t) && /Lender 1/.test(t))) headless++;
+    });
+    chk(per.length > 1, `the fat comparison really does spill onto more than one page (${per.length})`);
+    chk(headless === 0, `every page carrying table rows also carries the header band and the lender names${headless ? ` — ${headless} headless page(s)` : ""}`);
+  }
+
+  // ── 8c. A VULGAR FRACTION NEEDS A SEPARATING SPACE. The round-3 fix stopped DELETING the
+  //     fraction but stored the ASCII form with no space, so "6½%" printed as "61/2%" — a rate
+  //     the borrower cannot read back, and "61" is a plausible number in its own right.
+  {
+    const { text: frac } = await pdfText(new Uint8Array(await buildComparisonPdf(comparison([
+      quote(1, { rate: "6\u00BD%", apr: "6\u215B%" }),
+      quote(2, { rate: "7\u00BE%", apr: "7\u2158%" }),
+    ]))));
+    for (const want of ["6 1/2%", "6 1/8%", "7 3/4%", "7 4/5%"]) chk(frac.includes(want), `the rate prints as "${want}"`);
+    for (const never of ["61/2%", "61/8%", "73/4%"]) chk(!frac.includes(never), `and never as "${never}"`);
+  }
 
   // ── 9. THE COLUMN HEADER names the loan; a silent cut makes two options indistinguishable.
   const longName = "30-Year Fixed DSCR Investor Cash-Out Refinance With Interest-Only Option";
