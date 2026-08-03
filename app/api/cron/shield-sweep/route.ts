@@ -80,6 +80,7 @@ export async function GET(req: NextRequest) {
   }
 
   const hits: Array<{ id: string; name: string | null; email: string | null; phone: string | null; stage: string; risk: number; signals: string[] }> = [];
+  let cleared = 0;
   for (const l of scope) {
     if (engaged.has(l.id)) continue;
     const { risk, signals } = scoreSignals(
@@ -92,6 +93,35 @@ export async function GET(req: NextRequest) {
     if (ph && !sigs.some((s) => s.key === ph.key)) sigs.push(ph);
     const total = Math.max(0, sigs.reduce((a, s) => a + s.pts, 0));
     const hard = sigs.some((s) => s.ev === "hard");
+    // ── RECORD THE CLEAN RESULT TOO ─────────────────────────────────────────────────────
+    //
+    // This sweep scored every lead and then only WROTE when one was a hit, so a lead that
+    // passed had its verdict computed and thrown away — four times a day, forever. Meanwhile
+    // lib/leadReality.ts returns "real" only when raw.shield.band === "clean", a value nothing
+    // in the codebase ever wrote, so 166 of 170 drip-eligible leads read "Not yet screened by
+    // Lead Shield" while being screened continuously. The sweep remembered its failures and
+    // forgot its successes.
+    //
+    // A pass is a finding. Nothing else changes: no stage move, no pause — just the verdict.
+    if (!hard && total < qTh && apply && !(l.raw as any)?.shield) {
+      const { data: freshClean } = await supabaseAdmin.from("leads").select("raw").eq("id", l.id).maybeSingle();
+      const raw = ((freshClean as any)?.raw && typeof (freshClean as any).raw === "object"
+        ? (freshClean as any).raw
+        : (l.raw && typeof l.raw === "object" ? l.raw : {})) as Record<string, any>;
+      // Re-check on the FRESH row: a quarantine may have landed since the bulk select, and a
+      // clean band must never overwrite it.
+      if (!raw.shield) {
+        raw.shield = {
+          version: 1, verdict: "clear", band: "clean", risk: total, signals: sigs,
+          channel: "api", retro: true, screened_at: new Date().toISOString(), screened_by: "sweep",
+          // `lookup` and `smsCapable` are deliberately ABSENT — no Twilio call was made, and
+          // leadReality reads lookup.valid / lookup.lineType. Inventing either would assert a
+          // check we never performed; a null one would downgrade the lead to suspect.
+        };
+        await supabaseAdmin.from("leads").update({ raw }).eq("id", l.id);
+        cleared++;
+      }
+    }
     if (hard || total >= qTh) {
       hits.push({ id: l.id, name: l.full_name, email: l.email, phone: l.phone, stage: l.stage, risk: total, signals: sigs.map((s) => `${s.key}:${s.pts}`) });
       if (apply) {
@@ -115,7 +145,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (apply) {
-    await logActivity({ entity_type: "shield", entity_id: "sweep", actor: "shield", action: "shield.sweep", detail: { scanned: scope.length, engaged_skipped: engaged.size, quarantined: hits.length } }).catch(() => {});
+    await logActivity({ entity_type: "shield", entity_id: "sweep", actor: "shield", action: "shield.sweep", detail: { scanned: scope.length, engaged_skipped: engaged.size, quarantined: hits.length, cleared } }).catch(() => {});
   }
   await recordHeartbeat("shield-sweep");
     return NextResponse.json({ ok: true, mode: apply ? "applied" : "dry_run", scanned: scope.length, engaged_skipped: engaged.size, hits: hits.length, leads: hits });
