@@ -77,7 +77,7 @@ function EditorField({
             if (r.state) onChange("state" as any, r.state);
           }} />
       ) : f.type === "money" ? (
-        <CurrencyInput value={v} onChange={(clean) => onChange(f.key, clean)} className={field} />
+        <CurrencyInput allowCents={f.cents} value={v} onChange={(clean) => onChange(f.key, clean)} className={field} />
       ) : f.type === "select" ? (
         <select value={v} onChange={(e) => onChange(f.key, e.target.value)} className={field}>
           <option value="">— Select —</option>
@@ -382,15 +382,31 @@ function ScenarioDesk() {
       // THE CLIENT HALF OF settleDerived. The server learned to leave an LO-STATED figure alone;
       // this still overwrote it on the next keystroke, so a typed PITIA/DSCR/LTV vanished as soon
       // as any related field was touched — the exact override the server was fixed to respect.
+      //
+      // AND THE CLIENT HAS TO MAINTAIN `derived` ITSELF. It only ever arrived FROM the server —
+      // it is not in SCENARIO_FIELD_KEYS, so it is never sent on save and never refreshed between
+      // round-trips. So the ownership test compared every later keystroke against the FIRST
+      // figure of the session: recompute once, then `ours` goes false forever and the ratio
+      // freezes. Proven on the shipping reducer: saved ltv 65 / derived {ltv:65}; loan -> 400k
+      // shows 80 (true 80); loan -> 450k still shows 80 (true 90); value -> 430k still shows 80
+      // (true 104.7). The server then reads 80 as an LO override and persists it, and that frozen
+      // figure goes onto the wholesaler PDF and — as a STATED ltv that outranks the letter's own
+      // math — onto the listing-agent letter. Recording what we just derived is the whole fix.
+      const setDerived = (k: string, v: number | null) => {
+        (next as any)[k] = v;
+        const d: Record<string, number> = { ...((next as any).derived || {}) };
+        if (v == null) delete d[k]; else d[k] = v;
+        (next as any).derived = Object.keys(d).length ? d : null;
+      };
       const ours = (k: string, v: any) => {
         const last = (next as any)?.derived?.[k];
         return v == null || (last != null && Math.abs(Number(v) - Number(last)) < 0.0051);
       };
       if (key === "principal_interest" || key === "taxes_monthly" || key === "insurance_monthly" || key === "hoa_monthly") {
-        if (ours("monthly_piti", (next as any).monthly_piti)) (next as any).monthly_piti = computePitia(next);
+        if (ours("monthly_piti", (next as any).monthly_piti)) setDerived("monthly_piti", computePitia(next));
       }
       if (key === "principal_interest" || key === "taxes_monthly" || key === "insurance_monthly" || key === "hoa_monthly" || key === "monthly_piti" || key === "monthly_rent") {
-        if (ours("dscr", (next as any).dscr)) (next as any).dscr = computeDscr(next);
+        if (ours("dscr", (next as any).dscr)) setDerived("dscr", computeDscr(next));
       }
       // loan_purpose SELECTS the LTV basis (lesser-of on a purchase, as-is on a refi) — its whole
       // job — and it was missing from every trigger, so picking Purchase vs Refinance left the
@@ -399,8 +415,8 @@ function ScenarioDesk() {
         // LTV has to move too. It only recomputed on the CLTV path before, so changing the
         // loan amount or the as-is value left a STALE LTV on screen — the ratio the LO is
         // actually reading while sizing the deal, and the one that lands on the PDF.
-        if (ours("ltv", (next as any).ltv)) (next as any).ltv = computeLtv(next);
-        if (ours("cltv", (next as any).cltv)) (next as any).cltv = computeCltv(next);
+        if (ours("ltv", (next as any).ltv)) setDerived("ltv", computeLtv(next));
+        if (ours("cltv", (next as any).cltv)) setDerived("cltv", computeCltv(next));
       }
       return next;
     });

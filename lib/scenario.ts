@@ -59,6 +59,10 @@ export type Scenario = {
   // second position at all: a 2nd's own LTV is meaningless on its own, and every lender
   // qualifies it on CLTV = (1st balance + this loan) / value.
   first_lien_balance?: number | null;
+  /** MONTHLY DEBT SERVICE on that senior lien. On a 2nd / HELOC the property pays it out of the
+   *  same rent, so DSCR is meaningless without it. Entered from the borrower's mortgage
+   *  statement; estimated (and flagged) when the LO does not have it yet. */
+  first_lien_payment?: number | null;
   term?: string | null;            // requested term
   amortization?: string | null;    // 30yr / 40yr / Interest-Only
   rate_type?: string | null;       // Fixed / ARM
@@ -131,7 +135,10 @@ export type Wholesaler = {
 
 // ---- Field catalog: drives the editor form AND the PDF, so they stay identical. ----
 export type FieldType = "text" | "number" | "money" | "percent" | "select" | "textarea";
-export type Field = { key: keyof Scenario; label: string; type: FieldType; options?: string[]; hint?: string; full?: boolean };
+/** `cents` marks a money field whose value is genuinely quoted to the cent — a monthly payment,
+ *  a rent, a premium. Whole-dollar money boxes truncate the decimal, which is right for a loan
+ *  amount and wrong for a $1,847.32 P&I. */
+export type Field = { key: keyof Scenario; label: string; type: FieldType; options?: string[]; hint?: string; full?: boolean; cents?: boolean };
 export type Section = { title: string; fields: Field[] };
 
 export const LOAN_TYPES = ["DSCR", "Conventional", "FHA", "VA", "Jumbo", "Bank-Statement", "Fix & Flip", "Bridge", "Ground-Up Construction", "Commercial", "HELOC / 2nd"];
@@ -164,6 +171,7 @@ export const SCENARIO_SECTIONS: Section[] = [
       { key: "rehab_budget", label: "Rehab Budget", type: "money", hint: "Fix & Flip" },
       { key: "down_payment", label: "Down Payment", type: "money" },
       { key: "first_lien_balance", label: "1st Lien Balance", type: "money", hint: "2nd / HELOC — payoff stays in place" },
+      { key: "first_lien_payment", label: "1st Lien Payment (mo)", type: "money", cents: true, hint: "from the mortgage statement — DSCR counts it" },
       { key: "ltv", label: "LTV %", type: "percent" },
       { key: "cltv", label: "CLTV %", type: "percent", hint: "auto from 1st + this loan" },
       { key: "term", label: "Term", type: "text", hint: "e.g. 30yr" },
@@ -187,16 +195,16 @@ export const SCENARIO_SECTIONS: Section[] = [
   {
     title: "Qualifying",
     fields: [
-      { key: "monthly_rent", label: "Market / Lease Rent (mo)", type: "money", hint: "DSCR" },
-      { key: "principal_interest", label: "P&I (mo)", type: "money", hint: "DSCR" },
-      { key: "taxes_monthly", label: "Property Taxes (mo)", type: "money", hint: "DSCR" },
-      { key: "insurance_monthly", label: "Insurance (mo)", type: "money", hint: "DSCR" },
-      { key: "hoa_monthly", label: "HOA Dues (mo)", type: "money", hint: "DSCR" },
-      { key: "monthly_piti", label: "PITIA (mo)", type: "money", hint: "auto from P&I + taxes + ins + HOA" },
+      { key: "monthly_rent", label: "Market / Lease Rent (mo)", type: "money", cents: true, hint: "DSCR" },
+      { key: "principal_interest", label: "P&I (mo)", type: "money", cents: true, hint: "DSCR" },
+      { key: "taxes_monthly", label: "Property Taxes (mo)", type: "money", cents: true, hint: "DSCR" },
+      { key: "insurance_monthly", label: "Insurance (mo)", type: "money", cents: true, hint: "DSCR" },
+      { key: "hoa_monthly", label: "HOA Dues (mo)", type: "money", cents: true, hint: "DSCR" },
+      { key: "monthly_piti", label: "PITIA (mo)", type: "money", cents: true, hint: "auto from P&I + taxes + ins + HOA" },
       { key: "dscr", label: "DSCR Ratio", type: "number" },
-      { key: "monthly_income", label: "Qualifying Income (mo)", type: "money", hint: "Full-doc" },
+      { key: "monthly_income", label: "Qualifying Income (mo)", type: "money", cents: true, hint: "Full-doc" },
       { key: "dti", label: "DTI %", type: "percent" },
-      { key: "bank_stmt_deposits", label: "Avg Mo. Deposits", type: "money", hint: "Bank-Statement" },
+      { key: "bank_stmt_deposits", label: "Avg Mo. Deposits", type: "money", cents: true, hint: "Bank-Statement" },
       { key: "reserves_months", label: "Reserves (months)", type: "number" },
       { key: "liquid_assets", label: "Liquid Assets", type: "money" },
       { key: "properties_financed", label: "# Financed Properties", type: "number" },
@@ -286,6 +294,29 @@ export function isJuniorLien(s: Partial<Scenario>): boolean {
   return /heloc|2nd|second/i.test(String(s.loan_type || "")) || (num(s.first_lien_balance) ?? 0) > 0;
 }
 
+/** Rate assumed when the LO has the senior BALANCE but not its payment. Amortizing, not
+ *  interest-only — an IO guess understates the payment and re-inflates the very ratio this
+ *  exists to correct, i.e. it errs toward the deal passing. */
+const SENIOR_ASSUMED_RATE = 6.5;
+
+/** MONTHLY DEBT SERVICE ON THE SENIOR LIEN, and whether we had to estimate it.
+ *
+ *  A junior loan does not relieve the property of the first mortgage — the rent has to cover
+ *  BOTH. `isJuniorLien` was written for exactly this and then never called by anything: grep
+ *  returned only its own definition. Measured on the case the Underwriting Desk was fixed for
+ *  the same day: a $120k second behind a $300k senior at $3,200 rent printed DSCR 1.7213 and
+ *  passed, while the true figure including the senior is 0.85 and it fails. */
+export function seniorDebtService(s: Partial<Scenario>): { payment: number; estimated: boolean } {
+  if (!isJuniorLien(s)) return { payment: 0, estimated: false };
+  const entered = num(s.first_lien_payment);
+  if (entered != null && entered >= 0) return { payment: entered, estimated: false };
+  const bal = num(s.first_lien_balance) ?? 0;
+  if (bal <= 0) return { payment: 0, estimated: false };
+  const r = SENIOR_ASSUMED_RATE / 100 / 12, n = 360;
+  const pmt = (bal * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+  return { payment: Math.round(pmt * 100) / 100, estimated: true };
+}
+
 // Compute DSCR = rent / PITIA when both present.
 // Kept at 4dp, NOT 2dp: this value is compared against lender minDscr floors in
 // lib/pricing/compare.ts, and 2dp rounding let a true 1.0951 store as 1.10 and clear a
@@ -358,7 +389,11 @@ export function computeDscr(s: Partial<Scenario>): number | null {
   const pitiaIsLOs = stated != null && (lastDerived == null || Math.abs(stated - Number(lastDerived)) >= 0.0051);
   const piti = pitiaIsLOs ? stated : (computePitia(s) ?? stated);
   if (!rent || !piti) return null;
-  return Math.round((rent / piti) * 10000) / 10000;
+  // THE PROPERTY'S TOTAL DEBT SERVICE, not just this loan's payment. On a 2nd / HELOC the senior
+  // mortgage is paid out of the same rent.
+  const total = piti + seniorDebtService(s).payment;
+  if (!total) return null;
+  return Math.round((rent / total) * 10000) / 10000;
 }
 
 // Infer the loan purpose (intent) from a free-text product/purpose string.

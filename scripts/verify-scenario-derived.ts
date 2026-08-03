@@ -14,7 +14,7 @@
 // This exercises the real settle logic by POSTing through the route's own pure pieces.
 //
 //   npx tsx scripts/verify-scenario-derived.ts
-import { settleDerived, type Scenario } from "../lib/scenario";
+import { settleDerived, computeLtv, computeDscr, seniorDebtService, type Scenario } from "../lib/scenario";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -101,6 +101,74 @@ chk(firstSave.derived?.ltv === 65 && firstSave.derived?.monthly_piti === 2760,
   "a first save echoing our own computed figures is recognised as DERIVED, not as hand-typed");
 const thenCleared = settleAll(firstSave, { ...DEAL, monthly_rent: null });
 chk(thenCleared.dscr === null, "so clearing the rent afterwards still clears the DSCR");
+
+// ── THE EDITOR MUST KEEP ITS OWN `derived` MAP CURRENT.
+//    The client's ownership test compared every keystroke against a map that only ever arrived
+//    FROM the server — never sent on save, never refreshed between round-trips — so it recomputed
+//    ONCE and then froze, and the server persisted the frozen figure as an LO override. This
+//    reproduces the reducer's contract: after a recompute, `derived` must hold the NEW figure, or
+//    the next edit disowns it.
+{
+  // The shipping reducer's rule, restated: recompute when the on-screen value is ours, and record
+  // what we just derived. (app/scenarios/page.tsx — setDerived + ours.)
+  const step = (st: any, patch: any) => {
+    const next = { ...st, ...patch };
+    const ours = (k: string, v: any) => {
+      const last = next?.derived?.[k];
+      return v == null || (last != null && Math.abs(Number(v) - Number(last)) < 0.0051);
+    };
+    const setDerived = (k: string, v: number | null) => {
+      next[k] = v;
+      const d: Record<string, number> = { ...(next.derived || {}) };
+      if (v == null) delete d[k]; else d[k] = v;
+      next.derived = Object.keys(d).length ? d : null;
+    };
+    if (ours("ltv", next.ltv)) setDerived("ltv", computeLtv(next));
+    return next;
+  };
+  let st: any = { loan_amount: 325000, as_is_value: 500000, loan_purpose: "Rate-Term Refinance", ltv: 65, derived: { ltv: 65 } };
+  st = step(st, { loan_amount: 400000 });
+  chk(st.ltv === 80, `loan -> 400k moves LTV to 80 (got ${st.ltv})`);
+  st = step(st, { loan_amount: 450000 });
+  chk(st.ltv === 90, `loan -> 450k KEEPS MOVING, to 90 (got ${st.ltv}) — this is where it used to freeze at 80`);
+  st = step(st, { as_is_value: 430000 });
+  chk(st.ltv === 104.7, `value -> 430k gives 104.7 (got ${st.ltv}), not a stale 80 on the wholesaler PDF`);
+
+  // AND AN LO-TYPED FIGURE IS STILL LEFT ALONE — the fix must not re-break the override.
+  let typed: any = { loan_amount: 400000, as_is_value: 500000, loan_purpose: "Rate-Term Refinance", ltv: 72, derived: { ltv: 80 } };
+  typed = step(typed, { loan_amount: 410000 });
+  chk(typed.ltv === 72, `a typed LTV of 72 survives an unrelated edit (got ${typed.ltv})`);
+}
+
+// ── A JUNIOR LOAN DOES NOT RELIEVE THE PROPERTY OF THE FIRST MORTGAGE.
+//    The Scenario Desk's DSCR divided rent by this loan's PITIA alone. `isJuniorLien` was written
+//    for exactly this and had ZERO callers — grep returned only its own definition — while the
+//    same fix had already landed in the Underwriting Desk that day.
+{
+  const second: any = {
+    monthly_rent: 3200, principal_interest: 1500, taxes_monthly: 250, insurance_monthly: 109,
+    hoa_monthly: 0, first_lien_balance: 300000, loan_amount: 120000, as_is_value: 600000,
+    loan_type: "HELOC / 2nd",
+  };
+  const sr = seniorDebtService(second);
+  chk(sr.payment > 0 && sr.estimated, `an un-entered senior payment is ESTIMATED and flagged ($${sr.payment}/mo)`);
+  const d = computeDscr(second)!;
+  chk(d < 1, `DSCR on a 2nd counts the senior mortgage — ${d} (it printed 1.7213 and PASSED a 1.10 box)`);
+  const entered = computeDscr({ ...second, first_lien_payment: 1850 })!;
+  chk(seniorDebtService({ ...second, first_lien_payment: 1850 }).estimated === false,
+    "the LO's own figure from the mortgage statement is used, and not flagged as an estimate");
+  chk(entered < 1, `and still fails on the entered payment (${entered})`);
+
+  // A FIRST-POSITION DEAL IS COMPLETELY UNAFFECTED.
+  const first: any = { ...second, first_lien_balance: 0, loan_type: "DSCR 30-Yr" };
+  chk(seniorDebtService(first).payment === 0, "a first-position scenario adds no senior debt service");
+  chk(computeDscr(first)! > 1.7, `and its DSCR is unchanged (${computeDscr(first)})`);
+
+  // A STATED $0 senior payment is a real answer (a forbearance, an interest-free family note) —
+  // it must not fall through to the estimate.
+  const zero = seniorDebtService({ ...second, first_lien_payment: 0 });
+  chk(zero.payment === 0 && !zero.estimated, "a stated $0 senior payment applies, rather than being replaced by the model");
+}
 
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). A ratio that outlives its inputs is a number on a wholesaler PDF that nothing supports.\n`); process.exit(1); }
