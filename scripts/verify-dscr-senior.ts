@@ -12,7 +12,7 @@
 // went unworked for a full remediation cycle — which is why those lists now get adjudicated.
 //
 //   npx tsx scripts/verify-dscr-senior.ts
-import { computeDeskMetrics, sanitizeInput, enteredNum, LOAN_BOX, type DeskInput } from "../lib/underwritingDesk";
+import { computeDeskMetrics, sanitizeInput, enteredNum, deskUrlaSeed, LOAN_BOX, type DeskInput } from "../lib/underwritingDesk";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -118,6 +118,61 @@ chk(true, "non-numeric text is rejected rather than reinterpreted as $0 (which w
 const viaRoute = computeDeskMetrics({ ...si, monthlyRent: 3200 } as DeskInput);
 chk(viaRoute.seniorPayment === 1400 && !viaRoute.seniorPaymentEstimated,
   "end to end: the payment typed on the screen reaches the DSCR, unestimated");
+
+// ── 10. PROVENANCE SURVIVES A RE-RUN. The screen writes a web-pulled value into the form, so the
+//       SECOND run used to classify our own Zestimate as "entered" and the lender's MISMO lost
+//       AutomatedValuationModel. And the staleness gate makes a re-run mandatory after any edit,
+//       so the second run is the NORMAL path.
+const reRun = sanitizeInput({
+  loanType: "dscr", lienPosition: 1, asIsValue: "412000", monthlyRent: "3150",
+  asIsValueIsWeb: true, monthlyRentIsWeb: true,
+});
+chk(reRun.asIsValueIsWeb === true && reRun.monthlyRentIsWeb === true,
+  "the 'still a web figure' flags survive the route boundary");
+const edited = sanitizeInput({ loanType: "dscr", asIsValue: "450000", asIsValueIsWeb: false });
+chk(edited.asIsValueIsWeb === false, "and an LO-edited figure is no longer flagged as web-sourced");
+
+// ── 11. HIDDEN FIELDS MUST NOT SEED THE 1003. The screen hides rent on a full-doc owner-occupied
+//       deal and ARV on a non-ARV product, but the values stayed in form state and were exported:
+//       an owner-occupied conventional PURCHASE shipped monthly rental income on the subject
+//       property, plus an ARV and a rehab budget, to a lender in MISMO.
+const ownerSeed = deskUrlaSeed({
+  loanType: "conventional", lienPosition: 1, occupancy: "owner", propertyType: "SFR",
+  address: "1 Test Way", loanAmount: 400000, asIsValue: 500000,
+  monthlyRent: 3200, arv: 620000, rehabBudget: 45000, termYears: 30,
+} as DeskInput, "Purchase", {});
+chk(ownerSeed.property.expectedMonthlyRentalIncome === undefined,
+  "an owner-occupied conventional purchase seeds NO rental income on the subject property");
+chk(ownerSeed.property.afterRepairValue === undefined && ownerSeed.property.rehabBudget === undefined,
+  "and no ARV or rehab budget");
+const flipSeed = deskUrlaSeed({
+  loanType: "fixflip", lienPosition: 1, occupancy: "investment", propertyType: "SFR",
+  address: "1 Test Way", loanAmount: 400000, asIsValue: 500000, arv: 620000, rehabBudget: 45000, termYears: 30,
+} as DeskInput, "Purchase", {});
+chk(flipSeed.property.afterRepairValue === 620000 && flipSeed.property.rehabBudget === 45000,
+  "while a fix&flip still seeds the ARV and rehab it genuinely uses");
+
+// ── 12. A SUBSTITUTED ARV must be flagged, and the LO's Target DSCR must bind the VERDICT.
+const noArv = computeDeskMetrics({ loanType: "fixflip", lienPosition: 1, occupancy: "investment",
+  asIsValue: 300000, loanAmount: 270000, rehabBudget: 80000, termYears: 1, ratePct: 11 } as DeskInput);
+chk(noArv.arvEstimated === true, "an ARV product with no ARV supplied FLAGS the substitution");
+const realArv = computeDeskMetrics({ loanType: "fixflip", lienPosition: 1, occupancy: "investment",
+  asIsValue: 300000, arv: 430000, loanAmount: 270000, termYears: 1, ratePct: 11 } as DeskInput);
+chk(realArv.arvEstimated === false, "and a supplied ARV is not flagged");
+
+// The target must sit ABOVE the deal's actual ratio or it binds nothing — my first pick was
+// 1.25 against a 1.29 deal, which passes legitimately and proved only that I chose badly.
+const targeted = computeDeskMetrics(deal({ existingLiens: 0, monthlyRent: 2400, targetDscr: 1.40 }));
+const boxOnly = computeDeskMetrics(deal({ existingLiens: 0, monthlyRent: 2400 }));
+chk(targeted.dscr === boxOnly.dscr, "the Target DSCR does not change the ratio itself");
+chk(!targeted.fits.dscr && boxOnly.fits.dscr,
+  `the LO's Target DSCR BINDS the verdict (${targeted.dscr!.toFixed(2)} fails a 1.40 target, passes the 1.00 box)`);
+
+// ── 13. TAX / INSURANCE OVERRIDE reaches the ratio the deal is judged on.
+const modelled = computeDeskMetrics(deal({ existingLiens: 0 }));
+const realTax = computeDeskMetrics(deal({ existingLiens: 0, taxRatePct: 2.4 }));
+chk(realTax.taxMonthly > modelled.taxMonthly && realTax.pitia > modelled.pitia && realTax.dscr! < modelled.dscr!,
+  `the real tax bill moves PITIA and DSCR (${modelled.dscr!.toFixed(2)} -> ${realTax.dscr!.toFixed(2)})`);
 
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). A DSCR that ignores the first mortgage passes deals the property cannot carry.\n`); process.exit(1); }

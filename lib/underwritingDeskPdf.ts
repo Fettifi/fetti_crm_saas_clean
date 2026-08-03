@@ -45,7 +45,13 @@ export async function buildUnderwritingDeskPdf(d: any): Promise<Uint8Array> {
   dt("NMLS #2267023 · CA DFPI Financing Law License #60DBO-153798", { x: M + 58, y: y - 34, size: 7, font, color: GREY });
   y -= 58;
 
-  const input = d.input || {}, m = d.metrics || {}, uw = d.underwrite || {}, tr = d.titleRead || {}, mkt = d.market || {}, loc = d.location || {};
+  const input = d.input || {}, m = d.metrics || {}, uw = d.underwrite || {}, mkt = d.market || {}, loc = d.location || {};
+  // `tr` was `d.titleRead || {}` — ALWAYS TRUTHY, so the "no title profile was read" warning below
+  // could never fire. An unreadable or absent upload looked identical to a clean read on a summary
+  // that tells the reader whether vesting and senior liens have been checked.
+  const trRaw = d.titleRead;
+  const tr = trRaw || {};
+  const titleWasRead = !!trRaw && Object.keys(trRaw).length > 0;
   const box = m.box || {};
   text("Preliminary Underwriting Summary", 15, bold, SLATE);
   gap(2);
@@ -68,12 +74,17 @@ export async function buildUnderwritingDeskPdf(d: any): Promise<Uint8Array> {
   heading("Key metrics");
   const rows: [string, string][] = [
     ["Loan amount", money(input.loanAmount)],
-    ["As-is value / price", money(input.asIsValue)],
+    // SAY WHERE THE VALUE CAME FROM. `valueSource` was handed to this builder on the result object
+    // and never read, so a public-web Zestimate printed as a bare "As-is value / price" on a
+    // branded summary — and drove the LTV beside it. The MISMO export learned to disclose this;
+    // the document a human actually reads did not.
+    [`As-is value / price${String(d.valueSource || "").startsWith("web") ? "  (web estimate — not an appraisal)" : ""}`, money(input.asIsValue)],
     ...(input.arv ? [["After-repair value (ARV)", money(input.arv)] as [string, string]] : []),
     ["LTV", pct(m.ltv)],
     ...(input.lienPosition === 2 || input.existingLiens ? [["CLTV (incl. senior liens)", pct(m.cltv)] as [string, string]] : []),
-    ...(m.ltarv != null ? [["Loan-to-ARV", pct(m.ltarv)] as [string, string]] : []),
-    ...(m.dscr != null ? [["DSCR (on PITIA)", dec(m.dscr)] as [string, string]] : []),
+    // An ARV we substituted from the as-is value is not a measured loan-to-ARV.
+    ...(m.ltarv != null ? [[`Loan-to-ARV${m.arvEstimated ? "  (no ARV supplied — measured against as-is)" : ""}`, pct(m.ltarv)] as [string, string]] : []),
+    ...(m.dscr != null ? [[`DSCR (on total debt service${m.seniorPayment > 0 ? `, incl. senior ${money(m.seniorPayment)}/mo${m.seniorPaymentEstimated ? " est." : ""}` : ""})`, dec(m.dscr)] as [string, string]] : []),
     ["Rate (used)", pct(m.ratePct)],
     ["P&I / mo", money(m.pi)],
     ["PITIA / mo", money(m.pitia)],
@@ -98,10 +109,12 @@ export async function buildUnderwritingDeskPdf(d: any): Promise<Uint8Array> {
   // Title / lien
   heading("Title, liens & vesting");
   if (uw.titleLienRead) para(String(uw.titleLienRead), 9.5, font, SLATE);
-  if (tr && !tr.error) {
+  // `tr && !tr.error` was always true (tr defaulted to {}), so this branch ran even with NO title
+  // read — printing nothing — and the else-if warning below could never be reached.
+  if (titleWasRead && !tr.error) {
     if (tr.vesting) para(`Vesting: ${tr.vesting}`, 8.5, font, GREY);
     if (Array.isArray(tr.openLiens) && tr.openLiens.length) { gap(1); text("Open liens on record:", 8.5, bold, SLATE); for (const l of tr.openLiens) para(`- ${l.lienType || "lien"}${l.holder ? " — " + l.holder : ""}${l.estimatedBalance ? " ~" + money(l.estimatedBalance) : ""}${l.position ? " (pos " + l.position + ")" : ""}`, 8.5, font, GREY, M + 6); }
-  } else if (!d.titleRead) {
+  } else {
     para("No title/property profile was read — pull a TitlePro profile / preliminary title report to confirm vesting and senior liens before funding.", 8.5, font, AMBER);
   }
 

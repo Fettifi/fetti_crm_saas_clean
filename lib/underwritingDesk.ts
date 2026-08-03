@@ -56,6 +56,10 @@ export type DeskInput = {
    *  rent, so on a junior deal DSCR is meaningless without it. Entered from the borrower's
    *  mortgage statement; estimated (and flagged) when the LO does not have it yet. */
   existingLienPayment?: number;
+  /** Set by the screen when a value/rent it is sending is one WE backfilled from the web and the
+   *  LO has not touched. Without it the second run reclassifies our own AVM as "entered". */
+  asIsValueIsWeb?: boolean;
+  monthlyRentIsWeb?: boolean;
   rehabBudget?: number;
   monthlyRent?: number;        // gross rent (DSCR / commercial)
   propertyType?: string;       // SFR | 2-4 unit | condo | multifamily | commercial | land
@@ -85,6 +89,8 @@ export type DeskMetrics = {
   ltarv: number | null;        // loan / ARV (fix&flip) — the binding LTV for ARV loans
   cltarv: number | null;       // (loan + senior liens) / ARV
   dscr: number | null;         // rent / TOTAL property debt service (junior PITIA + senior lien)
+  /** True when no ARV was supplied on an ARV product and the as-is value stood in for it. */
+  arvEstimated: boolean;
   /** The senior lien's monthly payment used in that ratio, and whether we had to estimate it. */
   seniorPayment: number;
   seniorPaymentEstimated: boolean;
@@ -111,6 +117,10 @@ function monthlyAmortizing(principal: number, ratePct: number, months: number): 
 export function computeDeskMetrics(input: DeskInput): DeskMetrics {
   const box = LOAN_BOX[input.loanType] || LOAN_BOX.dscr;
   const value = Math.max(0, Number(input.asIsValue) || 0);
+  // ARV SUBSTITUTION MUST BE VISIBLE. On an ARV product with the field left blank this falls back
+  // to the AS-IS value, and the result was still printed as "Loan-to-ARV" — a ratio measured
+  // against a number that is not an ARV, on a branded summary. Substitute, but say so.
+  const arvEstimated = !!box.usesARV && !(Number(input.arv) > 0) && value > 0;
   const arv = box.usesARV ? (Number(input.arv) || value || 0) : (Number(input.arv) || null);
   const loan = Math.max(0, Number(input.loanAmount) || 0);
   const senior = Math.max(0, Number(input.existingLiens) || 0);
@@ -182,7 +192,10 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
   const fits = {
     ltv: box.usesARV ? (ltarv == null || ltarv <= box.maxLTV) : (ltv == null || ltv <= box.maxLTV),
     cltv: box.usesARV ? (cltarv == null || cltarv <= box.maxCLTV) : (cltv == null || cltv <= box.maxCLTV),
-    dscr: !box.usesRental || dscr == null || dscr >= box.minDSCR,
+    // The LO's Target DSCR moved the max loan but not the VERDICT, so a deal could be sized to a
+    // 1.25 target and still be badged "fits" on the box's 1.00 floor. Judge against whichever is
+    // STRICTER — a target below the box floor cannot make an ineligible deal eligible.
+    dscr: !box.usesRental || dscr == null || dscr >= Math.max(box.minDSCR || 0, targetDscr || 0),
     overall: true,
   };
   fits.overall = fits.ltv && fits.cltv && fits.dscr && loan <= maxLoan + 1;
@@ -191,7 +204,7 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
     box, value, arv, ratePct, termYears,
     pi, taxMonthly: round(p.taxMonthly), insMonthly: round(p.insMonthly),
     hoaMonthly: Number(input.hoaMonthly) || 0, pitia,
-    ltv, cltv, ltarv, cltarv, dscr, seniorPayment, seniorPaymentEstimated,
+    ltv, cltv, ltarv, cltarv, dscr, seniorPayment, seniorPaymentEstimated, arvEstimated,
     maxLoanByLTV, maxLoanByDSCR: maxLoanByDSCR != null ? round(maxLoanByDSCR) : null,
     maxLoan, headroom: round(maxLoan - loan), cashInDeal, fits,
   };
@@ -313,7 +326,13 @@ export function deskUrlaSeed(input: DeskInput, purpose: string, result?: any) {
       propertyType: input.propertyType || undefined,
       occupancy: OCC_URLA[input.occupancy || "investment"] || "Investment",
       presentValue: input.asIsValue || undefined,
-      expectedMonthlyRentalIncome: input.monthlyRent || undefined,
+      // ONLY WHAT THIS PRODUCT ACTUALLY USES. The screen HIDES rent on a full-doc owner-occupied
+      // deal and ARV on a non-ARV product, but the values stayed in form state and were seeded
+      // anyway — so an owner-occupied conventional PURCHASE exported monthly rental income on the
+      // subject property, plus an ARV and a rehab budget, into the 1003 and out to a lender in
+      // MISMO. A hidden field is not a cleared field.
+      expectedMonthlyRentalIncome: (box.usesRental && OCC_URLA[input.occupancy || "investment"] !== "PrimaryResidence")
+        ? (input.monthlyRent || undefined) : undefined,
       // The Desk BACKFILLS value and rent from a web pull when the LO leaves them blank, and the
       // screen then writes them into the form — so by the time we get here an AVM figure is
       // indistinguishable from a typed one. The underwrite response is the only place that still
@@ -321,8 +340,8 @@ export function deskUrlaSeed(input: DeskInput, purpose: string, result?: any) {
       // as if it were an appraised value.
       valueSource: valueProvenance(result?.valueSource),
       rentSource: rentProvenance(result?.rentSource),
-      afterRepairValue: input.arv || undefined,
-      rehabBudget: input.rehabBudget || undefined,
+      afterRepairValue: box.usesARV ? (input.arv || undefined) : undefined,
+      rehabBudget: box.usesARV ? (input.rehabBudget || undefined) : undefined,
     },
     loan: {
       purpose,
@@ -381,6 +400,8 @@ export function sanitizeInput(b: any): DeskInput {
     // ZERO-PRESERVING. These two are statements about the deal, not blanks.
     monthlyRent: enteredNum(b?.monthlyRent),
     existingLienPayment: enteredNum(b?.existingLienPayment),
+    asIsValueIsWeb: b?.asIsValueIsWeb === true,
+    monthlyRentIsWeb: b?.monthlyRentIsWeb === true,
     propertyType: _str(b?.propertyType, 40), occupancy: (["investment", "owner", "second_home"].includes(b?.occupancy) ? b.occupancy : "investment"),
     fico: _numOr(b?.fico) || undefined, ratePct: _numOr(b?.ratePct) || undefined, termYears: _numOr(b?.termYears) || undefined,
     hoaMonthly: _numOr(b?.hoaMonthly) || undefined, taxRatePct: _numOr(b?.taxRatePct) || undefined, insRatePct: _numOr(b?.insRatePct) || undefined,

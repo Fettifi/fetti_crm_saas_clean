@@ -209,7 +209,13 @@ export async function POST(req: NextRequest) {
     // Backfill the deal's value / rent from the web pull when the LO left them blank, so an
     // address alone still underwrites. The LO's typed numbers ALWAYS win when present.
     const effAsIs = input.asIsValue || Number(webPull?.estimatedValue) || Number(webPull?.lastSalePrice) || 0;
-    const valueSource = input.asIsValue ? "entered" : (webPull?.estimatedValue ? `web:${webPull.valueBasis || "estimate"}` : webPull?.lastSalePrice ? "web:recent sale" : "none");
+    // A figure WE put in the form is still ours on the next run. `asIsValueIsWeb` says the LO has
+    // not touched it, so it must not be re-badged "entered" — that is how the provenance marker
+    // disappeared from the lender's MISMO on every run after the first.
+    const valueSource = (input.asIsValue && !input.asIsValueIsWeb) ? "entered"
+      : (input.asIsValueIsWeb ? "web:estimate"
+      : webPull?.estimatedValue ? `web:${webPull.valueBasis || "estimate"}`
+      : webPull?.lastSalePrice ? "web:recent sale" : "none");
     // $0 IS A REAL ANSWER — it means the LO is telling us the unit is VACANT. A falsy check
     // discards that statement and substitutes a Rent Zestimate, so the Desk returns a DSCR built
     // on rent the property does not collect, and that number goes into a loan file and out to a
@@ -217,7 +223,9 @@ export async function POST(req: NextRequest) {
     // never for "truthy".
     const rentEntered = input.monthlyRent != null && Number.isFinite(Number(input.monthlyRent)) && Number(input.monthlyRent) >= 0;
     const effRent = rentEntered ? Number(input.monthlyRent) : (Number(webPull?.estimatedRent) || undefined);
-    const rentSource = rentEntered ? "entered" : (webPull?.estimatedRent ? "web:Rent Zestimate" : "none");
+    const rentSource = (rentEntered && !input.monthlyRentIsWeb) ? "entered"
+      : (input.monthlyRentIsWeb ? "web:Rent Zestimate"
+      : webPull?.estimatedRent ? "web:Rent Zestimate" : "none");
     if (!effAsIs) return NextResponse.json({ error: "Couldn't find a value for this address online — enter an as-is value / purchase price.", webPull }, { status: 422 });
 
     // 6) Deterministic metrics (value/rent may be web-backfilled; tax/ins from ZIP resolver).

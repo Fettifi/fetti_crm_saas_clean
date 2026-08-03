@@ -64,6 +64,17 @@ export default function UnderwritingDesk() {
     // Zero-preserving: `num(x) || undefined` here was the FIRST of the two truthiness filters
     // that made the $0-rent rule unreachable. A typed 0 means the unit is vacant.
     monthlyRent: f.monthlyRent !== "" && f.monthlyRent != null ? num(f.monthlyRent) : undefined,
+    // THE REAL CARRYING COSTS. The Desk had NO tax or insurance override at all, so PITIA ->
+    // DSCR -> max loan -> the pass/fail badge was always a state/ZIP model — even though the Desk
+    // itself reads the actual annual tax off the uploaded county bill and then discarded it.
+    // The LO holds ANNUAL DOLLARS (a tax bill, a bound premium); the engine wants a rate against
+    // value, so convert here rather than making them do arithmetic.
+    taxRatePct: num(f.taxAnnual) > 0 && num(f.asIsValue) > 0 ? (num(f.taxAnnual) / num(f.asIsValue)) * 100 : undefined,
+    insRatePct: num(f.insAnnual) > 0 && num(f.asIsValue) > 0 ? (num(f.insAnnual) / num(f.asIsValue)) * 100 : undefined,
+    // Still-unedited web figures. The route uses these to keep the provenance instead of
+    // reclassifying a value it supplied itself as one the LO typed.
+    asIsValueIsWeb: !!f._webValue && String(f.asIsValue) === String(f._webValue),
+    monthlyRentIsWeb: !!f._webRent && String(f.monthlyRent) === String(f._webRent),
     propertyType: f.propertyType, occupancy: f.occupancy,
     fico: num(f.fico) || undefined, ratePct: num(f.ratePct) || undefined, termYears: num(f.termYears) || 30,
     hoaMonthly: num(f.hoaMonthly) || undefined, targetDscr: num(f.targetDscr) || undefined,
@@ -96,11 +107,22 @@ export default function UnderwritingDesk() {
       else {
         // Backfill the form with any value/rent the Desk pulled from the web, so the LO sees
         // them, can override, and they carry into create-file / PDF. Typed values are kept.
-        setF((p: any) => ({
-          ...p,
-          ...(String(j?.valueSource || "").startsWith("web") && !num(p.asIsValue) && j?.input?.asIsValue ? { asIsValue: String(j.input.asIsValue) } : {}),
-          ...(String(j?.rentSource || "").startsWith("web") && !num(p.monthlyRent) && j?.input?.monthlyRent ? { monthlyRent: String(j.input.monthlyRent) } : {}),
-        }));
+        //
+        // REMEMBER WHAT WE BACKFILLED. Writing a web figure into the form made the NEXT run
+        // classify it as "entered" — so a Zestimate was laundered into an LO-stated value and the
+        // lender's MISMO silently lost AutomatedValuationModel and the "NOT a lease" note. Worse,
+        // the staleness gate makes a re-run mandatory after any edit, so the second run is the
+        // NORMAL case, not an edge one. We keep the exact figure we wrote; if it is still there
+        // on the next run it is still ours, and if the LO changed it, it is theirs.
+        setF((p: any) => {
+          const vWeb = String(j?.valueSource || "").startsWith("web") && !num(p.asIsValue) && j?.input?.asIsValue;
+          const rWeb = String(j?.rentSource || "").startsWith("web") && !num(p.monthlyRent) && j?.input?.monthlyRent;
+          return {
+            ...p,
+            ...(vWeb ? { asIsValue: String(j.input.asIsValue), _webValue: String(j.input.asIsValue) } : {}),
+            ...(rWeb ? { monthlyRent: String(j.input.monthlyRent), _webRent: String(j.input.monthlyRent) } : {}),
+          };
+        });
         setResult(j);
         setTimeout(() => document.getElementById("uw-result")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
       }
@@ -213,10 +235,22 @@ export default function UnderwritingDesk() {
                 value={f.existingLienPayment ?? ""}
                 onChange={(v) => set("existingLienPayment", v)}
                 className={inp}
-                placeholder={`$${Math.round(m.seniorPayment || 0).toLocaleString()} est.`}
+                // m can be null: preview returns null when computeDeskMetrics throws, and this field
+                // renders in the FORM, outside the result block. Dereferencing it crashed the page.
+                placeholder={`$${Math.round(m?.seniorPayment || 0).toLocaleString()} est.`}
               />
             </div>
           )}
+          <div>
+            <label className={lbl}>Property taxes / yr <span className="text-slate-600">(the real bill)</span></label>
+            <CurrencyInput value={f.taxAnnual ?? ""} onChange={(v) => set("taxAnnual", v)} className={inp}
+              placeholder={m ? `$${Math.round((m.taxMonthly || 0) * 12).toLocaleString()} est.` : "$ estimated"} />
+          </div>
+          <div>
+            <label className={lbl}>Insurance / yr <span className="text-slate-600">(bound premium)</span></label>
+            <CurrencyInput value={f.insAnnual ?? ""} onChange={(v) => set("insAnnual", v)} className={inp}
+              placeholder={m ? `$${Math.round((m.insMonthly || 0) * 12).toLocaleString()} est.` : "$ estimated"} />
+          </div>
           {!lien2 && !f.existingLiens && <div><label className={lbl}>Existing liens (optional)</label><CurrencyInput value={f.existingLiens || ""} onChange={(v) => set("existingLiens", v)} className={inp} placeholder="$0" /></div>}
           {box.usesRental && <div><label className={lbl}>Gross rent / mo</label><CurrencyInput value={f.monthlyRent || ""} onChange={(v) => set("monthlyRent", v)} className={inp} placeholder="$/mo" /></div>}
           {box.usesRental && <div><label className={lbl}>Target DSCR</label><select value={f.targetDscr || box.minDSCR} onChange={(e) => set("targetDscr", e.target.value)} className={inp}><option value={1.25}>1.25</option><option value={1.10}>1.10</option><option value={1.0}>1.00</option><option value={0.75}>0.75 (low-DSCR)</option></select></div>}
