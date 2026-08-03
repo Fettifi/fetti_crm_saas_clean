@@ -97,34 +97,48 @@ const LETTER = {
   for (const must of ["Sincerely", "Ramon Dent", "NMLS #2267023", "Equal Housing Opportunity", "not a commitment to lend"])
     chk(flat.includes(must), `the tail survives: "${must}"`);
 
-  // ── 4. Internal-only stays internal ─────────────────────────────────────────────────────
-  console.log("\ncaptured-but-internal stays off the letter:");
-  // THE LIST IS LITERAL, NOT DERIVED FROM THE FLAG IT IS TESTING.
-  // The first version of this check filtered PA_FIELDS on `internalOnly` and then asserted those
-  // fields did not print. Deleting `internalOnly: true` from broker_comp therefore removed it
-  // from the filter as well — the field started printing on the letter and the guard stayed
-  // green. A check whose input moves with the thing it checks cannot fail. These keys must be
-  // internal because of WHAT THEY ARE, so they are named here.
-  const MUST_BE_INTERNAL = [
-    "broker_comp",           // Reg Z 1026.36(d)(2) — printed beside borrower-paid points it reads as dual comp
-    "lender_rebate_ysp",
-    "base_price", "pricing_adjustments",   // publishes his wholesale pricing; an LLPA grid is the borrower's credit tier in code
-    "credit_score", "dti", "qualifying_income", "verified_reserves",  // the buyer's position, handed to the party negotiating against them
-    "lender_name", "account_executive",    // names the wholesale source; most broker agreements restrict this
+  // ── 4. Everything prints; hiding is a real control ──────────────────────────────────────
+  console.log("\nsensitive terms print by default, and hiding actually holds them back:");
+  // Ramon asked twice for everything off the document to reach the letter, so these no longer
+  // block — but the switch has to WORK, and a hidden field must not merely be un-rendered while
+  // still sitting in the blob the public PDF route serves.
+  const MUST_BE_TOGGLEABLE = [
+    "broker_comp",           // Reg Z 1026.36(d)(2) — beside borrower-paid points it reads as dual comp
+    "lender_rebate_ysp", "base_price", "pricing_adjustments",
+    "credit_score", "dti", "qualifying_income", "verified_reserves",
+    "lender_name", "account_executive",
   ];
-  const notFlagged = MUST_BE_INTERNAL.filter((k) => !PA_BY_KEY[k]?.internalOnly);
-  chk(notFlagged.length === 0, `the fields that must never print are still marked internal${notFlagged.length ? ` — UNMARKED: ${notFlagged.join(", ")}` : ""}`);
-  const printed = MUST_BE_INTERNAL.filter((k) => flat.includes("SENSITIVE-" + k));
-  chk(printed.length === 0, `and none of them reaches the page${printed.length ? ` — LEAKED: ${printed.join(", ")}` : ""} (comp, pricing, FICO, DTI, the wholesale lender)`);
-  const leaked = PA_FIELDS.filter((f) => f.internalOnly && flat.includes("SENSITIVE-" + f.key)).map((f) => f.key);
-  chk(leaked.length === 0, `no other internal-only field prints either${leaked.length ? ` — LEAKED: ${leaked.join(", ")}` : ""}`);
-  chk(PA_INTERNAL_KEYS.length > 0 && !PA_LETTER_KEYS.some((k) => PA_INTERNAL_KEYS.includes(k)),
-    "the letter-safe and internal key sets are disjoint");
+  const unflagged = MUST_BE_TOGGLEABLE.filter((k) => !PA_BY_KEY[k]?.internalOnly);
+  chk(unflagged.length === 0, `the sensitive terms are still flagged, so the form offers a switch for each${unflagged.length ? ` — UNFLAGGED: ${unflagged.join(", ")}` : ""}`);
+  const printedByDefault = MUST_BE_TOGGLEABLE.filter((k) => flat.includes("SENSITIVE-" + k));
+  chk(printedByDefault.length === MUST_BE_TOGGLEABLE.length,
+    `all ${MUST_BE_TOGGLEABLE.length} print by default — he asked for everything on the sheet`);
+
+  const hiddenRows = letterRows(LETTER, { ...extra, __hidden: MUST_BE_TOGGLEABLE });
+  const stillThere = MUST_BE_TOGGLEABLE.filter((k) => hiddenRows.some((r) => r.key === k));
+  chk(stillThere.length === 0, `unticking removes them from the letter${stillThere.length ? ` — STILL SHOWN: ${stillThere.join(", ")}` : ""}`);
   const api = code("app/api/preapprovals/route.ts");
-  chk(/PA_INTERNAL:/.test(api) && /PA_LETTER_KEYS/.test(api),
-    "they are stored under SEPARATE keys — the public PDF route dereferences PA_TERMS, so a toggle alone would not be a control");
+  chk(/hidden_fields/.test(api) && /PA_INTERNAL:/.test(api),
+    "and a hidden field is stored under the key no public route reads — not just left out of the render");
   chk(!/PA_INTERNAL/.test(code("app/api/letter/[token]/pdf/route.ts")) && !/PA_INTERNAL/.test(code("app/api/letter/[token]/route.ts")),
-    "and no public route reads the internal key");
+    "no public route reads that key");
+
+  // ── 4b. Every uploaded document is read ─────────────────────────────────────────────────
+  console.log("\nevery document he uploads is read:");
+  chk(/getAll\("file"\)/.test(ex), "the extractor reads EVERY uploaded file, not just the first");
+  chk(/multiple/.test(readFileSync("app/preapprovals/page.tsx", "utf8")), "and the picker accepts more than one");
+  chk(/conflicts\.push/.test(ex), "two documents disagreeing is REPORTED, not silently resolved");
+  chk(/differentBorrower/.test(code("app/preapprovals/page.tsx")),
+    "a second document MERGES instead of wiping the first — but a different borrower's sheet clears the form");
+  const terms = code("lib/preapprovalTerms.ts");
+  chk(/valueKind === "list"/.test(terms),
+    "the other_terms catch-all expands into real rows (it rendered as [object Object])");
+  chk(/f\.key === "term"/.test(terms) && /loan_term_length/.test(terms),
+    "one Loan term row, showing the document's own wording — a 3-year sheet printed \"12-month interest-only\"");
+  chk(/LEAVE "term" OUT ENTIRELY|Never pick the nearest option/.test(ex),
+    "and the extractor is told never to force-map to the nearest dropdown option");
+  chk(/DICTATE, DO NOT RE-CATEGORISE|Never rename a fee/.test(ex),
+    "fees keep the document's own names — an Insurance Monitoring Fee printed as a Processing fee");
 
   // ── 5. PDF ↔ web letter parity ──────────────────────────────────────────────────────────
   console.log("\nthe two renderings of one letter agree:");

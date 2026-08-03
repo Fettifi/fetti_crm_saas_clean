@@ -68,11 +68,18 @@ function fmt(f: PaField, raw: any): string | null {
  */
 export function letterSections(l: any, x: any): TermSection[] {
   const extra = x && typeof x === "object" ? x : {};
+  const hidden = new Set<string>(Array.isArray((extra as any).__hidden) ? (extra as any).__hidden : []);
   const ltv = resolveLtv(l, extra);
   // Values live in two places: real columns on `preapprovals`, and the extras blob. Read both
   // through one accessor so no field's home has to be remembered at the call site.
   const valueOf = (f: PaField): any => {
     if (f.key === "ltv") return ltv;
+    // ONE LOAN TERM ROW, AND IT SAYS WHAT THE DOCUMENT SAYS.
+    // `term` is a dropdown column; `loan_term_length` is the sheet's verbatim wording. A 3-year
+    // bridge sheet has no matching dropdown option, so the enum used to print the NEAREST one —
+    // "12-month interest-only" on a three-year loan — beside the correct "3 Years". Two rows, one
+    // of them false. The document's own words win, and the duplicate row is suppressed below.
+    if (f.key === "term") return (extra as any).loan_term_length || (l || {}).term;
     if (f.column) return (l || {})[f.key];
     return (extra as any)[f.key];
   };
@@ -82,7 +89,29 @@ export function letterSections(l: any, x: any): TermSection[] {
     const rows: TermRow[] = [];
     for (const f of PA_FIELDS) {
       if (f.section !== section) continue;
-      if (f.internalOnly) continue;              // captured for the LO, never on the letter
+      // EVERYTHING PRINTS UNLESS RAMON SAYS OTHERWISE.
+      // These fields used to be blocked outright. He asked twice for everything off the document
+      // to reach the letter, so the default is now ON and `__hidden` is his per-letter override —
+      // ticked off in the form, and the hidden ones are stored under the key no public route
+      // reads. The advice stands (comp beside borrower-paid points reads as dual compensation;
+      // the buyer's FICO is not the seller agent's business) but the call is his.
+      if (hidden.has(f.key)) continue;
+      if (f.key === "loan_term_length") continue; // folded into the single "Loan term" row above
+      // THE CATCH-ALL IS A LIST OF ROWS, NOT A VALUE.
+      // This is the field that makes "capture everything" true — whatever the sheet said that has
+      // no named slot. Passed through String() it rendered "[object Object],[object Object]" on
+      // the letter, which is worse than dropping it: it looks like data and carries none. Each
+      // entry becomes its own row under the document's OWN label.
+      if (f.valueKind === "list") {
+        const items = valueOf(f);
+        if (Array.isArray(items)) {
+          for (const it of items) {
+            const label = String(it?.label ?? "").trim(), value = String(it?.value ?? "").trim();
+            if (label && value) rows.push({ key: `other:${label}`, label, value });
+          }
+        }
+        continue;
+      }
       const v = fmt(f, valueOf(f));
       if (v == null) { if (f.alwaysShow) rows.push({ key: f.key, label: f.label, value: "—" }); continue; }
       rows.push({ key: f.key, label: f.label, value: v });

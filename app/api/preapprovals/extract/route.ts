@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const MEDIA = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"]);
-const LOAN_TYPES = ["Conventional", "FHA", "VA", "USDA", "Jumbo", "First-Time Homebuyer", "DSCR", "Bank-Statement (Self-Employed)", "Fix & Flip", "Bridge", "HELOC", "Reverse (HECM)"];
+const LOAN_TYPES = ["Conventional", "FHA", "VA", "USDA", "Jumbo", "First-Time Homebuyer", "DSCR", "Bank-Statement (Self-Employed)", "Fix & Flip", "Bridge", "Private Money / Hard Money", "Second Mortgage / 2nd TD", "HELOC", "Reverse (HECM)"];
 const TERMS = ["30-year fixed", "15-year fixed", "20-year fixed", "5/1 ARM", "7/1 ARM", "12-month interest-only", "Other"];
 const OCC = ["Primary residence", "Second home", "Investment"];
 
@@ -37,10 +37,18 @@ const SYSTEM = `You read U.S. mortgage/lender TERM SHEETS, rate locks, loan esti
 
 Return ONLY valid JSON. INCLUDE ONLY fields you can actually read from the document; omit everything else. NEVER guess, infer or invent a number, rate or date — a missing field is correct, a wrong one is not.
 
+DICTATE, DO NOT RE-CATEGORISE. Ramon's words: "read everything that I upload and dictate that onto the sheet." Use a named field ONLY when the document's own wording unambiguously means that field. If a line item does not clearly match one, put it in "other_terms" USING THE DOCUMENT'S OWN LABEL, VERBATIM. Never rename a fee: an "Insurance Monitoring Fee" is not a processing fee, a "Lender Desk Review" is not an appraisal fee. A term shown under the sheet's own name is right; the same term shown under a name the sheet never used is wrong, and it goes to a borrower.
+
+TRANSCRIBE VALUES AS WRITTEN. Keep ranges ("10.99-11.99%"), approximations ("Approximately $2,000,000"), qualifiers ("paid in advance", "excludes escrow & title") and conditions in full. Do not round, average, normalise or tidy. If the document contains an obvious typo in a name or address, reproduce it — do not silently correct it.
+
+EVERY LINE ON THE DOCUMENT MUST APPEAR SOMEWHERE in your output — a named field or other_terms. Before finishing, re-read the document and confirm nothing was left out.
+
+DO NOT REPEAT YOURSELF. If a value is already in a named field, do not also list it in other_terms. Use other_terms only for what has no named field, or for a QUALIFIER the named field cannot hold ("paid in advance", "excludes escrow & title", "of the appraised value") — and then state only the qualifier, not the whole line again.
+
 A ZERO IS A REAL ANSWER. If the sheet says 0 points, $0 lender fees, no prepayment penalty or $0 down, return it — do not omit it as if it were absent.
 
 Map the product to the closest ${JSON.stringify(LOAN_TYPES)} for "loan_type" ("Conv"→"Conventional"; a no-income/rental/investment qualifier→"DSCR"; bank-statement self-employed→"Bank-Statement (Self-Employed)"; an interest-only short-term/rehab loan→"Fix & Flip" or "Bridge"), and keep the sheet's OWN product wording verbatim in "program_name".
-Map "term" to the closest ${JSON.stringify(TERMS)} ("360 mo"/"30 yr fixed"→"30-year fixed"; interest-only bridge/flip→"12-month interest-only"), and keep the sheet's own wording in "amortization_type".
+Set "term" ONLY when the document's term genuinely IS one of ${JSON.stringify(TERMS)} ("360 mo"/"30 yr fixed"→"30-year fixed"). If it is anything else — 3 years, 18 months, 40-year, a balloon — LEAVE "term" OUT ENTIRELY and put the document's own wording in "loan_term_length" (e.g. "3 Years"). Never pick the nearest option: a 3-year bridge shown as "12-month interest-only" is a false statement on a letter that goes to a borrower. Keep the payment structure in "amortization_type".
 Map "occupancy" to one of ${JSON.stringify(OCC)} ("Non-Owner Occupied"/"NOO"/"Investor"/"Rental"→"Investment"; "Owner-Occupied"/"Primary"→"Primary residence"; "Second Home"/"Vacation"→"Second home").
 
 Distinguish the two expiry dates — "lock_expires" is when the RATE lock dies, "termsheet_expires" is when the LENDER'S QUOTE dies. Do not merge them.
@@ -50,16 +58,9 @@ ${SCHEMA_LINES},
  "other_terms": [{"label": string, "value": string}]  — EVERY remaining term on the sheet that has no field above. Do not drop anything; put it here.
 }`;
 
-export async function POST(req: NextRequest) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return NextResponse.json({ error: "Term-sheet reading needs ANTHROPIC_API_KEY." }, { status: 503 });
-  try {
-    const form = await req.formData();
-    const file = form.get("file");
-    if (!(file instanceof Blob)) return NextResponse.json({ error: "No term sheet provided." }, { status: 400 });
-    const mediaType = (file as any).type || "application/octet-stream";
-    if (!MEDIA.has(mediaType)) return NextResponse.json({ error: `Unsupported type ${mediaType}. Upload a PDF or image.` }, { status: 415 });
-    const b64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+/** Read ONE document. Throws on a truncated or unreadable reply — never returns a partial. */
+async function readOne(key: string, buf: Buffer, mediaType: string): Promise<any> {
+    const b64 = buf.toString("base64");
 
     const block = mediaType === "application/pdf"
       ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }
@@ -85,13 +86,68 @@ export async function POST(req: NextRequest) {
     if (!res.ok) throw new Error(j?.error?.message || `Anthropic ${res.status}`);
     // A truncated reply is a FAILURE, not a partial read. Say so rather than issuing a letter
     // off half a term sheet.
-    if (j?.stop_reason === "max_tokens") {
-      return NextResponse.json({ error: "That term sheet is denser than one pass can read. Split it and upload the pages separately." }, { status: 422 });
-    }
+    if (j?.stop_reason === "max_tokens") throw new Error("denser than one pass can read — split it into separate uploads");
     const txt = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").replace(/```json/gi, "").replace(/```/g, "").trim();
     const m = txt.match(/\{[\s\S]*\}/);
-    let ex: any = {};
-    try { ex = JSON.parse(m ? m[0] : txt); } catch { return NextResponse.json({ error: "Couldn't read that term sheet — try a clearer PDF or image." }, { status: 422 }); }
+    try { return JSON.parse(m ? m[0] : txt); } catch { throw new Error("couldn't read it — try a clearer scan"); }
+}
+
+export async function POST(req: NextRequest) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return NextResponse.json({ error: "Term-sheet reading needs ANTHROPIC_API_KEY." }, { status: 503 });
+  try {
+    // READ EVERYTHING HE UPLOADS.
+    //
+    // Ramon, 2026-08-03: "make sure that you read everything that I upload and dictate that onto
+    // the sheet." This read `form.get("file")` — exactly ONE document — while a real quote arrives
+    // as several: the term sheet, the fee worksheet, the rate lock confirmation, a guideline
+    // exception page. Everything after the first was simply not read.
+    const form = await req.formData();
+    const files = form.getAll("file").filter((f) => typeof f !== "string") as unknown as Blob[];
+    if (!files.length) return NextResponse.json({ error: "No term sheet provided." }, { status: 400 });
+
+    const skipped: string[] = [];
+    const usable: { name: string; buf: Buffer; mediaType: string }[] = [];
+    for (const f of files) {
+      const name = (f as any).name || "document";
+      const mediaType = (f as any).type || "application/octet-stream";
+      if (!MEDIA.has(mediaType)) { skipped.push(`${name} (unsupported type ${mediaType})`); continue; }
+      usable.push({ name, buf: Buffer.from(await f.arrayBuffer()), mediaType });
+    }
+    if (!usable.length) return NextResponse.json({ error: "Nothing readable. Upload a PDF or an image.", skipped }, { status: 415 });
+
+    // In parallel — several documents read one after another blow the function timeout.
+    const outcomes = await Promise.all(usable.map(async (u) => {
+      try { return { name: u.name, ex: await readOne(key, u.buf, u.mediaType) }; }
+      catch (e: any) { return { name: u.name, ex: null, err: e?.message || "unreadable" }; }
+    }));
+    const failed = outcomes.filter((o) => !o.ex).map((o) => `${o.name} (${(o as any).err})`);
+    const read = outcomes.filter((o) => o.ex).map((o) => o.name);
+    if (!read.length) return NextResponse.json({ error: `Couldn't read ${failed.join("; ")}.`, failed, skipped }, { status: 422 });
+
+    // MERGE, AND NEVER LET A LATER DOCUMENT BLANK AN EARLIER ONE.
+    // Same rule as the 1003 SSN merge: completeness only goes up. A fee worksheet that does not
+    // mention the rate must not erase the rate the term sheet stated. Where two documents state
+    // DIFFERENT values for the same term we keep the first and REPORT the disagreement — silently
+    // picking one is how a letter ends up quoting a rate the borrower was never offered.
+    const ex: any = {};
+    const conflicts: { field: string; kept: string; also: string; from: string }[] = [];
+    const seenIn: Record<string, string> = {};
+    for (const o of outcomes) {
+      if (!o.ex) continue;
+      for (const [k, v] of Object.entries(o.ex)) {
+        if (v == null || String(v).trim() === "") continue;
+        if (k === "other_terms") {
+          ex.other_terms = [...(ex.other_terms || []), ...(Array.isArray(v) ? v : [])];
+          continue;
+        }
+        if (!(k in ex)) { ex[k] = v; seenIn[k] = o.name; continue; }
+        if (String(ex[k]).trim() !== String(v).trim()) {
+          const label = PA_BY_KEY[k]?.label || k;
+          conflicts.push({ field: label, kept: String(ex[k]), also: String(v), from: o.name });
+        }
+      }
+    }
 
     // Sanitize → only well-formed, known values reach the form.
     // A ZERO IS AN ANSWER. `n > 0` deleted every legitimate zero on a term sheet — $0 down on
@@ -154,13 +210,22 @@ export async function POST(req: NextRequest) {
     // The catch-all: anything the sheet carried with no named slot. This is what makes "capture
     // everything" true rather than "capture the 130 things we thought of".
     if (Array.isArray(ex.other_terms)) {
+      // A catch-all row that repeats a named field is noise on the letter — the model echoed
+      // "$550.00 Lender Desk Review" beside the Desk review fee row it had already filled.
+      const shown = new Set(Object.entries(clean).map(([, v]) => String(v).replace(/[^a-z0-9.]/gi, "").toLowerCase()).filter((x) => x.length >= 2));
       const others = ex.other_terms
         .map((o: any) => ({ label: String(o?.label ?? "").trim().slice(0, 80), value: String(o?.value ?? "").trim().slice(0, CAP) }))
-        .filter((o: any) => o.label && o.value && !PA_BY_KEY[o.label]);
+        .filter((o: any) => {
+          if (!o.label || !o.value || PA_BY_KEY[o.label]) return false;
+          const norm = o.value.replace(/[^a-z0-9.]/gi, "").toLowerCase();
+          // Short values that exactly duplicate a captured one are echoes; long prose is a real
+          // stipulation and must be kept even if it mentions a number we also captured.
+          return !(norm.length < 60 && [...shown].some((v) => norm === v || norm.includes(v)));
+        });
       if (others.length) clean.other_terms = others.slice(0, 40);
     }
 
-    return NextResponse.json({ ok: true, extracted: clean, fields: Object.keys(clean), unmapped });
+    return NextResponse.json({ ok: true, extracted: clean, fields: Object.keys(clean), unmapped, read, failed, skipped, conflicts });
   } catch (e: any) {
     console.error("[preapprovals/extract] error:", e);
     return NextResponse.json({ error: e?.message || "Extraction failed." }, { status: 500 });

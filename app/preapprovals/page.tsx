@@ -58,6 +58,8 @@ export default function PreApprovals() {
   const [f, setF] = useState<any>({ ...BLANK });
   const [unmapped, setUnmapped] = useState<{ field: string; value: string }[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [conflicts, setConflicts] = useState<{ field: string; kept: string; also: string; from: string }[]>([]);
+  const [hidden, setHidden] = useState<string[]>([]);
   const set = (k: string, v: string) => setF((p: any) => ({ ...p, [k]: v }));
 
   async function load() {
@@ -92,21 +94,29 @@ export default function PreApprovals() {
   }
 
   // Upload a lender term sheet → Claude extracts the loan terms → pre-fill the form.
-  async function uploadTermSheet(file: File) {
+  async function uploadTermSheet(files: FileList | File[]) {
     setTsBusy(true); setTsMsg(null);
     try {
-      const fd = new FormData(); fd.append("file", file);
+      const fd = new FormData();
+      // EVERY FILE HE PICKED. A quote arrives as a term sheet plus a fee worksheet plus a lock
+      // confirmation; this sent exactly one and the rest were never read.
+      for (const fl of Array.from(files)) fd.append("file", fl);
       const r = await fetch("/api/preapprovals/extract", { method: "POST", body: fd });
       const j = await r.json();
       if (r.ok && j.extracted) {
         const ex = j.extracted;
         const numStr = (v: any) => (v != null ? String(v) : undefined);
-        // RESET FIRST. The merge only ever SET keys the new sheet contained and never cleared the
-        // rest, so a second upload — or a second letter without reloading the page — carried the
-        // previous borrower's terms onto this one. With 130 fields that stops being a nuisance and
-        // becomes the likeliest way a wrong number reaches a listing agent.
+        // MERGE, DON'T WIPE — BUT NEVER ACROSS BORROWERS.
+        // An earlier fix reset the whole form on every upload to stop one borrower's terms landing
+        // on another's letter. That also destroyed document 1 the moment document 2 was added, so
+        // a fee worksheet uploaded after a term sheet erased the term sheet. The real distinction
+        // is not "another upload", it is "another BORROWER": we merge by default and only clear
+        // when the incoming name disagrees with what is already on the form.
+        const priorName = String(f.borrower_name || "").trim().toLowerCase();
+        const newName = String(ex.borrower_name || "").trim().toLowerCase();
+        const differentBorrower = !!priorName && !!newName && priorName !== newName;
         setF((p: any) => ({
-          ...BLANK,
+          ...(differentBorrower ? BLANK : p),
           officer_name: p.officer_name, officer_nmls: p.officer_nmls,   // the LO's own identity persists
           lead_id: p.lead_id, loan_file_id: p.loan_file_id,
           ...(ex.borrower_name && { borrower_name: ex.borrower_name }),
@@ -123,11 +133,22 @@ export default function PreApprovals() {
           ...(ex.expires_on && { expires_on: ex.expires_on }),
           // `.filter(v => v)` dropped every legitimate zero — 0 points, $0 lender fees.
           ...Object.fromEntries(ALL_EXTRA_KEYS.map((k) => [k, ex[k]]).filter(([, v]) => v != null && String(v) !== "")),
-          ...(Array.isArray(ex.other_terms) && ex.other_terms.length ? { other_terms: ex.other_terms } : {}),
+          ...(Array.isArray(ex.other_terms) && ex.other_terms.length
+            ? { other_terms: [...(differentBorrower ? [] : (p.other_terms || [])), ...ex.other_terms] }
+            : {}),
         }));
+        if (differentBorrower) setWarnings([`This document is for ${ex.borrower_name} — the form was cleared first so the previous borrower's terms could not carry over.`]);
         setUnmapped(j.unmapped || []);
+        setConflicts(j.conflicts || []);
         const n = (j.fields || []).length + (ex.other_terms?.length || 0);
-        setTsMsg(n ? { ok: true, text: `✅ Pulled ${n} field${n === 1 ? "" : "s"} from the term sheet — review below, then issue the letter.` } : { text: "Read the file but found no usable terms — enter them manually." });
+        const lost = [...(j.failed || []), ...(j.skipped || [])];
+        const docs = (j.read || []).length;
+        setTsMsg({
+          ok: n > 0,
+          text: (n ? `✅ Pulled ${n} field${n === 1 ? "" : "s"} from ${docs} document${docs === 1 ? "" : "s"} — review below, then issue the letter.`
+                   : "Read the file but found no usable terms — enter them manually.")
+                + (lost.length ? `  ⚠️ NOT read: ${lost.join("; ")}.` : ""),
+        });
       } else setTsMsg({ text: "⚠️ " + (j.error || "Couldn't read the term sheet.") });
     } catch { setTsMsg({ text: "⚠️ Connection error." }); } finally { setTsBusy(false); }
   }
@@ -140,12 +161,13 @@ export default function PreApprovals() {
         ALL_EXTRA_KEYS.map((k) => [k, f[k]]).filter(([, v]) => v != null && String(v).trim() !== ""),
       );
       if (Array.isArray(f.other_terms) && f.other_terms.length) extra_terms.other_terms = f.other_terms;
-      const r = await fetch("/api/preapprovals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, extra_terms }) });
+      (extra_terms as any).__hiddenSend = undefined;
+      const r = await fetch("/api/preapprovals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, extra_terms, hidden_fields: hidden }) });
       const j = await r.json();
       if (r.ok) {
         setJustIssued(j.preapproval); setEmailed(j.emailed || []); setWarnings(j.warnings || []);
         setF({ ...BLANK, officer_name: f.officer_name, officer_nmls: f.officer_nmls });
-        setUnmapped([]); setTsMsg(null);
+        setUnmapped([]); setTsMsg(null); setConflicts([]); setHidden([]);
         await load();
       }
     } finally { setSaving(false); }
@@ -186,10 +208,19 @@ export default function PreApprovals() {
             <label className={`${tsBusy ? "opacity-60" : ""} bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-2 rounded-lg text-sm flex items-center gap-2 cursor-pointer`}>
               {tsBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} {tsBusy ? "Reading…" : "Upload term sheet"}
               <input type="file" accept="application/pdf,image/*" className="hidden" disabled={tsBusy}
-                onChange={(e) => { const fl = e.target.files?.[0]; if (fl) uploadTermSheet(fl); e.currentTarget.value = ""; }} />
+                multiple
+              onChange={(e) => { const fl = e.target.files; if (fl?.length) uploadTermSheet(fl); e.currentTarget.value = ""; }} />
             </label>
           </div>
           {tsMsg && <div className={`text-xs mt-2 ${tsMsg.ok ? "text-emerald-300" : "text-slate-300"}`}>{tsMsg.text}</div>}
+          {/* TWO DOCUMENTS THAT DISAGREE MUST NOT BE RECONCILED SILENTLY. The merge keeps the
+              first value; picking one without saying so is how a letter quotes a rate the
+              borrower was never offered. */}
+          {conflicts.length > 0 && (
+            <div className="text-xs mt-2 text-amber-300 bg-amber-950/30 border border-amber-800/40 rounded-lg p-2">
+              ⚠️ Your documents disagree. {conflicts.map((c) => `${c.field}: kept "${c.kept}", but ${c.from} says "${c.also}"`).join(" · ")} — check which is current before issuing.
+            </div>
+          )}
           {/* A VALUE WE COULD NOT MAP MUST BE SAID OUT LOUD. It used to be discarded silently, and
               the form's default was printed in its place. */}
           {unmapped.length > 0 && (

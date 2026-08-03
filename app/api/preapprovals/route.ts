@@ -112,8 +112,15 @@ export async function POST(req: NextRequest) {
       }
       return out;
     };
-    const extra = take([...EXTRA_KEYS, "other_terms"]) as Record<string, string>;
-    const internal = take(PA_INTERNAL_KEYS);
+    // Ramon's per-letter choice, not a fixed list: whatever he ticked OFF stays behind. Anything
+    // hidden goes to the internal key that no public route reads, so hiding is a real control and
+    // not just a rendering flag on data that is already publicly served.
+    const hidden: string[] = Array.isArray(b.hidden_fields) ? b.hidden_fields.map(String) : [];
+    const hide = new Set(hidden);
+    const letterKeys = [...EXTRA_KEYS, ...PA_INTERNAL_KEYS, "other_terms"].filter((k) => !hide.has(k));
+    const extra = take(letterKeys) as Record<string, string>;
+    if (hidden.length) (extra as any).__hidden = hidden as any;
+    const internal = take([...PA_INTERNAL_KEYS, ...EXTRA_KEYS].filter((k) => hide.has(k)));
 
     const { data, error } = await supabaseAdmin.from("preapprovals").insert([row]).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
