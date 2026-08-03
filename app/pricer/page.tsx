@@ -155,6 +155,7 @@ export default function PricerPage() {
   const [origPct, setOrigPct] = useState("1"); // Fetti's origination fee (% of loan) — adjustable per deal
   const [cc, setCc] = useState<any>(null);
   const [ccOpen, setCcOpen] = useState(true);
+  const [ccErr, setCcErr] = useState<string | null>(null);
   // MANUAL FIGURES, keyed by CostLine.key. Held as the clean numeric STRINGS CurrencyInput emits
   // so that clearing the box is itself the "reset to estimate" gesture — no separate control to
   // find, and no way to end up with a blank field that is still secretly overriding the line.
@@ -169,6 +170,7 @@ export default function PricerPage() {
   useEffect(() => {
     if (!dealBasis || !r.loan || !state) { setCc(null); return; }
     const ctl = new AbortController();
+    setCcErr(null);
     const t = setTimeout(() => {
       fetch("/api/pricer/closing-costs", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: ctl.signal,
@@ -182,7 +184,16 @@ export default function PricerPage() {
           vaExempt,
           overrides: ovrNums,
         }),
-      }).then((res) => (res.ok ? res.json() : null)).then((j) => setCc(j?.ok ? j : null)).catch(() => setCc(null));
+      }).then((res) => (res.ok ? res.json() : null))
+        .then((j) => { if (j?.ok) setCc(j); })
+        .catch((e) => {
+          // AN ABORT IS NOT A FAILURE. Nulling `cc` here unmounted the whole closing-cost block —
+          // origination %, the MI override, seller credit, the VA-exempt box and every line
+          // override — and took focus with it, on every keystroke that superseded an in-flight
+          // request. Keep the last good figures; only a real error clears them.
+          if (e?.name === "AbortError") return;
+          setCcErr("Couldn't refresh closing costs — the figures below may be stale.");
+        });
     }, 350);
     return () => { clearTimeout(t); ctl.abort(); };
   }, [dealBasis, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct, vaExempt, ovrNums]);
@@ -378,6 +389,7 @@ export default function PricerPage() {
                   <span className="text-[10px] uppercase text-slate-500">Estimated closing costs{cc.inputs?.county ? ` · ${cc.inputs.county}` : ""}</span>
                   <span className="text-[11px] text-emerald-400">{ccOpen ? "hide" : "show"} detail</span>
                 </button>
+                {ccErr && <p className="text-[11px] text-amber-400 mt-1">{ccErr}</p>}
                 <div className="flex items-baseline justify-between mt-1">
                   <span className="text-sm text-slate-300">Total closing costs</span>
                   <span className="text-xl font-bold text-white">{money(cc.totalClosingCosts)}</span>

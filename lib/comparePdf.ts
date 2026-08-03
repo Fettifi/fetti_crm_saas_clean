@@ -47,9 +47,19 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
     .replace(/\u2159/g, "1/6").replace(/\u215A/g, "5/6").replace(/\u215B/g, "1/8")
     .replace(/\u215C/g, "3/8").replace(/\u215D/g, "5/8").replace(/\u215E/g, "7/8")
     .replace(/\u2044/g, "/")
-    // ANY REMAINING DIGIT-BEARING CHARACTER must not vanish silently. Superscripts, full-width
-    // digits and other numerals get folded to ASCII rather than deleted.
+    // DIGIT-BEARING CHARACTERS must not vanish silently — the final strip below would delete
+    // them and change a number. Full-width, superscript, subscript and the common non-Latin
+    // decimal digit ranges are folded to ASCII. (An earlier version of this comment claimed all
+    // of that while the code folded only full-width; the comment was the lie, not the intent.)
     .replace(/[\uFF10-\uFF19]/g, (c) => String(c.charCodeAt(0) - 0xFF10))
+    .replace(/[\u2070\u00B9\u00B2\u00B3\u2074-\u2079]/g, (c) => {
+      const sup = "\u2070\u00B9\u00B2\u00B3\u2074\u2075\u2076\u2077\u2078\u2079";
+      const i = sup.indexOf(c); return i >= 0 ? String("0123456789"[i]) : c;
+    })
+    .replace(/[\u2080-\u2089]/g, (c) => String(c.charCodeAt(0) - 0x2080))
+    .replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (c) => String(c.charCodeAt(0) - 0x06F0))
+    .replace(/[\u0966-\u096F]/g, (c) => String(c.charCodeAt(0) - 0x0966))
     .replace(/[^\x20-\x7E]/g, "");
   const yAt = (size: number) => H - cur - size;
   const text = (str: string, size: number, f = font, color = SLATE, x = M) => page.drawText(safe(str), { x, y: yAt(size), size, font: f, color });
@@ -145,7 +155,16 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
         const all = wrap(cellValue(q, r.key), font, fs, colW - 10);
         if (all.length <= 3) return all;
         const cut = all.slice(0, 3);
-        cut[2] = (cut[2] || "").replace(/\s*\S*$/, "") + " ...";
+        // APPEND, DO NOT CARVE. Stripping the trailing token to make room deleted MORE than the
+        // truncation it was marking: in a narrow column wrap() emits about one word per line, so
+        // `\s*\S*$` matched the whole line and replaced the third line of real content with
+        // " ...". Only drop a word when the line would otherwise overflow.
+        const withMark = (cut[2] || "") + " ...";
+        // Real font metric, not a character-count guess — the ellipsis is only paid for in
+        // dropped words when it genuinely does not fit.
+        cut[2] = font.widthOfTextAtSize(safe(withMark), fs) <= colW - 10
+          ? withMark
+          : ((cut[2] || "").replace(/\s*\S+$/, "") || cut[2] || "") + " ...";
         return cut;
       });
       const maxLines = Math.max(1, ...valLines.map((a) => a.length));

@@ -24,7 +24,7 @@ const MAX_ROWS = 1000;
 // ---------------------------------------------------------------- canonical fields
 const STRING_FIELDS = ["address", "city", "state", "zip", "county", "property_type", "notes"] as const;
 const NUMBER_FIELDS = [
-  "units", "price", "rent_monthly", "rent_annual", "other_income_monthly", "taxes_annual",
+  "units", "price", "rent_monthly", "rent_annual", "other_income_monthly", "taxes_annual", "taxes_monthly", "insurance_monthly",
   "insurance_annual", "hoa_monthly", "rehab_budget", "arv", "back_tax_amount",
 ] as const;
 const CANONICAL_FIELDS: string[] = [...STRING_FIELDS, ...NUMBER_FIELDS];
@@ -35,6 +35,17 @@ function jsonError(error: string, status = 400) {
 }
 
 /** "$1,250.00" | "65%" | " 1 200 " → number; blanks/garbage → null. */
+/** A carrying cost cannot be negative. Accounting parentheses and a leading minus both mean a
+ *  debit in an owner's spreadsheet, and both were being parsed into a NEGATIVE tax/insurance/HOA —
+ *  which the engine then SUBTRACTS, inflating NOI and the loan. */
+function toNumNonNeg(v: unknown): number | null {
+  const n = toNum(v);
+  if (n == null) return null;
+  const raw = String(v ?? "");
+  const accountingNeg = /^\s*\(.*\)\s*$/.test(raw);
+  return (n < 0 || accountingNeg) ? Math.abs(n) : n;
+}
+
 function toNum(v: unknown): number | null {
   if (v == null || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -70,6 +81,11 @@ function synonymFor(header: string): string | null {
   if (is("property type", "type", "prop type", "asset type", "asset class", "product type")) return "property_type";
   if (is("units", "unit count", "of units", "number of units", "doors", "beds units")) return "units";
   if (has("back", "tax") || has("delinquent", "tax") || has("tax", "owed") || has("tax", "lien") || has("past", "due", "tax")) return "back_tax_amount";
+  // MONTHLY TAX / INSURANCE COLUMNS. Rent got unit-normalization and these did not, so a
+  // "Monthly Taxes" column landed in the ANNUAL field verbatim — understating the tax 12x, which
+  // lifts the max loan, with no flag and the workbook printing "verified/entered".
+  if (has("month", "tax") || has("tax", "mo")) return "taxes_monthly";
+  if (has("month", "insurance") || has("insurance", "mo") || has("month", "ins")) return "insurance_monthly";
   if (has("tax")) return "taxes_annual"; // "annual taxes", "property tax", "taxes", "re taxes"
   if (has("insurance") || is("ins", "annual ins", "hazard")) return "insurance_annual";
   if (has("hoa") || has("association")) return "hoa_monthly";
@@ -226,7 +242,7 @@ function buildRows(headers: string[], dataRows: unknown[][], mapping: Record<str
       if (!city && d.city) city = d.city;
     }
 
-    const backTax = toNum(rec.back_tax_amount);
+    const backTax = toNumNonNeg(rec.back_tax_amount);
     rows.push({
       id: "p" + (idOffset + rows.length),
       source_sheet: sourceSheet ?? null,
@@ -237,23 +253,30 @@ function buildRows(headers: string[], dataRows: unknown[][], mapping: Record<str
       county: toStr(rec.county),
       property_type: toStr(rec.property_type),
       units: toNum(rec.units),
-      price: toNum(rec.price),
+      price: toNumNonNeg(rec.price),
       // AN ANNUAL RENT COLUMN IS DIVIDED DOWN, not read as monthly. Left as-is it inflated DSCR
       // and the max loan by 12x, in the direction that approves the deal. The monthly column wins
       // if the sheet has both; the conversion is recorded in the notes so it is never silent.
-      rent_monthly: toNum(rec.rent_monthly) ?? (toNum(rec.rent_annual) != null ? Math.round((toNum(rec.rent_annual) as number) / 12) : null),
-      other_income_monthly: toNum(rec.other_income_monthly),
+      rent_monthly: toNumNonNeg(rec.rent_monthly) ?? (toNumNonNeg(rec.rent_annual) != null ? Math.round((toNumNonNeg(rec.rent_annual) as number) / 12) : null),
+      other_income_monthly: toNumNonNeg(rec.other_income_monthly),
       // Map what's on the sheet verbatim — even if a taxes value looks monthly, do NOT
       // guess a conversion; the engine flags estimates and humans verify.
-      taxes_annual: toNum(rec.taxes_annual),
-      insurance_annual: toNum(rec.insurance_annual),
-      hoa_monthly: toNum(rec.hoa_monthly),
-      rehab_budget: toNum(rec.rehab_budget),
-      arv: toNum(rec.arv),
+      // A monthly column is multiplied UP, and the conversion goes in the notes so it is never
+      // silent. The annual column wins when the sheet has both.
+      taxes_annual: toNumNonNeg(rec.taxes_annual) ?? (toNumNonNeg(rec.taxes_monthly) != null ? Math.round((toNumNonNeg(rec.taxes_monthly) as number) * 12) : null),
+      insurance_annual: toNumNonNeg(rec.insurance_annual) ?? (toNumNonNeg(rec.insurance_monthly) != null ? Math.round((toNumNonNeg(rec.insurance_monthly) as number) * 12) : null),
+      hoa_monthly: toNumNonNeg(rec.hoa_monthly),
+      rehab_budget: toNumNonNeg(rec.rehab_budget),
+      arv: toNumNonNeg(rec.arv),
       back_tax_status: backTax != null && backTax > 0 ? "owed" : "unknown",
       back_tax_amount: backTax,
-      notes: [toStr(rec.notes), (toNum(rec.rent_monthly) == null && toNum(rec.rent_annual) != null)
-        ? `Rent converted from an ANNUAL column ($${Math.round(toNum(rec.rent_annual) as number).toLocaleString()}/yr ÷ 12)` : null]
+      notes: [toStr(rec.notes),
+        (toNumNonNeg(rec.rent_monthly) == null && toNumNonNeg(rec.rent_annual) != null)
+          ? `Rent converted from an ANNUAL column ($${Math.round(toNumNonNeg(rec.rent_annual) as number).toLocaleString()}/yr ÷ 12)` : null,
+        (toNumNonNeg(rec.taxes_annual) == null && toNumNonNeg(rec.taxes_monthly) != null)
+          ? `Taxes converted from a MONTHLY column ($${Math.round(toNumNonNeg(rec.taxes_monthly) as number).toLocaleString()}/mo × 12)` : null,
+        (toNumNonNeg(rec.insurance_annual) == null && toNumNonNeg(rec.insurance_monthly) != null)
+          ? `Insurance converted from a MONTHLY column ($${Math.round(toNumNonNeg(rec.insurance_monthly) as number).toLocaleString()}/mo × 12)` : null]
         .filter(Boolean).join(" · ") || null,
     });
   }

@@ -478,7 +478,7 @@ function ScenarioDesk() {
         setTimeout(() => setFlash(null), missed.length ? 9000 : 3500); }
       else setErr(j.error || "Send failed.");
     } finally { setBusyAction(null); }
-  }, [selected, selectedIds, directEmail, loadScenarios]);
+  }, [selected, selectedIds, directEmail, loadScenarios, saveScenario]);
 
   // --- quotes ----------------------------------------------------------------
   const saveQuote = useCallback(async (wholesaler_id: string, patch: Partial<Quote>) => {
@@ -552,7 +552,10 @@ function ScenarioDesk() {
       if (r.ok) router.push("/preapprovals");
       else { const j = await r.json().catch(() => ({})); setErr(j.error || "Could not issue pre-approval."); }
     } finally { setBusyAction(null); }
-  }, [selected, router]);
+    // saveScenario and draft MUST be in the deps: without them this callback closes over a
+    // snapshot taken before the LO's edits, so "save first, then send" saved and sent the OLD
+    // editor state — the exact failure the save was added to prevent.
+  }, [selected, draft, router, saveScenario]);
 
   // --- derived ---------------------------------------------------------------
   const filtered = useMemo(() => {

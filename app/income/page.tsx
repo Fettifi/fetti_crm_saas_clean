@@ -85,11 +85,15 @@ export default function IncomeCalcPage() {
       // double-counted it into DTI — silently making the borrower look worse, or (on a
       // re-upload after a correction) counting a paid-off account twice.
       setLiabs((prev) => {
-        const key = (l: any) => `${String(l.creditor || "").toLowerCase().trim()}|${l.type}|${Math.round(Number(l.monthly) || 0)}|${l.balance == null ? "" : Math.round(Number(l.balance))}`;
+        // IDENTITY, NOT STATE. Keying on the balance and the payment meant a REFRESHED report —
+        // the normal case, balances a month older — matched nothing, appended every tradeline a
+        // second time and reported zero duplicates suppressed. A tradeline is the creditor plus
+        // the account type; the figures are what CHANGES about it.
+        const key = (l: any) => `${String(l.creditor || "").toLowerCase().replace(/[^a-z0-9]/g, "")}|${l.type}`;
         const seen = new Set(prev.map(key));
         const added = (j.liabilities || []).filter((l: any) => !seen.has(key(l)));
         const dropped = (j.liabilities || []).length - added.length;
-        if (dropped > 0) setCrWarn((w) => [...new Set([...w, `${dropped} tradeline(s) already on the list were not added again (duplicate upload).`])]);
+        if (dropped > 0) setCrWarn((w) => [...new Set([...w, `${dropped} tradeline(s) for creditors already on the list were not added again — if this upload is a NEWER report, delete the older rows so the balances are current.`])]);
         return [...prev, ...added];
       });
       if (j.borrower && !borrowerName) setBorrowerName(j.borrower);

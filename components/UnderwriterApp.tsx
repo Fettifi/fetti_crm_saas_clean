@@ -51,14 +51,14 @@ const fx = (n: number | null | undefined) =>
 // that sets the tax on every UNVERIFIED door in the portfolio, and amort_years, which directly
 // sizes loan_by_dscr. `max` bounds each one: they were bounded below but not above on the screen
 // and not at all in the API, so a fat-fingered 900 vacancy silently drove every figure.
-const EDITABLE: { key: keyof Assumptions; label: string; suffix: string; step: string; max: number }[] = [
+const EDITABLE: { key: keyof Assumptions; label: string; suffix: string; step: string; max: number; min?: number }[] = [
   { key: "rate_pct", label: "Rate", suffix: "%", step: "0.125", max: 30 },
-  { key: "target_dscr", label: "Target DSCR", suffix: "x", step: "0.05", max: 5 },
+  { key: "target_dscr", label: "Target DSCR", suffix: "x", step: "0.05", max: 5, min: 0.01 },
   { key: "max_ltv_pct", label: "Max LTV", suffix: "%", step: "1", max: 100 },
   { key: "vacancy_pct", label: "Vacancy", suffix: "%", step: "1", max: 100 },
   { key: "mgmt_pct", label: "Mgmt", suffix: "%", step: "1", max: 100 },
   { key: "closing_cost_pct", label: "Closing costs", suffix: "%", step: "0.5", max: 100 },
-  { key: "amort_years", label: "Amortization", suffix: "yr", step: "1", max: 40 },
+  { key: "amort_years", label: "Amortization", suffix: "yr", step: "1", max: 40, min: 1 },
   { key: "maintenance_pct", label: "Maintenance", suffix: "%", step: "1", max: 100 },
   { key: "tax_fallback_pct", label: "Tax fallback", suffix: "%", step: "0.1", max: 10 },
   { key: "ins_fallback_pct", label: "Ins. fallback", suffix: "%", step: "0.1", max: 10 },
@@ -407,7 +407,10 @@ export default function UnderwritePage() {
       // Out-of-range falls back to the base — and `invalidAssumptions` below SAYS SO, because the
       // old behaviour left the box showing one thing while a different number drove every figure
       // on screen.
-      if (Number.isFinite(n) && n >= 0 && n <= f.max) (out as any)[f.key] = n;
+      // `n >= 0` let a 0 through for target_dscr and amort_years, which a downstream guard then
+      // rewrote INVISIBLY to the default — so the bar showed 0 while every figure on screen used
+      // 1.1. That is the visible-vs-effective divergence this block was added to close.
+      if (Number.isFinite(n) && n >= (f.min ?? 0) && n <= f.max) (out as any)[f.key] = n;
     }
     if (out.target_dscr <= 0) out.target_dscr = DEFAULT_ASSUMPTIONS.target_dscr; // never divide by zero
     return out;
@@ -419,7 +422,7 @@ export default function UnderwritePage() {
     const raw = aStr[f.key];
     if (raw == null || raw.trim() === "") return true;
     const n = parseFloat(raw);
-    return !(Number.isFinite(n) && n >= 0 && n <= f.max);
+    return !(Number.isFinite(n) && n >= (f.min ?? 0) && n <= f.max);
   }), [aStr]);
 
   // --- LIVE recompute: identical math to the API (pure isomorphic engine) -----

@@ -122,13 +122,19 @@ export async function POST(req: NextRequest) {
       //
       // (My first version gated this on a `purpose` the screen never sends, so the branch could
       // never be true — a dead condition dressed as a rule. Removed rather than left in place.)
-      taxes_annual: inTaxes ?? (loc?.taxRatePct && purchasePrice > 0
-        ? Math.round((purchasePrice * loc.taxRatePct) / 100)
-        : (Number(web?.annualPropertyTax) || null)),
+      // LEAVE IT NULL WHEN IT IS MODELLED. Populating it here from the ZIP rate looked like an
+      // improvement and broke two things: the engine's `taxes_estimated` flag is set by
+      // `p.taxes_annual == null`, so the "estimated — verify" warning stopped firing on EVERY
+      // run; and dealQualifier's maxWorkablePrice iteration scales carrying costs with the
+      // candidate price ONLY through the same `??` fallback, so a fixed figure froze the taxes at
+      // the entered price and moved the tool's most action-driving number optimistically.
+      //
+      // The ZIP rate is a better MODEL than the engine's flat %-of-price, so it is passed as the
+      // assumption instead — where it scales, and where it stays an acknowledged estimate.
+      taxes_annual: inTaxes,
+      insurance_annual: inIns,
       // The ZIP insurance model was resolved and discarded too — insurance fell all the way
       // through to the engine's flat %-of-price fallback even when a better figure existed.
-      insurance_annual: inIns ?? (loc && (loc as any).insRatePct && purchasePrice > 0
-        ? Math.round((purchasePrice * (loc as any).insRatePct) / 100) : null),
       hoa_monthly: inHoa ?? (Number(web?.hoaMonthly) || null),
       rehab_budget: rehabBudget || null, arv: effArv || null, back_tax_status: "unknown", notes: str(body?.notes, 400) || null,
     };
@@ -136,6 +142,10 @@ export async function POST(req: NextRequest) {
     // maintenance and closing costs were all fixed house defaults, so an investor with a real
     // quoted rate or a real management contract could not model their own deal.
     const assumptions = dealAssumptions(body);
+    // ZIP-accurate fallbacks, applied as RATES so they scale with the candidate price in the
+    // maxWorkablePrice search and still read as estimates to the engine.
+    if (loc?.taxRatePct) assumptions.tax_fallback_pct = loc.taxRatePct;
+    if ((loc as any)?.insRatePct) assumptions.ins_fallback_pct = (loc as any).insRatePct;
     const assumptionsOverridden = overriddenAssumptions(body);
     const qualify = qualifyDeal(propertyRow, assumptions);   // flip / rental / brrrr requirements + verdicts
     const hold = underwriteOne(propertyRow, assumptions);    // NOI, cap rate, cash-on-cash, cashflow, max loan
@@ -156,10 +166,10 @@ export async function POST(req: NextRequest) {
       assumptionsOverridden,
       carryingCostSource: {
         taxes: inTaxes != null ? "entered"
-          : (loc?.taxRatePct ? `reassessed at the purchase price using the ${loc.countyName || zip} effective rate (${loc.taxRatePct}%) — a sale resets the assessment`
+          : (loc?.taxRatePct ? `ESTIMATED at the ${loc.countyName || zip} effective rate (${loc.taxRatePct}%), applied to the purchase price — a sale resets the assessment. Verify with the county.`
           : Number(web?.annualPropertyTax) ? "current owner's bill from public records — verify, a sale usually reassesses"
           : "estimated %-of-price"),
-        insurance: inIns != null ? "entered" : (loc && (loc as any).insRatePct ? `regional model for ${loc.countyName || zip}` : "estimated %-of-price"),
+        insurance: inIns != null ? "entered" : (loc && (loc as any).insRatePct ? `ESTIMATED — regional model for ${loc.countyName || zip}` : "estimated %-of-price"),
         hoa: inHoa != null ? "entered" : (Number(web?.hoaMonthly) ? "web" : "none on file"),
       },
     };

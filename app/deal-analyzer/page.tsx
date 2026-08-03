@@ -116,9 +116,9 @@ export default function DealAnalyzerPage() {
         </div>
         {/* CARRYING COSTS — the figures an investor already holds. Blank = we estimate it. */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div><label className={lbl}>Property taxes / yr <span className="text-slate-600">(the real bill)</span></label><CurrencyInput value={f.taxesAnnual} onChange={(v) => set("taxesAnnual", v)} className={inp} placeholder="$ estimated if blank" /></div>
-          <div><label className={lbl}>Insurance / yr <span className="text-slate-600">(bound premium)</span></label><CurrencyInput value={f.insuranceAnnual} onChange={(v) => set("insuranceAnnual", v)} className={inp} placeholder="$ estimated if blank" /></div>
-          <div><label className={lbl}>HOA / mo</label><CurrencyInput value={f.hoaMonthly} onChange={(v) => set("hoaMonthly", v)} className={inp} placeholder="$ 0 if none" /></div>
+          <div><label className={lbl}>Property taxes / yr <span className="text-slate-600">(the real bill)</span></label><CurrencyInput allowCents value={f.taxesAnnual} onChange={(v) => set("taxesAnnual", v)} className={inp} placeholder="$ estimated if blank" /></div>
+          <div><label className={lbl}>Insurance / yr <span className="text-slate-600">(bound premium)</span></label><CurrencyInput allowCents value={f.insuranceAnnual} onChange={(v) => set("insuranceAnnual", v)} className={inp} placeholder="$ estimated if blank" /></div>
+          <div><label className={lbl}>HOA / mo</label><CurrencyInput allowCents value={f.hoaMonthly} onChange={(v) => set("hoaMonthly", v)} className={inp} placeholder="$ 0 if none" /></div>
         </div>
 
         {/* DEAL TERMS — house defaults until the investor has their own. */}

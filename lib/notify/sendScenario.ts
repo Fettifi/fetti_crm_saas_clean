@@ -57,7 +57,10 @@ export async function sendScenarioToWholesalers(
       `We have a deal we'd love to get your pricing on: ${summary}<br><br>` +
       `The full scenario is attached — please reply with your rate, points, max LTV, term, and any conditions/approval.<br><br>` +
       `— ${BRAND.company} · NMLS #${BRAND.nmls}`;
-    if (await sendOne(w.email, subject, html, pdfB64, filename)) sent.push(w.company);
+    // RETURN THE EMAIL, not the company. The caller matches delivery against w.email; returning
+    // the display name meant every match failed, so no quote row was recorded and every lender
+    // that HAD been emailed was reported to the LO as not reached.
+    if (await sendOne(w.email, subject, html, pdfB64, filename)) sent.push(String(w.email).toLowerCase());
   }
   return sent;
 }

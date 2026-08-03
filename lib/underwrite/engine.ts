@@ -55,6 +55,7 @@ export type UnderwriteResult = {
   address: string;
   // income + expenses (monthly unless noted)
   gross_income_m: number;
+  scheduled_rent_m: number;   // LEASE rent only — the DSCR numerator, row and roll-up alike
   effective_income_m: number;      // after vacancy
   taxes_m: number; taxes_estimated: boolean;
   insurance_m: number; insurance_estimated: boolean;
@@ -163,7 +164,12 @@ export function underwriteOne(p: PropertyRow, a: Assumptions): UnderwriteResult 
 
   return {
     id: p.id, address: p.address,
-    gross_income_m: r2(grossIncome), effective_income_m: r2(effective_income_m),
+    gross_income_m: r2(grossIncome),
+    // The roll-up needs the SAME numerator the row's DSCR used. Without this, blended_dscr fell
+    // back to gross income and the dashboard/workbook reported a materially higher blended DSCR
+    // than any of the rows it averages.
+    scheduled_rent_m: r2(scheduledRent),
+    effective_income_m: r2(effective_income_m),
     taxes_m: r2(taxes_m), taxes_estimated, insurance_m: r2(insurance_m), insurance_estimated, hoa_m: r2(hoa_m),
     noi_annual: Math.round(noi_annual), cap_rate_pct,
     loan_by_ltv: Math.round(loan_by_ltv), loan_by_dscr: Math.round(loan_by_dscr), max_loan,
@@ -189,7 +195,11 @@ export type PortfolioSummary = {
 export function underwritePortfolio(rows: PropertyRow[], a: Assumptions): { results: UnderwriteResult[]; summary: PortfolioSummary } {
   const results = rows.map((p) => underwriteOne(p, a));
   const sized = results.filter((x) => x.max_loan > 0);
-  const totRent = sized.reduce((s, x) => s + x.gross_income_m, 0);
+  // LEASE RENT, matching underwriteOne. This was gross_income_m, so parking/laundry lifted the
+  // BLENDED DSCR on the dashboard card and in the client-facing workbook while every per-row DSCR
+  // correctly excluded it — the fix reached the row and not the roll-up, and the guard asserted
+  // the row and never the summary.
+  const totRent = sized.reduce((s, x) => s + x.scheduled_rent_m, 0);
   const totPitia = sized.reduce((s, x) => s + x.pitia_at_max_loan_m, 0);
   const totPrice = results.reduce((s, x, i) => s + (Number(rows[i].price) || 0), 0);
   const totLoan = results.reduce((s, x) => s + x.max_loan, 0);

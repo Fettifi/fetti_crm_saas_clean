@@ -116,6 +116,11 @@ chk(thinOther.results[0].dscr_at_max_loan === thinB.results[0].dscr_at_max_loan,
   "parking / laundry income does NOT raise DSCR (it is not scheduled lease rent)");
 chk(thinOther.results[0].max_loan === thinB.results[0].max_loan,
   "and does NOT lift the DSCR-supported max loan");
+// THE ROLL-UP, NOT JUST THE ROW. The first version of this check asserted the per-row DSCR and
+// stopped — so the same defect one layer up (summary.blended_dscr still dividing GROSS income)
+// survived the fix and shipped to the dashboard card and the client workbook. Assert both.
+chk(thinOther.summary.blended_dscr === thinB.summary.blended_dscr,
+  `other income does not move the PORTFOLIO blended DSCR either (${thinB.summary.blended_dscr} both ways)`);
 chk(thinOther.results[0].noi_annual > thinB.results[0].noi_annual,
   `but it DOES raise NOI, because it is real money (${Math.round(thinB.results[0].noi_annual).toLocaleString()} -> ${Math.round(thinOther.results[0].noi_annual).toLocaleString()})`);
 chk(thinOther.results[0].gross_income_m > thinB.results[0].gross_income_m,
