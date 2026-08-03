@@ -52,6 +52,7 @@ export default function PricerPage() {
   const [includePMI, setIncludePMI] = useState(true);
   const [miOverride, setMiOverride] = useState("");        // the LO's real MI quote, $/mo
   const [vaExempt, setVaExempt] = useState(false);         // disabled-veteran funding-fee exemption
+  const [vaFirstUse, setVaFirstUse] = useState(true);      // 2.15% first use vs 3.30% subsequent
   const [borrowerName, setBorrowerName] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
 
@@ -112,7 +113,16 @@ export default function PricerPage() {
   const insEntered = insOverride.trim() !== "" && Number.isFinite(num(insOverride)) && num(insOverride) >= 0;
   const taxOver = taxEntered && taxBasis > 0;
   const insOver = insEntered && insBasis > 0;
-  const taxRatePctEff = taxOver ? (num(taxOverride) / taxBasis) * 100 : (useLocRates ? loc!.taxRatePct : undefined);
+  // Declared here because the effective tax rate below adopts the SERVER's resolved rate from
+  // this response when the client's own location fetch came back empty.
+  const [cc, setCc] = useState<any>(null);
+  // WHEN THE CLIENT COULD NOT RESOLVE THE LOCATION, ADOPT THE SERVER'S. `useLocRates` depends on
+  // a client fetch that can fail or still be in flight, while both API routes resolve server-side
+  // and always succeed — in CA that is the Prop-13 nominal 1.25% against the engine's 0.71% state
+  // fallback, so the screen and the borrower's PDF quoted materially different taxes on one deal.
+  // The closing-cost response already carries the rates the server used; use them.
+  const srvTaxRate = cc?.inputs?.taxRatePct != null ? Number(cc.inputs.taxRatePct) : undefined;
+  const taxRatePctEff = taxOver ? (num(taxOverride) / taxBasis) * 100 : (useLocRates ? loc!.taxRatePct : srvTaxRate);
   const insRatePctEff = insOver ? (num(insOverride) / insBasis) * 100 : (useLocRates ? loc!.insRatePct : undefined);
 
   // LTV is independent of rate, so compute it first (rate=0), estimate the rate,
@@ -153,7 +163,6 @@ export default function PricerPage() {
   const [escrowWaived, setEscrowWaived] = useState(false);
   const [ownersTitle, setOwnersTitle] = useState(false);
   const [origPct, setOrigPct] = useState("1"); // Fetti's origination fee (% of loan) — adjustable per deal
-  const [cc, setCc] = useState<any>(null);
   const [ccOpen, setCcOpen] = useState(true);
   const [ccErr, setCcErr] = useState<string | null>(null);
   // MANUAL FIGURES, keyed by CostLine.key. Held as the clean numeric STRINGS CurrencyInput emits
@@ -181,7 +190,7 @@ export default function PricerPage() {
           originationPct: origPct === "" ? undefined : num(origPct),
           // Both API routes already accepted vaExempt; the screen never sent it, so a disabled
           // veteran's funding-fee exemption could not be applied from the pricer at all.
-          vaExempt,
+          vaExempt, vaFirstUse,
           overrides: ovrNums,
         }),
       }).then((res) => (res.ok ? res.json() : null))
@@ -196,7 +205,7 @@ export default function PricerPage() {
         });
     }, 350);
     return () => { clearTimeout(t); ctl.abort(); };
-  }, [dealBasis, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct, vaExempt, ovrNums]);
+  }, [dealBasis, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct, vaExempt, vaFirstUse, ovrNums]);
 
   async function downloadPdf() {
     if (isRefi ? (!num(value) || !num(refiLoan)) : !num(price)) {
@@ -217,7 +226,7 @@ export default function PricerPage() {
           ratePct: effRate, rateIsOverride: rateOverrideValid, termMonths: term, hoaMonthly: num(hoa), includePMI,
           sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
           originationPct: origPct === "" ? undefined : num(origPct),
-          vaExempt, miMonthlyOverride: miOverride.trim() !== "" && num(miOverride) >= 0 ? num(miOverride) : undefined,
+          vaExempt, vaFirstUse, miMonthlyOverride: miOverride.trim() !== "" && num(miOverride) >= 0 ? num(miOverride) : undefined,
           overrides: ovrNums,
         }),
       });
@@ -481,6 +490,15 @@ export default function PricerPage() {
                         {/* Both routes already accepted vaExempt; the screen never sent it, so a
                             disabled veteran could not have the funding fee removed from a quote. */}
                         VA funding fee EXEMPT (service-connected disability / Purple Heart)
+                      </label>
+                    )}
+                    {loanType.startsWith("va") && !vaExempt && (
+                      <label className="flex items-center gap-2 text-[11px] text-slate-300">
+                        <input type="checkbox" checked={!vaFirstUse} onChange={(e) => setVaFirstUse(!e.target.checked)} className="accent-emerald-500" />
+                        {/* The tier was hard-wired to first use, so a veteran using the benefit
+                            again was quoted 2.15% instead of 3.30% — a materially low fee and
+                            loan amount on a borrower-facing PDF. */}
+                        SUBSEQUENT use of the VA benefit (3.30% instead of 2.15%)
                       </label>
                     )}
                     <div className="grid grid-cols-2 gap-2">

@@ -17,6 +17,24 @@ import type { Comparison, CompareQuote } from "../lib/compareTypes";
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
 
+/** Y positions of every drawn text item, per page. Presence alone CANNOT detect off-page drawing:
+ *  pdf-lib happily writes at negative Y and pdfjs extracts it regardless, so a "the figure is in
+ *  the text" assertion passes on the broken version. Position is the only thing that shows it. */
+async function pdfItemYs(bytes: Uint8Array): Promise<{ y: number; h: number; str: string }[]> {
+  const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await pdfjs.getDocument({ data: bytes, useSystemFonts: true }).promise;
+  const out: { y: number; h: number; str: string }[] = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const h = page.view[3];
+    for (const it of (await page.getTextContent()).items as any[]) {
+      if (!String(it.str || "").trim()) continue;
+      out.push({ y: it.transform[5], h, str: it.str });
+    }
+  }
+  return out;
+}
+
 async function pdfText(bytes: Uint8Array): Promise<{ text: string; pages: number }> {
   const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const doc = await pdfjs.getDocument({ data: bytes, useSystemFonts: true }).promise;
@@ -95,6 +113,51 @@ const comparison = (quotes: CompareQuote[], over: Partial<Comparison> = {}): Com
     Array.from({ length: 4 }, (_, i) => quote(i + 1, { prepay: longTerm })),
   ))))).text;
   chk(/\.\.\./.test(trunc), "a cell cut for space is marked with an ellipsis rather than ending mid-sentence");
+
+  // ── 8. NOTHING MAY DRAW OFF THE PAGE.
+  //
+  // HONEST NOTE ON THIS ONE: the round-3 auditor reported that the bounds guard budgeted ~16.5pt
+  // per row against ~38.5pt rows and therefore drew the table's bottom at NEGATIVE Y. I could not
+  // reproduce it. Measured minimum Y across 2, 4 and 6 columns with maximally tall content, with
+  // and without the change: 74 / 105 / 120 in every case, always on-page, identical either way —
+  // the footer's own ensure(54) takes the page break first. The row-height budget was still made
+  // accurate (it is strictly better and costs nothing) but the reported defect was NOT confirmed.
+  //
+  // The assertion below is kept because it is a real invariant, and because it took two wrong
+  // attempts to write one that COULD see this class of bug at all: "the figure appears in the
+  // extracted text" passes on off-page content, since pdfjs extracts text at any coordinate.
+  // Position is the only thing that shows it.
+  // The scenario has to ACTUALLY overflow, or the check passes on the broken code too — my first
+  // version did exactly that. A long note pushes the table down the page and every row carries
+  // three wrapped lines, so the old ~16.5pt-per-row budget under-counts by more than a page.
+  const heavy = "5% year one, 4% year two, 3% year three, 2% year four, 1% year five, then open with no penalty and a sixty day written notice requirement";
+  const bulky = await pdfText(new Uint8Array(await buildComparisonPdf(comparison(
+    Array.from({ length: 4 }, (_, i) => quote(i + 1, {
+      prepay: heavy, lockDays: heavy, term: heavy, ltv: heavy,
+      lenderFees: heavy, apr: heavy, monthlyPI: heavy, pitia: heavy, points: heavy,
+      cashToClose: `$${40000 + i}`,
+    })),
+    { note: heavy + " " + heavy + " " + heavy },
+  ))));
+  const ys = await pdfItemYs(new Uint8Array(await buildComparisonPdf(comparison(
+    Array.from({ length: 4 }, (_, i) => quote(i + 1, {
+      prepay: heavy, lockDays: heavy, term: heavy, ltv: heavy,
+      lenderFees: heavy, apr: heavy, monthlyPI: heavy, pitia: heavy, points: heavy,
+      cashToClose: `$${40000 + i}`,
+    })),
+    { note: heavy + " " + heavy + " " + heavy },
+  ))));
+  const offPage = ys.filter((it) => it.y < 0 || it.y > it.h);
+  chk(offPage.length === 0,
+    `nothing is drawn outside the page bounds${offPage.length ? ` — ${offPage.length} item(s) at y=${offPage.slice(0, 3).map((o) => Math.round(o.y)).join(", ")}` : ""}`);
+  chk(bulky.text.includes("40000"), "and the figures are still present");
+
+  // ── 9. THE COLUMN HEADER names the loan; a silent cut makes two options indistinguishable.
+  const longName = "30-Year Fixed DSCR Investor Cash-Out Refinance With Interest-Only Option";
+  const hdr = await pdfText(new Uint8Array(await buildComparisonPdf(comparison([
+    quote(1, { program: longName }), quote(2, { program: longName + " And A Prepay Rider" }),
+  ]))));
+  chk(/\.\.\./.test(hdr.text), "a truncated PROGRAM NAME is marked, like the data cells already were");
 
   console.log("");
   if (bad) { console.error(`FAIL — ${bad} problem(s). An option the borrower was quoted, missing from the document they compare on, is the whole point of the tool failing.\n`); process.exit(1); }

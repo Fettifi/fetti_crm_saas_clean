@@ -56,6 +56,10 @@ export type DeskInput = {
    *  rent, so on a junior deal DSCR is meaningless without it. Entered from the borrower's
    *  mortgage statement; estimated (and flagged) when the LO does not have it yet. */
   existingLienPayment?: number;
+  /** The LO's actual annual tax bill / bound premium, in DOLLARS. Converted to a rate against the
+   *  resolved value, because the form's as-is value is empty on the web-pull path. */
+  taxAnnual?: number;
+  insAnnual?: number;
   /** Set by the screen when a value/rent it is sending is one WE backfilled from the web and the
    *  LO has not touched. Without it the second run reclassifies our own AVM as "entered". */
   asIsValueIsWeb?: boolean;
@@ -403,6 +407,10 @@ export function sanitizeInput(b: any): DeskInput {
     existingLiens: _numOr(b?.existingLiens) || undefined, rehabBudget: _numOr(b?.rehabBudget) || undefined,
     // ZERO-PRESERVING. These two are statements about the deal, not blanks.
     monthlyRent: enteredNum(b?.monthlyRent),
+    // Annual dollars from the screen; converted to rates below against the value the SERVER
+    // resolved, so the web-pull path (address only, no typed value) keeps the LO's real figures.
+    taxAnnual: enteredNum(b?.taxAnnual),
+    insAnnual: enteredNum(b?.insAnnual),
     existingLienPayment: enteredNum(b?.existingLienPayment),
     asIsValueIsWeb: b?.asIsValueIsWeb === true,
     monthlyRentIsWeb: b?.monthlyRentIsWeb === true,

@@ -229,7 +229,13 @@ export async function POST(req: NextRequest) {
     if (!effAsIs) return NextResponse.json({ error: "Couldn't find a value for this address online — enter an as-is value / purchase price.", webPull }, { status: 422 });
 
     // 6) Deterministic metrics (value/rent may be web-backfilled; tax/ins from ZIP resolver).
-    const metrics = computeDeskMetrics({ ...input, asIsValue: effAsIs, monthlyRent: effRent, state, taxRatePct: input.taxRatePct || loc?.taxRatePct, insRatePct: input.insRatePct || loc?.insRatePct });
+    // Convert the LO's annual DOLLARS against the value we actually resolved (which may have come
+    // from the web pull), so a real tax bill survives an address-only run.
+    const taxRateFromDollars = input.taxAnnual != null && effAsIs > 0 ? (input.taxAnnual / effAsIs) * 100 : undefined;
+    const insRateFromDollars = input.insAnnual != null && effAsIs > 0 ? (input.insAnnual / effAsIs) * 100 : undefined;
+    const metrics = computeDeskMetrics({ ...input, asIsValue: effAsIs, monthlyRent: effRent, state,
+      taxRatePct: taxRateFromDollars ?? input.taxRatePct ?? loc?.taxRatePct,
+      insRatePct: insRateFromDollars ?? input.insRatePct ?? loc?.insRatePct });
 
     // 7) Approved wholesale lenders for matching.
     let lenders: any[] = [];

@@ -130,7 +130,16 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
       text(`Options ${offset + 1}\u2013${offset + quotes.length} of ${all.length}${ci > 0 ? " (continued)" : ""}`, 9, bold, GREY);
       cur += 16;
     }
-    ensure(40 + rows.length * (fs + 9));
+    // BUDGET WHAT WE ARE ACTUALLY ABOUT TO DRAW. This budgeted ~16.5pt a row while a row with
+    // three wrapped lines is ~38.5pt, so the guard passed, no page break was taken, and the
+    // bottom of the table rendered at NEGATIVE Y — off the page, invisible, with no error. The
+    // measurement has to come from the same wrap() the rows use, and there is a per-row check
+    // inside the loop as a backstop.
+    const rowHeights = rows.map((r) => {
+      const lines = quotes.map((q) => Math.min(3, wrap(cellValue(q, r.key), font, fs, colW - 10).length));
+      return 7 + Math.max(1, ...lines) * (fs + 3);
+    });
+    ensure(40 + rowHeights.reduce((a, b) => a + b, 0));
     const tableTop = cur;
 
     // Header band: program / "Option N" per column, recommended in emerald.
@@ -141,7 +150,15 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
       const rec = !!q.recommended;
       // Numbering continues across pages — "Option 1" appearing twice would read as a duplicate.
       const head = (q.program || `Option ${offset + i + 1}`);
-      wrap(head, bold, fs + 1, colW - 10).slice(0, 2).forEach((ln, li) =>
+      // THE PROGRAM NAME IS THE ONLY THING IN THE PDF THAT SAYS WHICH LOAN EACH COLUMN IS, and it
+      // was cut to two lines with no marker — in the same render pass that was hardened to mark
+      // data-cell truncation. A borrower comparing "30-Yr Fixed DSCR Investor" against "30-Yr
+      // Fixed DSCR Investor…" cannot tell which is which.
+      const headLines = wrap(head, bold, fs + 1, colW - 10);
+      const headCut = headLines.length > 2
+        ? [headLines[0], (headLines[1] || "") + " ..."]
+        : headLines;
+      headCut.forEach((ln, li) =>
         page.drawText(ln, { x: colX(i) + 6, y: H - cur - 13 - li * (fs + 2), size: fs + 1, font: bold, color: rec ? EMERALD : SLATE }));
       if (rec) page.drawText("* Recommended", { x: colX(i) + 6, y: H - cur - 13 - 2 * (fs + 2), size: Math.max(6, fs - 2), font, color: EMERALD });
     });
@@ -149,6 +166,9 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
 
     // Data rows.
     rows.forEach((r, ri) => {
+      // Backstop: even with the measured budget above, a continuation page must be taken rather
+      // than drawing past the bottom margin.
+      if (cur + rowHeights[ri] > H - M) { page = doc.addPage([W, H]); cur = M; }
       // A cell cut to three lines with no marker dropped the tail of a long term — a prepayment
       // schedule, a lock description — from the borrower's copy with nothing to indicate it.
       const valLines = quotes.map((q) => {

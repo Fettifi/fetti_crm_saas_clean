@@ -84,6 +84,9 @@ export async function buildUnderwritingDeskPdf(d: any): Promise<Uint8Array> {
     ...(input.lienPosition === 2 || input.existingLiens ? [["CLTV (incl. senior liens)", pct(m.cltv)] as [string, string]] : []),
     // An ARV we substituted from the as-is value is not a measured loan-to-ARV.
     ...(m.ltarv != null ? [[`Loan-to-ARV${m.arvEstimated ? "  (no ARV supplied — measured against as-is)" : ""}`, pct(m.ltarv)] as [string, string]] : []),
+    // The Rent Zestimate drives the DSCR row below and was disclosed ONLY in the MISMO — the
+    // human-readable summary printed it as though the LO had supplied it.
+    ...(input.monthlyRent != null ? [[`Gross rent / mo${String(d.rentSource || "").startsWith("web") ? "  (web estimate — NOT a lease)" : ""}`, money(input.monthlyRent)] as [string, string]] : []),
     ...(m.dscr != null ? [[`DSCR (on total debt service${m.seniorPayment > 0 ? `, incl. senior ${money(m.seniorPayment)}/mo${m.seniorPaymentEstimated ? " est." : ""}` : ""})`, dec(m.dscr)] as [string, string]] : []),
     ["Rate (used)", pct(m.ratePct)],
     ["P&I / mo", money(m.pi)],

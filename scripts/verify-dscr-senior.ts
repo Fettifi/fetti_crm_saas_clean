@@ -184,6 +184,24 @@ chk(vacantDeal.fits.dscr === false, "and FAILS the DSCR test rather than skippin
 const noRentAtAll = computeDeskMetrics(deal({ existingLiens: 0, monthlyRent: undefined as any }));
 chk(noRentAtAll.dscr === null, "a MISSING rent is still null — absent and vacant stay different facts");
 
+// ── 15. THE LO'S REAL TAX BILL MUST SURVIVE THE WEB-PULL PATH. The overrides were converted to a
+//       percentage of the FORM's as-is value, which is EMPTY when the LO enters an address and
+//       lets the Desk fetch the value — the path the feature exists to support. The real bill was
+//       silently discarded and the ZIP model used instead.
+const dollars = sanitizeInput({ loanType: "dscr", asIsValue: "", taxAnnual: "7200", insAnnual: "2400", monthlyRent: "3200" });
+chk(dollars.taxAnnual === 7200 && dollars.insAnnual === 2400,
+  "annual DOLLARS cross the route boundary even with no value typed on the form");
+chk(dollars.asIsValue === 0, "and the form's as-is value is genuinely absent on that path");
+// Converted against a SERVER-resolved value, the entered bill drives the metrics.
+const resolvedValue = 600000;
+const withBill = computeDeskMetrics({ ...dollars, asIsValue: resolvedValue, loanAmount: 300000,
+  taxRatePct: (dollars.taxAnnual! / resolvedValue) * 100 } as DeskInput);
+const modelOnly = computeDeskMetrics({ ...dollars, asIsValue: resolvedValue, loanAmount: 300000,
+  taxAnnual: undefined, taxRatePct: 1.1 } as DeskInput);
+chk(Math.abs(withBill.taxMonthly - 7200 / 12) < 1,
+  `the entered bill drives the monthly tax ($${Math.round(withBill.taxMonthly)}/mo = $7,200/yr)`);
+chk(withBill.taxMonthly !== modelOnly.taxMonthly, "and differs from the ZIP model it used to fall back to");
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). A DSCR that ignores the first mortgage passes deals the property cannot carry.\n`); process.exit(1); }
 console.log(`PASS — DSCR and loan sizing count the whole debt the property carries.\n`);

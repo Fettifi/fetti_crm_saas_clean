@@ -69,8 +69,12 @@ export default function UnderwritingDesk() {
     // itself reads the actual annual tax off the uploaded county bill and then discarded it.
     // The LO holds ANNUAL DOLLARS (a tax bill, a bound premium); the engine wants a rate against
     // value, so convert here rather than making them do arithmetic.
-    taxRatePct: num(f.taxAnnual) > 0 && num(f.asIsValue) > 0 ? (num(f.taxAnnual) / num(f.asIsValue)) * 100 : undefined,
-    insRatePct: num(f.insAnnual) > 0 && num(f.asIsValue) > 0 ? (num(f.insAnnual) / num(f.asIsValue)) * 100 : undefined,
+    // ANNUAL DOLLARS, NOT A RATE. Converting here divided by the FORM's as-is value — which is
+    // EMPTY on the web-pull path the feature explicitly supports (address only, value fetched
+    // server-side), so the LO's real tax bill and bound premium were silently discarded and the
+    // ZIP model used instead. Send the dollars; the server knows the value it resolved.
+    taxAnnual: f.taxAnnual !== "" && f.taxAnnual != null ? num(f.taxAnnual) : undefined,
+    insAnnual: f.insAnnual !== "" && f.insAnnual != null ? num(f.insAnnual) : undefined,
     // Still-unedited web figures. The route uses these to keep the provenance instead of
     // reclassifying a value it supplied itself as one the LO typed.
     asIsValueIsWeb: !!f._webValue && String(f.asIsValue) === String(f._webValue),
@@ -230,7 +234,7 @@ export default function UnderwritingDesk() {
               a deal that fails the box reads as passing. Estimated when blank, and said so. */}
           {!!num(f.existingLiens) && (
             <div>
-              <label className={lbl}>Senior lien payment / mo</label>
+              <label className={lbl}>Senior lien P&amp;I / mo <span className="text-slate-600">(principal + interest only)</span></label>
               <CurrencyInput
                 value={f.existingLienPayment ?? ""}
                 onChange={(v) => set("existingLienPayment", v)}
@@ -324,11 +328,16 @@ export default function UnderwritingDesk() {
             {/* DSCR here is rent over the property's TOTAL debt service. When the senior payment
                 was estimated rather than entered, the pass/fail rests on that estimate — say so
                 next to the number, not in a footnote nobody reads. */}
+            {String(result?.rentSource || "").startsWith("web") && (
+              <div className="mt-3 text-[11px] rounded-lg px-3 py-2 bg-amber-500/10 text-amber-300">
+                The rent above is a WEB ESTIMATE (Rent Zestimate), not a lease — and it is what the DSCR beside it is measured on. Enter the lease rent to firm this up.
+              </div>
+            )}
             {m.seniorPayment > 0 && (
               <div className={`mt-3 text-[11px] rounded-lg px-3 py-2 ${m.seniorPaymentEstimated ? "bg-amber-500/10 text-amber-300" : "bg-slate-800/60 text-slate-300"}`}>
                 DSCR is measured against the property&apos;s TOTAL debt service — this loan plus the senior lien&apos;s {money(m.seniorPayment)}/mo
                 {m.seniorPaymentEstimated
-                  ? " (ESTIMATED at 6.5% amortizing — enter the real payment from the borrower's mortgage statement to firm this up)."
+                  ? " (ESTIMATED at 6.5% amortizing). Enter the senior's PRINCIPAL & INTEREST from the mortgage statement — NOT the total payment: this loan's PITIA above already carries the property's full tax and insurance, so a total would double-count escrow."
                   : " (as entered)."}
               </div>
             )}

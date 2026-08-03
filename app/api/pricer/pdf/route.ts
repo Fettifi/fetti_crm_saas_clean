@@ -50,8 +50,13 @@ export async function POST(req: NextRequest) {
     const useLocRates = !!loc.state && (!b.state || b.state === loc.state);
     const taxBasis = price || Number(b.value) || 0;
     const insBasis = Number(b.value) || price || 0;
-    const taxOverAnnual = Number(b.taxAnnualOverride) || 0;
-    const insOverAnnual = Number(b.insAnnualOverride) || 0;
+    // THE LAST TWO $0 GATES. The screen was fixed to send a stated zero; these `|| 0` reads then
+    // turned it back into "unset", so an abated / exempt property still got the ZIP estimate on
+    // the borrower's PDF while the screen showed $0. Test for SENT, not for truthy.
+    const taxSent = b.taxAnnualOverride != null && Number.isFinite(Number(b.taxAnnualOverride)) && Number(b.taxAnnualOverride) >= 0;
+    const insSent = b.insAnnualOverride != null && Number.isFinite(Number(b.insAnnualOverride)) && Number(b.insAnnualOverride) >= 0;
+    const taxOverAnnual = taxSent ? Number(b.taxAnnualOverride) : -1;
+    const insOverAnnual = insSent ? Number(b.insAnnualOverride) : -1;
 
     const baseInput = {
       price, value: Number(b.value) || undefined, down: Number(b.down) || 0,
@@ -61,8 +66,8 @@ export async function POST(req: NextRequest) {
       miMonthlyOverride: b.miMonthlyOverride != null && Number(b.miMonthlyOverride) >= 0 ? Number(b.miMonthlyOverride) : null,
       // Without this the PDF charged conventional PMI on VA/USDA/DSCR loans.
       loanType: String(b.loanType || "conv30"),
-      taxRatePct: taxOverAnnual > 0 && taxBasis > 0 ? (taxOverAnnual / taxBasis) * 100 : (useLocRates ? loc.taxRatePct : undefined),
-      insRatePct: insOverAnnual > 0 && insBasis > 0 ? (insOverAnnual / insBasis) * 100 : (useLocRates ? loc.insRatePct : undefined),
+      taxRatePct: taxSent && taxBasis > 0 ? (taxOverAnnual / taxBasis) * 100 : (useLocRates ? loc.taxRatePct : undefined),
+      insRatePct: insSent && insBasis > 0 ? (insOverAnnual / insBasis) * 100 : (useLocRates ? loc.insRatePct : undefined),
     };
 
     // Resolve the rate. Honor an explicit advisor override; otherwise estimate.
@@ -98,6 +103,9 @@ export async function POST(req: NextRequest) {
           pointsPct: Number(b.pointsPct) || 0, sellerCredit: Number(b.sellerCredit) || 0, lenderCredit: Number(b.lenderCredit) || 0,
           escrowWaived: b.escrowWaived === true, ownersTitle: b.ownersTitle === true,
           vaExempt: b.vaExempt === true, model: ccModel,
+          // Hard-wired to first use everywhere, so a subsequent-use veteran was quoted a funding
+          // fee 1.15 points too low (2.15% vs 3.30%) and a loan amount to match, on the PDF.
+          vaFirstUse: b.vaFirstUse !== false,
           // The screen sends originationPct and this route used to DROP it, so an advisor who
           // adjusted origination saw one number on screen and handed the borrower a PDF with the
           // house default. The borrower-facing document has to agree with the screen it came from.
@@ -124,9 +132,9 @@ export async function POST(req: NextRequest) {
     const pdf = await buildPricerPdf({
       closing,
       borrowerName: b.borrowerName || undefined, address: b.address || undefined, state: stateIn || undefined,
-      county: taxOverAnnual > 0 ? undefined : (useLocRates ? (loc.countyName || undefined) : undefined),
-      taxSource: taxOverAnnual > 0 ? undefined : (useLocRates ? loc.taxSource : undefined),
-      taxIsActual: taxOverAnnual > 0, insIsActual: insOverAnnual > 0,
+      county: taxSent ? undefined : (useLocRates ? (loc.countyName || undefined) : undefined),
+      taxSource: taxSent ? undefined : (useLocRates ? loc.taxSource : undefined),
+      taxIsActual: taxSent, insIsActual: insSent,
       price, value: Number(b.value) || undefined, down: Number(b.down) || 0, loanAmount: r.loan, ltv: r.ltv,
       financedFees: (r as any).financedFees || 0, baseLoan: (r as any).baseLoan ?? r.loan,
       loanType: loanTypeLabel, purpose: mapPurpose(b.purpose),
