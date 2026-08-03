@@ -81,7 +81,15 @@ export async function POST(req: NextRequest) {
     const msg = calendly
       ? `He's tied up at this exact moment — but here's his calendar, grab any slot and it's locked in: ${calendly} Or keep texting me and I'll get everything moving in the meantime. (Reply STOP to opt out.)`
       : `He's tied up at this exact moment — I've flagged you as priority and he'll call you shortly. Meanwhile I can keep things moving right here. (Reply STOP to opt out.)`;
-    const s = await sendSms(leadE164, msg, { allowQuietHours: true });
+    // NOT A QUIET-HOURS EXEMPTION. `allowQuietHours` is reserved for messages that are not
+    // solicitations — an internal alert, or a direct reply the recipient just asked for. A
+    // bridge attempt that FAILED is neither: this is us initiating at 11pm because a call did
+    // not connect. It is also the second automated text on this path and neither one consulted
+    // the master shutoff. A hold now defers instead of sending.
+    const s = await sendSms(leadE164, msg);
+    if (s.deferred) {
+      await logActivity({ entity_type: "lead", entity_id: leadId, lead_id: leadId, actor: "agent:mark", action: "sms.deferred", detail: { reason: s.detail, kind: "bridge_fallback" } }).catch(() => {});
+    }
     if (s.ok) await logComms({ leadId, channel: "sms", direction: "outbound", type: "ai_reply", body: msg, to: leadE164, providerId: s.sid, actor: "agent:mark" }).catch(() => {});
   } else {
     await logComms({ leadId, channel: "sms", direction: "outbound", type: "call_bridge", body: `📞 LIVE BRIDGE: owner accepted — system dialed ${first} and connected the call.`, to: leadE164, actor: "system" }).catch(() => {});

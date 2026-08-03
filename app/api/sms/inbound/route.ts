@@ -10,6 +10,7 @@ import { markConciergeReply, extractConversationFacts, handoffSignal, expertiseF
 import { cfg } from "@/lib/settings";
 import { phoneMatchForms } from "@/lib/phone";
 import { magicApplyLink } from "@/lib/magicLink";
+import { automationPaused } from "@/lib/automationGate";
 
 export const dynamic = "force-dynamic";
 // inbound-reply auto-promote may replay the full pipeline (after Twilio ACK)
@@ -119,29 +120,56 @@ export async function POST(req: NextRequest) {
         const reply = "It's Fetti 🦉 You're already on the list — see what you qualify for: https://fettifi.com/tv (Reply STOP to opt out.)";
         return new NextResponse(`<Response><Message>${reply.replace(/&/g, "&amp;")}</Message></Response>`, { status: 200, headers: { "Content-Type": "text/xml" } });
       }
-      const consent = { sms_optin: true, keyword: word, campaign: "youtube_thelot", at: new Date().toISOString(), text: body.slice(0, 200) };
-      try {
-        const { data: existing } = await supabaseAdmin.from("leads").select("id, raw").in("phone", phoneMatchForms(digits)).order("created_at", { ascending: false }).limit(1).maybeSingle();
-        if (existing) {
-          const raw = (existing as any).raw && typeof (existing as any).raw === "object" ? (existing as any).raw : {};
-          raw.consent = consent;
-          raw.sms_consent = true; // texting us first = express written consent (TCPA)
-          delete raw.sms_optout_at; // fresh keyword text supersedes an old STOP
-          await supabaseAdmin.from("leads").update({ raw, nurture_paused: false }).eq("id", (existing as any).id);
-          // Texting a keyword is human evidence — release a quarantined lead fully
-          // (the consent update above unpaused it but left stage "Review" otherwise).
-          try { await autoPromoteIfQuarantined((existing as any).id, "sms_optin"); } catch { /* */ }
-        } else {
-          await supabaseAdmin.from("leads").insert([{ phone: digits, source: "youtube_thelot", lead_source: "sms_optin", stage: "New Lead", raw: { consent, sms_consent: true } }]);
-        }
-      } catch (e) { console.warn("[sms/inbound] optin save failed", e); }
+      // ONE WORD FROM A KNOWN LEAD IS A REPLY, NOT AN OPT-IN.
+      //
+      // This branch ran BEFORE the lead lookup, and the keyword list is DEAL/FETTI/MONEY/
+      // QUALIFY/HOME/LOT — every one of which is a plausible answer to our own first-touch
+      // question ("are you looking at homes, or getting financing sorted first?"). So a lead
+      // replying "Home" was: stamped with a campaign they never saw, had `sms_optout_at`
+      // DELETED, had nurture un-paused, and got the marketing auto-reply instead of a human —
+      // while their actual reply was never logged, never raised as a hot lead, and never
+      // reached the concierge. Executed against the shipping gate: a lead sitting at
+      // {sms_consent:false, sms_optout_at:'2026-07-06'} went from DO-NOT-TEXT to TEXTABLE on
+      // the single word "Home".
+      //
+      // A known number falls through to the reply path below, which grants texted-in consent
+      // ONLY when there is no opt-out on file (see the `!raw.sms_optout_at` test there).
+      const { data: known } = await supabaseAdmin
+        .from("leads").select("id").in("phone", phoneMatchForms(digits))
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (!known) {
+        // A REVOCATION IS NEVER SUPERSEDED BY A KEYWORD. `delete raw.sms_optout_at` was the
+        // only line in the codebase that could put a number that said STOP back on the list.
+        // It is gone; re-consent has to come through a path that records HOW.
+        const consent = {
+          sms_optin: true, keyword: word, at: new Date().toISOString(), text: body.slice(0, 200),
+          // Only claim the campaign the keyword actually belongs to. Stamping every inbound
+          // word "youtube_thelot" manufactures the evidence we would produce in a dispute.
+          ...(word === "LOT" ? { campaign: "youtube_thelot" } : {}),
+        };
+        try {
+          await supabaseAdmin.from("leads").insert([{
+            phone: digits,
+            source: word === "LOT" ? "youtube_thelot" : "sms_optin",
+            lead_source: "sms_optin", stage: "New Lead",
+            raw: { consent, sms_consent: true, sms_consent_source: "keyword" },
+          }]);
+        } catch (e) { console.warn("[sms/inbound] optin save failed", e); }
+        // The inbound text itself is a record we must keep, whether or not it matched a lead.
+        try { await logActivity({ entity_type: "sms", entity_id: digits.slice(-4), actor: "consumer", action: "sms.optin", detail: { keyword: word, from, text: body.slice(0, 200) } }); } catch { /* */ }
+      } else {
+        // Known number: do NOT treat this as an opt-in. Fall through to the reply path.
+      }
+      if (!known) {
 
-      const optinHook = process.env.LEAD_NOTIFY_WEBHOOK;
-      if (optinHook) { try { await fetch(optinHook, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: `🎬 **The Lot opt-in** — ${from} texted "${body}". Sent them fettifi.com/tv.` }) }); } catch { /* */ } }
+        const optinHook = process.env.LEAD_NOTIFY_WEBHOOK;
+        if (optinHook) { try { await fetch(optinHook, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: `📲 **SMS opt-in** — ${from} texted "${body}".` }) }); } catch { /* */ } }
 
-      const reply = "It's Fetti 🦉 Thanks for texting in from The Lot! See what you qualify for in 2 min — home loans, refis & investment: https://fettifi.com/tv — Msg&data rates may apply. Reply STOP to opt out.";
-      const xml = reply.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      return new NextResponse(`<Response><Message>${xml}</Message></Response>`, { status: 200, headers: { "Content-Type": "text/xml" } });
+        const reply = "It's Fetti 🦉 Thanks for texting in! See what you qualify for in 2 min — home loans, refis & investment: https://fettifi.com/tv — Msg&data rates may apply. Reply STOP to opt out.";
+        const xml = reply.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return new NextResponse(`<Response><Message>${xml}</Message></Response>`, { status: 200, headers: { "Content-Type": "text/xml" } });
+      }
+      // known number → fall through to the reply path
     }
 
     if (digits) {
@@ -182,6 +210,25 @@ export async function POST(req: NextRequest) {
           if (raw.consent && typeof raw.consent === "object") raw.consent = { ...raw.consent, sms_optin: false, revoked_at: raw.sms_optout_at };
           await supabaseAdmin.from("leads").update({ nurture_paused: true, raw }).eq("id", (r as any).id);
         }
+        // A STOP FROM A NUMBER WE HOLD NO ROW FOR MUST STILL BE RECORDED.
+        // One did, on 2026-07-06, and left no trace anywhere in 8,567 activity rows — it was
+        // only recovered 21 days later by backfilling Twilio's own suppression list. Nothing
+        // stopped that number from being intaken and texted in the meantime. A revocation has
+        // to survive a failed lead match, so persist it as a suppression row: every existing
+        // gate already reads `sms_optout_at`, so this needs no new store and no new DDL.
+        if (!(rows || []).length) {
+          const now = new Date().toISOString();
+          try {
+            await supabaseAdmin.from("leads").insert([{
+              phone: digits, source: "sms_optout", lead_source: "sms_optout", stage: "Dead",
+              nurture_paused: true,
+              raw: { sms_consent: false, sms_optout_at: now, do_not_contact: true, optout_text: body.slice(0, 200), optout_source: "inbound_stop" },
+            }]);
+          } catch (e) { console.warn("[sms/inbound] suppression row failed", e); }
+        }
+        // Log the revocation itself whether or not it matched — this is the record we would
+        // have to produce, and it used to sit under `if (lead)`.
+        try { await logActivity({ entity_type: "sms", entity_id: digits.slice(-4), actor: "consumer", action: "sms.optout", detail: { from, text: body.slice(0, 200), matched: (rows || []).length } }); } catch { /* */ }
       } else {
         // UNMATCHED inbound from a real human — CAPTURE, never drop (previously the
         // if(lead) gate below silently lost these). Someone texting a mortgage line is
@@ -279,8 +326,16 @@ export async function POST(req: NextRequest) {
             // connects them. Decline/timeout = calendar text. The press-1 screen (plus
             // the 2h throttle inside /api/voice/bridge) is the no-bots/no-waste gate.
             if (signal === "asked for a human" && (lead as any).phone && process.env.CRON_SECRET) {
+              // THE MASTER SHUTOFF HAS TO APPLY HERE TOO. This branch runs BEFORE
+              // markConciergeReply, so with AUTOMATION_PAUSED='1' silencing every other engine
+              // a borrower who replied "call me" still received two automated texts — this one
+              // and the bridge fallback. `handoffSignal` matches "call me | human | real person",
+              // i.e. exactly the borrower most likely to be mid-conversation at any hour.
+              const paused = await automationPaused();
               const holdMsg = `You got it — let me see if Ramon can jump on a quick call with you right now. Give me a minute. (Reply STOP to opt out.)`;
-              const hs = await sendSms(leadPhone, holdMsg);
+              const hs = paused
+                ? { ok: false, sid: undefined as string | undefined, detail: "automation paused" }
+                : await sendSms(leadPhone, holdMsg);
               if (hs.ok) await logComms({ leadId, channel: "sms", direction: "outbound", type: "ai_reply", body: holdMsg, to: leadPhone, providerId: hs.sid, actor: "agent:mark" }).catch(() => {});
               // Fire-and-forget: the bridge endpoint handles the whisper, the connect,
               // and the fallback text — this webhook must return fast.

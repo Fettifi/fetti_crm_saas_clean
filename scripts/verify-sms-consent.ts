@@ -77,6 +77,45 @@ for (const f of SEND_PATHS) {
     `${f} does not POST to Twilio directly — it must go through sendSms, which holds the consent, quiet-hours and STOP gates${hits ? ` (${hits} raw POST(s) found)` : ""}`);
 }
 
+// ── 6. A KEYWORD MUST NOT RESURRECT A REVOKED CONSENT, AND MUST NOT FIRE FOR A KNOWN LEAD.
+//    The opt-in branch ran BEFORE the lead lookup, and its keyword list is
+//    DEAL/FETTI/MONEY/QUALIFY/HOME/LOT — every one a plausible answer to our own first-touch
+//    question. A lead replying "Home" had `sms_optout_at` DELETED, was stamped with a campaign
+//    they never saw, and got a marketing blast instead of a human, while their real reply was
+//    never logged or raised. Asserted against the source because the branch is a route handler.
+{
+  const raw = readFileSync("app/api/sms/inbound/route.ts", "utf8");
+  // STRIP COMMENTS BEFORE ASSERTING. The first version of this check failed on the comment that
+  // EXPLAINS the removed line — a guard that cannot tell code from prose reports the fix as the
+  // defect, and next time someone would "fix" it by deleting the explanation.
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+  chk(!/delete\s+raw\.sms_optout_at/.test(src),
+    "nothing in the inbound route deletes sms_optout_at — a STOP is never superseded by a keyword");
+  chk(/const \{ data: known \}/.test(src) && /if \(!known\)/.test(src),
+    "the opt-in branch looks the number up FIRST and only treats an UNKNOWN number as an opt-in");
+  chk(/word === "LOT" \? \{ campaign: "youtube_thelot" \}/.test(src),
+    "and only claims The Lot campaign for the LOT keyword, rather than stamping it on every word");
+  chk(/action: "sms\.optout"/.test(src) && /suppression row/.test(src),
+    "a STOP from a number with no lead row is persisted and logged — one was lost for 21 days");
+  chk(/automationPaused\(\)/.test(src),
+    "the live-bridge hold message consults the master shutoff like every other automated send");
+
+  const bridge = readFileSync("app/api/voice/bridge/route.ts", "utf8").split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+  chk(!/sendSms\([^)]*allowQuietHours:\s*true/.test(bridge),
+    "the bridge fallback no longer claims a quiet-hours exemption — a failed bridge is not an emergency");
+}
+
+// ── 7. SUPPRESSION IS ENFORCED AT THE PRIMITIVE, not at each call site. A revocation may live
+//    on a row the caller never opened (a duplicate, a legacy form, the row an unmatched STOP
+//    writes). The email twin of this already existed; SMS had nothing.
+{
+  const comms = readFileSync("lib/comms.ts", "utf8").split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+  chk(/export async function isPhoneSuppressed/.test(comms), "lib/comms exports isPhoneSuppressed");
+  const sendBody = comms.slice(comms.indexOf("export async function sendSms"), comms.indexOf("export async function sendSms") + 3000);
+  chk(/isPhoneSuppressed\(/.test(sendBody), "and sendSms consults it before every send");
+  chk(!/deferred:\s*true[^\n]*suppress/i.test(sendBody), "a suppressed number is a refusal, never a retryable defer");
+}
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). A text to someone who did not consent is statutory damages per message, and the burden of proving consent is ours.\n`); process.exit(1); }
 console.log(`PASS — one consent predicate, it fails closed, and no sender bypasses the gate.\n`);

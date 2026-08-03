@@ -125,6 +125,12 @@ export async function sendSms(
       const v = quietHoursFor(toNorm, opts?.state ?? null, opts?.quietAt);
       if (v.quiet) return { ok: false, deferred: true, detail: quietReason(v) };
     }
+    // PHONE-LEVEL SUPPRESSION, enforced at the primitive. A revocation may live on a row the
+    // caller never opened — a duplicate, a legacy form, or the row an unmatched STOP writes.
+    // This is NOT `deferred`: it must never be retried.
+    if (await isPhoneSuppressed(toNorm)) {
+      return { ok: false, detail: "recipient has opted out — suppressed" };
+    }
     const params = new URLSearchParams({ To: toNorm, From: from, Body: body });
     // Per-message status callback so delivery state (delivered/failed) flows back
     // to /api/sms/status and onto the conversation thread.
@@ -271,6 +277,34 @@ export async function isEmailSuppressed(email: string): Promise<boolean> {
     return bad;
   } catch {
     return false; // fail open
+  }
+}
+
+
+/**
+ * IS THIS NUMBER SUPPRESSED, regardless of which lead row it belongs to?
+ *
+ * The email twin of this (isEmailSuppressed) already existed; SMS had nothing. Every SMS gate
+ * read consent off a lead row the CALLER had looked up, so a revocation that lived on a
+ * different row — a duplicate, a legacy form, or the suppression row an unmatched STOP now
+ * writes — was invisible to a sender that happened to resolve a different row first. Checked
+ * HERE so no call site can forget it, and cached like the email list.
+ */
+export async function isPhoneSuppressed(phone: string): Promise<boolean> {
+  const norm = normalizePhone(phone);
+  const digits = String(norm || "").replace(/\D/g, "").slice(-10);
+  if (digits.length !== 10) return false;
+  const key = `p:${digits}`;
+  const hit = suppressionCache.get(key);
+  if (hit && Date.now() - hit.at < SUPPRESSION_TTL_MS) return hit.bad;
+  try {
+    const forms = [digits, `+1${digits}`, `1${digits}`, `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`];
+    const { data } = await supabaseAdmin.from("leads").select("raw, nurture_paused").in("phone", forms).limit(25);
+    const bad = (data || []).some((l: any) => !!l.raw?.sms_optout_at || l.raw?.sms_consent === false || !!l.raw?.do_not_contact);
+    suppressionCache.set(key, { bad, at: Date.now() });
+    return bad;
+  } catch {
+    return false; // fail open on an infrastructure error, never on a data answer
   }
 }
 
