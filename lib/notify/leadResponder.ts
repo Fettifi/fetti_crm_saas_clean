@@ -8,7 +8,8 @@ import { markSignatureLite } from "@/lib/notify/emailSignature";
 import { senderFrom } from "@/lib/notify/mailFrom";
 import { scrubSmsIsms, unsubUrl, renderTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
 import { cfg } from "@/lib/settings";
-import { logComms, isEmailSuppressed } from "@/lib/comms";
+import { logComms, isEmailSuppressed, sendSms } from "@/lib/comms";
+import { smsAllowed } from "@/lib/smsConsent";
 import { isSyntheticLead } from "@/lib/synthetic";
 import { quietHoursFor, quietReason } from "@/lib/quietHours";
 import { COMMS_PERSONA } from "@/lib/markPersona";
@@ -16,6 +17,10 @@ import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
 import { authorizeSend, type SendKind } from "@/lib/conversation/governor";
 
 export type LeadContact = {
+  /** The lead's `raw` blob and state, when the caller has them — lets smsLead re-check consent
+   *  itself and lets sendSms use the lead's own state for the quiet-hours window instead of an
+   *  area-code guess. Optional so existing callers keep working. */
+  raw?: any;
   id?: string | null;       // lead id — when set, the send is logged to the conversation thread
   kind?: string | null;     // message type for the thread (first_touch | nurture | ...)
   name?: string | null;
@@ -109,41 +114,30 @@ async function emailLead(l: LeadContact, fallbackBody: string) {
 }
 
 async function smsLead(l: LeadContact, body: string) {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM;
-  if (!sid || !token || !from || !l.phone) return { ok: false as boolean, id: undefined as string | undefined };
-  const to = l.phone.startsWith("+") ? l.phone : `+1${l.phone.replace(/\D/g, "")}`;
-  // TCPA QUIET HOURS. Everything routed through respondToLead is AUTOMATED outreach
-  // (first touch, drip, reactivation, doc chase) — i.e. exactly what the 8am-8pm local
-  // window governs. A hold is NOT a failure: the caller leaves nurture_step untouched so
-  // the same step is retried on the next run, inside the window.
-  const q = quietHoursFor(to, l.state ?? null);
-  if (q.quiet) {
-    console.log(`[responder] SMS held — ${quietReason(q)}`);
+  if (!l.phone) return { ok: false as boolean, id: undefined as string | undefined };
+  // ONE SEND PRIMITIVE. This built its own Twilio request, so every gate it needed had to be
+  // re-implemented here and every gate it did NOT re-implement was simply absent — which is how
+  // three sibling senders in lib/notify/docRequest.ts put unconsented texts on real handsets.
+  // sendSms holds the TCPA quiet-hours window, the carrier 21610 opt-out capture and the status
+  // callback in one place. A hold is NOT a failure: `deferred` tells the caller to leave
+  // nurture_step untouched so the same step retries inside the window.
+  //
+  // DEFENCE IN DEPTH ON CONSENT. The callers (lib/nurture.ts, lib/leadPipeline.ts) each check
+  // consent before reaching here, and they held — the automated engine is not what leaked. But
+  // "the caller checked" is the assumption that made the document chaser's omission invisible
+  // for two months, so when the raw record is available, check it here as well.
+  const v = l.raw !== undefined ? smsAllowed(l.raw as any) : { ok: true as boolean, reason: undefined as string | undefined };
+  if (!v.ok) {
+    console.log(`[responder] SMS refused — ${v.reason}`);
+    return { ok: false as boolean, id: undefined as string | undefined, refused: v.reason };
+  }
+  const res = await sendSms(l.phone, body, { statusCallback: true, state: l.state ?? null });
+  if (res.deferred) {
+    console.log(`[responder] SMS held — ${res.detail}`);
     return { ok: false as boolean, id: undefined as string | undefined, deferred: true };
   }
-  const params = new URLSearchParams({ To: to, From: from, Body: body });
-  // Delivery telemetry: without this, nurture/first-touch texts logged delivery=None
-  // (blind to whether they even landed). Twilio POSTs status → /api/sms/status.
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
-  params.set("StatusCallback", `${appUrl}/api/sms/status`);
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params.toString(),
-  });
-  const j = await res.json().catch(() => ({} as any));
-  // Mirror of the 21610 handling in lib/comms sendSms: this path builds its own Twilio
-  // request, so without this the automated drip would never learn about a carrier opt-out.
-  if (!res.ok && String(j?.code) === "21610") {
-    try { const { recordCarrierOptOut } = await import("@/lib/comms"); await recordCarrierOptOut(to); } catch { /* best effort */ }
-    return { ok: false as boolean, id: undefined as string | undefined, optedOut: true };
-  }
-  return { ok: res.ok, id: j?.sid as string | undefined };
+  // sendSms records a carrier opt-out (21610) itself, so this path no longer has to mirror it.
+  return { ok: res.ok, id: res.sid, optedOut: /21610|opted out/i.test(res.detail || "") || undefined };
 }
 
 /** Instantly respond to a lead via every configured channel. Never throws. */

@@ -43,7 +43,8 @@
     "hooks:install": "git config core.hooksPath scripts/hooks && echo \"income guard installed\"",
     "verify:currency-input": "tsx scripts/verify-currency-input.ts",
     "verify:column-map": "tsx scripts/verify-column-map.ts",
-    "verify:desk-lien": "tsx scripts/verify-desk-lien.ts"
+    "verify:desk-lien": "tsx scripts/verify-desk-lien.ts",
+    "verify:sms-consent": "tsx scripts/verify-sms-consent.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

@@ -6,7 +6,9 @@
 // LEAD_RESPONSE_FROM_EMAIL, SMS needs Twilio creds. No-ops safely if a channel
 // isn't configured, and never throws.
 
-import { logComms } from "@/lib/comms";
+import { logComms, sendSms } from "@/lib/comms";
+import { smsAllowed, messagingAllowed, withStopLine } from "@/lib/smsConsent";
+import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { senderFrom } from "@/lib/notify/mailFrom";
 import { COMMS_PERSONA } from "@/lib/markPersona";
 
@@ -70,26 +72,38 @@ async function emailDocRequest(r: DocRequest): Promise<boolean> {
   return res.ok;
 }
 
+/** THE CONSENT LOOKUP THE CHASER NEVER DID. Returns the verdict plus the state, which sharpens
+ *  the quiet-hours check (a lead's own state beats an area-code guess). */
+async function smsGate(r: DocRequest): Promise<{ ok: boolean; reason?: string; state?: string | null }> {
+  if (!r.to_phone) return { ok: false, reason: "no phone" };
+  // No lead row means no consent artifact — and this chaser is documented as also texting
+  // co-borrowers, CPAs, title, employers and insurance agents, none of whom ever gave Fetti a
+  // number. A third party is exactly who must not be texted on a guess.
+  if (!r.leadId) return { ok: false, reason: "no lead on file — cannot evidence consent" };
+  const { data } = await supabaseAdmin
+    .from("leads").select("raw, nurture_paused, state").eq("id", r.leadId).maybeSingle();
+  if (!data) return { ok: false, reason: "lead not found — cannot evidence consent" };
+  const paused = messagingAllowed(data as any);
+  if (!paused.ok) return { ok: false, reason: paused.reason };
+  const v = smsAllowed((data as any).raw);
+  return { ok: v.ok, reason: v.reason, state: (data as any).state ?? null };
+}
+
 async function smsDocRequest(r: DocRequest): Promise<boolean> {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM;
-  if (!sid || !token || !from || !r.to_phone) return false;
+  // THIS PATH PUT UNCONSENTED TEXTS ON REAL HANDSETS. It hand-rolled its own Twilio POST, so it
+  // inherited none of lib/comms.sendSms's gates: no consent check, no TCPA quiet-hours window,
+  // no opt-out check, no delivery callback, and no "Reply STOP" in the body. `remind-all` fires
+  // it across every open loan file from one button. Reconciling Twilio against the CRM found 15
+  // messages delivered from here to numbers with no consent on file, the most recent 2026-08-01.
+  const gate = await smsGate(r);
+  if (!gate.ok) return false;
   const first = (r.to_name || "there").split(" ")[0];
   const docLine = r.docs.length ? ` We need: ${r.docs.join(", ")}.` : "";
-  const body = `Hi ${first}, ${r.lo_name || "Fetti Financial Services"} here.${docLine} Upload securely here: ${r.link}`;
-  const to = r.to_phone.startsWith("+") ? r.to_phone : `+1${r.to_phone.replace(/\D/g, "")}`;
-  const params = new URLSearchParams({ To: to, From: from, Body: body });
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params.toString(),
-  });
-  const j = await res.json().catch(() => ({} as any));
-  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "sms", direction: "outbound", type: "doc_request", body, to, actor: "lo", providerId: j?.sid }).catch(() => {});
+  const body = withStopLine(`Hi ${first}, ${r.lo_name || "Fetti Financial Services"} here.${docLine} Upload securely here: ${r.link}`);
+  const res = await sendSms(r.to_phone!, body, { statusCallback: true, state: gate.state });
+  if (res.ok && r.leadId) {
+    await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "sms", direction: "outbound", type: "doc_request", body, to: r.to_phone!, actor: "lo", providerId: res.sid }).catch(() => {});
+  }
   return res.ok;
 }
 
@@ -135,25 +149,14 @@ async function emailUploadLink(r: UploadLinkSend): Promise<boolean> {
 }
 
 async function smsUploadLink(r: UploadLinkSend): Promise<boolean> {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM;
-  if (!sid || !token || !from || !r.to_phone) return false;
+  // Same gates as the doc chaser — this was the second hand-rolled Twilio POST in this file.
+  const gate = await smsGate(r as any);
+  if (!gate.ok) return false;
   const first = (r.to_name || "there").split(" ")[0];
   const book = r.calendly ? ` Prefer to talk? Book a call: ${r.calendly}` : "";
-  const body = `Hi ${first}, ${r.lo_name || "Fetti Financial Services"} here. Here's your secure document portal — upload anytime, everything stays attached to your file: ${r.link}${book}`;
-  const to = r.to_phone.startsWith("+") ? r.to_phone : `+1${r.to_phone.replace(/\D/g, "")}`;
-  const params = new URLSearchParams({ To: to, From: from, Body: body });
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params.toString(),
-  });
-  const j = await res.json().catch(() => ({} as any));
-  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "sms", direction: "outbound", type: "upload_link", body, to, actor: "lo", providerId: j?.sid }).catch(() => {});
+  const body = withStopLine(`Hi ${first}, ${r.lo_name || "Fetti Financial Services"} here. Here's your secure document portal — upload anytime, everything stays attached to your file: ${r.link}${book}`);
+  const res = await sendSms(r.to_phone!, body, { statusCallback: true, state: gate.state });
+  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "sms", direction: "outbound", type: "upload_link", body, to: r.to_phone!, actor: "lo", providerId: res.sid }).catch(() => {});
   return res.ok;
 }
 
@@ -195,18 +198,13 @@ async function emailSign(r: SignSend): Promise<boolean> {
   return res.ok;
 }
 async function smsSign(r: SignSend): Promise<boolean> {
-  const sid = process.env.TWILIO_ACCOUNT_SID, token = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_FROM;
-  if (!sid || !token || !from || !r.to_phone) return false;
+  // Third hand-rolled POST. Three of the 15 unconsented deliveries came from this one.
+  const gate = await smsGate(r as any);
+  if (!gate.ok) return false;
   const first = (r.to_name || "there").split(" ")[0];
-  const body = `Hi ${first}, ${r.lo_name || "Fetti Financial Services"} sent you a document to e-sign: "${r.title}". Review & sign securely: ${r.link}`;
-  const to = r.to_phone.startsWith("+") ? r.to_phone : `+1${r.to_phone.replace(/\D/g, "")}`;
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: { Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ To: to, From: from, Body: body }).toString(),
-  });
-  const j = await res.json().catch(() => ({} as any));
-  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "sms", direction: "outbound", type: "esign_request", body, to, actor: "lo", providerId: j?.sid }).catch(() => {});
+  const body = withStopLine(`Hi ${first}, ${r.lo_name || "Fetti Financial Services"} sent you a document to e-sign: "${r.title}". Review & sign securely: ${r.link}`);
+  const res = await sendSms(r.to_phone!, body, { statusCallback: true, state: gate.state });
+  if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "sms", direction: "outbound", type: "esign_request", body, to: r.to_phone!, actor: "lo", providerId: res.sid }).catch(() => {});
   return res.ok;
 }
 /** Send an e-signature request over every configured channel. Never throws. */
