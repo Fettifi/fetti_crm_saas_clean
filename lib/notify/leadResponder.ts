@@ -128,7 +128,12 @@ async function smsLead(l: LeadContact, body: string) {
   // consent before reaching here, and they held — the automated engine is not what leaked. But
   // "the caller checked" is the assumption that made the document chaser's omission invisible
   // for two months, so when the raw record is available, check it here as well.
-  const v = l.raw !== undefined ? smsAllowed(l.raw as any) : { ok: true as boolean, reason: undefined as string | undefined };
+  // FAIL CLOSED, ALWAYS. This read `l.raw !== undefined ? smsAllowed(l.raw) : { ok: true }` —
+  // so the check it exists to perform was skipped for every caller that does not pass `raw`,
+  // which is 7 of the 8, INCLUDING the two named in the comment above as the ones it protects.
+  // A defence-in-depth check that defaults to "allow" is decoration. smsAllowed already treats
+  // an absent record as no consent, which is the correct answer.
+  const v = smsAllowed(l.raw as any);
   if (!v.ok) {
     console.log(`[responder] SMS refused — ${v.reason}`);
     return { ok: false as boolean, id: undefined as string | undefined, refused: v.reason };

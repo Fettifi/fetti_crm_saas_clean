@@ -12,7 +12,7 @@
 // recorded, explicit opt-in must return false.
 //
 //   npx tsx scripts/verify-sms-consent.ts
-import { smsAllowed, canSms, messagingAllowed, withStopLine, STOP_LINE } from "../lib/smsConsent";
+import { smsAllowed, canSms, messagingAllowed, withStopLine, STOP_LINE, isRevocation } from "../lib/smsConsent";
 import { readFileSync } from "fs";
 
 let bad = 0;
@@ -153,6 +153,77 @@ for (const f of SEND_PATHS) {
   chk(/consentJustGranted/.test(apply), "the apply route notices when a submission flips SMS consent on");
   chk(/kind: "first_touch"/.test(apply) && /email: null/.test(apply),
     "and fires the SMS leg only — the email already went out");
+}
+
+// ── 10. THE REVOCATION DETECTOR, BOTH DIRECTIONS. The guard shipped with ZERO isRevocation
+//     tests, and the function it was written to protect returned FALSE on the exact sentence
+//     quoted in the commit message that added it. It also fired on live borrowers, and nothing
+//     in the repo ever clears email_suppressed_at — a false positive is permanent.
+{
+  const MUST_STOP = [
+    "STOP", "unsubscribe", "Please stop emailing me", "stop emailing me",
+    "Please stop e-mailing me", "I no longer wish to receive these emails",
+    "Not interested, please stop", "Please remove my email from your list",
+    "I do not wish to be contacted", "take me off your list", "no more texts",
+    "remove me from your list", "stop texting me", "quit calling me", "do not call me",
+  ];
+  const MUST_NOT = [
+    "Don't call me before 9am, texts are fine",
+    "I don't have your email address, can you send it?",
+    "Remove me as authorized user on the card",
+    "Take me to the closing table",
+    "cancel my 3pm appointment", "stop by the office tomorrow", "no more than 30 days please",
+    "email me instead of calling", "W-2", "what rate can I get?",
+    // Our own footer, quoted back inside an ordinary reply.
+    "sounds good, call me Tuesday. Click here to unsubscribe | Privacy | NMLS #2267023",
+  ];
+  for (const m of MUST_STOP) chk(isRevocation(m), `honoured as an opt-out: ${JSON.stringify(m)}`);
+  for (const m of MUST_NOT) chk(!isRevocation(m), `NOT an opt-out — silencing this borrower is permanent: ${JSON.stringify(m)}`);
+}
+
+// ── 11. A MACHINE CANNOT OPT OUT ON SOMEONE'S BEHALF. The auto-generated test sat BELOW the
+//     revocation branch, inside a deferred after() block, so a mailer-daemon bounce ("please do
+//     not reply to this message") suppressed the borrower and returned before the hot-lead alert.
+{
+  const ingest = code("lib/inbound/ingestEmail.ts");
+  const ag = ingest.indexOf("const autoGen");
+  const rev = ingest.indexOf("isRevocation(text)");
+  chk(ag > 0 && ag < rev, "the auto-generated-email test is evaluated BEFORE the revocation branch");
+  chk(/!autoGen && \(isRevocation/.test(ingest), "and gates it");
+}
+
+// ── 12. THE OPT-IN LINK MUST NOT REVERSE AN UNSUBSCRIBE. /api/unsubscribe records a CAN-SPAM
+//     opt-out by writing nurture_paused: true and NOTHING ELSE; /api/optin wrote
+//     nurture_paused: false unconditionally, and the same drip email carries both links.
+{
+  const optin = code("app/api/optin/route.ts");
+  chk(!/nurture_paused: false/.test(optin), "the opt-in route no longer clears nurture_paused");
+  chk(/email_optout_at \|\| \(lead as any\)\.nurture_paused/.test(optin), "and refuses an already-unsubscribed lead");
+  chk(/raw\.sms_consent_text \|\| SMS_OPTIN_DISCLOSURE/.test(optin),
+    "and never overwrites a BROADER consent artifact with this narrower one (23 leads carry an artifact that also grants AI voice calls)");
+}
+
+// ── 13. EVERY EMAIL LEG OF THE DOC CHASER IS SUPPRESSION-GATED. The SMS legs were gated; their
+//     email twins POSTed straight to Resend with no check at all, from a button that fires in
+//     bulk across every open loan file.
+{
+  const doc = code("lib/notify/docRequest.ts");
+  chk((doc.match(/emailGate\(r as any\)/g) || []).length === 3, "all three email legs call emailGate");
+  chk(/isEmailSuppressed/.test(doc), "which consults the suppression list");
+}
+
+// ── 14. THE DEFENCE-IN-DEPTH CONSENT CHECK MUST FAIL CLOSED — and every caller must feed it.
+//     It read `raw !== undefined ? smsAllowed(raw) : { ok: true }`, so it was skipped for 7 of
+//     its 8 callers, including the two its own docblock names.
+{
+  const responder = code("lib/notify/leadResponder.ts");
+  chk(/const v = smsAllowed\(l\.raw as any\)/.test(responder), "the responder's consent re-check fails CLOSED");
+  for (const f of ["lib/nurture.ts", "lib/commsWatchdog.ts", "lib/leadPipeline.ts", "app/api/apply/route.ts"]) {
+    const src = code(f);
+    const calls = (src.match(/respondToLead\(\{/g) || []).length;
+    const withRaw = (src.match(/raw: [^,]+,/g) || []).length;
+    chk(calls === 0 || withRaw >= calls, `${f} passes raw on all ${calls} respondToLead call(s) — otherwise fail-closed silences everyone`);
+  }
 }
 
 console.log("");

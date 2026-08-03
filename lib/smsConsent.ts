@@ -93,17 +93,55 @@ export function withStopLine(body: string): string {
 // misses "stop texting me" / "remove me from your list". This detector catches
 // embedded revocations while deliberately NOT misfiring on the ambiguous uses the
 // funnel must keep as hot replies ("cancel my 3pm appointment", "stop by the office").
+/** Our own email footer contains the word "unsubscribe". A quoted reply that keeps it must not
+ *  read back as the borrower's own revocation — an HTML-only reply flattened by the tag-stripper
+ *  keeps that footer verbatim. */
+function stripOwnFooter(t: string): string {
+  return t
+    .replace(/click here to unsubscribe[^.]*/g, " ")
+    .replace(/to unsubscribe[^.]*/g, " ")
+    .replace(/unsubscribe\s*[|·\-–]\s*(?:privacy|terms|nmls)[^.]*/g, " ")
+    .replace(/reply stop to opt out[^.]*/g, " ")
+    .replace(/nmls\s*#?\s*\d+[^.]*/g, " ");
+}
+
 export function isRevocation(raw: string): boolean {
   const t = (raw || "").trim().toLowerCase();
   if (!t) return false;
+
+  // ── FALSE POSITIVES SILENCE LIVE BORROWERS, AND NOTHING EVER CLEARS THE FLAG. ──────────────
+  // A conditional PREFERENCE is not a revocation: "don't call me before 9am, texts are fine"
+  // and "no calls, email me instead" are a borrower telling us HOW to reach them. The old rule
+  // 3 fired on both. lib/inbound/ingestEmail.ts gates the suppression write, the drip pause and
+  // an early return on this function, and nothing in the repo ever un-suppresses an address.
+  if (/\b(?:is|are)\s+(?:fine|ok|okay|good|better|preferred)\b/.test(t)) return false;
+  if (/\b(?:instead|rather than|prefer)\b/.test(t) && !/\b(?:all contact|any contact|everything)\b/.test(t)) return false;
+
+  const body = stripOwnFooter(t);
+
   // 1) The message IS a single opt-out keyword (± trailing punctuation).
   if (/^(stop\s?all|stop|unsubscribe|cancel|end|quit|optout|opt[-\s]?out|revoke|remove)[.!?\s]*$/.test(t)) return true;
-  // 2) Words with no other reading in an SMS reply → opt-out even when embedded.
-  if (/\bunsubscribe\b|\bopt[-\s]?out\b|\bstop\s?all\b/.test(t)) return true;
-  // 3) "stop"/"quit"/"cease"/"no more"/"don't"/"do not" tied to a contact channel.
-  if (/\b(?:stop|quit|cease|halt|no more|don'?t|do not|please stop)\b[^.!?]{0,24}\b(?:text|texts|texting|messag|contact|call|calls|calling|email|emails)\b/.test(t)) return true;
-  // 4) Explicit removal requests.
-  if (/\b(?:remove|take)\s+me\b/.test(t) || /\bno more (?:texts?|messages?|calls?|emails?)\b/.test(t) || /\bleave me alone\b/.test(t)) return true;
+  // 2) Words with no other reading in a reply → opt-out even when embedded. Evaluated against
+  //    the body with OUR OWN footer removed.
+  if (/\bunsubscribe\b|\bopt[-\s]?out\b|\bstop\s?all\b/.test(body)) return true;
+  // 3) A stop verb whose OBJECT is a contact channel. The gerunds matter: `\bemail\b` cannot
+  //    match "emailing", so "please stop emailing me" — the exact sentence this detector was
+  //    written for, and the one quoted in the commit that added the email path — was FALSE.
+  if (/\b(?:stop|quit|cease|halt|no more|please stop)\b[^.!?]{0,24}\b(?:text|texts|texting|messag|contact|contacting|call|calls|calling|e-?mail|e-?mails|e-?mailing)\b/.test(body)) return true;
+  // 3a) "don't" / "do not" is only a stop instruction when a contact VERB follows it directly.
+  //     Allowing 24 characters of slack matched "I don't have your email address, can you send
+  //     it?" — a borrower ASKING to be emailed, read as a demand never to be.
+  if (/\b(?:don'?t|do not|never)\s+(?:ever\s+|any\s+more\s+|again\s+)?(?:call|text|e-?mail|contact|message|phone|reach out)\b/.test(body)) return true;
+  // 3b) The formal register — "I no longer wish to receive these emails" — which the verb list
+  //     above misses entirely.
+  if (/\b(?:no longer wish|do not wish|don'?t wish|no longer want|do not want|don'?t want)\b[^.!?]{0,30}\b(?:receive|contact|contacted|e-?mail|text|call|hear)\b/.test(body)) return true;
+  // 3c) "not interested" paired with a stop/remove is a complete revocation in practice.
+  if (/\bnot interested\b/.test(body) && /\b(?:stop|remove|unsubscribe|no more)\b/.test(body)) return true;
+  // 4) Removal from a LIST — not from anything else. The old bare `remove me` / `take me` also
+  //    matched "remove me as authorized user on the card" and "take me to the closing table".
+  if (/\b(?:remove|take)\s+me\s+(?:from|off)\b/.test(body)) return true;
+  if (/\b(?:remove|delete)\s+my\s+(?:e-?mail|number|phone|info|information|details)\b/.test(body)) return true;
+  if (/\bno more (?:texts?|messages?|calls?|e-?mails?)\b/.test(body) || /\bleave me alone\b/.test(body)) return true;
   // 5) A leading, standalone "stop" command (but not "stop by ...").
   if (/^stop\b/.test(t) && !/^stop by\b/.test(t)) return true;
   return false;

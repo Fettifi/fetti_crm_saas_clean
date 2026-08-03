@@ -121,7 +121,14 @@ export async function ingestInboundEmail(input: ParsedInbound, opts: IngestOpts 
   // a reply saying "please stop emailing me" was logged as the HOTTEST signal in the funnel,
   // handed to the AI concierge to auto-answer, and left in the drip. The detector already
   // existed — it was trapped at module scope inside the SMS route where email could not see it.
-  if (isRevocation(text) || isRevocation(subject || "")) {
+  // LOOP GUARD, AND IT MUST COME FIRST. This test lived below, inside the deferred after()
+  // block — on the wrong side of the revocation branch. So a mailer-daemon bounce ("please do
+  // not reply to this message") and a vacation auto-reply were read as the BORROWER revoking:
+  // suppressed, paused, and returned before the hot-lead alert. A machine cannot opt out on
+  // someone's behalf.
+  const autoGen = /out of office|automatic reply|auto[- ]?reply|delivery status|undeliverable|mailer-daemon|do[- ]?not[- ]?reply|failure notice|read receipt|postmaster|delivery has failed/i.test(`${subject} ${from}`);
+
+  if (!autoGen && (isRevocation(text) || isRevocation(subject || ""))) {
     try {
       const raw = (lead.raw && typeof lead.raw === "object" ? { ...lead.raw } : {}) as any;
       raw.email_optout_at = raw.email_optout_at || new Date().toISOString();
@@ -145,9 +152,7 @@ export async function ingestInboundEmail(input: ParsedInbound, opts: IngestOpts 
   try { const { autoPromoteIfQuarantined } = await import("@/lib/leadShield"); await autoPromoteIfQuarantined(lead.id, "email_inbound"); } catch { /* */ }
   await logHotLeadReply({ leadId: lead.id, name: lead.full_name, body: `✉️ (email) ${subject ? subject + " — " : ""}${text.slice(0, 300)}` }).catch(() => {});
 
-  // LOOP GUARD: never auto-reply to an auto-generated email (OOO, mailer-daemon,
-  // no-reply) — that's how mail loops start.
-  const autoGen = /out of office|automatic reply|auto[- ]?reply|delivery status|undeliverable|mailer-daemon|do[- ]?not[- ]?reply|failure notice|read receipt/i.test(`${subject} ${from}`);
+
 
   // Mark auto-responds by EMAIL (compliance-gated inside markConciergeReply) so the
   // reply becomes a live two-way thread — deferred so the caller returns fast.

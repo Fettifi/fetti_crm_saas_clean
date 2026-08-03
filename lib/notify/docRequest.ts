@@ -8,6 +8,7 @@
 
 import { logComms, sendSms } from "@/lib/comms";
 import { smsAllowed, messagingAllowed, withStopLine } from "@/lib/smsConsent";
+import { isEmailSuppressed } from "@/lib/comms";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { senderFrom } from "@/lib/notify/mailFrom";
 import { COMMS_PERSONA } from "@/lib/markPersona";
@@ -58,6 +59,7 @@ async function emailDocRequest(r: DocRequest): Promise<boolean> {
     r.docs.length === 1
       ? `Document needed for your Fetti loan: ${r.docs[0]}`
       : `Documents needed for your Fetti loan${r.file_number ? ` (${r.file_number})` : ""}`;
+  if (!(await emailGate(r as any))) return false;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -70,6 +72,23 @@ async function emailDocRequest(r: DocRequest): Promise<boolean> {
     await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "email", direction: "outbound", type: "doc_request", subject, body: human, to: r.to_email, actor: "agent:mark", providerId: j?.id }).catch(() => {});
   }
   return res.ok;
+}
+
+
+/** THE EMAIL TWIN OF smsGate. All three email legs POSTed straight to api.resend.com with no
+ *  gate whatsoever: `isEmailSuppressed` appears nowhere in this file, and repo-wide it is called
+ *  in exactly two places, neither of them here. So a borrower who wrote "stop emailing me" still
+ *  received doc-request, portal-link and e-sign mail — from a button that fires in bulk across
+ *  every open loan file. The SMS legs were gated today; their email twins were not. */
+async function emailGate(r: { to_email?: string | null; leadId?: string | null }): Promise<boolean> {
+  if (!r.to_email) return false;
+  if (await isEmailSuppressed(r.to_email)) return false;
+  if (!r.leadId) return true;   // a third party with no lead row has no unsubscribe record
+  const { data } = await supabaseAdmin.from("leads").select("raw, nurture_paused").eq("id", r.leadId).maybeSingle();
+  if (!data) return true;
+  if (!messagingAllowed(data as any).ok) return false;
+  if ((data as any).raw?.email_optout_at) return false;
+  return true;
 }
 
 /** THE CONSENT LOOKUP THE CHASER NEVER DID. Returns the verdict plus the state, which sharpens
@@ -123,6 +142,8 @@ export type UploadLinkSend = {
 };
 
 async function emailUploadLink(r: UploadLinkSend): Promise<boolean> {
+  // Same gate as the doc-request leg — a suppressed address is suppressed on every leg.
+  if (!(await emailGate(r as any))) return false;
   const key = process.env.RESEND_API_KEY;
   const from = senderFrom();
   if (!key || !from || !r.to_email) return false;
@@ -177,6 +198,8 @@ export type SignSend = {
   leadId?: string | null; loanFileId?: string | null;
 };
 async function emailSign(r: SignSend): Promise<boolean> {
+  // Same gate as the doc-request leg — a suppressed address is suppressed on every leg.
+  if (!(await emailGate(r as any))) return false;
   const key = process.env.RESEND_API_KEY;
   const from = senderFrom();
   if (!key || !from || !r.to_email) return false;

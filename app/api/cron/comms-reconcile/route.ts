@@ -23,6 +23,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /** Twilio messages sent in the window, by SID, with their final status. */
+/** sid -> recipient, filled by twilioSent so the owner's own pages can be excluded. */
+const toOf = new Map<string, string>();
+
 async function twilioSent(sinceIso: string): Promise<Map<string, string>> {
   const sid = process.env.TWILIO_ACCOUNT_SID, token = process.env.TWILIO_AUTH_TOKEN;
   const out = new Map<string, string>();
@@ -37,6 +40,7 @@ async function twilioSent(sinceIso: string): Promise<Map<string, string>> {
     for (const m of r.messages || []) {
       if (String(m.direction || "").startsWith("inbound")) continue;
       out.set(String(m.sid), String(m.status || ""));
+      toOf.set(String(m.sid), String(m.to || ""));
     }
     url = r.next_page_uri ? `https://api.twilio.com${r.next_page_uri}` : null;
   }
@@ -67,7 +71,12 @@ export async function GET(req: NextRequest) {
     // absent from the borrower's timeline — logging it would put a message on their record that
     // never arrived, which is its own kind of wrong.
     const landed = [...provider.entries()].filter(([, st]) => st === "delivered" || st === "sent");
-    const missing = landed.filter(([sid]) => !ours.has(sid));
+    // OUR OWN PAGES ARE NOT BORROWER MESSAGES. Alerts to the owner's number (this cron's own
+    // output, the hot-lead pager, the handoff page, bounce notices) are deliberately not written
+    // to a lead's conversation timeline — there is no lead. Counting them as missing records
+    // manufactures a permanent, growing false alarm.
+    const ownerDigits = String(process.env.LEAD_NOTIFY_SMS_TO || "").replace(/\D/g, "").slice(-10);
+    const missing = landed.filter(([sid]) => !ours.has(sid) && (!ownerDigits || String(toOf.get(sid) || "").replace(/\D/g, "").slice(-10) !== ownerDigits));
 
     const detail = {
       window_days: 7,
@@ -83,8 +92,13 @@ export async function GET(req: NextRequest) {
       // An INTERNAL alert to the owner's own number is the documented use for
       // allowQuietHours — it is not a solicitation. It still goes through the one send
       // primitive, because "this one is different" is how the last four bypasses started.
+      //
+      // AND IT MUST NOT PAGE ON ITS OWN FOOTPRINT. Every alert this cron sends is an outbound
+      // Twilio message with no `comms.message` row — so it becomes a "gap" on the next run, and
+      // the count grows by one a day forever. A monitor whose own output is its alarm condition
+      // reports a system that is fine as broken, and after a week nobody reads it.
       const to = process.env.LEAD_NOTIFY_SMS_TO;
-      if (to) {
+      if (to && missing.length) {
         await sendSms(to, `⚠️ ${missing.length} text(s) landed in the last 7d with NO record in the CRM. Check /api/cron/comms-reconcile.`, { allowQuietHours: true }).catch(() => {});
       }
     }

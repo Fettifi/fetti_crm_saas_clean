@@ -191,7 +191,7 @@ export async function runCommsWatchdog(): Promise<{ answered: number; firstTouch
         const emailT = renderFirstTouch(l as any, { appLink, calendly, optInLink: smsAllowed((l as any).raw).ok ? null : smsOptInLink(l as any) });
         const smsOk = raw.sms_consent === true || raw.consent?.sms_optin === true;
         const res = await respondToLead({
-          id: (l as any).id, kind: "first_touch", name: (l as any).full_name, email: (l as any).email,
+          id: (l as any).id, raw: (l as any).raw, kind: "first_touch", name: (l as any).full_name, email: (l as any).email,
           phone: smsOk ? (l as any).phone : null, loan_purpose: (l as any).loan_purpose, state: (l as any).state,
           message: "", appLink, emailSubject: emailT.subject, emailBody: emailT.body,
         });

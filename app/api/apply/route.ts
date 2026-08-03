@@ -553,7 +553,7 @@ export async function POST(req: NextRequest) {
               const purpose = prettyPurpose(body.loan_purpose || (data as any).loan_purpose);
               const backLink = magicApplyLink(data);
               const res = await respondToLead({
-                id: data.id, kind: "returning", name: full_name, email,
+                id: data.id, raw: (data as any).raw, kind: "returning", name: full_name, email,
                 phone: smsOk ? phone : null, loan_purpose: body.loan_purpose, state: body.state ?? (data as any)?.state ?? null,
                 message: `Hey ${first}, it's ${COMMS_PERSONA} at Fetti — saw you stopped by again about the ${purpose}. Anything I can help with? No rush — I can pick up right where you left off: ${backLink}`,
                 emailSubject: "saw you came back",

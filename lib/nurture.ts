@@ -399,7 +399,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         const reviewEmail = `Hey ${fn} — congrats again on closing. Genuinely glad we got it done.\n\nOne small ask: if we earned it, a quick Google review makes a real difference for a small shop like ours. Two sentences is plenty: ${reviewUrl}\n\nEither way — thank you for trusting us with it.`;
         try {
           const res = await respondToLead({
-            id: l.id, kind: "nurture", name: fn, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state, message: msg,
+            id: l.id, raw: (l as any).raw, kind: "nurture", name: fn, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state, message: msg,
             emailSubject: "a quick favor", emailBody: reviewEmail,
           });
           if ((res?.sent || []).length) {
@@ -453,7 +453,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
           // today this lane passed "nurture", which mapped to "proactive". Nobody in the repo
           // produced "operational" at all, so the doc-chaser would have been silenced by the
           // new applicant gate — the opposite of what Ramon asked for.
-          id: l.id, kind: "doc_chase", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state, message,
+          id: l.id, raw: (l as any).raw, kind: "doc_chase", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state, message,
           emailSubject: "what's left on your file", emailBody,
         });
         if ((res?.sent || []).length) {
@@ -533,7 +533,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         const emailT = renderTouch(EMAIL_TOUCHES[STEP_TOUCH[due.step]] || EMAIL_TOUCHES.d30, l);
         const emailBody = emailT.body + cta.email + textMeLine + optInLineFor(l as any);
         const res = await respondToLead({
-          id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
+          id: l.id, raw: (l as any).raw, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
           message: due.msg(name, purpose) + finishLine + bookLine,   // SMS copy
           emailSubject: emailT.subject, emailBody,                    // email copy
         });
@@ -588,7 +588,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         // kind "reactivation" -> govKind "reactivation": exempt from the proactive LIFETIME cap
         // and from nothing else. Sending this as "nurture" is why the lane never fired — the
         // drip had already spent all the lifetime touches by the time a lead reached it.
-        id: l.id, kind: "reactivation", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
+        id: l.id, raw: (l as any).raw, kind: "reactivation", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
         message: msg + finishLine + bookLine,                        // SMS copy
         emailSubject: emailT.subject,                                 // email copy
         emailBody: emailT.body + ctaR.email + textMeLine + optInLineFor(l as any),
