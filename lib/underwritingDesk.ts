@@ -95,9 +95,20 @@ export type DeskMetrics = {
   dscr: number | null;         // rent / TOTAL property debt service (junior PITIA + senior lien)
   /** True when no ARV was supplied on an ARV product and the as-is value stood in for it. */
   arvEstimated: boolean;
-  /** The senior lien's monthly payment used in that ratio, and whether we had to estimate it. */
+  /** The senior lien's monthly payment used in that ratio, and whether we had to estimate it.
+   *  Zero on a first-position deal — see `existingLienPayoff`. */
   seniorPayment: number;
   seniorPaymentEstimated: boolean;
+  /** TOTAL monthly debt service the property carries: this loan's PITIA plus any surviving senior. */
+  totalDebtService: number;
+  /** 2nd position / HELOC — the existing lien stays on title and belongs in CLTV and DSCR. */
+  isJunior: boolean;
+  /** A FIRST-position deal's entered lien: retired at closing, reported but never carried into
+   *  CLTV, the DSCR denominator or the MISMO. */
+  existingLienPayoff: number;
+  /** The DSCR test could not be RUN (rental product, rent never supplied) — which is not the same
+   *  as having failed it, and must never render as "DSCR OK". */
+  dscrIndeterminate: boolean;
   maxLoanByLTV: number;        // value × box.maxLTV (or ARV for flip)
   maxLoanByDSCR: number | null;
   maxLoan: number;             // binding of the above
@@ -127,7 +138,21 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
   const arvEstimated = !!box.usesARV && !(Number(input.arv) > 0) && value > 0;
   const arv = box.usesARV ? (Number(input.arv) || value || 0) : (Number(input.arv) || null);
   const loan = Math.max(0, Number(input.loanAmount) || 0);
-  const senior = Math.max(0, Number(input.existingLiens) || 0);
+  // ── DOES THE EXISTING LIEN SURVIVE CLOSING? ───────────────────────────────────────────────
+  // On a JUNIOR deal (2nd / HELOC) it does: the property carries both mortgages, so the senior
+  // belongs in CLTV and in the DSCR denominator. On a FIRST-position deal it does NOT — an
+  // existing lien entered on a cash-out refi is the PAYOFF, and it is gone the moment the new
+  // loan funds. Counting it anyway double-charged the deal: measured on a 1st-position DSCR
+  // cash-out ($500k value / $350k loan / $280k payoff / $3,200 rent) it reported CLTV 126%,
+  // added an estimated $1,770/mo to the denominator, dropped DSCR to 0.66, cut the max loan to
+  // $118,703, printed "outside the box" on the branded PDF, and handed the lender a MISMO file
+  // carrying two concurrent first liens. `isJunior` existed but was not computed until after the
+  // senior payment had already been fixed.
+  const isJunior = input.lienPosition === 2 || input.loanType === "second";
+  const existingLiens = Math.max(0, Number(input.existingLiens) || 0);
+  const senior = isJunior ? existingLiens : 0;
+  /** A first-position deal's existing lien: retired at closing, not carried. */
+  const existingLienPayoff = isJunior ? 0 : existingLiens;
   const ratePct = Number(input.ratePct) > 0 ? Number(input.ratePct) : box.rate;
   const termYears = Number(input.termYears) > 0 ? Number(input.termYears) : 30;
   const targetDscr = Number(input.targetDscr) > 0 ? Number(input.targetDscr) : (box.minDSCR || 1.0);
@@ -178,7 +203,6 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
   // rental products — the DSCR-supported loan on the gross rent. A junior loan (2nd
   // position / HELOC) is bound by CLTV, not standalone LTV: the max NEW loan is the
   // combined-LTV ceiling MINUS the senior lien(s) already on title.
-  const isJunior = input.lienPosition === 2 || input.loanType === "second";
   const capBasis = box.usesARV ? (arv || value) : value;
   const maxLoanByLTV = isJunior
     ? Math.max(0, round(capBasis * (box.maxCLTV / 100) - senior))
@@ -203,9 +227,15 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
     // The LO's Target DSCR moved the max loan but not the VERDICT, so a deal could be sized to a
     // 1.25 target and still be badged "fits" on the box's 1.00 floor. Judge against whichever is
     // STRICTER — a target below the box floor cannot make an ineligible deal eligible.
-    dscr: !box.usesRental || dscr == null || dscr >= Math.max(box.minDSCR || 0, targetDscr || 0),
+    // A MISSING DSCR IS NOT A PASSING DSCR. `dscr == null` short-circuited this to true, so a
+    // rental deal with no rent supplied came back fits.overall = true and the branded PDF printed
+    // the words "DSCR OK" with no DSCR row above it — an affirmative verdict on a test that was
+    // never run. Unknown must read as unknown, and it must not carry `overall`.
+    dscr: !box.usesRental ? true : (dscr != null && dscr >= Math.max(box.minDSCR || 0, targetDscr || 0)),
     overall: true,
   };
+  /** The DSCR test could not be RUN (rental product, no rent) — distinct from having failed it. */
+  const dscrIndeterminate = box.usesRental && dscr == null;
   fits.overall = fits.ltv && fits.cltv && fits.dscr && loan <= maxLoan + 1;
 
   return {
@@ -213,6 +243,7 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
     pi, taxMonthly: round(p.taxMonthly), insMonthly: round(p.insMonthly),
     hoaMonthly: Number(input.hoaMonthly) || 0, pitia,
     ltv, cltv, ltarv, cltarv, dscr, seniorPayment, seniorPaymentEstimated, arvEstimated,
+    isJunior, existingLienPayoff, dscrIndeterminate, totalDebtService,
     maxLoanByLTV, maxLoanByDSCR: maxLoanByDSCR != null ? round(maxLoanByDSCR) : null,
     maxLoan, headroom: round(maxLoan - loan), cashInDeal, fits,
   };
@@ -327,6 +358,8 @@ export function deskUrlaSeed(input: DeskInput, purpose: string, result?: any) {
   const termMonths = box.interestOnly ? 12 : (input.termYears && input.termYears > 0 ? input.termYears : 30) * 12;
   const addr = { street: input.address || undefined, city: input.city || undefined, state: input.state || undefined, zip: input.zip || undefined, country: "US" };
   const hasAddr = !!(addr.street || addr.city || addr.state || addr.zip);
+  // Same test computeDeskMetrics uses — an existing lien survives closing only on a junior deal.
+  const seedIsJunior = input.lienPosition === 2 || input.loanType === "second";
   return {
     borrowers: input.borrower ? [{ fullName: input.borrower }] : [],
     property: {
@@ -363,10 +396,18 @@ export function deskUrlaSeed(input: DeskInput, purpose: string, result?: any) {
       lienPosition: input.lienPosition,
       // THE SENIOR LIEN. On a 2nd-position deal the Desk sizes off CLTV, so this is the binding
       // input — and it was being dropped here, handing the lender a file that could not reproduce
-      // the max loan the Desk had just computed. Carried whenever there IS a senior balance,
-      // regardless of the lien-position selector, because a stated senior balance is a fact about
-      // the property either way.
-      existingLienBalance: Number(input.existingLiens) > 0 ? Number(input.existingLiens) : undefined,
+      // the max loan the Desk had just computed.
+      //
+      // ONLY A SURVIVING LIEN IS CARRIED. A balance entered on a FIRST-position deal is the
+      // payoff; exporting it produced a MISMO file with two concurrent first liens.
+      existingLienBalance: seedIsJunior && Number(input.existingLiens) > 0 ? Number(input.existingLiens) : undefined,
+      // ...AND ITS MONTHLY PAYMENT. This is the denominator the whole 2nd-position DSCR fix was
+      // built on. It was collected, used in the ratio, flagged on screen and printed in the PDF —
+      // and then dropped right here, so the loan file the Desk created reported DSCR 1.88 on the
+      // exact deal the Desk had just failed at 0.90. lib/urla.ts declares the field and
+      // lib/mismo.ts exports it; the seed was the only missing link.
+      existingLienMonthlyPayment:
+        seedIsJunior && Number(input.existingLienPayment) > 0 ? Number(input.existingLienPayment) : undefined,
     },
   };
 }

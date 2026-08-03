@@ -102,7 +102,11 @@ export async function buildUnderwritingDeskPdf(d: any): Promise<Uint8Array> {
   }
   gap(2);
   const fit = m.fits || {};
-  para(`Program box (${box.label || "—"}): max LTV ${box.maxLTV}%, max CLTV ${box.maxCLTV}%${box.minDSCR ? `, min DSCR ${box.minDSCR}` : ""}.  Fit: LTV ${fit.ltv ? "OK" : "OVER"}, CLTV ${fit.cltv ? "OK" : "OVER"}${box.usesRental ? `, DSCR ${fit.dscr ? "OK" : "LOW"}` : ""}.`, 8, font, fit.overall ? EMERALD : AMBER);
+  // UNKNOWN IS NOT "OK", AND IT IS NOT "LOW" EITHER. With no rent supplied there is no DSCR row
+  // above this line, and the sentence used to assert "DSCR OK" anyway — an affirmative verdict on
+  // a test that was never run, coloured emerald. Say which of the three states it is.
+  const dscrWord = m.dscrIndeterminate ? "not calculated (no rent supplied)" : fit.dscr ? "OK" : "LOW";
+  para(`Program box (${box.label || "—"}): max LTV ${box.maxLTV}%, max CLTV ${box.maxCLTV}%${box.minDSCR ? `, min DSCR ${box.minDSCR}` : ""}.  Fit: LTV ${fit.ltv ? "OK" : "OVER"}, CLTV ${fit.cltv ? "OK" : "OVER"}${box.usesRental ? `, DSCR ${dscrWord}` : ""}.`, 8, font, fit.overall ? EMERALD : AMBER);
 
   const sect = (title: string, val: any, color = SLATE) => { if (val) { heading(title); para(String(val), 9.5, font, color); } };
   sect("Value opinion", uw.valueOpinion);
