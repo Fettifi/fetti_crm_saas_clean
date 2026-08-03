@@ -67,7 +67,17 @@ export default function PreApprovals() {
       property_address: lf.property_address || p.property_address,
       purchase_price: lf.property_value ? String(lf.property_value) : p.purchase_price,
       loan_amount: lf.loan_amount ? String(lf.loan_amount) : p.loan_amount,
-      occupancy: lf.occupancy === "Investor" ? "Investment" : lf.occupancy === "Owner" ? "Primary residence" : p.occupancy,
+      // ANYTHING UNRECOGNISED FELL THROUGH TO THE FORM DEFAULT — "Primary residence" — so a DSCR
+      // or second-home file pulled from the LOS produced a letter asserting the borrower will
+      // OCCUPY the property. That is a statement to a listing agent about occupancy, on a loan
+      // where occupancy is the whole basis of the product. Map what we know; blank what we do not.
+      occupancy: (() => {
+        const o = String(lf.occupancy || "").toLowerCase();
+        if (/investor|investment|rental|non.?owner/.test(o)) return "Investment";
+        if (/owner|primary/.test(o)) return "Primary residence";
+        if (/second|vacation/.test(o)) return "Second home";
+        return "";   // unknown — the LO picks, we do not assert
+      })(),
     }));
   }
 

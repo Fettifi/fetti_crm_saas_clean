@@ -348,10 +348,15 @@ export function settleDerived<T extends Partial<Scenario>>(base: T, priorDerived
 
 export function computeDscr(s: Partial<Scenario>): number | null {
   const rent = num(s.monthly_rent);
-  // Prefer the payment BUILT from its components — if the LO fills in P&I/taxes/insurance/HOA
-  // and also has an older lump PITIA typed in, the components are the truth and the ratio
-  // must follow them, or the sheet shows a DSCR that contradicts its own line items.
-  const piti = computePitia(s) ?? num(s.monthly_piti);
+  // WHOSE PITIA IS IT? Components win over a STALE derived lump — that was the original rule and
+  // it is right. But settleDerived now respects an LO-STATED monthly_piti as theirs, and this
+  // still overrode it, so the sheet printed the LO's payment and a DSCR computed from a different
+  // one. `derived` says which: if the stored figure is not what we last produced, the LO put it
+  // there and the ratio has to follow it.
+  const stated = num(s.monthly_piti);
+  const lastDerived = (s as any)?.derived?.monthly_piti;
+  const pitiaIsLOs = stated != null && (lastDerived == null || Math.abs(stated - Number(lastDerived)) >= 0.0051);
+  const piti = pitiaIsLOs ? stated : (computePitia(s) ?? stated);
   if (!rent || !piti) return null;
   return Math.round((rent / piti) * 10000) / 10000;
 }

@@ -379,11 +379,18 @@ function ScenarioDesk() {
       // ever ASSIGNS, so deleting the rent left the old DSCR on screen until a save round-tripped
       // it away. The server learned this in settleDerived; the editor has to agree, or the number
       // the LO is reading while deciding is the stale one.
+      // THE CLIENT HALF OF settleDerived. The server learned to leave an LO-STATED figure alone;
+      // this still overwrote it on the next keystroke, so a typed PITIA/DSCR/LTV vanished as soon
+      // as any related field was touched — the exact override the server was fixed to respect.
+      const ours = (k: string, v: any) => {
+        const last = (next as any)?.derived?.[k];
+        return v == null || (last != null && Math.abs(Number(v) - Number(last)) < 0.0051);
+      };
       if (key === "principal_interest" || key === "taxes_monthly" || key === "insurance_monthly" || key === "hoa_monthly") {
-        (next as any).monthly_piti = computePitia(next);
+        if (ours("monthly_piti", (next as any).monthly_piti)) (next as any).monthly_piti = computePitia(next);
       }
       if (key === "principal_interest" || key === "taxes_monthly" || key === "insurance_monthly" || key === "hoa_monthly" || key === "monthly_piti" || key === "monthly_rent") {
-        (next as any).dscr = computeDscr(next);
+        if (ours("dscr", (next as any).dscr)) (next as any).dscr = computeDscr(next);
       }
       // loan_purpose SELECTS the LTV basis (lesser-of on a purchase, as-is on a refi) — its whole
       // job — and it was missing from every trigger, so picking Purchase vs Refinance left the
@@ -392,8 +399,8 @@ function ScenarioDesk() {
         // LTV has to move too. It only recomputed on the CLTV path before, so changing the
         // loan amount or the as-is value left a STALE LTV on screen — the ratio the LO is
         // actually reading while sizing the deal, and the one that lands on the PDF.
-        (next as any).ltv = computeLtv(next);
-        (next as any).cltv = computeCltv(next);
+        if (ours("ltv", (next as any).ltv)) (next as any).ltv = computeLtv(next);
+        if (ours("cltv", (next as any).cltv)) (next as any).cltv = computeCltv(next);
       }
       return next;
     });
