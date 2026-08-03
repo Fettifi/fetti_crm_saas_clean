@@ -39,8 +39,23 @@ export type SendKind =
 
 export type Decision = { allow: true } | { allow: false; reason: string };
 
-/** Proactive touches a lead may EVER receive. Was effectively 12+ across 90 days. */
-export const PROACTIVE_LIFETIME_CAP = 3;
+/**
+ * Proactive touches a lead may EVER receive. Was effectively 12+ across 90 days.
+ *
+ * 2026-07-29 it was set to 3 as part of switching automation off — a deliberate floor while the
+ * conversation engine was rebuilt.
+ *
+ * 2026-08-02, RAMON'S CALL: raised to 7 so the full drip cadence can actually be delivered.
+ * STEPS has 7 entries spread over 90 days (day 1, 3, 7, 14, 30, 60, 90); at a cap of 3, steps
+ * 4-7 could never reach anyone and 26 leads sat queued for touches the gate would always
+ * refuse. Two numbers in two files, nobody comparing them — lib/nurture.ts now warns at module
+ * load if the cadence is longer than the cap, so they cannot silently disagree again.
+ *
+ * The cap counts TOUCHES, not message rows (see rule 6): logComms writes one row per channel,
+ * and counting rows meant a both-channel touch consumed two slots. 7 here means seven real
+ * conversations over three months, which is what the cadence was written to be.
+ */
+export const PROACTIVE_LIFETIME_CAP = 7;
 // The ONLY send kinds allowed to reach a borrower who has already converted. Ramon kept the
 // doc-chaser (2026-08-01): asking for a document we are genuinely waiting on moves the
 // client's own file forward and is not marketing. Drip, re-engagement and AI concierge

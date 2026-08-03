@@ -164,8 +164,21 @@ async function logSkipped(leadId: string, lane: string, step: number, reason: st
 if (STEPS.length > PROACTIVE_LIFETIME_CAP) {
   console.warn(
     `[nurture] CADENCE EXCEEDS THE CAP: ${STEPS.length} drip steps vs PROACTIVE_LIFETIME_CAP=${PROACTIVE_LIFETIME_CAP}. ` +
-    `Steps ${PROACTIVE_LIFETIME_CAP + 1}-${STEPS.length} and the reactivation lane can never be delivered. ` +
+    `Steps ${PROACTIVE_LIFETIME_CAP + 1}-${STEPS.length} can never be delivered. ` +
     `Raise the cap deliberately or truncate the cadence.`,
+  );
+}
+// AND THE REACTIVATION LANE IS A SEPARATE QUESTION. It only starts once the drip is finished,
+// so by definition the lead has already had STEPS.length proactive touches — if the cap is not
+// STRICTLY greater than the cadence, every reactivation send is denied the moment it becomes
+// due. That lane is the stated plan for mining the dormant database now that ad spend is zero,
+// and it has never delivered a single message. Say so at load rather than letting it look busy.
+if (REACTIVATION.length && STEPS.length >= PROACTIVE_LIFETIME_CAP) {
+  console.warn(
+    `[nurture] REACTIVATION CAN NEVER FIRE: the drip alone uses ${STEPS.length} of ` +
+    `PROACTIVE_LIFETIME_CAP=${PROACTIVE_LIFETIME_CAP} touches, so a lead reaching the ` +
+    `reactivation lane is already at the cap. Raise the cap above ${STEPS.length}, or accept ` +
+    `that the drip is the whole cadence.`,
   );
 }
 

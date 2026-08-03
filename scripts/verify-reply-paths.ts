@@ -20,6 +20,7 @@
 //
 //   npx tsx scripts/verify-reply-paths.ts
 import { readFileSync } from "fs";
+import { evaluateThreadRules, PROACTIVE_LIFETIME_CAP } from "../lib/conversation/governor";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -132,6 +133,28 @@ console.log(`\nREPLY PATHS — a pause is not a delete\n`);
   const nurture = code("lib/nurture.ts");
   chk(/STEPS\.length > PROACTIVE_LIFETIME_CAP/.test(nurture),
     "a cadence longer than the cap is announced at load — 7 steps against a cap of 3 meant steps 4-7 could never be delivered to anyone");
+  chk(/REACTIVATION CAN NEVER FIRE/.test(nurture),
+    "and so is the separate case where the drip alone exhausts the cap, leaving the reactivation lane dead");
+}
+
+// ── THE CAP AND THE CADENCE, as configured today. Ramon set the cap to 7 on 2026-08-02 so the
+//    full 7-step drip can be delivered; before that it was 3 and steps 4-7 were unreachable.
+{
+  const cap = PROACTIVE_LIFETIME_CAP;
+  const mk = (touches: number) => {
+    const t: any[] = [];
+    for (let i = 0; i < touches; i++) {
+      // A both-channel touch writes TWO rows in the same minute — the double-count that used to
+      // burn the cap in half the touches.
+      const at = new Date(Date.UTC(2026, 6, i + 1, 16, 0, 0)).toISOString();
+      t.push({ direction: "outbound", at, kind: "nurture", body: "e" });
+      t.push({ direction: "outbound", at, kind: "nurture", body: "s" });
+    }
+    return t;
+  };
+  const at = (n: number) => evaluateThreadRules({ kind: "proactive", thread: mk(n), now: new Date(Date.UTC(2026, 7, 2)) }).allow;
+  chk(at(cap - 1), `a lead with ${cap - 1} both-channel touches can still receive the last one (cap ${cap})`);
+  chk(!at(cap), `and is denied at ${cap} — the cap binds on TOUCHES, not on the ${cap * 2} logged rows`);
 }
 
 // ── RR-6. The drip step is bounded by what was actually SENT.
