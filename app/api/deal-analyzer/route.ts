@@ -81,7 +81,6 @@ export async function POST(req: NextRequest) {
     if (!zip && geo?.zip) zip = geo.zip;
     const st = state || geo?.state || "";
     const loc = zip ? resolveLocation(zip) : null;
-    const isRefiPurpose = /refi|refinance|cash.?out|hold|brrrr/i.test(String(body?.purpose || body?.strategy || ""));
     const cityStateZip = [city || geo?.city, st, zip].filter(Boolean).join(" ");
 
     // 2) Fan out the intel pulls in parallel: property facts, neighborhood/market, Census.
@@ -115,12 +114,17 @@ export async function POST(req: NextRequest) {
       // buy this?". Entered wins; then the ZIP-accurate rate model this route ALREADY RESOLVED
       // and then threw away; the seller's bill is used only on a refi, where the owner does not
       // change, and only as a last resort.
-      taxes_annual: inTaxes ?? (
-        loc?.taxRatePct && purchasePrice > 0 && !isRefiPurpose
-          ? Math.round((purchasePrice * loc.taxRatePct) / 100)
-          : (loc?.taxRatePct && purchasePrice > 0
-              ? (Number(web?.annualPropertyTax) || Math.round((purchasePrice * loc.taxRatePct) / 100))
-              : (Number(web?.annualPropertyTax) || null))),
+      // THIS TOOL ALWAYS MODELS AN ACQUISITION — flip, hold and BRRRR all begin with buying the
+      // property — so the assessment always resets to the purchase price. The scraped
+      // `annualPropertyTax` is the CURRENT OWNER'S bill, often long-held and often capped, and
+      // using it understated the buyer's tax and inflated NOI, cap rate and cashflow on the one
+      // tool that answers "should I buy this?".
+      //
+      // (My first version gated this on a `purpose` the screen never sends, so the branch could
+      // never be true — a dead condition dressed as a rule. Removed rather than left in place.)
+      taxes_annual: inTaxes ?? (loc?.taxRatePct && purchasePrice > 0
+        ? Math.round((purchasePrice * loc.taxRatePct) / 100)
+        : (Number(web?.annualPropertyTax) || null)),
       // The ZIP insurance model was resolved and discarded too — insurance fell all the way
       // through to the engine's flat %-of-price fallback even when a better figure existed.
       insurance_annual: inIns ?? (loc && (loc as any).insRatePct && purchasePrice > 0
@@ -152,7 +156,7 @@ export async function POST(req: NextRequest) {
       assumptionsOverridden,
       carryingCostSource: {
         taxes: inTaxes != null ? "entered"
-          : (loc?.taxRatePct && !isRefiPurpose ? `reassessed at the purchase price using the ${loc.countyName || zip} effective rate (${loc.taxRatePct}%) — a purchase resets the assessment`
+          : (loc?.taxRatePct ? `reassessed at the purchase price using the ${loc.countyName || zip} effective rate (${loc.taxRatePct}%) — a sale resets the assessment`
           : Number(web?.annualPropertyTax) ? "current owner's bill from public records — verify, a sale usually reassesses"
           : "estimated %-of-price"),
         insurance: inIns != null ? "entered" : (loc && (loc as any).insRatePct ? `regional model for ${loc.countyName || zip}` : "estimated %-of-price"),
