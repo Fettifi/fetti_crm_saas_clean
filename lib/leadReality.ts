@@ -76,8 +76,16 @@ export function leadReality(input: {
     if (band === "clean") {
       const line = String(lookup?.lineType || "").toLowerCase();
       // Clean intake but the number is VoIP → could still be a burner; nudge to verify.
-      if (line && /voip|virtual|non[- ]?fixed/.test(line)) return suspect("VoIP number — confirm it's a real person");
-      if (shield.smsCapable === false) return suspect("Number can't receive texts (landline/other)");
+      // NON-FIXED VoIP is the burner shape (TextNow, TextPlus — no address on file). A FIXED
+      // VoIP is ordinary cable/residential phone service and belongs to a real household;
+      // Shield's own model already prices them 20 vs 10 points. Flagging both cost two real
+      // leads their nurture.
+      if (line && /non[- ]?fixed|virtual/.test(line)) return suspect("VoIP number — confirm it's a real person");
+      // TWO SPELLINGS, ONE FACT. lib/leadShield.ts:495 (intake) writes snake_case
+      // `sms_capable`; the lookup backfill wrote camelCase `smsCapable`. Reading only one
+      // meant 184 records answered `undefined` — i.e. "textable" — for a number the carrier
+      // had already said cannot receive a text. Read both until the data is normalised.
+      if (shield.smsCapable === false || shield.sms_capable === false) return suspect("Number can't receive texts (landline/other)");
       return real(line === "mobile" ? "Mobile line, passed Lead Shield" : "Passed Lead Shield");
     }
   }

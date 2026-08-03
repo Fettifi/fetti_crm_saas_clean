@@ -48,8 +48,11 @@ export async function buildAndSendLeadDigest(): Promise<{ sent: string[]; counts
     const { shieldActionToken } = await import("@/lib/leadShield");
     const app = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
     const inReview = leads.filter((l) => String(l.stage || "").toLowerCase() === "review");
-    const gray = inReview.filter((l) => (l.raw?.shield?.band || "gray") === "gray");
-    const junk = inReview.filter((l) => (l.raw?.shield?.band || "gray") !== "gray");
+    // A clean-banded lead sitting in Review is a HUMAN decision to look at it, not hard junk —
+    // it belongs in "needs your call", not in the silent count. (Latent until clean verdicts
+    // existed; live now.)
+    const gray = inReview.filter((l) => ["gray", "clean"].includes(String(l.raw?.shield?.band || "gray")));
+    const junk = inReview.filter((l) => !["gray", "clean"].includes(String(l.raw?.shield?.band || "gray")));
     const { data: acts } = await supabaseAdmin
       .from("activity_log").select("action, actor, detail").like("action", "shield.%").gte("created_at", d1).limit(2000);
     const count = (a: string) => (acts || []).filter((x: any) => x.action === a).length;
@@ -82,8 +85,15 @@ export async function buildAndSendLeadDigest(): Promise<{ sent: string[]; counts
       const key = String((l as any).lead_source || (l as any).source || "unknown").slice(0, 40);
       chan[key] = chan[key] || { total: 0, bad: 0 };
       chan[key].total++;
+      // BOTH DIRECTIONS WERE WRONG. `band && band !== "gray"` counted a CLEAN lead as junk —
+      // and a GRAY (quarantined) one as good. It only read correctly while "clean" was a value
+      // nothing ever wrote; the moment clean verdicts started being recorded, every source
+      // converged on 100% junk and this digest emails Ramon "cut or fix the placement" at 25%.
+      // Name the bad bands instead of inferring them from one that is not.
+      const band = String(raw.shield?.band || "");
       const isBad = String((l as any).stage || "").toLowerCase() === "review" ||
-        ["invalid", "non_us"].includes(raw.phone_status) || (raw.shield?.band && raw.shield.band !== "gray");
+        ["invalid", "non_us"].includes(raw.phone_status) ||
+        ["watch", "gray", "junk"].includes(band);
       if (isBad) chan[key].bad++;
     }
     const flagged = Object.entries(chan)

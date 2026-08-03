@@ -227,8 +227,14 @@ export async function POST(req: NextRequest) {
     const quarantined = shield?.verdict === "quarantine" && (!existingId || hardEvidence);
     if (quarantined) {
       applyShieldToRow(row, shield!, { channel, ip: internal ? null : clientIp(req), preStage: existingStage });
-    } else if (shield && shield.band !== "clean") {
-      // watch band / shadow would-quarantine / merge downgrade: evidence only.
+    } else if (shield) {
+      // RECORD THE PASS TOO. This read `shield.band !== "clean"`, so when a lead passed,
+      // NEITHER branch ran and raw.shield was never written — proven across every row in the
+      // database: the 9 intake-written shields are gray x7 and watch x2, zero clean, ever.
+      // Every clean lead therefore started life "Not yet screened by Lead Shield", and
+      // assessLead had by then already made the PAID Twilio lookup whose result was discarded
+      // with it. applyShieldToRow only pauses on a quarantine verdict, so a pass writes the
+      // record and nothing else — and it captures `lookup` and `sms_capable` for free.
       applyShieldToRow(row, { ...shield, verdict: "pass" }, { channel, ip: internal ? null : clientIp(req) });
     }
 

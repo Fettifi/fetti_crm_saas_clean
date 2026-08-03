@@ -552,7 +552,9 @@ export async function promoteQuarantined(leadId: string, actor: string, trigger:
     const { runNewLeadPipeline } = await import("@/lib/leadPipeline");
     const fresh = { ...(lead as any), stage: toStage, nurture_paused: false, raw };
     await runNewLeadPipeline(fresh, {
-      smsCapable: shield.sms_capable !== false,
+      // Both spellings — see lib/leadReality.ts. Reading only snake_case here let a promote
+      // authorise SMS to a number the carrier says cannot receive one, on 184 records.
+      smsCapable: (shield.sms_capable ?? shield.smsCapable) !== false,
       deferredReplay: true,
       skipOwnerAlert: actor.startsWith("owner"),
       optedOut: raw.tracking_opt_out === true,

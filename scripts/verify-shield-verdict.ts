@@ -26,8 +26,12 @@ console.log(`\nSHIELD VERDICT — a pass is a finding\n`);
 // ── 1. The sweep records a CLEAN result, not only a quarantine.
 {
   const src = code("app/api/cron/shield-sweep/route.ts");
-  chk(/band: "clean"/.test(src), "the sweep writes band \"clean\" for a lead that passes");
-  chk(/verdict: "clear"/.test(src), "under an explicit clear verdict");
+  chk(/band: total >= wTh \? "watch" : "clean"/.test(src),
+    "the sweep records a band for a lead that passes — clean below the watch threshold, watch above it");
+  chk(/verdict: "pass"/.test(src),
+    "under the DECLARED verdict — lib/leadShield.ts:48 is \"pass\" | \"quarantine\", and 190 rows shipped carrying \"clear\", which is in neither");
+  chk(/total >= wTh \? "watch"/.test(src),
+    "and bands against the WATCH threshold — writing \"clean\" for everything under the QUARANTINE threshold collapsed 30-59 into clean");
   chk(/if \(!raw\.shield\)/.test(src),
     "on a FRESHLY re-read row, so a quarantine that landed since the bulk select is never overwritten by a clean band");
   chk(/cleared\+\+/.test(src) && /cleared \}/.test(src),
@@ -98,6 +102,58 @@ for (const f of ["scripts/shield-lookup-backfill.ts", "scripts/shield-backfill.t
     "the backfill reuses lib/leadShield.lookupPhone, so it shares the 90-day cache and the daily cap with the live sweep");
   chk(/new Set\(needing\.map/.test(src),
     "and looks up each DISTINCT number once rather than once per lead");
+}
+
+// ── 7. THE MIDDLE TIER. Shield has four bands and leadReality treats "watch" as suspect. My
+//    first version of this guard asserted only that a clean band yields "real", so it passed
+//    while the sweep laundered every lead scoring 30-59 — including one named "test test",
+//    which scores 40. A guard that only checks the happy tier cannot see a collapsed one.
+{
+  const mk = (band: string) => leadReality({ raw: { shield: { band, verdict: band === "gray" || band === "junk" ? "quarantine" : "pass", risk: 40, signals: [] } }, name: "x", email: "x@y.com", phone: "5615550134" }).level;
+  chk(mk("watch") === "suspect", `a watch band is suspect (got "${mk("watch")}")`);
+  chk(mk("clean") === "real", "a clean band is still real");
+  chk(mk("gray") === "suspect", "gray is suspect");
+  chk(mk("junk") === "invalid", "junk is invalid");
+}
+
+// ── 8. ONE FACT, TWO SPELLINGS. The intake writer stores snake_case sms_capable; the lookup
+//    backfill wrote camelCase smsCapable; leadReality read camel and the promote SMS gate read
+//    snake. 184 records answered "undefined" — i.e. textable — for numbers the carrier had said
+//    cannot receive a text.
+{
+  const base = { band: "clean", verdict: "pass", risk: 0, signals: [], lookup: { lineType: "landline", valid: true } };
+  for (const key of ["smsCapable", "sms_capable"]) {
+    const r = leadReality({ raw: { shield: { ...base, [key]: false } }, name: "x", email: "x@y.com", phone: "5615550134" }).level;
+    chk(r === "suspect", `a landline flagged via ${key} reads suspect (got "${r}")`);
+  }
+  const shieldSrc = code("lib/leadShield.ts");
+  chk(/sms_capable \?\? shield\.smsCapable/.test(shieldSrc) || /smsCapable \?\? shield\.sms_capable/.test(shieldSrc),
+    "and the promote SMS gate reads both spellings too");
+}
+
+// ── 9. A FIXED VoIP IS NOT A BURNER. Non-fixed VoIP (TextNow, TextPlus — no address on file)
+//    is the burner shape; fixed VoIP is ordinary cable phone service. Shield's own model prices
+//    them 20 vs 10 points, and flagging both cost two real leads their nurture.
+{
+  const v = (lineType: string) => leadReality({ raw: { shield: { band: "clean", verdict: "pass", risk: 0, signals: [], lookup: { lineType, valid: true } } }, name: "x", email: "x@y.com", phone: "5615550134" }).level;
+  chk(v("nonFixedVoip") === "suspect", "nonFixedVoip is suspect");
+  chk(v("fixedVoip") === "real", `fixedVoip is NOT flagged (got "${v("fixedVoip")}")`);
+  chk(v("mobile") === "real", "and a mobile is real");
+}
+
+// ── 10. THE GENERATOR. Recording clean verdicts retroactively is worthless if the intake path
+//     still discards them — every new lead would start unverified again. Proven across the
+//     whole database: the 9 intake-written shields were gray x7 and watch x2, zero clean, ever.
+{
+  const apply = code("app/api/apply/route.ts");
+  chk(!/shield\.band !== "clean"/.test(apply),
+    "the intake path records a clean verdict instead of skipping it");
+  const digest = code("lib/notify/leadDigest.ts");
+  chk(/\["watch", "gray", "junk"\]\.includes\(band\)/.test(digest),
+    "and the lead digest names the BAD bands rather than inferring them from one that is not — it counted clean as junk and quarantined as good");
+  const sweep = code("app/api/cron/shield-sweep/route.ts");
+  chk(!/lead\.stage\.advanced/.test(sweep),
+    "the sweep's engagement filter excludes our OWN outbound stage-advance — it was skipping 121 of 127 leads because our first touch had advanced them");
 }
 
 console.log("");

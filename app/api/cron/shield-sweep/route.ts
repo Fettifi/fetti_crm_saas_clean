@@ -30,6 +30,11 @@ export async function GET(req: NextRequest) {
   await recordAttempt("shield-sweep");
   const apply = req.nextUrl.searchParams.get("apply") === "1";
   const qTh = Number((await cfg("SHIELD_RISK_QUARANTINE").catch(() => ""))) || 60;
+  // THE MIDDLE TIER IS NOT "CLEAN". Shield bands at risk >= W as "watch" (lib/leadShield.ts:462)
+  // and leadReality treats watch as SUSPECT. Writing "clean" for everything under the
+  // QUARANTINE threshold collapsed 30-59 into clean and laundered leads the free fallback had
+  // already caught — a lead named "test test" scores 40 and came out "real".
+  const wTh = Number((await cfg("SHIELD_RISK_WATCH").catch(() => ""))) || 30;
   const csv = (s: string | null) => String(s || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
   const extraDisposable = csv(await cfg("SHIELD_DISPOSABLE_EXTRA").catch(() => ""));
   const allowDomains = csv(await cfg("SHIELD_ALLOW_DOMAINS").catch(() => ""));
@@ -52,7 +57,12 @@ export async function GET(req: NextRequest) {
     const { data: acts } = await supabaseAdmin
       .from("activity_log").select("lead_id, action, detail")
       .in("lead_id", chunk)
-      .in("action", ["comms.message", "doc.uploaded", "calendly.booked", "lead.stage.advanced"])
+      // `lead.stage.advanced` is written by our OWN first touch (lib/leadPipeline.ts), by the
+      // system 193 times out of 249 — so the moment nurture sent touch #1 the lead became
+      // permanently unscoreable. Measured effect, identical on all 29 sweep runs: scope 127,
+      // engaged_skipped 121, SIX leads actually scored. Human engagement means THEY did
+      // something: an inbound message, a document, a booking.
+      .in("action", ["comms.message", "doc.uploaded", "calendly.booked"])
       .limit(5000);
     for (const a of acts || []) {
       const d = (a as any).detail || {};
@@ -112,7 +122,12 @@ export async function GET(req: NextRequest) {
       // clean band must never overwrite it.
       if (!raw.shield) {
         raw.shield = {
-          version: 1, verdict: "clear", band: "clean", risk: total, signals: sigs,
+          // "pass" — the declared union in lib/leadShield.ts:48 is "pass" | "quarantine".
+          // "clear" is in neither, so any reader testing the natural inverse of "quarantine"
+          // would have silently mis-sorted every record this writes.
+          version: 1, verdict: "pass",
+          band: total >= wTh ? "watch" : "clean",
+          risk: total, signals: sigs,
           channel: "api", retro: true, screened_at: new Date().toISOString(), screened_by: "sweep",
           // `lookup` and `smsCapable` are deliberately ABSENT — no Twilio call was made, and
           // leadReality reads lookup.valid / lookup.lineType. Inventing either would assert a

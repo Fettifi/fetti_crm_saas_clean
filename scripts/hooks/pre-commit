@@ -41,8 +41,13 @@ MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingD
 # The portfolio grid's per-property actuals: an editor that stops short of the roll-up looks
 # fixed and is not.
 UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite' -e 'deal-analyzer' -e 'scripts/verify-deal-analyzer')
+# WHO IS A REAL PERSON. The Shield verdict now decides whether a lead is nurtured at all, so a
+# band written wrongly either silences a borrower or clears a bot. On 2026-08-02 a backfill
+# wrote a verdict outside the declared union on 190 rows, collapsed the whole "watch" tier into
+# "clean", and split one fact across two spellings that two different readers each read one of.
+SHIELD=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/leadShield' -e 'lib/leadReality' -e 'shield-sweep' -e 'lib/notify/leadDigest' -e 'scripts/shield-' -e 'scripts/verify-shield')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
@@ -50,6 +55,14 @@ printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" "$UW" "$INCOV" "$AVM" "$DOCS" |
 echo ""
 
 FAILED=""
+
+if [ -n "$SHIELD" ]; then
+  printf "   %-18s " "verify:shield-verdict"
+  OUT=$(npm run --silent verify:shield-verdict 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:shield-verdict"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
 
 if [ -n "$AUTH" ]; then
   printf "   %-18s " "verify:auth"
