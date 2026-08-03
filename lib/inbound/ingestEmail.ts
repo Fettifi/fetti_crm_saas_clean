@@ -16,6 +16,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logComms, sendEmail } from "@/lib/comms";
 import { logActivity } from "@/lib/activity";
 import { logHotLeadReply } from "@/lib/notify/hotLeadReply";
+import { isRevocation } from "@/lib/smsConsent";
 import { cfg } from "@/lib/settings";
 
 export type ParsedInbound = { from: string | null; subject: string; text: string; providerId?: string | null };
@@ -112,6 +113,32 @@ export async function ingestInboundEmail(input: ParsedInbound, opts: IngestOpts 
   // Record on the conversation timeline (Conversations inbox). providerId makes the
   // idempotency guard above catch any future re-delivery of this same message.
   await logComms({ leadId: lead.id, channel: "email", direction: "inbound", type: "reply", subject, body: text, from, status: "received", providerId }).catch(() => {});
+
+  // "STOP EMAILING ME" IS AN OPT-OUT, WHEREVER IT ARRIVES.
+  //
+  // CAN-SPAM does not require an opt-out to come through the unsubscribe link, and the FCC's
+  // 2024 order says a consumer may revoke by any reasonable means. This route honoured neither:
+  // a reply saying "please stop emailing me" was logged as the HOTTEST signal in the funnel,
+  // handed to the AI concierge to auto-answer, and left in the drip. The detector already
+  // existed — it was trapped at module scope inside the SMS route where email could not see it.
+  if (isRevocation(text) || isRevocation(subject || "")) {
+    try {
+      const raw = (lead.raw && typeof lead.raw === "object" ? { ...lead.raw } : {}) as any;
+      raw.email_optout_at = raw.email_optout_at || new Date().toISOString();
+      raw.email_optout_source = "inbound_reply";
+      raw.email_optout_text = String(text).slice(0, 200);
+      raw.email_suppressed_at = raw.email_suppressed_at || raw.email_optout_at;
+      raw.email_suppress_reason = "recipient asked to stop by email reply";
+      await supabaseAdmin.from("leads").update({ raw, nurture_paused: true }).eq("id", lead.id);
+    } catch (e) { console.warn("[ingestEmail] opt-out write failed", e); }
+    await logComms({ leadId: lead.id, channel: "email", direction: "inbound", type: "optout", subject, body: text, from, status: "received", providerId }).catch(() => {});
+    await logActivity({
+      entity_type: "lead", entity_id: lead.id, lead_id: lead.id, actor: "consumer",
+      action: "email.optout", detail: { from, subject, text: String(text).slice(0, 200) },
+    }).catch(() => {});
+    // No hot-lead alert, no auto-reply, no drip. The one thing they asked for is silence.
+    return { ok: true, matched: true, leadId: lead.id, optedOut: true } as any;
+  }
 
   // Release a quarantined lead (a real email reply is human evidence) + fire the
   // hot-reply task/alert so the team sees the conversion moment.

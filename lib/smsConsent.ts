@@ -71,3 +71,33 @@ export const STOP_LINE = "Reply STOP to opt out.";
 export function withStopLine(body: string): string {
   return /\bSTOP\b/i.test(body) ? body : `${body.replace(/\s+$/, "")} ${STOP_LINE}`;
 }
+
+// A REVOCATION IS A REVOCATION ON ANY CHANNEL.
+//
+// This lived inside the SMS route at module scope, so the EMAIL ingest could not reach it —
+// and consequently "stop emailing me" in a reply was logged as a HOT LEAD, auto-answered by
+// the concierge, and left in the drip. CAN-SPAM gives 10 business days to honour an opt-out
+// request and does not require it to arrive through the unsubscribe link.
+//
+// TCPA opt-out detection. Under the FCC's 2024 TCPA Report & Order (47 CFR
+// 64.1200(a)(10), eff. Apr 2025) a consumer may revoke consent by ANY reasonable
+// means, and words like stop/quit/end/cancel/unsubscribe/opt-out are per se
+// reasonable EVEN when embedded in a longer message. A bare-keyword-only match
+// misses "stop texting me" / "remove me from your list". This detector catches
+// embedded revocations while deliberately NOT misfiring on the ambiguous uses the
+// funnel must keep as hot replies ("cancel my 3pm appointment", "stop by the office").
+export function isRevocation(raw: string): boolean {
+  const t = (raw || "").trim().toLowerCase();
+  if (!t) return false;
+  // 1) The message IS a single opt-out keyword (± trailing punctuation).
+  if (/^(stop\s?all|stop|unsubscribe|cancel|end|quit|optout|opt[-\s]?out|revoke|remove)[.!?\s]*$/.test(t)) return true;
+  // 2) Words with no other reading in an SMS reply → opt-out even when embedded.
+  if (/\bunsubscribe\b|\bopt[-\s]?out\b|\bstop\s?all\b/.test(t)) return true;
+  // 3) "stop"/"quit"/"cease"/"no more"/"don't"/"do not" tied to a contact channel.
+  if (/\b(?:stop|quit|cease|halt|no more|don'?t|do not|please stop)\b[^.!?]{0,24}\b(?:text|texts|texting|messag|contact|call|calls|calling|email|emails)\b/.test(t)) return true;
+  // 4) Explicit removal requests.
+  if (/\b(?:remove|take)\s+me\b/.test(t) || /\bno more (?:texts?|messages?|calls?|emails?)\b/.test(t) || /\bleave me alone\b/.test(t)) return true;
+  // 5) A leading, standalone "stop" command (but not "stop by ...").
+  if (/^stop\b/.test(t) && !/^stop by\b/.test(t)) return true;
+  return false;
+}

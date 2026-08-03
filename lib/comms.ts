@@ -86,6 +86,14 @@ export async function recordCarrierOptOut(phone: string, source = "twilio_21610"
       raw.sms_optout_at = raw.sms_optout_at || new Date().toISOString();
       raw.sms_optout_source = source;
       raw.sms_consent = false;
+      // REVOKE EVERY CONSENT FORM, not just the boolean. The gates OR `sms_consent === true`
+      // with `consent.sms_optin === true`, so clearing only the first left a texted-in keyword
+      // grant standing and three senders would still have read it as consent. The inbound STOP
+      // branch already did this; the carrier path — the one that fires when Twilio tells us the
+      // consumer opted out at the handset — did not.
+      if (raw.consent && typeof raw.consent === "object") {
+        raw.consent = { ...raw.consent, sms_optin: false, revoked_at: raw.sms_optout_at, revoked_via: source };
+      }
       await supabaseAdmin.from("leads").update({ raw, nurture_paused: true }).eq("id", l.id);
       await logActivity({
         entity_type: "lead", entity_id: l.id, lead_id: l.id, actor: "system",

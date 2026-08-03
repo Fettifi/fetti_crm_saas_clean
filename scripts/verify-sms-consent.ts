@@ -68,11 +68,17 @@ const SEND_PATHS = [
   "lib/nurture.ts",
   "lib/markConcierge.ts",
   "app/api/conversations/route.ts",
+  "app/api/cron/comms-reconcile/route.ts",
+  "app/api/voice/bridge/route.ts",
+  "app/api/sms/inbound/route.ts",
 ];
 for (const f of SEND_PATHS) {
   let src = "";
   try { src = readFileSync(f, "utf8"); } catch { continue; }
-  const hits = (src.match(/api\.twilio\.com[^\n]*Messages\.json/g) || []).length;
+  // A SEND POSTs to the bare Messages.json endpoint; a LIST READ carries a query string.
+  // Flagging both would make the reconciliation cron — whose whole job is to READ the
+  // provider ledger — unable to do it.
+  const hits = (src.match(/api\.twilio\.com[^\n`]*Messages\.json(?!\?)/g) || []).length;
   chk(ALLOWED.has(f) || hits === 0,
     `${f} does not POST to Twilio directly — it must go through sendSms, which holds the consent, quiet-hours and STOP gates${hits ? ` (${hits} raw POST(s) found)` : ""}`);
 }

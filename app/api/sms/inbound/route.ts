@@ -11,35 +11,13 @@ import { cfg } from "@/lib/settings";
 import { phoneMatchForms } from "@/lib/phone";
 import { magicApplyLink } from "@/lib/magicLink";
 import { automationPaused } from "@/lib/automationGate";
+import { isRevocation } from "@/lib/smsConsent";
 
 export const dynamic = "force-dynamic";
 // inbound-reply auto-promote may replay the full pipeline (after Twilio ACK)
 export const maxDuration = 120;
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
-
-// TCPA opt-out detection. Under the FCC's 2024 TCPA Report & Order (47 CFR
-// 64.1200(a)(10), eff. Apr 2025) a consumer may revoke consent by ANY reasonable
-// means, and words like stop/quit/end/cancel/unsubscribe/opt-out are per se
-// reasonable EVEN when embedded in a longer message. A bare-keyword-only match
-// misses "stop texting me" / "remove me from your list". This detector catches
-// embedded revocations while deliberately NOT misfiring on the ambiguous uses the
-// funnel must keep as hot replies ("cancel my 3pm appointment", "stop by the office").
-function isRevocation(raw: string): boolean {
-  const t = (raw || "").trim().toLowerCase();
-  if (!t) return false;
-  // 1) The message IS a single opt-out keyword (± trailing punctuation).
-  if (/^(stop\s?all|stop|unsubscribe|cancel|end|quit|optout|opt[-\s]?out|revoke|remove)[.!?\s]*$/.test(t)) return true;
-  // 2) Words with no other reading in an SMS reply → opt-out even when embedded.
-  if (/\bunsubscribe\b|\bopt[-\s]?out\b|\bstop\s?all\b/.test(t)) return true;
-  // 3) "stop"/"quit"/"cease"/"no more"/"don't"/"do not" tied to a contact channel.
-  if (/\b(?:stop|quit|cease|halt|no more|don'?t|do not|please stop)\b[^.!?]{0,24}\b(?:text|texts|texting|messag|contact|call|calls|calling|email|emails)\b/.test(t)) return true;
-  // 4) Explicit removal requests.
-  if (/\b(?:remove|take)\s+me\b/.test(t) || /\bno more (?:texts?|messages?|calls?|emails?)\b/.test(t) || /\bleave me alone\b/.test(t)) return true;
-  // 5) A leading, standalone "stop" command (but not "stop by ...").
-  if (/^stop\b/.test(t) && !/^stop by\b/.test(t)) return true;
-  return false;
-}
 
 // Twilio inbound SMS webhook ("A message comes in"). When a lead replies:
 //  - pause their automated nurture (they're engaged — a human takes over)
@@ -346,10 +324,12 @@ export async function POST(req: NextRequest) {
               return; // Mark's hold text + the bridge outcome cover this turn — no AI double-reply
             }
             if (signal) {
-              const sid2 = process.env.TWILIO_ACCOUNT_SID, tok2 = process.env.TWILIO_AUTH_TOKEN, sf2 = process.env.TWILIO_FROM, st2 = process.env.LEAD_NOTIFY_SMS_TO;
-              if (sid2 && tok2 && sf2 && st2) {
-                const pb = new URLSearchParams({ To: st2, From: sf2, Body: `🔴 HANDOFF (${signal}) — ${(lead as any).full_name || from}: "${body.slice(0, 140)}" → ${APP_URL}/conversations` });
-                fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid2}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${sid2}:${tok2}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: pb.toString() }).catch(() => {});
+              // Internal page to the OWNER — the documented use for allowQuietHours (not a
+              // solicitation). Still routed through the one send primitive: "this one is
+              // different" is how all four consumer-facing bypasses started.
+              const owner = process.env.LEAD_NOTIFY_SMS_TO;
+              if (owner) {
+                await sendSms(owner, `🔴 HANDOFF (${signal}) — ${(lead as any).full_name || from}: "${body.slice(0, 140)}" → ${APP_URL}/conversations`, { allowQuietHours: true }).catch(() => {});
               }
             }
             // Pre-filled application link = the conversion CTA — but only while they're

@@ -23,6 +23,11 @@ const PRODUCTS = [
 const CREDIT = ["740+", "700-739", "660-699", "620-659", "Below 620"];
 const fmt = (n: number) => "$" + Math.round(n).toLocaleString();
 
+// THE DISCLOSURE THE CONSUMER READS, and the exact string we store as the consent artifact.
+// One constant so the two can never drift: what we can produce in a dispute has to be what was
+// on screen. (app/apply/form/page.tsx does the same with its own SMS_CONSENT.)
+const SMS_CONSENT_DISCLOSURE = "Text me too — I agree to receive account, application, and appointment text messages (SMS) from Fetti Financial Services LLC at the number provided. Consent is not a condition of any service. Msg & data rates may apply. Reply STOP to opt out.";
+
 export default function QuotePage() {
   const [purpose, setPurpose] = useState("DSCR Rental");
   const [value, setValue] = useState("");
@@ -66,7 +71,12 @@ export default function QuotePage() {
           consent_text: "By submitting, borrower agreed Fetti Financial Services may contact them by phone & email about their inquiry. Consent not required to buy.",
           sms_consent: fd.get("sms_optin") === "on",
           sms_consent_at: fd.get("sms_optin") === "on" ? new Date().toISOString() : null,
-          sms_consent_text: fd.get("sms_optin") === "on" ? "Optional SMS consent checkbox on /quote" : null,
+          // THE ARTIFACT MUST BE THE DISCLOSURE THE CONSUMER READ, not a description of the
+          // widget they clicked. "Optional SMS consent checkbox on /quote" proves nothing in a
+          // TCPA dispute — the burden is on us to show what they agreed to. /apply already
+          // stores the literal text; this is the same string rendered beside the box below.
+          sms_consent_text: fd.get("sms_optin") === "on" ? SMS_CONSENT_DISCLOSURE : null,
+          sms_consent_source: fd.get("sms_optin") === "on" ? "web_checkbox" : null,
         }),
       });
       const j = await res.json();
@@ -123,7 +133,7 @@ export default function QuotePage() {
               <input name="phone" required placeholder="Phone" className={field} />
               <label className="flex items-start gap-2 text-left cursor-pointer">
                 <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" />
-                <span className="text-[10px] text-slate-400 leading-relaxed">Text me too — I agree to receive account, application, and appointment text messages (SMS) from Fetti Financial Services LLC at the number provided. Consent is not a condition of any service. Msg &amp; data rates may apply. Reply STOP to opt out.</span>
+                <span className="text-[10px] text-slate-400 leading-relaxed">{SMS_CONSENT_DISCLOSURE}</span>
               </label>
               <AddressInput value={addr} onChange={setAddr} placeholder="Property address (optional)" />
               {err && <p className="text-red-400 text-sm">{err}</p>}

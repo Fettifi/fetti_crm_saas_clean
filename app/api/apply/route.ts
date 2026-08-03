@@ -368,6 +368,13 @@ export async function POST(req: NextRequest) {
     // (carrier A2P/toll-free rule + TCPA: agreeing to texts must not be required). We
     // only text a lead when sms_consent === true; it also persists on lead.raw (via the
     // rawBody spread) so first-touch + nurture gate every future SMS send on it.
+    // LOG WHAT WAS STORED, NOT WHAT THE BODY CLAIMED. This object is built from the REQUEST
+    // BODY, and the form is multi-step: step 1 posts without the consent keys and step 2 posts
+    // with them, so the activity log recorded `false` and then `true` for the same person. The
+    // Mark-chat submission can log `false` while the ratchet above has already stored `true`.
+    // Nothing reads this object — every gate reads leads.raw — so it is write-only evidence, and
+    // it was the reason a replay of the logs read as "50 leads texted without consent" when the
+    // delivered-unconsented automated count is zero. Read the stored row below instead.
     const smsConsent = (body as any).sms_consent === true;
     const consent = ((body as any).consent === true || smsConsent)
       ? {
@@ -381,10 +388,28 @@ export async function POST(req: NextRequest) {
       : null;
 
     after(async () => {
+      // Re-read the STORED consent so the audit trail reflects the row, not the request. On a
+      // multi-step submission the body for step 1 carries no consent keys at all.
+      let storedConsent: any = consent;
+      try {
+        const { data: fresh } = await supabaseAdmin.from("leads").select("raw").eq("id", data.id).maybeSingle();
+        const fr: any = (fresh as any)?.raw || {};
+        if (fr.consent || fr.sms_consent != null) {
+          storedConsent = {
+            ...(fr.consent && typeof fr.consent === "object" ? fr.consent : {}),
+            sms_consent: fr.sms_consent === true,
+            sms_consent_at: fr.sms_consent_at ?? null,
+            sms_consent_text: fr.sms_consent_text ?? null,
+            sms_consent_source: fr.sms_consent_source ?? null,
+            sms_optout_at: fr.sms_optout_at ?? null,
+            recorded_from: "stored_row",
+          };
+        }
+      } catch { /* fall back to the request-derived object */ }
       await logActivity({
         entity_type: "lead", entity_id: data.id, lead_id: data.id, actor: "system",
         action: deduped ? "lead.updated" : "lead.created",
-        detail: { source: row.source, tier, score, product: body.loan_purpose, ...(consent ? { consent } : {}) },
+        detail: { source: row.source, tier, score, product: body.loan_purpose, ...(storedConsent ? { consent: storedConsent } : {}) },
       });
     });
 

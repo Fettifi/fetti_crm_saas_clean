@@ -238,6 +238,13 @@ export async function POST(req: NextRequest) {
             utm_campaign: v.ad_id ? `meta_ad_${v.ad_id}` : "meta_lead_ad",
             consent: true, consent_at: new Date().toISOString(),
             consent_text: "Submitted a Meta Lead Ad instant form requesting contact from Fetti Financial Services.",
+            // SAY IT OUT LOUD: the instant form asks for CONTACT, not for texts. `consent: true`
+            // above means "the form was submitted" and nothing more. The SMS gates happened to
+            // hold only because `true?.sms_optin` evaluates to undefined — an accident, not a
+            // decision. Stating sms_consent:false makes the record mean what it says, and makes
+            // the email-only treatment of Meta leads deliberate and auditable.
+            sms_consent: false,
+            sms_consent_source: null,
             meta: { leadgen_id: leadgenId, form_id: v.form_id, page_id: v.page_id, ad_id: v.ad_id, created_time: v.created_time },
           };
           // Route through the same intake the website uses (scoring, auto-response, alert, agents).

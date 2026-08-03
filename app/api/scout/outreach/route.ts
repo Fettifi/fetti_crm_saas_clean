@@ -19,6 +19,7 @@ import { meetingSms, meetingEmailSubject, meetingEmailHtml } from "@/lib/scoutMe
 import { sendSms, sendEmail, logComms } from "@/lib/comms";
 import { withinCallingHours } from "@/lib/callingHours";
 import { cfg } from "@/lib/settings";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,6 +75,28 @@ export async function POST(req: NextRequest) {
     if (!smsQuietOk) {
       results.sms = { ok: false, detail: "outside 8am-9pm seller-local quiet hours — SMS withheld (email unaffected); click again during the window" };
     } else {
+      // COLD-TEXTING A FSBO SELLER IS TELEMARKETING, NOT LEAD FOLLOW-UP.
+      //
+      // This seller never contacted Fetti; the number came off a listing. "We want to buy your
+      // property" to a scraped number is the Florida FTSA fact pattern, and the federal DNC
+      // rules apply to a commercial solicitation regardless of how the number was obtained.
+      // Verified never fired — 0 scout_invite rows across all 188 outbound texts — so this is a
+      // guard BEFORE first use, not a remediation.
+      //
+      // Until a DNC scrub and a per-number outreach ledger exist, SMS on this path is off and
+      // the LO is told to use email (which is CAN-SPAM territory, a far lower bar) or to call.
+      const DNC_CLEARED = (await cfg("SCOUT_SMS_DNC_CLEARED")) === "1";
+      if (!DNC_CLEARED) {
+        results.sms = {
+          ok: false,
+          detail: "Cold SMS to a seller is telemarketing — blocked until a National + state DNC scrub is wired (set SCOUT_SMS_DNC_CLEARED=1 once it is). Use email, or call.",
+        };
+        await logActivity({
+          entity_type: "scout", entity_id: String(deal.id || "").slice(0, 24), actor: "system",
+          action: "scout.sms_blocked", detail: { reason: "no DNC scrub", to: String(deal.seller_phone).slice(-4) },
+        }).catch(() => {});
+        return NextResponse.json({ ok: false, results }, { status: 200 });
+      }
       const r = await sendSms(deal.seller_phone, smsBody);
       results.sms = r;
       if (r.ok) anySent = true;
