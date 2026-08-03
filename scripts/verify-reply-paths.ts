@@ -84,6 +84,66 @@ console.log(`\nREPLY PATHS — a pause is not a delete\n`);
   chk(/items\.sort\(/.test(src), "results are re-sorted by receivedDateTime so ingest order still matches arrival order");
 }
 
+// ── RR-9. A FAILED SEND MUST BE VISIBLE. `action='sms.send_failed'` had ZERO rows in the
+//    entire table. One consented, application-stage borrower was attempted three times and
+//    failed all three on a geo-permission error; in the CRM he looked like a lead nobody had
+//    texted. Three more sit in the same state.
+{
+  const comms = code("lib/comms.ts");
+  chk(/PERMANENT_SMS_ERRORS/.test(comms), "permanent Twilio errors are enumerated, not lumped in with transient ones");
+  chk(/21408/.test(comms), "including 21408 — the region-not-enabled error that hid four leads");
+  chk(/recordSmsSendFailure/.test(comms), "a failed send writes a record");
+  chk(/action: "sms\.send_failed"/.test(comms), "and appears on the lead's timeline");
+  chk(/raw\.sms_undeliverable = true/.test(comms),
+    "a permanent failure sets sms_undeliverable — the flag the send gates already read but only the status webhook ever set");
+}
+
+// ── RR-12. A PARTIAL SEND MUST NOT CONSUME THE STEP. `res.sent` is per-channel, and "at least
+//    one landed" advanced the cadence — so a dropped SMS was never retried. The cron fires
+//    16:00 UTC = 06:00 in Honolulu, below the quiet-hours floor, so every Hawaii lead lost its
+//    drip SMS at every step while the email walked the cadence to the end.
+{
+  const nurture = code("lib/nurture.ts");
+  chk(/const missed = open\.filter/.test(nurture), "the drip computes which OPEN channels did not land");
+  chk(/landed\.length && missed\.length === 0/.test(nurture), "and advances nurture_step only when none were missed");
+  chk(/step NOT advanced/.test(nurture), "a partial send is recorded as partial");
+}
+
+// ── RR-14. AN EMPTY RUN MUST BE EXPLICABLE. Every failure branch was a console.warn on a
+//    serverless function, so "no row" meant four different things. 63 of 73 due leads in one
+//    simulated run produced no evidence of any kind.
+{
+  const nurture = code("lib/nurture.ts");
+  chk(/async function logSkipped/.test(nurture), "nurture writes durable skip rows, like commsWatchdog already did");
+  chk((nurture.match(/logSkipped\(/g) || []).length >= 4, "and uses them on the silent branches, not just one");
+  chk(/action: "nurture\.skipped"/.test(nurture), "under an action a human can filter on");
+}
+
+// ── RR-5 / RR-13. The governor must count TOUCHES, and must hash EACH channel.
+{
+  const gov = code("lib/conversation/governor.ts");
+  chk(/minutes = new Set/.test(gov),
+    "the lifetime cap groups by minute — logComms writes one row per channel, so a single both-channel touch was eating TWO of three slots");
+  chk(/input\.smsBody, input\.emailBody/.test(gov),
+    "rule 7 fingerprints each channel body separately, not the concatenation");
+  const responder = code("lib/notify/leadResponder.ts");
+  chk(/smsBody: lead\.message/.test(responder) && /emailBody: lead\.emailBody/.test(responder),
+    "and the caller passes both, so an email blast can finally collide with the stored email rows");
+  const nurture = code("lib/nurture.ts");
+  chk(/STEPS\.length > PROACTIVE_LIFETIME_CAP/.test(nurture),
+    "a cadence longer than the cap is announced at load — 7 steps against a cap of 3 meant steps 4-7 could never be delivered to anyone");
+}
+
+// ── RR-6. The drip step is bounded by what was actually SENT.
+{
+  const nurture = code("lib/nurture.ts");
+  chk(/countProactiveTouches/.test(nurture), "the drip counts real touches from the message log");
+  chk(/Math\.min\(l\.nurture_step \|\| 0, actualTouches\)/.test(nurture),
+    "and clamps nurture_step to them, so a counter inflated by a no-op run cannot pick mid-cadence copy");
+  chk(/MAX_SAFE_INTEGER/.test(nurture),
+    "and an error counting NEVER resets a lead's cadence to the start");
+}
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). A lead that is never contacted cannot reply, and none of these failures are visible from the outside.\n`); process.exit(1); }
 console.log(`PASS — a pause is measured, a safety net does not consume its own backlog, and a hold is queued and drained.\n`);

@@ -8,6 +8,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { respondToLead } from "@/lib/notify/leadResponder";
 import { cfg } from "@/lib/settings";
+import { PROACTIVE_LIFETIME_CAP } from "@/lib/conversation/governor";
 import { logActivity } from "@/lib/activity";
 // EMAIL ≠ SMS: the msg() strings below are SMS copy ("Reply YES/STOP"). Emails get their
 // own panel-crafted personal notes (subject + body) from the email touch-set, keyed to
@@ -131,6 +132,59 @@ function applyCta(startedApplication: boolean, link: string): { sms: string; ema
         sms: ` If you want, I can start an application and pre-fill what you've already given me: ${link}`,
         email: `\n\nP.S. If it's useful, I can start an application and pre-fill what you've already given me — or just reply and I'll help: ${link}`,
       };
+}
+
+
+/**
+ * A NURTURE RUN THAT DOES NOTHING MUST SAY WHY.
+ *
+ * Every failure branch here was a console.warn on a serverless function — so "no row" meant
+ * four different things at once: nobody was due, everybody was blocked, the provider was down,
+ * or the engine was dead. Simulated against live data, one run had 73 due leads of which 63
+ * produced no evidence of any kind. lib/commsWatchdog.ts already writes durable `watchdog.held`
+ * rows with a reason; nurture was the outlier. With this, `sent + skipped = considered` is an
+ * assertable identity instead of a hope.
+ */
+async function logSkipped(leadId: string, lane: string, step: number, reason: string): Promise<void> {
+  await logActivity({
+    entity_type: "lead", entity_id: leadId, lead_id: leadId, actor: "system",
+    action: "nurture.skipped", detail: { lane, step, reason },
+  }).catch(() => {});
+}
+
+
+// THE CADENCE AND THE CAP MUST AGREE, OR THE EXTRA STEPS ARE A LIE.
+//
+// STEPS has 7 entries plus an unbounded reactivation lane; the governor's
+// PROACTIVE_LIFETIME_CAP is 3. Steps 4-7 and the whole reactivation lane could therefore
+// never be delivered to anyone — 26 leads sat queued at nurture_step 4-7 for touches the gate
+// would always refuse. Two numbers in two files, nobody comparing them. This does not pick the
+// right number (that is Ramon's call) — it makes the disagreement impossible to ship silently.
+if (STEPS.length > PROACTIVE_LIFETIME_CAP) {
+  console.warn(
+    `[nurture] CADENCE EXCEEDS THE CAP: ${STEPS.length} drip steps vs PROACTIVE_LIFETIME_CAP=${PROACTIVE_LIFETIME_CAP}. ` +
+    `Steps ${PROACTIVE_LIFETIME_CAP + 1}-${STEPS.length} and the reactivation lane can never be delivered. ` +
+    `Raise the cap deliberately or truncate the cadence.`,
+  );
+}
+
+
+/** How many proactive touches this lead has ACTUALLY received, counted from the message log
+ *  and grouped by minute so a both-channel touch counts once. */
+async function countProactiveTouches(leadId: string): Promise<number> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("activity_log").select("created_at, detail")
+      .eq("lead_id", leadId).eq("action", "comms.message").limit(500);
+    const minutes = new Set(
+      (data || [])
+        .filter((r: any) => r?.detail?.direction === "outbound" && ["first_touch", "nurture"].includes(String(r?.detail?.type || "")))
+        .map((r: any) => String(r.created_at).slice(0, 16)),
+    );
+    return minutes.size;
+  } catch {
+    return Number.MAX_SAFE_INTEGER;  // on an error, never RESET a lead's cadence
+  }
 }
 
 export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number; ran: boolean; firstTouchesHeld?: number; dripSuppressedInProcess?: number }> {
@@ -398,7 +452,20 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     const lane = isHot ? HOT_STEPS : isWarm ? WARM_STEPS : STEPS;
     const ageDays = (Date.now() - new Date(l.created_at).getTime()) / 86400000;
     const lastStep = lane[lane.length - 1].step;
-    const curStep = l.nurture_step || 0;
+    // CLAMP THE COUNTER TO WHAT WAS ACTUALLY SENT.
+    //
+    // The due touch is chosen from this counter and the lead's AGE — never from messages that
+    // actually went out. A code path live 2026-06-26 → 07-08 advanced the counter on runs that
+    // sent nothing (179 of 586 nurture.sent rows carry `channels: []`, all inside that window).
+    // Residual state: 176 leads with nurture_step > 0, 65 of them higher than the total number
+    // of messages ever sent to them, 13 with a step above zero and NO message ever. 54 are
+    // still eligible, so on resume they would receive mid-cadence copy that presupposes a
+    // relationship that never happened — one lead's first-ever message from Fetti was the d30
+    // body, "your file's still sitting on my desk", 30 days after she enquired. That is not a
+    // weak email, it is disqualifying. The counter is now bounded by reality on every run, so
+    // the repair holds even where the stored value is still wrong.
+    const actualTouches = await countProactiveTouches(l.id);
+    const curStep = Math.min(l.nurture_step || 0, actualTouches);
 
     if (curStep < lastStep) {
       // Send the FIRST un-sent step that's now due, then advance one step per run —
@@ -409,7 +476,7 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
       if (!due) continue;
       // Throttle: a lead whose backlog makes multiple steps "due" (old import, re-opt-in)
       // still gets at most one touch every 2 days — never seven emails in seven days.
-      if (sinceLast < 2) continue;
+      if (sinceLast < 2) { await logSkipped(l.id, "drip", (l.nurture_step || 0), "throttled — under 2 days since the last touch"); continue; }
       // Backlog meter. Originally this only metered FIRST touches, which missed the real
       // failure mode: when the drip stalls for days, EVERY lead's next step comes due at
       // once, not just step 1. The 2026-07-26 run proved it — 37 first touches but 122
@@ -435,17 +502,42 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
           message: due.msg(name, purpose) + finishLine + bookLine,   // SMS copy
           emailSubject: emailT.subject, emailBody,                    // email copy
         });
-        if ((res?.sent || []).length) {
+        // ADVANCE ONLY WHEN EVERY OPEN CHANNEL LANDED.
+        //
+        // `res.sent` is a per-channel array, and "at least one landed" consumed the step — so a
+        // lead whose email went out and whose SMS was dropped never got the SMS for that step,
+        // and the cadence marched on without it. Every single-channel drop hits this: a
+        // suppressed address, a Twilio failure, a carrier opt-out, a quiet-hours hold. The
+        // geographic proof is the sharpest: the cron fires 16:00 UTC, which in August is 06:00
+        // in Honolulu — below the 8am quiet-hours floor — so every Hawaii lead had its drip SMS
+        // dropped at EVERY step while the email walked the cadence to the end. SMS is the
+        // channel that replies (10.6%/msg against 1.2%), so this silently converts both-channel
+        // leads into email-only ones mid-cadence.
+        const open: string[] = [];
+        if (l.email) open.push("email");
+        if (sendPhone) open.push("sms");
+        const landed = res?.sent || [];
+        const missed = open.filter((c) => !landed.includes(c));
+        if (landed.length && missed.length === 0) {
           await supabaseAdmin.from("leads").update({ nurture_step: due.step, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
           sent++;
-          await logSent(l.id, isHot ? "hot_drip" : isWarm ? "warm_drip" : "drip", due.step, res.sent);
-        } else console.warn("[nurture] drip step", due.step, "delivered on no channel for", l.id, "— not advancing");
+          await logSent(l.id, isHot ? "hot_drip" : isWarm ? "warm_drip" : "drip", due.step, landed);
+        } else if (landed.length) {
+          // Partial: record the touch, do NOT consume the step — the dropped channel retries.
+          await supabaseAdmin.from("leads").update({ last_nurture_at: new Date().toISOString() }).eq("id", l.id);
+          sent++;
+          await logSent(l.id, isHot ? "hot_drip" : isWarm ? "warm_drip" : "drip", due.step, landed);
+          await logSkipped(l.id, isHot ? "hot_drip" : isWarm ? "warm_drip" : "drip", due.step,
+            `partial send — ${landed.join("+")} landed, ${missed.join("+")} did not; step NOT advanced`);
+        } else {
+          await logSkipped(l.id, isHot ? "hot_drip" : isWarm ? "warm_drip" : "drip", due.step, "delivered on no channel");
+        }
       } catch (e) { console.warn("[nurture] drip failed for", l.id, e); }
       continue;
     }
 
     // Drip done → reactivate every ~45 days, forever, until they reply or STOP.
-    if (sinceLast < REACTIVATE_THROTTLE_DAYS) continue;
+    if (sinceLast < REACTIVATE_THROTTLE_DAYS) { await logSkipped(l.id, "drip", (l.nurture_step || 0), "reactivation throttle"); continue; }
     // Rotation: r1 -> r2 -> r3 once, then alternate r1/r2 forever — r3 says "genuinely
     // the last one" and must never repeat (the brand can't be caught lying about stopping).
     const rSteps = curStep - lastStep; // 0-based reactivation counter

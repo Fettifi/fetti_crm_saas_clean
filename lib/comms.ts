@@ -109,6 +109,40 @@ export async function recordCarrierOptOut(phone: string, source = "twilio_21610"
   }
 }
 
+
+/** Twilio errors that will never succeed on retry — a wrong/unreachable number or a geo
+ *  permission the account does not hold. 21408: region not enabled. 21211: invalid 'To'.
+ *  21614: not a mobile number. 21606/21612: unreachable from this sender. */
+const PERMANENT_SMS_ERRORS = new Set(["21408", "21211", "21614", "21606", "21612", "21610"]);
+
+/**
+ * Record a failed SMS against the lead so it appears on the timeline instead of looking like
+ * a lead nobody contacted. Permanent failures also flip `sms_undeliverable`, which the send
+ * gates already consult.
+ */
+export async function recordSmsSendFailure(
+  phone: string,
+  err: { code: string; message: string; permanent: boolean },
+): Promise<void> {
+  const digits = String(phone || "").replace(/\D/g, "").slice(-10);
+  if (digits.length !== 10) return;
+  const forms = [digits, `+1${digits}`, `1${digits}`, `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`];
+  try {
+    const { data } = await supabaseAdmin.from("leads").select("id, raw").in("phone", forms).limit(10);
+    for (const l of (data || []) as any[]) {
+      const raw = l.raw && typeof l.raw === "object" ? { ...l.raw } : {};
+      raw.sms_send_error = { code: err.code, message: err.message, at: new Date().toISOString() };
+      if (err.permanent) raw.sms_undeliverable = true;
+      await supabaseAdmin.from("leads").update({ raw }).eq("id", l.id);
+      await logActivity({
+        entity_type: "lead", entity_id: l.id, lead_id: l.id, actor: "system",
+        action: "sms.send_failed",
+        detail: { code: err.code, message: err.message, permanent: err.permanent, to: `***${digits.slice(-4)}` },
+      }).catch(() => {});
+    }
+  } catch { /* diagnostics must never break a send path */ }
+}
+
 /** Send an SMS via Twilio. Returns the message SID for status correlation. Never throws. */
 export async function sendSms(
   to: string,
@@ -118,7 +152,7 @@ export async function sendSms(
   // are not solicitations (an internal alert, or a direct reply the recipient just asked
   // for). Automated marketing must never set it.
   opts?: { statusCallback?: boolean; state?: string | null; allowQuietHours?: boolean; quietAt?: Date }
-): Promise<{ ok: boolean; sid?: string; detail: string; deferred?: boolean }> {
+): Promise<{ ok: boolean; sid?: string; detail: string; deferred?: boolean; code?: string; permanent?: boolean }> {
   try {
     const sid = process.env.TWILIO_ACCOUNT_SID;
     const token = process.env.TWILIO_AUTH_TOKEN;
@@ -159,7 +193,21 @@ export async function sendSms(
       await recordCarrierOptOut(toNorm);
       return { ok: false, detail: "recipient has opted out (carrier suppression) — suppressed locally too" };
     }
-    return { ok: false, detail: j?.message || `HTTP ${res.status}` };
+    // A PERMANENTLY-FAILED SEND MUST NOT LOOK LIKE "WE CHOSE NOT TO TEXT".
+    //
+    // Everything except 21610 was discarded here: no code, no message, no row anywhere.
+    // `action='sms.send_failed'` had ZERO rows in the entire table. One consented,
+    // application-stage borrower was attempted three times and failed all three with 21408
+    // ("permission to send to this region is not enabled" — a Puerto Rico area code needs a
+    // separate Twilio geo permission). In the CRM he simply looked like a lead nobody had
+    // texted, and three more leads sit in the same state.
+    //
+    // PERMANENT errors also set `sms_undeliverable`, which lib/leadPipeline.ts and
+    // lib/smsConsent.ts already read but which only /api/sms/status ever set.
+    const code = String(j?.code || "");
+    const permanent = PERMANENT_SMS_ERRORS.has(code);
+    await recordSmsSendFailure(toNorm, { code, message: String(j?.message || `HTTP ${res.status}`), permanent }).catch(() => {});
+    return { ok: false, detail: j?.message || `HTTP ${res.status}`, code, permanent };
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : "error" };
   }

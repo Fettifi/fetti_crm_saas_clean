@@ -162,7 +162,7 @@ export async function respondToLead(lead: LeadContact): Promise<{ sent: string[]
   {
     const k = String(lead.kind || "first_touch");
     const govKind: SendKind = k === "doc_chase" ? "operational" : k === "ai_reply" ? "reply" : "proactive";
-    const d = await authorizeSend({ leadId: lead.id, kind: govKind, body: (lead.message || "") + " " + (lead.emailBody || "") });
+    const d = await authorizeSend({ leadId: lead.id, kind: govKind, body: (lead.message || "") + " " + (lead.emailBody || ""), smsBody: lead.message || "", emailBody: lead.emailBody || "" });
     if (!d.allow) { console.warn(`[leadResponder] held (${k}):`, d.reason); return { sent: [] }; }
   }
   const body = (lead.message && lead.message.trim()) || defaultMessage(lead);

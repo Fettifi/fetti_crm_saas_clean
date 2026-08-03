@@ -102,6 +102,9 @@ export async function threadFor(leadId: string, limit = 60): Promise<LoggedMessa
  * `now` is injectable so the rules can be replayed against history in tests.
  */
 export async function authorizeSend(input: {
+  /** Per-channel bodies. Hashing the concatenation only ever fingerprinted the SMS. */
+  smsBody?: string | null;
+  emailBody?: string | null;
   leadId?: string | null;
   kind: SendKind;
   body: string;
@@ -167,8 +170,18 @@ export async function authorizeSend(input: {
   // 7. NOT A BLAST. If this exact body already went to somebody ELSE recently, it is a
   //    template pretending to be a personal note — the thing that made 66 people receive
   //    the same "here's something most people don't hear" email in the same minute.
-  const fp = bodyFingerprint(input.body);
-  if (fp) {
+  // HASH EACH CHANNEL'S BODY SEPARATELY. The caller passed `smsBody + " " + emailBody` as one
+  // string, and bodyFingerprint keeps only words 2-25 — which the ~40-word SMS copy always
+  // occupies. So the fingerprint WAS the SMS body and the email body was never hashed at all,
+  // while the comparison set (comms.message detail.body) is written one row per channel.
+  // Measured since 2026-07-25: EMAIL fingerprints spanned 32, 30, 22, 22, 18, 17 and 11 leads;
+  // SMS collided for only 2 and 7, because the SMS templates carry the first name at word 2 and
+  // the email templates did not. The exact copy that got automation switched off — 32 recipients
+  // of the same "something most people don't hear" email — passed this gate untouched.
+  const fps = [input.smsBody, input.emailBody, input.body]
+    .map((b) => bodyFingerprint(String(b || "")))
+    .filter(Boolean);
+  if (fps.length) {
     const since = new Date(now.getTime() - DUPLICATE_WINDOW_DAYS * 86400000).toISOString();
     const { data: recent } = await supabaseAdmin
       .from("activity_log")
@@ -176,10 +189,16 @@ export async function authorizeSend(input: {
       .eq("action", "comms.message")
       .gte("created_at", since)
       .limit(2000);
-    const clash = ((recent || []) as any[]).some(
-      (r) => r.lead_id && r.lead_id !== leadId && r.detail?.direction === "outbound" && bodyFingerprint(String(r.detail?.body || "")) === fp,
+    const seen = new Set(
+      ((recent || []) as any[])
+        .filter((r) => r.lead_id && r.lead_id !== leadId && r.detail?.direction === "outbound")
+        .map((r) => bodyFingerprint(String(r.detail?.body || "")))
+        .filter(Boolean),
     );
-    if (clash) return { allow: false, reason: "identical message already sent to a different lead — that's a blast, not a note" };
+    // EITHER channel colliding is a blast — the email one is the one that was slipping through.
+    if (fps.some((f) => seen.has(f))) {
+      return { allow: false, reason: "identical message already sent to a different lead — that's a blast, not a note" };
+    }
   }
 
   return { allow: true };
@@ -222,9 +241,23 @@ export function evaluateThreadRules(input: { kind: SendKind; thread: LoggedMessa
     }
   }
 
-  // 6. A HARD LIFETIME CAP on speaking first.
+  // 6. A HARD LIFETIME CAP on speaking first — counted in TOUCHES, not message rows.
+  //
+  // This counted rows, and logComms writes ONE ROW PER CHANNEL: a single both-channel touch
+  // consumed TWO of the three slots, so touch #2 pushed the count to 4 and the lead was capped
+  // after two real conversations. Measured: 6 of the 26 cap-denied leads hit the cap after only
+  // TWO touches, and every one of them had both an email and a phone.
+  //
+  // That means the cap throttled hardest exactly the cohort that is the only one that ever
+  // replies — both-channel leads reply 20.6%, email-only 0% — and it did so by an accident of
+  // logging granularity that nobody decided. Group by minute: the email and the SMS of one
+  // touch are written together.
   if (input.kind === "proactive") {
-    const priorProactive = outbound.filter((m) => (m.kind || "").startsWith("proactive") || (m.kind || "") === "nurture").length;
+    const isProactive = (m: LoggedMessage) => (m.kind || "").startsWith("proactive") || (m.kind || "") === "nurture";
+    const minutes = new Set(
+      outbound.filter(isProactive).map((m) => String(m.at || "").slice(0, 16)),
+    );
+    const priorProactive = minutes.size;
     if (priorProactive >= PROACTIVE_LIFETIME_CAP) {
       return { allow: false, reason: `proactive lifetime cap reached (${priorProactive}/${PROACTIVE_LIFETIME_CAP})` };
     }

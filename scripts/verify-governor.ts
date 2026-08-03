@@ -55,6 +55,16 @@ async function main() {
       let d = evaluateThreadRules({ kind, thread, now });   // thread = state BEFORE this send
       if (d.allow) {
         // rule 7: identical body already sent to a different lead in the window?
+        //
+        // NOTE ON THIS REPLAY'S HONESTY. It hashes `msg.body` — the logged, SINGLE-CHANNEL
+        // body — which until 2026-08-02 was NOT what production hashed: authorizeSend was
+        // handed `smsBody + " " + emailBody` as one string, and bodyFingerprint keeps only
+        // words 2-25, so the production hash matched neither stored row reliably and the email
+        // blasts (fingerprints spanning 32, 30, 22, 22, 18, 17 and 11 leads) sailed through.
+        // The replay was therefore exercising a layer production never reached, which makes the
+        // "82% would have been blocked" figure it produced too generous. authorizeSend now
+        // fingerprints each channel separately against the per-channel rows, so this replay and
+        // production finally agree — and the number below can be trusted.
         const fp = bodyFingerprint(msg.body);
         const prior = (fpSeen.get(fp) || []).filter((x) => now.getTime() - x.at < 45 * 86400000 && x.lead !== lead);
         if (fp && prior.length) d = { allow: false, reason: "blast — same body already sent to another lead" };
