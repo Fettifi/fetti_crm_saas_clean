@@ -9,21 +9,30 @@ export * from "@/lib/compareTypes";
 
 const KEY = "LOAN_COMPARISONS";
 
+/** THE DANGEROUS FAILURE: this returned [] for BOTH "no comparisons exist" and "the read failed".
+ *  Every write is a read-modify-write of one JSON blob, so a transient read error made
+ *  saveComparison write back an array containing ONLY the new record — silently deleting every
+ *  other comparison in the system. A read that fails must THROW, so the write never happens. */
 async function readAll(): Promise<Comparison[]> {
-  try {
-    const { data } = await supabaseAdmin.from("app_settings").select("value").eq("key", KEY).maybeSingle();
-    const v = (data as any)?.value;
-    if (v == null) return [];
-    const parsed = typeof v === "string" ? JSON.parse(v || "[]") : v;
-    return Array.isArray(parsed) ? (parsed as Comparison[]) : [];
-  } catch { return []; }
+  const { data, error } = await supabaseAdmin.from("app_settings").select("value").eq("key", KEY).maybeSingle();
+  if (error) throw new Error(`comparisons: read failed (${error.message}) — refusing to continue, a write now would erase the others`);
+  const v = (data as any)?.value;
+  if (v == null) return [];
+  let parsed: unknown;
+  try { parsed = typeof v === "string" ? JSON.parse(v || "[]") : v; }
+  catch (e: any) { throw new Error(`comparisons: stored value is not valid JSON (${e?.message}) — refusing to overwrite it`); }
+  // A non-array is corruption, not emptiness. Overwriting it would destroy whatever is there.
+  if (!Array.isArray(parsed)) throw new Error("comparisons: stored value is not an array — refusing to overwrite it");
+  return parsed as Comparison[];
 }
 
+/** And a write that fails must not report success — the LO saw "Saved." on a dropped upsert. */
 async function writeAll(arr: Comparison[]): Promise<void> {
-  await supabaseAdmin.from("app_settings").upsert(
+  const { error } = await supabaseAdmin.from("app_settings").upsert(
     { key: KEY, value: JSON.stringify(arr), updated_at: new Date().toISOString() },
     { onConflict: "key" }
   );
+  if (error) throw new Error(`comparisons: save failed (${error.message}) — nothing was stored`);
 }
 
 export async function listComparisons(): Promise<Comparison[]> {

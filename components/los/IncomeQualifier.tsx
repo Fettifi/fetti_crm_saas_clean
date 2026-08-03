@@ -106,6 +106,17 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
       const r = await fetch(`/api/los/files/${fileId}/credit-liabilities`, { method: "POST" });
       const j = await r.json();
       if (!r.ok) { setLiabErr(j?.error || "Couldn't read the credit report."); return; }
+      // THE MANUAL DEBTS FIELD IS SEEDED FROM THE 1003'S OWN LIABILITY TOTAL (metrics.liabilities),
+      // and these credit-report rows are ADDED on top of it — so pulling the report double-counted
+      // every debt already on the application and inflated DTI. The pulled rows are the better
+      // source (they are itemised and reviewable), so they REPLACE the seeded lump sum.
+      if ((j.liabilities || []).length) {
+        setDebtsInput((prev) => {
+          const seeded = metrics?.liabilities ? String(metrics.liabilities) : "";
+          // Only clear what WE seeded — an LO-typed figure is theirs and stays.
+          return prev === seeded ? "" : prev;
+        });
+      }
       setLiabs(j.liabilities || []);
       setLiabDocs(j.docsRead || []);
       // The route builds these expressly so a document it could not read cannot be silent; this
@@ -197,7 +208,9 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   const qualRateN = num(qualRate) || num(rate); // qualify at the stress rate if given
   const term = num(termYears) * 12;
   const downN = num(downPct);
-  const debts = num(debtsInput) + liabTotal + incomeCalc.rentalDebt; // manual + credit-report liabilities + net rental loss
+  // manual + credit-report liabilities + net rental loss. The seeded 1003 lump sum is cleared when
+  // the itemised credit-report rows arrive (see pullCreditLiabilities) so the two cannot stack.
+  const debts = num(debtsInput) + liabTotal + incomeCalc.rentalDebt;
   const noRate = qualRateN <= 0;
 
   // Proposed payment on the loan currently on file (IO uses interest-only at qual rate).

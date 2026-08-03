@@ -12,20 +12,27 @@ const SCENARIOS_KEY = "SCENARIOS";
 const WHOLESALERS_KEY = "WHOLESALERS";
 
 // app_settings.value may be stored as text or jsonb depending on the column — handle both.
+/** SAME SHAPE AS THE COMPARISONS STORE, and the same danger: [] meant both "none exist" and "the
+ *  read failed", while every write is a read-modify-write of one blob — so a transient read error
+ *  wrote back an array containing only the new record and erased every other scenario. A failed
+ *  or corrupt read must THROW so the write never runs. */
 async function readArr<T>(key: string): Promise<T[]> {
-  try {
-    const { data } = await supabaseAdmin.from("app_settings").select("value").eq("key", key).maybeSingle();
-    const v = (data as any)?.value;
-    if (v == null) return [];
-    const parsed = typeof v === "string" ? JSON.parse(v || "[]") : v;
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
-  } catch { return []; }
+  const { data, error } = await supabaseAdmin.from("app_settings").select("value").eq("key", key).maybeSingle();
+  if (error) throw new Error(`${key}: read failed (${error.message}) — refusing to continue, a write now would erase the others`);
+  const v = (data as any)?.value;
+  if (v == null) return [];
+  let parsed: unknown;
+  try { parsed = typeof v === "string" ? JSON.parse(v || "[]") : v; }
+  catch (e: any) { throw new Error(`${key}: stored value is not valid JSON (${e?.message}) — refusing to overwrite it`); }
+  if (!Array.isArray(parsed)) throw new Error(`${key}: stored value is not an array — refusing to overwrite it`);
+  return parsed as T[];
 }
 
 async function writeArr<T>(key: string, arr: T[]): Promise<void> {
-  await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from("app_settings")
     .upsert({ key, value: JSON.stringify(arr), updated_at: new Date().toISOString() }, { onConflict: "key" });
+  if (error) throw new Error(`scenarios: save failed (${error.message}) — nothing was stored`);
 }
 
 export function genId(): string {

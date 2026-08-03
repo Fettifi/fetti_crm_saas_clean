@@ -14,6 +14,8 @@ export type WorksheetData = {
   date?: string;
   loanType?: string;
   audience?: "lender" | "borrower";   // borrower copy omits the internal verification report + flags
+  /** The inputs behind Max loan / Max purchase price, printed so the figure can be checked. */
+  assumptions?: Record<string, string | number>;
   result: { monthlyTotal: number; annualTotal: number; derivedDebts?: number; lines: { label: string; basis: string; monthly: number; flag?: string; overridden?: boolean }[]; warnings?: string[] };
   report?: { perDoc?: { file?: string; docType?: string; source?: string; keyFigures?: string }[]; crossChecks?: string[]; flags?: string[]; confidence?: string; notes?: string };
   docsRead?: string[];
@@ -146,6 +148,19 @@ export async function buildIncomeWorksheetPdf(d: WorksheetData): Promise<Uint8Ar
   }
 
   // Engine warnings — internal only.
+  // A MAX LOAN WITH NO ASSUMPTIONS CANNOT BE CHECKED. The figure is driven by the target DTI, the
+  // rate, the term, the down payment and the MI factor, none of which were printed — so the
+  // borrower (and the next person to read the file) saw an authoritative number with nothing
+  // behind it and no way to reproduce it.
+  if (d.assumptions && Object.keys(d.assumptions).length) {
+    heading("What this maximum assumes");
+    for (const [k, v] of Object.entries(d.assumptions)) {
+      if (v == null || String(v).trim() === "") continue;
+      para(`${k}: ${v}`, 8.5, font, GREY, M + 6);
+    }
+    para("Change any of these and the maximum changes. This is an estimate for planning, not a pre-approval.", 8, font, GREY, M + 6);
+  }
+
   if (lender && d.result.warnings?.length) {
     heading("Calculation notes");
     for (const w of d.result.warnings) para("• " + w, 8, font, GREY, M + 4);

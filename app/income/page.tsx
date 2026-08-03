@@ -17,7 +17,7 @@ import {
 } from "@/lib/income";
 
 const money = (n: number) => "$" + Math.round(n || 0).toLocaleString();
-const num = (s: string) => Number(String(s).replace(/[^0-9.]/g, "")) || 0;
+const num = (s: string) => Number(String(s).replace(/[^0-9.]/g, "")) || 0;   // keeps cents; CurrencyInput only emits a decimal when allowCents is on
 const snum = (s: string) => { const n = Number(String(s).replace(/[^0-9.-]/g, "")); return isFinite(n) ? n : 0; }; // keeps negatives (self-emp loss)
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "s" + Math.random().toString(36).slice(2));
 const TYPES: SourceType[] = [
@@ -138,6 +138,17 @@ export default function IncomeCalcPage() {
           loanType: loanType === "fha" ? "FHA" : "Conventional",
           audience: pdfAudience,
           result: r,
+          // Everything that produced the maximum, so the figure can be checked and reproduced.
+          assumptions: {
+            "Target back-end DTI": `${num(targetDti)}%`,
+            ...(frontCap ? { "FHA front-end cap": `${frontCap}%` } : {}),
+            "Interest rate used": `${num(rate)}%`,
+            "Term": `${num(termYears) || 30} years`,
+            "Down payment": `${num(downPct)}%`,
+            "Monthly debts counted": money(debts),
+            "Taxes / insurance / HOA used": `${money(num(tiHoa))}/mo`,
+            "Qualifying income": `${money(r.monthlyTotal)}/mo`,
+          },
           qualification: {
             label: "Max housing payment (PITIA)", maxPITIA: maxPay, maxPI: ml.maxPI, maxLoan: ml.maxLoan, maxPrice: ml.maxPrice,
             ratioLabel: frontCap ? "Front / back DTI" : "Back-end DTI", ratioValue: dti.back ? (frontCap ? `${dti.front.toFixed(0)}% / ${dti.back.toFixed(0)}%` : `${dti.back.toFixed(0)}%`) : "—",
@@ -239,7 +250,12 @@ export default function IncomeCalcPage() {
                       </div>
                     ) : (
                       <div className="flex items-end gap-2">
-                        <div className="flex-1"><label className={lbl}>{meta.amountLabel}</label><CurrencyInput value={s.amount ?? ""} onChange={(v) => update(s.id, { amount: num(v) })} className={inp} placeholder={meta.placeholder} /></div>
+                        <div className="flex-1"><label className={lbl}>{meta.amountLabel}</label>
+                          {/* AN HOURLY RATE HAS CENTS. CurrencyInput strips the decimal point
+                              unless allowCents is set, so $27.50/hr was stored as $2,750/hr — a
+                              100x overstatement of the borrower's income, on the one field where
+                              a fractional dollar is the norm. */}
+                          <CurrencyInput allowCents={meta.hasHours} value={s.amount ?? ""} onChange={(v) => update(s.id, { amount: num(v) })} className={inp} placeholder={meta.placeholder} /></div>
                         {meta.hasHours && <div className="w-24"><label className={lbl}>Hrs / wk</label><input type="number" value={s.hours ?? ""} onChange={(e) => update(s.id, { hours: Number(e.target.value) || 0 })} className={inp} placeholder="40" /></div>}
                         {meta.isRental && <div className="flex-1"><label className={lbl}>Property PITIA /mo</label><CurrencyInput value={s.pitia ?? ""} onChange={(v) => update(s.id, { pitia: num(v) })} className={inp} placeholder="$0 / mo" /></div>}
                       </div>
