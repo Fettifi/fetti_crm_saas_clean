@@ -174,6 +174,16 @@ const realTax = computeDeskMetrics(deal({ existingLiens: 0, taxRatePct: 2.4 }));
 chk(realTax.taxMonthly > modelled.taxMonthly && realTax.pitia > modelled.pitia && realTax.dscr! < modelled.dscr!,
   `the real tax bill moves PITIA and DSCR (${modelled.dscr!.toFixed(2)} -> ${realTax.dscr!.toFixed(2)})`);
 
+// ── 14. A STATED $0 RENT MUST FAIL THE DSCR TEST, not skip it. This was the THIRD place the $0
+//       was discarded: the client and the route boundary were fixed and the engine still used
+//       truthiness, and `fits.dscr` treats a null DSCR as passing — so a door the LO had just
+//       declared VACANT was badged as fitting the box.
+const vacantDeal = computeDeskMetrics(deal({ existingLiens: 0, monthlyRent: 0 }));
+chk(vacantDeal.dscr === 0, `a stated $0 rent gives DSCR 0, not null (got ${vacantDeal.dscr})`);
+chk(vacantDeal.fits.dscr === false, "and FAILS the DSCR test rather than skipping it");
+const noRentAtAll = computeDeskMetrics(deal({ existingLiens: 0, monthlyRent: undefined as any }));
+chk(noRentAtAll.dscr === null, "a MISSING rent is still null — absent and vacant stay different facts");
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). A DSCR that ignores the first mortgage passes deals the property cannot carry.\n`); process.exit(1); }
 console.log(`PASS — DSCR and loan sizing count the whole debt the property carries.\n`);

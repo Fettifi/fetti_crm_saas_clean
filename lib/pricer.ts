@@ -133,7 +133,17 @@ export function estimatePITIAFinanced(i: PricerInput, financedFees: number) {
   const fee = Number(financedFees) || 0;
   if (!(fee > 0)) return { ...base, financedFees: 0, baseLoan: base.loan };
   const withFee = estimatePITIA({ ...i, loanAmount: base.loan + fee });
-  return { ...withFee, ltv: base.ltv, financedFees: fee, baseLoan: base.loan };
+  // THE MI RATE TIER COMES FROM THE BASE LTV, THE BALANCE FROM THE FINANCED LOAN.
+  // estimatePITIA above recomputed LTV on the inflated loan, so the FHA MIP tier was picked off
+  // the POST-UFMIP LTV — a 94% base loan can tip past 95% once the fee is rolled in and jump from
+  // 0.50% to 0.55%. The returned `ltv` was then overwritten back to the base while pmiAnnual kept
+  // the inflated tier, so the document reported an LTV and a premium that disagreed.
+  const pmiAnnual = base.pmiAnnual;
+  const pmiMonthly = base.miOverridden
+    ? base.pmiMonthly
+    : (pmiAnnual > 0 ? ((base.loan + fee) * (pmiAnnual / 100)) / 12 : 0);
+  const total = withFee.pi + withFee.taxMonthly + withFee.insMonthly + pmiMonthly + withFee.hoa;
+  return { ...withFee, ltv: base.ltv, pmiAnnual, pmiMonthly, total, financedFees: fee, baseLoan: base.loan };
 }
 
 export type PricerInput = {

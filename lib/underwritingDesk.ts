@@ -164,7 +164,11 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
     : round(monthlyAmortizing(senior, SENIOR_ASSUMED_RATE, 360));
   // TOTAL monthly debt service the PROPERTY carries — the honest denominator.
   const totalDebtService = round(pitia + seniorPayment);
-  const dscr = box.usesRental && input.monthlyRent ? dscrExact(Number(input.monthlyRent), totalDebtService) : null;
+  // THE THIRD PLACE $0 RENT WAS DISCARDED. The client and the route boundary were both fixed;
+  // this truthiness check still turned a stated $0 into "no DSCR", and `fits.dscr` treats a null
+  // DSCR as PASSING — so a door the LO had just declared VACANT passed the DSCR test.
+  const rentStated = input.monthlyRent != null && Number.isFinite(Number(input.monthlyRent)) && Number(input.monthlyRent) >= 0;
+  const dscr = box.usesRental && rentStated ? dscrExact(Number(input.monthlyRent), totalDebtService) : null;
 
   // Max loan the box supports: LTV cap (on ARV for flip, else as-is value), and — for
   // rental products — the DSCR-supported loan on the gross rent. A junior loan (2nd
@@ -179,7 +183,7 @@ export function computeDeskMetrics(input: DeskInput): DeskMetrics {
   // The rent available to service the NEW loan is what is left after the senior lien is paid —
   // otherwise the DSCR-supported loan size is overstated by exactly the same error as the ratio.
   const dscrBudget = Number(input.monthlyRent) / targetDscr - seniorPayment;
-  const maxLoanByDSCR = box.usesRental && input.monthlyRent
+  const maxLoanByDSCR = box.usesRental && rentStated
     ? (dscrBudget > escrowMonthly
         ? maxLoanFromPayment(dscrBudget, escrowMonthly, ratePct, termYears * 12, 20, 0).maxLoan
         : 0)   // the rent cannot even cover the senior lien plus escrow — it supports no new loan

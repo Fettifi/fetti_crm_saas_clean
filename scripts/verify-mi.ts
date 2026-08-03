@@ -9,7 +9,7 @@
 // read a COE. A comment is not a constraint; this file is.
 //
 //   npx tsx scripts/verify-mi.ts
-import { estimatePITIA, miRate, miProgram } from "../lib/pricer";
+import { estimatePITIA, estimatePITIAFinanced, miRate, miProgram } from "../lib/pricer";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -70,6 +70,19 @@ for (const junk of [-50, NaN, "abc" as any]) {
 chk(true, "negative / NaN / non-numeric MI overrides fall back to the model");
 chk(estimatePITIA({ ...deal, loanType: "va30", miMonthlyOverride: 200 }).pmiMonthly === 200,
   "an override still wins on VA — if a lender really charges it, the LO can say so");
+
+// ── THE FINANCED FEE MUST NOT MOVE THE MI RATE TIER. A 94% base FHA loan tips past 95% once the
+//    UFMIP is rolled in, so computing the tier on the post-fee LTV jumped the premium from 0.50%
+//    to 0.55% while the document reported the base 94% LTV beside it.
+{
+  const d94: any = { price: 500000, down: 30000, termMonths: 360, state: "FL", taxRatePct: 1.1, insRatePct: 0.6, includePMI: true, ratePct: 6.5, loanType: "fha30" };
+  const b = estimatePITIA(d94);
+  const f = estimatePITIAFinanced(d94, 8225);
+  chk(b.ltv <= 95 && (b.loan + 8225) / 500000 * 100 > 95, "the control case: base LTV under 95, post-fee over 95");
+  chk(f.pmiAnnual === b.pmiAnnual, `the MIP RATE is unchanged by financing the fee (${b.pmiAnnual}% both ways)`);
+  chk(f.pmiMonthly > b.pmiMonthly, "but the premium is charged on the larger amortizing balance, as FHA requires");
+  chk(f.ltv === b.ltv, "and the reported LTV stays on the base loan, agreeing with the tier");
+}
 
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). Quoting a veteran mortgage insurance they will never pay is not a rounding error.\n`); process.exit(1); }
