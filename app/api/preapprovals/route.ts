@@ -7,14 +7,24 @@ import { BRAND } from "@/lib/brand";
 import { buildPreApprovalPdf } from "@/lib/preapprovalPdf";
 import { sendPreapprovalEmails } from "@/lib/notify/sendPreapproval";
 import { setSetting } from "@/lib/settings";
+import { PA_LETTER_KEYS, PA_INTERNAL_KEYS } from "@/lib/preapprovalFields";
 
-// Richer term-sheet fields the preapprovals table has no column for — persisted in
-// app_settings (keyed by letter id) and rendered on the letter so a full term sheet
-// comes through complete, not dropped.
-// as_is_value is carried so the LETTER can measure LTV on the SAME basis as the Scenario Desk
-// (lesser of as-is and price on a purchase). Without it the letter fell back to purchase price
-// alone and printed a different ratio than the desk that produced it.
-const EXTRA_KEYS = ["loan_purpose", "rate_type", "monthly_payment", "ltv", "points", "lender_fees", "prepay_penalty", "reserves", "dscr", "lock_period", "as_is_value"];
+// Term-sheet fields the preapprovals table has no column for, persisted in app_settings keyed by
+// letter id. TWO keys, deliberately:
+//
+//   PA_TERMS:<id>     — printed on the letter. The PUBLIC pdf and letter routes read this.
+//   PA_INTERNAL:<id>  — captured for Ramon, never printed, and no public route reads it.
+//
+// The split is the control, not the toggle. Everything in PA_TERMS is public by construction —
+// app/api/letter/[token]/pdf/route.ts dereferences it for anyone holding the share link — so
+// broker compensation, the wholesale lender's name, the borrower's FICO and DTI must not be in
+// there at all. A per-field "show on letter" checkbox that writes into the same blob would put
+// one boolean between a listing agent and the buyer's credit score.
+//
+// as_is_value stays letter-side: the LETTER measures LTV on the SAME basis as the Scenario Desk
+// (lesser of as-is and price on a purchase), and without it the letter printed a different ratio
+// than the desk that produced it.
+const EXTRA_KEYS = PA_LETTER_KEYS;
 
 const validEmail = (e: any) => typeof e === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 
@@ -49,7 +59,18 @@ export async function POST(req: NextRequest) {
     if (!loan && purchase != null) loan = purchase - (down || 0);
 
     // Default expiry: 60 days out if not provided.
-    const expires = b.expires_on || new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+    //
+    // AND IT MUST NOT ALREADY BE PAST. The extractor used to map a rate-lock expiration into this
+    // field, so a three-week-old term sheet issued a letter that was dead on arrival: the row
+    // inserted, the PDF built, the emails went out, 201 came back with an "Open letter" button —
+    // and that button, the copy link and the PDF download all 410'd. The borrower and the agent
+    // already had the dead link. A past date now falls back to the default and says so.
+    let expires = b.expires_on || new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+    let expiryWarning: string | null = null;
+    if (b.expires_on && new Date(`${b.expires_on}T23:59:59-07:00`) < new Date()) {
+      expiryWarning = `The expiry on the term sheet (${b.expires_on}) has already passed — the letter was issued valid for 60 days instead.`;
+      expires = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+    }
 
     const row = {
       letter_number: letterNo(),
@@ -75,17 +96,43 @@ export async function POST(req: NextRequest) {
       borrower_email: validEmail(b.borrower_email) ? String(b.borrower_email).trim().toLowerCase() : null,
       agent_email: validEmail(b.agent_email) ? String(b.agent_email).trim().toLowerCase() : null,
     };
-    const extra: Record<string, string> = {};
-    if (b.extra_terms && typeof b.extra_terms === "object") {
-      for (const k of EXTRA_KEYS) { const v = b.extra_terms[k]; if (v != null && String(v).trim()) extra[k] = String(v).trim().slice(0, 80); }
-    }
+    // The 80-char cap was applied HERE as well as in the extractor, with no ellipsis — so a real
+    // prepay clause ("…1% in year 5; waived on sale to an unrelated third party") stored cut
+    // mid-word with the borrower-favourable half deleted, and printed as a complete term.
+    const CAP = 600;
+    const take = (keys: string[]) => {
+      const out: Record<string, unknown> = {};
+      if (!b.extra_terms || typeof b.extra_terms !== "object") return out;
+      for (const k of keys) {
+        const v = b.extra_terms[k];
+        if (v == null || String(v).trim() === "") continue;   // "" is absent; 0 and false are NOT
+        if (k === "other_terms" && Array.isArray(v)) { out[k] = v.slice(0, 40); continue; }
+        const t = String(v).trim();
+        out[k] = t.length > CAP ? t.slice(0, CAP - 1) + "\u2026" : t;
+      }
+      return out;
+    };
+    const extra = take([...EXTRA_KEYS, "other_terms"]) as Record<string, string>;
+    const internal = take(PA_INTERNAL_KEYS);
 
     const { data, error } = await supabaseAdmin.from("preapprovals").insert([row]).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+    // A LOST WRITE HERE PRODUCES TWO DIFFERENT LETTERS UNDER ONE LETTER NUMBER.
+    // setSetting returns false on failure precisely so a caller can notice; this ignored it and
+    // the catch only warned. The emailed PDF is built from the in-memory `extra` below, so the
+    // attachment was complete while every later download — and the web letter — silently lost
+    // every term. 201 and "✅ Letter issued" either way. Now it is reported.
+    let termsWarning: string | null = null;
     if (Object.keys(extra).length) {
-      try { await setSetting(`PA_TERMS:${data.id}`, JSON.stringify(extra)); }
+      let ok = false;
+      try { ok = await setSetting(`PA_TERMS:${data.id}`, JSON.stringify(extra)); }
       catch (e) { console.warn("[preapproval] terms persist failed:", e); }
+      if (!ok) termsWarning = "The letter was issued, but the additional loan terms could not be saved — the emailed PDF has them, later downloads will not. Re-issue this letter.";
+    }
+    if (Object.keys(internal).length) {
+      try { await setSetting(`PA_INTERNAL:${data.id}`, JSON.stringify(internal)); }
+      catch (e) { console.warn("[preapproval] internal terms persist failed:", e); }
     }
 
     // Auto-email the PDF to whichever recipients were provided.
@@ -103,7 +150,8 @@ export async function POST(req: NextRequest) {
       actor: "lo", action: "preapproval.issued",
       detail: { letter_number: data.letter_number, borrower: data.borrower_name, amount: loan, emailed },
     });
-    return NextResponse.json({ preapproval: data, emailed }, { status: 201 });
+    const warnings = [expiryWarning, termsWarning].filter(Boolean);
+    return NextResponse.json({ preapproval: data, emailed, warnings }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }

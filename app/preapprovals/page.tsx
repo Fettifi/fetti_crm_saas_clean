@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { FileCheck2, Loader2, Copy, Check, ExternalLink, Plus, Ban, Download, Upload } from "lucide-react";
 import AddressInput from "@/components/AddressInput";
 import CurrencyInput from "@/components/ui/CurrencyInput";
+import { PA_FIELDS } from "@/lib/preapprovalFields";
 
 type PA = { id: string; letter_number: string; share_token: string; borrower_name: string; loan_type?: string; loan_amount?: number; status: string; expires_on?: string; created_at: string };
 type LoanFile = { id: string; lead_id?: string; borrower_name: string; email?: string; product?: string; occupancy?: string; property_address?: string; property_value?: number; loan_amount?: number };
@@ -13,20 +14,24 @@ type LoanFile = { id: string; lead_id?: string; borrower_name: string; email?: s
 const LOAN_TYPES = ["Conventional", "FHA", "VA", "USDA", "Jumbo", "First-Time Homebuyer", "DSCR", "Bank-Statement (Self-Employed)", "Fix & Flip", "Bridge", "HELOC", "Reverse (HECM)"];
 const TERMS = ["30-year fixed", "15-year fixed", "20-year fixed", "5/1 ARM", "7/1 ARM", "12-month interest-only", "Other"];
 const OCC = ["Primary residence", "Second home", "Investment"];
-// Richer term-sheet fields with no preapprovals column — captured, shown on the
-// letter, persisted via app_settings. [key, label, placeholder]
-const EXTRA_FIELDS: [string, string, string][] = [
-  ["loan_purpose", "Loan purpose", "Purchase / Cash-Out Refi"],
-  ["rate_type", "Rate type", "e.g. 5/1 ARM, Fixed, I/O"],
-  ["monthly_payment", "Est. monthly payment", "e.g. $3,142"],
-  ["ltv", "LTV", "auto if blank"],
-  ["points", "Points", "e.g. 1.000"],
-  ["lender_fees", "Lender fees", "e.g. $1,995"],
-  ["prepay_penalty", "Prepay penalty", "5/4/3/2/1 or None"],
-  ["reserves", "Reserves", "e.g. 6 months"],
-  ["dscr", "DSCR", "e.g. 1.25"],
-  ["lock_period", "Rate lock", "e.g. 45 days"],
-];
+// Every term-sheet field, from the ONE registry the extractor, the PDF and the public letter
+// also read (lib/preapprovalFields.ts). This was a hand-written list of 10 while the extractor
+// knew 22 and real term sheets carry ~130 — so most of an uploaded sheet had nowhere to land.
+const EXTRA_FIELDS: [string, string, string][] = PA_FIELDS
+  .filter((f) => !f.column && !f.internalOnly && f.key !== "other_terms")
+  .map((f) => [f.key, f.label, f.example || ""] as [string, string, string]);
+// Captured off the sheet for Ramon, deliberately NOT printed and NOT stored in the blob the
+// public letter routes read. See the comment on PA_INTERNAL_KEYS in the API route.
+const INTERNAL_FIELDS: [string, string, string][] = PA_FIELDS
+  .filter((f) => !f.column && f.internalOnly)
+  .map((f) => [f.key, f.label, f.example || ""] as [string, string, string]);
+const ALL_EXTRA_KEYS = [...EXTRA_FIELDS, ...INTERNAL_FIELDS].map(([k]) => k);
+const SECTION_OF: Record<string, string> = Object.fromEntries(PA_FIELDS.map((f) => [f.key, f.section]));
+const bySection = (list: [string, string, string][]) => {
+  const m = new Map<string, [string, string, string][]>();
+  for (const f of list) { const k = SECTION_OF[f[0]] || "Other"; if (!m.has(k)) m.set(k, []); m.get(k)!.push(f); }
+  return [...m.entries()];
+};
 const field = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none";
 
 export default function PreApprovals() {
@@ -39,15 +44,20 @@ export default function PreApprovals() {
   const [emailed, setEmailed] = useState<string[]>([]);
   const [tsBusy, setTsBusy] = useState(false);
   const [tsMsg, setTsMsg] = useState<{ ok?: boolean; text: string } | null>(null);
-  const [f, setF] = useState<any>({
-    borrower_name: "", co_borrower: "", loan_type: "Conventional", purchase_price: "", down_payment: "",
-    loan_amount: "", interest_rate: "", term: "30-year fixed", property_address: "", occupancy: "Primary residence",
+  // OCCUPANCY DEFAULTS TO BLANK, NOT "Primary residence". A non-empty default combined with a
+  // dropped extraction is how a DSCR letter told a listing agent the borrower would occupy an
+  // investment property. The LO picks; we do not assert.
+  const BLANK = {
+    borrower_name: "", co_borrower: "", loan_type: "", purchase_price: "", down_payment: "",
+    loan_amount: "", interest_rate: "", term: "", property_address: "", occupancy: "",
     conditions: "Standard documentation required: income, assets, and employment verification; satisfactory appraisal; clear title.",
     officer_name: "Ramon Dent", officer_nmls: "2267023", expires_on: "",
-    borrower_email: "", agent_email: "",
-    loan_purpose: "", rate_type: "", monthly_payment: "", ltv: "", points: "",
-    lender_fees: "", prepay_penalty: "", reserves: "", dscr: "", lock_period: "",
-  });
+    borrower_email: "", agent_email: "", other_terms: [] as any[],
+    ...Object.fromEntries(ALL_EXTRA_KEYS.map((k) => [k, ""])),
+  };
+  const [f, setF] = useState<any>({ ...BLANK });
+  const [unmapped, setUnmapped] = useState<{ field: string; value: string }[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const set = (k: string, v: string) => setF((p: any) => ({ ...p, [k]: v }));
 
   async function load() {
@@ -91,8 +101,14 @@ export default function PreApprovals() {
       if (r.ok && j.extracted) {
         const ex = j.extracted;
         const numStr = (v: any) => (v != null ? String(v) : undefined);
+        // RESET FIRST. The merge only ever SET keys the new sheet contained and never cleared the
+        // rest, so a second upload — or a second letter without reloading the page — carried the
+        // previous borrower's terms onto this one. With 130 fields that stops being a nuisance and
+        // becomes the likeliest way a wrong number reaches a listing agent.
         setF((p: any) => ({
-          ...p,
+          ...BLANK,
+          officer_name: p.officer_name, officer_nmls: p.officer_nmls,   // the LO's own identity persists
+          lead_id: p.lead_id, loan_file_id: p.loan_file_id,
           ...(ex.borrower_name && { borrower_name: ex.borrower_name }),
           ...(ex.co_borrower && { co_borrower: ex.co_borrower }),
           ...(ex.loan_type && { loan_type: ex.loan_type }),
@@ -105,9 +121,12 @@ export default function PreApprovals() {
           ...(ex.occupancy && { occupancy: ex.occupancy }),
           ...(ex.conditions && { conditions: ex.conditions }),
           ...(ex.expires_on && { expires_on: ex.expires_on }),
-          ...Object.fromEntries(EXTRA_FIELDS.map(([k]) => [k, ex[k]]).filter(([, v]) => v)),
+          // `.filter(v => v)` dropped every legitimate zero — 0 points, $0 lender fees.
+          ...Object.fromEntries(ALL_EXTRA_KEYS.map((k) => [k, ex[k]]).filter(([, v]) => v != null && String(v) !== "")),
+          ...(Array.isArray(ex.other_terms) && ex.other_terms.length ? { other_terms: ex.other_terms } : {}),
         }));
-        const n = (j.fields || []).length;
+        setUnmapped(j.unmapped || []);
+        const n = (j.fields || []).length + (ex.other_terms?.length || 0);
         setTsMsg(n ? { ok: true, text: `✅ Pulled ${n} field${n === 1 ? "" : "s"} from the term sheet — review below, then issue the letter.` } : { text: "Read the file but found no usable terms — enter them manually." });
       } else setTsMsg({ text: "⚠️ " + (j.error || "Couldn't read the term sheet.") });
     } catch { setTsMsg({ text: "⚠️ Connection error." }); } finally { setTsBusy(false); }
@@ -117,10 +136,18 @@ export default function PreApprovals() {
     e.preventDefault(); if (!f.borrower_name.trim()) return;
     setSaving(true);
     try {
-      const extra_terms = Object.fromEntries(EXTRA_FIELDS.map(([k]) => [k, f[k]]).filter(([, v]) => v && String(v).trim()));
+      const extra_terms: any = Object.fromEntries(
+        ALL_EXTRA_KEYS.map((k) => [k, f[k]]).filter(([, v]) => v != null && String(v).trim() !== ""),
+      );
+      if (Array.isArray(f.other_terms) && f.other_terms.length) extra_terms.other_terms = f.other_terms;
       const r = await fetch("/api/preapprovals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, extra_terms }) });
       const j = await r.json();
-      if (r.ok) { setJustIssued(j.preapproval); setEmailed(j.emailed || []); await load(); }
+      if (r.ok) {
+        setJustIssued(j.preapproval); setEmailed(j.emailed || []); setWarnings(j.warnings || []);
+        setF({ ...BLANK, officer_name: f.officer_name, officer_nmls: f.officer_nmls });
+        setUnmapped([]); setTsMsg(null);
+        await load();
+      }
     } finally { setSaving(false); }
   }
   async function voidLetter(id: string) {
@@ -142,6 +169,7 @@ export default function PreApprovals() {
           <div className="mt-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4">
             <div className="font-semibold">✅ Letter issued — {justIssued.letter_number}</div>
             {emailed.length > 0 && <div className="text-xs text-emerald-300/90 mt-1">📧 PDF emailed to {emailed.join(" & ")}.</div>}
+            {warnings.map((w, i) => <div key={i} className="text-xs text-amber-300 mt-1">⚠️ {w}</div>)}
             <div className="flex gap-2 mt-2">
               <a href={`/letter/${justIssued.share_token}`} target="_blank" rel="noreferrer" className="text-sm bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg flex items-center gap-1"><ExternalLink className="w-3.5 h-3.5" /> Open letter</a>
               <a href={`/api/letter/${justIssued.share_token}/pdf`} className="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-1"><Download className="w-3.5 h-3.5" /> PDF</a>
@@ -162,6 +190,13 @@ export default function PreApprovals() {
             </label>
           </div>
           {tsMsg && <div className={`text-xs mt-2 ${tsMsg.ok ? "text-emerald-300" : "text-slate-300"}`}>{tsMsg.text}</div>}
+          {/* A VALUE WE COULD NOT MAP MUST BE SAID OUT LOUD. It used to be discarded silently, and
+              the form's default was printed in its place. */}
+          {unmapped.length > 0 && (
+            <div className="text-xs mt-2 text-amber-300 bg-amber-950/30 border border-amber-800/40 rounded-lg p-2">
+              ⚠️ The sheet says {unmapped.map((u) => `${u.field} = "${u.value}"`).join(", ")} — that isn&rsquo;t one of the dropdown options, so nothing was filled in. Pick the closest below.
+            </div>
+          )}
           <div className="text-[11px] text-slate-500 mt-1">PDF or image. Terms are extracted for your review — nothing is issued until you click &ldquo;Issue pre-approval letter&rdquo; below.</div>
         </div>
 
@@ -190,14 +225,54 @@ export default function PreApprovals() {
           </div>
           <div><label className="text-xs text-slate-500">Property address</label><AddressInput value={f.property_address} onChange={(v) => set("property_address", v)} placeholder="To be determined" /></div>
           <div><label className="text-xs text-slate-500">Conditions</label><textarea value={f.conditions} onChange={(e) => set("conditions", e.target.value)} rows={2} className={field} /></div>
-          <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
-            <div className="text-xs text-slate-400 mb-2">📑 Additional loan terms <span className="text-slate-500">— captured from the term sheet; edit any, blanks are left off the letter (LTV auto-computes from amount ÷ price)</span></div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {EXTRA_FIELDS.map(([k, label, ph]) => (
-                <div key={k}><label className="text-xs text-slate-500">{label}</label><input value={f[k] || ""} onChange={(e) => set(k, e.target.value)} placeholder={ph} className={field} /></div>
-              ))}
-            </div>
-          </div>
+          {/* EVERY TERM OFF THE SHEET. Grouped the way they print on the letter. Blanks are simply
+              left off, so a 6-field bridge quote produces a 6-row letter and a full DSCR sheet
+              produces the lot. */}
+          <details open className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+            <summary className="text-xs text-slate-400 cursor-pointer">📑 Loan terms shown on the letter <span className="text-slate-500">— {EXTRA_FIELDS.length} fields, captured from the term sheet; blanks are left off (LTV auto-computes from amount ÷ value)</span></summary>
+            {bySection(EXTRA_FIELDS).map(([sec, fields]) => (
+              <div key={sec} className="mt-3">
+                <div className="text-[10px] uppercase tracking-wide text-emerald-500/80 mb-1.5">{sec}</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {fields.map(([k, label, ph]) => (
+                    <div key={k}><label className="text-xs text-slate-500">{label}</label><input value={f[k] ?? ""} onChange={(e) => set(k, e.target.value)} placeholder={ph} className={field} /></div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {Array.isArray(f.other_terms) && f.other_terms.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[10px] uppercase tracking-wide text-emerald-500/80 mb-1.5">Also on the sheet</div>
+                <div className="space-y-1">
+                  {f.other_terms.map((o: any, i: number) => (
+                    <div key={i} className="flex gap-2 text-xs">
+                      <input value={o.label} onChange={(e) => setF((p: any) => { const n = [...p.other_terms]; n[i] = { ...n[i], label: e.target.value }; return { ...p, other_terms: n }; })} className={field + " flex-1"} />
+                      <input value={o.value} onChange={(e) => setF((p: any) => { const n = [...p.other_terms]; n[i] = { ...n[i], value: e.target.value }; return { ...p, other_terms: n }; })} className={field + " flex-1"} />
+                      <button type="button" onClick={() => setF((p: any) => ({ ...p, other_terms: p.other_terms.filter((_: any, j: number) => j !== i) }))} className="text-slate-500 hover:text-red-400 px-2">✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </details>
+
+          {/* CAPTURED, NOT PRINTED. These are read off the sheet and kept for you, but they are
+              not written into the blob the public letter and PDF routes read — a pre-approval is
+              routinely forwarded to the listing agent and the seller. */}
+          <details className="rounded-lg border border-amber-900/40 bg-amber-950/10 p-3">
+            <summary className="text-xs text-amber-300/90 cursor-pointer">🔒 Captured for you — never printed on the letter <span className="text-slate-500">— {INTERNAL_FIELDS.length} fields: your comp and pricing, the wholesale lender, and the borrower&rsquo;s own credit and income</span></summary>
+            <div className="text-[11px] text-slate-500 mt-2">A pre-approval gets forwarded to the seller&rsquo;s agent. These stay on your side: broker comp beside borrower-paid points reads as dual compensation, the buyer&rsquo;s FICO and income are theirs not the seller&rsquo;s, and naming the wholesale lender invites the deal to be shopped around you.</div>
+            {bySection(INTERNAL_FIELDS).map(([sec, fields]) => (
+              <div key={sec} className="mt-3">
+                <div className="text-[10px] uppercase tracking-wide text-amber-500/70 mb-1.5">{sec}</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {fields.map(([k, label, ph]) => (
+                    <div key={k}><label className="text-xs text-slate-500">{label}</label><input value={f[k] ?? ""} onChange={(e) => set(k, e.target.value)} placeholder={ph} className={field} /></div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </details>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-slate-500">Loan officer name</label><input value={f.officer_name} onChange={(e) => set("officer_name", e.target.value)} className={field} /></div>
             <div><label className="text-xs text-slate-500">Officer NMLS #</label><input value={f.officer_nmls} onChange={(e) => set("officer_nmls", e.target.value)} className={field} /></div>

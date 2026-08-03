@@ -13,24 +13,32 @@ type Letter = {
   status: string; expires_on?: string; created_at: string;
 };
 
-const money = (n?: number | null) => (n == null ? "—" : "$" + Math.round(n).toLocaleString());
-const date = (s?: string) => (s ? new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "—");
+type Section = { name: string; rows: { key: string; label: string; value: string }[] };
+
+// A bare "YYYY-MM-DD" is UTC midnight. Formatted in the VIEWER's zone it printed the previous
+// day, so a Pacific agent saw "September 30" on the web while the PDF in the same email said
+// "October 1". Format bare dates in UTC on both surfaces.
+const date = (s?: string) =>
+  s ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T12:00:00Z` : s)
+        .toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })
+    : "—";
 
 export default function LetterPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const [l, setL] = useState<Letter | null>(null);
+  const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/letter/${token}`).then((r) => r.ok ? r.json() : Promise.reject()).then((j) => { setL(j.letter); setLoading(false); }).catch(() => { setMissing(true); setLoading(false); });
+    fetch(`/api/letter/${token}`).then((r) => r.ok ? r.json() : Promise.reject()).then((j) => { setL(j.letter); setSections(j.sections || []); setLoading(false); }).catch(() => { setMissing(true); setLoading(false); });
   }, [token]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-100"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
   if (missing || !l) return <div className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-500 px-6 text-center">This pre-approval letter link is invalid or has been removed.</div>;
 
   const voided = l.status === "void";
-  const expired = l.expires_on && new Date(l.expires_on) < new Date();
+  const expired = l.expires_on && new Date(`${l.expires_on}T23:59:59-07:00`) < new Date();
 
   return (
     <div className="min-h-screen bg-slate-100 py-6 px-4 print:bg-white print:p-0">
@@ -87,23 +95,23 @@ export default function LetterPage({ params }: { params: Promise<{ token: string
             information provided, subject to the conditions below.
           </p>
 
-          {/* Terms table */}
-          <div className="mt-4 border border-slate-200 rounded-md overflow-hidden text-[13px]">
-            {[
-              ["Loan program", l.loan_type || "—"],
-              ["Approved loan amount (up to)", money(l.loan_amount)],
-              ["Estimated purchase price", money(l.purchase_price)],
-              ["Down payment", money(l.down_payment)],
-              ["Loan term", l.term || "—"],
-              ["Estimated rate", l.interest_rate || "Subject to market at lock"],
-              ["Occupancy", l.occupancy || "—"],
-              ["Subject property", l.property_address || "To be determined"],
-            ].map(([k, v], i) => (
-              <div key={k as string} className={`flex justify-between px-3 py-1.5 ${i % 2 ? "bg-slate-50" : ""}`}>
-                <span className="text-slate-500">{k}</span><span className="font-medium text-right">{v}</span>
+          {/* Terms table — the SAME rows the PDF prints, from lib/preapprovalTerms.ts.
+              This was a hardcoded 8-row array while the PDF rendered every captured term, so the
+              borrower opened the attachment and the agent opened the link and they saw two
+              different letters. There is now one list and neither renderer owns it. */}
+          {sections.map((sec) => (
+            <div key={sec.name} className="mt-4">
+              <div className="text-[10px] font-semibold tracking-wide text-emerald-700 uppercase mb-1">{sec.name}</div>
+              <div className="border border-slate-200 rounded-md overflow-hidden text-[13px]">
+                {sec.rows.map((r, i) => (
+                  <div key={r.key} className={`flex justify-between gap-4 px-3 py-1.5 ${i % 2 ? "bg-slate-50" : ""}`}>
+                    <span className="text-slate-500 shrink-0">{r.label}</span>
+                    <span className="font-medium text-right break-words">{r.value}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
 
           {l.conditions && (
             <div className="mt-3 text-[12.5px]">
