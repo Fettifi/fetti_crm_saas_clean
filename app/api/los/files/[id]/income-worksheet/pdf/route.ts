@@ -26,6 +26,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       result: body.result,
       report: body.report,
       docsRead: body.docsRead,
+      // THE ASSUMPTIONS BLOCK WAS BUILT AND THEN DROPPED HERE. lib/incomePdf.ts renders a
+      // "What this maximum assumes" section, and every call site rebuilt WorksheetData field by
+      // field without it — so the section was dead from all three routes, and every max loan a
+      // borrower received was printed with no rate, no DTI target, no down payment, no debts and
+      // no escrow behind it. A maximum with no stated basis cannot be checked or reproduced.
+      assumptions: body.assumptions,
       qualification: body.qualification,
       comparison: body.comparison,
       borrowersNote: body.borrowersNote,

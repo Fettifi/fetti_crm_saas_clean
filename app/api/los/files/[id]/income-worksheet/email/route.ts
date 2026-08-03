@@ -40,6 +40,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       loanType: body.loanType,
       audience: "borrower", // never leak internal flags to the borrower
       result: body.result,
+      // THE ASSUMPTIONS BLOCK WAS BUILT AND THEN DROPPED HERE. lib/incomePdf.ts renders a
+      // "What this maximum assumes" section, and every call site rebuilt WorksheetData field by
+      // field without it — so the section was dead from all three routes, and every max loan a
+      // borrower received was printed with no rate, no DTI target, no down payment, no debts and
+      // no escrow behind it. A maximum with no stated basis cannot be checked or reproduced.
+      assumptions: body.assumptions,
       qualification: body.qualification,
       comparison: body.comparison,
       borrowersNote: body.borrowersNote,
@@ -54,10 +60,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const firstName = (data.borrowerName || "").split(" ")[0] || "there";
     const monthly = Math.round(body.result?.monthlyTotal || 0);
+    // ON A DSCR FILE, `monthlyTotal` IS THE PROPERTY'S GROSS RENT, not the borrower's income.
+    // The route never branched on loanType, so an investor was emailed "your qualifying income
+    // works out to about $3,200/mo" when $3,200 was the rent on the subject property. A DSCR
+    // loan qualifies on the property; saying otherwise misstates the basis of their approval
+    // in writing. Name what the figure actually is, or say nothing.
+    const isDscr = /dscr|investment/i.test(String((body as any).loanType || ""));
+    const figure = monthly
+      ? isDscr
+        ? ` — the property's gross rent is <strong>$${monthly.toLocaleString()}/mo</strong>, which is what a DSCR loan qualifies on`
+        : ` — your qualifying income works out to about <strong>$${monthly.toLocaleString()}/mo</strong>`
+      : "";
     const html =
       `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;color:#0f172a">` +
       `Hi ${firstName},<br><br>` +
-      `Attached is your income summary from ${BRAND.company}${monthly ? ` — your qualifying income works out to about <strong>$${monthly.toLocaleString()}/mo</strong>` : ""}. ` +
+      `Attached is your income summary from ${BRAND.company}${figure}. ` +
       `It shows the loan amount and monthly payment you can qualify for. Just reply to this email with any questions and we'll help you take the next step.<br><br>` +
       `— ${BRAND.company} · NMLS #${BRAND.nmls}` +
       `</div>`;

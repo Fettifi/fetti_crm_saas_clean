@@ -399,6 +399,19 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         warnings: verified?.result?.warnings || [],
         derivedDebts: verified?.result?.derivedDebts,
       },
+      // AND THE LOS TWIN HAS TO BUILD ONE. The three PDF/email routes now forward
+      // `assumptions`, but this side never produced one, so the "What this maximum assumes"
+      // section would still render empty from the loan file. A maximum with no stated basis
+      // cannot be checked by the borrower or reproduced by an underwriter.
+      assumptions: {
+        "Target back-end DTI": `${isInvestment ? "n/a (DSCR)" : `${targetDti}%`}`,
+        "Interest rate used": `${qualRateN}%`,
+        "Term": `${term} years`,
+        "Down payment": `${downN}%`,
+        "Monthly debts counted": money(debts),
+        "Taxes / insurance / HOA used": escrowKnown ? `${money(escrowN)}/mo` : "not entered — maximums withheld",
+        [isInvestment ? "Property gross rent" : "Qualifying income"]: `${money(income)}/mo`,
+      },
       report: audience === "lender" && verified?.report ? { ...verified.report, flags: annotatedFlags } : undefined,
       docsRead: audience === "lender" ? verified?.docsRead : undefined,
       comparison, qualification, borrowersNote,
@@ -450,10 +463,16 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   const QuoteCard = ({ q }: { q: Quote }) => (
     <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
       <div className="flex items-center justify-between mb-2"><div className="text-sm font-bold text-white">{q.label}</div>{q.miMonthly > 0 && <span className="text-[10px] text-slate-400">MI {money(q.miMonthly)}/mo</span>}</div>
+      {/* MAX LOAN IS A PITIA ANSWER. It withheld Max PITIA when escrow was unknown and then
+          published Max loan and Max price anyway — figures computed as though taxes,
+          insurance and HOA were ZERO. Measured: $450,922 / $563,653 against the true
+          $360,738 / $450,923 on a $3,000 budget with a $600 escrow. That is 25% high, and
+          those two figures are what flow into the borrower PDF and the emailed copy. If we
+          will not state the payment, we cannot state the loan it buys. */}
       <div className="text-[10px] uppercase text-slate-500">Max loan</div>
-      <div className="text-2xl font-bold text-emerald-400">{noRate ? "—" : money(q.maxLoan)}</div>
+      <div className="text-2xl font-bold text-emerald-400">{noRate || !escrowKnown ? "—" : money(q.maxLoan)}</div>
       <div className="grid grid-cols-2 gap-2 mt-2 text-center">
-        <div><div className="text-[10px] uppercase text-slate-500">Max price</div><div className="text-sm font-semibold text-emerald-300">{noRate ? "—" : money(q.maxPrice)}</div></div>
+        <div><div className="text-[10px] uppercase text-slate-500">Max price</div><div className="text-sm font-semibold text-emerald-300">{noRate || !escrowKnown ? "—" : money(q.maxPrice)}</div></div>
         <div><div className="text-[10px] uppercase text-slate-500">Max PITIA</div><div className="text-sm font-semibold text-slate-200">{escrowKnown ? money(q.maxPITIA) + "/mo" : "—"}</div></div>
       </div>
       <div className={`mt-2 text-[11px] rounded-lg px-2 py-1.5 ${toneCls[q.verdict.tone]}`}>{q.verdict.text}</div>

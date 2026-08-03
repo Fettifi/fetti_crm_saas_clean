@@ -45,7 +45,8 @@
     "verify:column-map": "tsx scripts/verify-column-map.ts",
     "verify:desk-lien": "tsx scripts/verify-desk-lien.ts",
     "verify:sms-consent": "tsx scripts/verify-sms-consent.ts",
-    "verify:reply-paths": "tsx scripts/verify-reply-paths.ts"
+    "verify:reply-paths": "tsx scripts/verify-reply-paths.ts",
+    "verify:income-payload": "tsx scripts/verify-income-payload.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
