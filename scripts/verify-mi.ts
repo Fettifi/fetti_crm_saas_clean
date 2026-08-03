@@ -53,6 +53,24 @@ chk(conv.pmiMonthly > 0, "conventional at 98% LTV still carries PMI");
 chk(va.total < conv.total, `VA total PITIA is lower than conventional by the phantom MI ($${Math.round(conv.total - va.total)}/mo)`);
 chk(Math.abs(fha.pmiMonthly - (490000 * 0.0055) / 12) < 1, "FHA monthly MIP matches 0.55% of the loan / 12");
 
+// ── AN ENTERED MI QUOTE WINS. MI was the only PITIA component with no override anywhere — the
+//    LO could switch it on or off and nothing else, so a real MI quote could not be used.
+const q = estimatePITIA({ ...deal, loanType: "conv30", miMonthlyOverride: 142 });
+chk(q.pmiMonthly === 142 && (q as any).miOverridden === true, "an entered MI quote is used verbatim");
+const lpmi = estimatePITIA({ ...deal, loanType: "conv30", miMonthlyOverride: 0 });
+chk(lpmi.pmiMonthly === 0 && (lpmi as any).miOverridden === true,
+  "$0 applies as LENDER-PAID MI — distinguishable from 'the model says none'");
+const modelled = estimatePITIA({ ...deal, loanType: "conv30" });
+chk(modelled.pmiMonthly > 0 && (modelled as any).miOverridden === false,
+  "with no override the program model still governs");
+for (const junk of [-50, NaN, "abc" as any]) {
+  const r = estimatePITIA({ ...deal, loanType: "conv30", miMonthlyOverride: junk });
+  if (r.pmiMonthly !== modelled.pmiMonthly) chk(false, `MI override ${String(junk)} was accepted`);
+}
+chk(true, "negative / NaN / non-numeric MI overrides fall back to the model");
+chk(estimatePITIA({ ...deal, loanType: "va30", miMonthlyOverride: 200 }).pmiMonthly === 200,
+  "an override still wins on VA — if a lender really charges it, the LO can say so");
+
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). Quoting a veteran mortgage insurance they will never pay is not a rounding error.\n`); process.exit(1); }
 console.log(`PASS — mortgage insurance follows the program, not one conventional ladder.\n`);

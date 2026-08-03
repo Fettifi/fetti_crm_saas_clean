@@ -50,6 +50,8 @@ export default function PricerPage() {
   const [taxOverride, setTaxOverride] = useState("");
   const [insOverride, setInsOverride] = useState("");
   const [includePMI, setIncludePMI] = useState(true);
+  const [miOverride, setMiOverride] = useState("");        // the LO's real MI quote, $/mo
+  const [vaExempt, setVaExempt] = useState(false);         // disabled-veteran funding-fee exemption
   const [borrowerName, setBorrowerName] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
 
@@ -103,8 +105,13 @@ export default function PricerPage() {
   // accepted, silently mis-scaled, and the borrower is quoted a tax payment nobody entered.
   const taxBasis = (isRefi ? num(value) : num(price)) || num(price) || num(value) || 0;
   const insBasis = num(value) || num(price) || 0;
-  const taxOver = num(taxOverride) > 0 && taxBasis > 0;
-  const insOver = num(insOverride) > 0 && insBasis > 0;
+  // $0 IS A REAL FIGURE. `num(x) > 0` rejected a stated zero at this gate and three more, so an
+  // abated / exempt property, or a self-insured one, silently got the ZIP estimate instead —
+  // the same truthiness trap as everything else in this audit. Test for ENTERED.
+  const taxEntered = taxOverride.trim() !== "" && Number.isFinite(num(taxOverride)) && num(taxOverride) >= 0;
+  const insEntered = insOverride.trim() !== "" && Number.isFinite(num(insOverride)) && num(insOverride) >= 0;
+  const taxOver = taxEntered && taxBasis > 0;
+  const insOver = insEntered && insBasis > 0;
   const taxRatePctEff = taxOver ? (num(taxOverride) / taxBasis) * 100 : (useLocRates ? loc!.taxRatePct : undefined);
   const insRatePctEff = insOver ? (num(insOverride) / insBasis) * 100 : (useLocRates ? loc!.insRatePct : undefined);
 
@@ -115,13 +122,15 @@ export default function PricerPage() {
         // Refinance: value is the deal basis (tax/ins/LTV) and the loan amount is direct.
         price: num(value), value: num(value) || undefined, loanAmount: num(refiLoan),
         termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI, loanType,
+        miMonthlyOverride: miOverride.trim() !== "" && num(miOverride) >= 0 ? num(miOverride) : null,
         taxRatePct: taxRatePctEff, insRatePct: insRatePctEff,
       }
     : {
         price: num(price), value: num(value) || undefined, down: num(down),
         termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI, loanType,
+        miMonthlyOverride: miOverride.trim() !== "" && num(miOverride) >= 0 ? num(miOverride) : null,
         taxRatePct: taxRatePctEff, insRatePct: insRatePctEff,
-      }), [isRefi, refiLoan, price, value, down, term, state, hoa, includePMI, loanType, taxRatePctEff, insRatePctEff]);
+      }), [isRefi, refiLoan, price, value, down, term, state, hoa, includePMI, miOverride, loanType, taxRatePctEff, insRatePctEff]);
 
   const pre = useMemo(() => estimatePITIA({ ...base, ratePct: 0 }), [base]);
   const credit = creditValueToFico(creditVal);
@@ -130,7 +139,11 @@ export default function PricerPage() {
     model,
   ), [loanType, credit.fico, pre.ltv, effOccupancy, purpose, term, model]);
 
-  const effRate = rateOverride && Number(overrideRate) ? Number(overrideRate) : est.rate;
+  // The old test was truthy-and-nonzero, so a blank or 0 box fell back to the model estimate
+  // while STILL sending rateIsOverride:true — the PDF then trusted a rate nobody had overridden.
+  // A negative was accepted outright.
+  const rateOverrideValid = rateOverride && Number.isFinite(Number(overrideRate)) && Number(overrideRate) > 0 && Number(overrideRate) <= 30;
+  const effRate = rateOverrideValid ? Number(overrideRate) : est.rate;
   const r = useMemo(() => estimatePITIA({ ...base, ratePct: effRate }), [base, effRate]);
 
   // ---- Closing costs (LE-shaped estimate; server engine uses ZIP + price) ----
@@ -164,12 +177,15 @@ export default function PricerPage() {
           ratePct: effRate, taxRatePct: taxRatePctEff, insAnnual: r.insMonthly * 12,
           sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
           originationPct: origPct === "" ? undefined : num(origPct),
+          // Both API routes already accepted vaExempt; the screen never sent it, so a disabled
+          // veteran's funding-fee exemption could not be applied from the pricer at all.
+          vaExempt,
           overrides: ovrNums,
         }),
       }).then((res) => (res.ok ? res.json() : null)).then((j) => setCc(j?.ok ? j : null)).catch(() => setCc(null));
     }, 350);
     return () => { clearTimeout(t); ctl.abort(); };
-  }, [dealBasis, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct, ovrNums]);
+  }, [dealBasis, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct, vaExempt, ovrNums]);
 
   async function downloadPdf() {
     if (isRefi ? (!num(value) || !num(refiLoan)) : !num(price)) {
@@ -184,11 +200,13 @@ export default function PricerPage() {
           borrowerName, address, state, zip,
           price: isRefi ? num(value) : num(price), value: num(value) || undefined,
           down: isRefi ? 0 : num(down), loanAmount: isRefi ? num(refiLoan) : undefined,
-          taxAnnualOverride: num(taxOverride) || undefined, insAnnualOverride: num(insOverride) || undefined,
+          taxAnnualOverride: taxEntered ? num(taxOverride) : undefined,
+          insAnnualOverride: insEntered ? num(insOverride) : undefined,
           loanType, creditVal, occupancy: effOccupancy, purpose,
-          ratePct: effRate, rateIsOverride: rateOverride, termMonths: term, hoaMonthly: num(hoa), includePMI,
+          ratePct: effRate, rateIsOverride: rateOverrideValid, termMonths: term, hoaMonthly: num(hoa), includePMI,
           sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
           originationPct: origPct === "" ? undefined : num(origPct),
+          vaExempt, miMonthlyOverride: miOverride.trim() !== "" && num(miOverride) >= 0 ? num(miOverride) : undefined,
           overrides: ovrNums,
         }),
       });
@@ -436,8 +454,23 @@ export default function PricerPage() {
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm pointer-events-none">% of loan</span>
                         </div>
                       </div>
+                      <div>
+                        <label className={lbl}>Mortgage insurance / mo <span className="text-slate-600">(your quote)</span></label>
+                        {/* MI was the ONLY PITIA component with no override — on/off was the whole
+                            control, so a real MI quote could not be entered. $0 = lender-paid. */}
+                        <CurrencyInput value={miOverride} onChange={setMiOverride} className={inp}
+                          placeholder={`$${Math.round(rp.pmiMonthly || 0).toLocaleString()} est.`} />
+                      </div>
                       <div><label className={lbl}>Seller credit</label><CurrencyInput value={sellerCredit} onChange={setSellerCredit} className={inp} placeholder="$0" /></div>
                     </div>
+                    {loanType.startsWith("va") && (
+                      <label className="flex items-center gap-2 text-[11px] text-slate-300 pt-1">
+                        <input type="checkbox" checked={vaExempt} onChange={(e) => setVaExempt(e.target.checked)} className="accent-emerald-500" />
+                        {/* Both routes already accepted vaExempt; the screen never sent it, so a
+                            disabled veteran could not have the funding fee removed from a quote. */}
+                        VA funding fee EXEMPT (service-connected disability / Purple Heart)
+                      </label>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       <div className="flex flex-col justify-end gap-1 pb-1">
                         <label className="flex items-center gap-2 text-[12px] text-slate-300"><input type="checkbox" checked={escrowWaived} onChange={(e) => setEscrowWaived(e.target.checked)} className="accent-emerald-500" /> Waive escrows</label>

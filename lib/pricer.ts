@@ -146,6 +146,10 @@ export type PricerInput = {
   state?: string | null;   // 2-letter
   hoaMonthly?: number;
   includePMI?: boolean;
+  /** THE LO'S OWN MONTHLY MI FIGURE. MI was the one PITIA component with no override anywhere —
+   *  it could only be switched fully on or off, so a real MI quote could not be entered at all.
+   *  $0 is meaningful (lender-paid MI); null/undefined falls back to the program model. */
+  miMonthlyOverride?: number | null;
   /** Program id from the screen ("conv30" | "fha30" | "va30" | "usda30" | "dscr30" | …).
    *  Mortgage insurance is program-specific; without this every loan got conventional PMI. */
   loanType?: string | null;
@@ -176,11 +180,15 @@ export function estimatePITIA(i: PricerInput) {
   const taxMonthly = (i.price || value) * (taxRate / 100) / 12;
   const insMonthly = value * (insRate / 100) / 12;
 
+  const miOverridden = i.miMonthlyOverride != null && Number.isFinite(Number(i.miMonthlyOverride)) && Number(i.miMonthlyOverride) >= 0;
   const pmiAnnual = i.includePMI ? miRate(ltv, i.loanType, n) : 0;
-  const pmiMonthly = pmiAnnual > 0 ? (loan * (pmiAnnual / 100)) / 12 : 0;
+  // An entered figure wins outright — including $0 for lender-paid MI, which the on/off switch
+  // could express but not distinguish from "the model says none".
+  const pmiMonthly = miOverridden ? Number(i.miMonthlyOverride)
+    : (pmiAnnual > 0 ? (loan * (pmiAnnual / 100)) / 12 : 0);
 
   const hoa = i.hoaMonthly || 0;
   const total = pi + taxMonthly + insMonthly + pmiMonthly + hoa;
 
-  return { loan, ltv, pi, taxMonthly, insMonthly, pmiMonthly, pmiAnnual, hoa, total, taxRate, insRate, value };
+  return { loan, ltv, pi, taxMonthly, insMonthly, pmiMonthly, pmiAnnual, hoa, total, taxRate, insRate, value, miOverridden };
 }

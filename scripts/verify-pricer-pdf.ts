@@ -101,6 +101,35 @@ async function render(cc: any): Promise<string> {
   chk(!/financed into the loan/.test(plainTxt) && /Loan amount/.test(plainTxt),
     "a conventional quote shows a single plain Loan amount row — no fee language invented");
 
+  // ── A REFINANCE IS NOT A PURCHASE. Every refi PDF was laid out as one: "Purchase / sales price
+  //    $700,000" and "Down payment $0" on a cash-out refi, to the borrower.
+  const refiTxt = await pdfText(new Uint8Array(await buildPricerPdf({
+    borrowerName: "Internal Test", state: "CA", price: 700000, down: 0, loanAmount: 500000,
+    ratePct: 6.5, termMonths: 360, loanType: "conv30", purpose: "cashout",
+    pi: 3160, taxMonthly: 670, insMonthly: 200, pmiMonthly: 0, hoa: 0, total: 4030, ltv: 71.4,
+  } as any)));
+  chk(/Property value/.test(refiTxt) && !/Purchase \/ sales price/.test(refiTxt),
+    "a cash-out refi says Property value, not Purchase / sales price");
+  chk(!/Down payment/.test(refiTxt), "and shows no down-payment row on a refinance");
+  const buyTxt = await pdfText(new Uint8Array(await buildPricerPdf({
+    borrowerName: "Internal Test", state: "CA", price: 450000, down: 90000, loanAmount: 360000,
+    ratePct: 6.5, termMonths: 360, loanType: "conv30", purpose: "purchase",
+    pi: 2275, taxMonthly: 431, insMonthly: 150, pmiMonthly: 0, hoa: 0, total: 2856, ltv: 80,
+  } as any)));
+  chk(/Purchase \/ sales price/.test(buyTxt) && /Down payment/.test(buyTxt),
+    "a purchase still says Purchase / sales price and shows the down payment");
+
+  // ── MI MUST BE NAMED BY PROGRAM. Calling FHA MIP "PMI" and then telling the borrower PMI
+  //    "applies to conventional loans over 80% LTV" contradicts the figure printed above it.
+  const fhaTxt = await pdfText(new Uint8Array(await buildPricerPdf({
+    borrowerName: "Internal Test", state: "FL", price: 400000, down: 14000, loanAmount: 386000,
+    ratePct: 6.5, termMonths: 360, loanType: "FHA 30-Yr", purpose: "purchase",
+    pi: 2440, taxMonthly: 367, insMonthly: 200, pmiMonthly: 177, hoa: 0, total: 3184, ltv: 96.5,
+  } as any)));
+  chk(/FHA MIP/.test(fhaTxt), "an FHA quote labels the figure FHA MIP, not PMI");
+  chk(/VA loans carry NO monthly mortgage insurance/.test(fhaTxt),
+    "and the disclaimer describes each program instead of asserting a conventional rule");
+
   console.log("");
   if (bad) { console.error(`FAIL — ${bad} problem(s). The borrower's document is the surface that matters.\n`); process.exit(1); }
   console.log("PASS — the borrower's PDF shows the actual figure, marks it, explains it, and totals it.\n");

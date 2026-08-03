@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
       loanAmount: b.loanAmount != null ? Number(b.loanAmount) : undefined,
       termMonths: Number(b.termMonths) || 360,
       state: stateIn, hoaMonthly: Number(b.hoaMonthly) || 0, includePMI: b.includePMI !== false,
+      miMonthlyOverride: b.miMonthlyOverride != null && Number(b.miMonthlyOverride) >= 0 ? Number(b.miMonthlyOverride) : null,
       // Without this the PDF charged conventional PMI on VA/USDA/DSCR loans.
       loanType: String(b.loanType || "conv30"),
       taxRatePct: taxOverAnnual > 0 && taxBasis > 0 ? (taxOverAnnual / taxBasis) * 100 : (useLocRates ? loc.taxRatePct : undefined),
@@ -111,7 +112,13 @@ export async function POST(req: NextRequest) {
         if (Number(cc.financedFees) > 0) {
           r = estimatePITIAFinanced({ ...baseInput, ratePct }, cc.financedFees) as typeof r;
         }
-      } catch (e) { console.warn("[api/pricer/pdf] closing-cost section skipped:", e); }
+      } catch (e) {
+        // A THROW HERE USED TO PRODUCE A QUIET, WRONG DOCUMENT: page 2 gone, every CONFIRMED
+        // override the LO typed gone, and page 1 still quoting a payment on the pre-financed loan.
+        // The LO saw a normal download. Fail loudly instead — they can retry or fix the input.
+        console.error("[api/pricer/pdf] closing-cost engine failed:", e);
+        return NextResponse.json({ error: "Couldn't compute closing costs for this scenario, so the PDF was not generated (it would have been missing page 2 and any figures you entered). Check the ZIP/state and try again." }, { status: 422 });
+      }
     }
 
     const pdf = await buildPricerPdf({
@@ -122,7 +129,8 @@ export async function POST(req: NextRequest) {
       taxIsActual: taxOverAnnual > 0, insIsActual: insOverAnnual > 0,
       price, value: Number(b.value) || undefined, down: Number(b.down) || 0, loanAmount: r.loan, ltv: r.ltv,
       financedFees: (r as any).financedFees || 0, baseLoan: (r as any).baseLoan ?? r.loan,
-      loanType: loanTypeLabel, ratePct, rateIsOverride: !!b.rateIsOverride, termMonths: baseInput.termMonths,
+      loanType: loanTypeLabel, purpose: mapPurpose(b.purpose),
+      ratePct, rateIsOverride: !!b.rateIsOverride, termMonths: baseInput.termMonths,
       pi: r.pi, taxMonthly: r.taxMonthly, insMonthly: r.insMonthly, pmiMonthly: r.pmiMonthly, hoa: r.hoa, total: r.total,
       taxRate: r.taxRate, insRate: r.insRate,
       officerName: b.officerName || undefined, officerNmls: b.officerNmls || undefined,

@@ -12,6 +12,9 @@ export type PricerPdfData = {
   county?: string; taxSource?: "zcta" | "county" | "state" | "default" | "ca-prop13";
   taxIsActual?: boolean; insIsActual?: boolean;
   price: number; value?: number; down: number; loanAmount: number; ltv: number;
+  /** "purchase" | "refi" | "cashout". Every refinance PDF was laid out as a PURCHASE — a cash-out
+   *  refi printed "Purchase / sales price $700,000" and "Down payment $0" to the borrower. */
+  purpose?: string;
   /** Financed FHA UFMIP / VA funding fee / USDA guarantee fee rolled into the loan (0 if none). */
   financedFees?: number;
   /** The loan BEFORE that fee — shown alongside so the borrower can see why the loan exceeds
@@ -83,9 +86,10 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
   text("THE LOAN", 9, bold, EMERALD); cur += 16;
   const downPct = d.price ? (d.down / d.price) * 100 : 0;
   const loanRows: [string, string][] = [
-    ["Purchase / sales price", money(d.price)],
+    [/refi|cash/i.test(String(d.purpose || "")) ? "Property value" : "Purchase / sales price", money(d.price)],
     ...(d.value && d.value !== d.price ? [["Appraised value", money(d.value)]] as [string, string][] : []),
-    ["Down payment", `${money(d.down)}${downPct ? `  (${downPct.toFixed(1)}%)` : ""}`],
+    // A refinance has no down payment; printing "$0" invites the borrower to think one is missing.
+    ...(/refi|cash/i.test(String(d.purpose || "")) ? [] : ([["Down payment", `${money(d.down)}${downPct ? `  (${downPct.toFixed(1)}%)` : ""}`]] as [string, string][])),
     // A borrower who sees a loan larger than price minus their down payment, with no line
     // explaining it, reasonably assumes the document is wrong. Show the base, the fee, and the
     // total — and say that the payment above is on the total.
@@ -111,7 +115,10 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
     ["Principal & interest", money(d.pi)],
     [`Property taxes (${money(d.taxMonthly * 12)}/yr${d.taxIsActual ? ", actual" : d.county ? ` — ${d.county}` : d.state ? ` — ${d.state}` : ""})`, money(d.taxMonthly)],
     [`Homeowner's insurance (${money(d.insMonthly * 12)}/yr${d.insIsActual ? ", actual" : ", est."})`, money(d.insMonthly)],
-    ...(d.pmiMonthly > 0 ? [["Mortgage insurance (PMI, est.)", money(d.pmiMonthly)]] as [string, string][] : []),
+    // Naming it "PMI" on an FHA or USDA quote is wrong — those are MIP and the guarantee fee,
+    // and the disclaimer then told the borrower it "applies to conventional loans over 80% LTV"
+    // directly under a figure charged on a 96.5% FHA loan.
+    ...(d.pmiMonthly > 0 ? [[`Mortgage insurance (${/fha/i.test(String(d.loanType || "")) ? "FHA MIP" : /usda/i.test(String(d.loanType || "")) ? "USDA annual fee" : "PMI"}, est.)`, money(d.pmiMonthly)]] as [string, string][] : []),
     ...(d.hoa > 0 ? [["HOA dues", money(d.hoa)]] as [string, string][] : []),
   ];
   payRows.forEach(([k, v], i) => tableRow(k, v, i));
@@ -124,7 +131,7 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
   page.drawRectangle({ x: M, y: H - cur + 4, width: CW, height: payRows.length * 18 + trh, borderColor: rgb(0.85, 0.87, 0.9), borderWidth: 1 });
   cur += 18;
 
-  para(`This is an ESTIMATE for planning purposes, not a quote, loan offer, or commitment to lend. Property taxes use the property location's effective tax rate (U.S. Census ACS data) and will vary by the actual assessment and exemptions. Homeowner's insurance is an estimate based on regional averages and location risk — it is not an insurance quote and will vary by the property, coverage, deductible, and carrier. The interest rate is an estimate and is subject to market conditions, your credit, and final approval until locked. PMI applies to conventional loans over 80% LTV and varies by program. Actual figures are determined by the tax authority, an insurance quote, and final underwriting.`, 8, font, GREY);
+  para(`This is an ESTIMATE for planning purposes, not a quote, loan offer, or commitment to lend. Property taxes use the property location's effective tax rate (U.S. Census ACS data) and will vary by the actual assessment and exemptions. Homeowner's insurance is an estimate based on regional averages and location risk — it is not an insurance quote and will vary by the property, coverage, deductible, and carrier. The interest rate is an estimate and is subject to market conditions, your credit, and final approval until locked. Mortgage insurance varies by program: conventional PMI applies over 80% LTV and can be removed as equity builds; FHA charges an annual MIP regardless of LTV; USDA charges an annual guarantee fee; VA loans carry NO monthly mortgage insurance. Actual figures are determined by the tax authority, an insurance quote, and final underwriting.`, 8, font, GREY);
   cur += 12;
 
   text(d.officerName || "Fetti Financial Services LLC", 10.5, bold); cur += 13;
