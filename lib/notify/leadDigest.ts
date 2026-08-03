@@ -4,6 +4,8 @@
 // Vercel cron (vercel.json -> /api/cron/lead-digest). Never throws.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyTeam } from "@/lib/notify/leadAlert";
+import { automationStatusBlock } from "@/lib/notify/automationStatus";
+import { automationPaused } from "@/lib/automationGate";
 
 type Lead = {
   id: string; full_name: string | null; tier: string | null;
@@ -106,13 +108,23 @@ export async function buildAndSendLeadDigest(): Promise<{ sent: string[]; counts
     }
   } catch { /* best-effort */ }
 
+  // OPENS THE DIGEST, because it changes how everything below it reads. "WORK THESE NOW" is
+  // copy for a funnel where the machine already sent the opening message; with the master
+  // shutoff on, those leads have had no contact at all and the list means something different.
+  // Never let a failure here cost Ramon his digest.
+  let autoBlock = "";
+  let pausedNow = false;
+  try { autoBlock = await automationStatusBlock(); } catch (e) { console.warn("[leadDigest] automation status:", e); }
+  try { pausedNow = await automationPaused(); } catch { /* subject decoration only */ }
+
   const line = (l: Lead) => `• ${l.full_name || "(no name)"} — ${l.tier || "untiered"} — ${l.loan_purpose || "loan"} — ${l.source || "?"} — ${l.stage || "New Lead"}`;
   const body = [
+    ...(autoBlock ? [autoBlock, ``] : []),
     `Last 24h: ${last24.length} new lead${last24.length === 1 ? "" : "s"}`,
     `  🔥 Tier 1: ${tier(last24, 1)}  ·  Tier 2: ${tier(last24, 2)}  ·  Tier 3: ${tier(last24, 3)}`,
     ``,
     needWork.length
-      ? `WORK THESE NOW (${needWork.length}):\n${needWork.map(line).join("\n")}`
+      ? `WORK THESE NOW (${needWork.length})${pausedNow ? " — these need YOU to send the first message" : ""}:\n${needWork.map(line).join("\n")}`
       : `No Tier 1/2 leads waiting to be worked. ✅`,
     ``,
     `Last 7 days: ${leads.length} leads  (🔥 ${tier(leads, 1)} Tier 1 · ${tier(leads, 2)} Tier 2)`,
@@ -125,7 +137,9 @@ export async function buildAndSendLeadDigest(): Promise<{ sent: string[]; counts
     `Board: https://app.fettifi.com/leads`,
   ].join("\n");
 
-  const subject = `☀️ Fetti Lead Digest — ${today()} · ${last24.length} new (🔥 ${tier(last24, 1)} Tier 1)`;
+  // The pause belongs in the SUBJECT too — a phone notification preview is often the whole
+  // digest anyone reads, and it is the one fact that changes what the rest of it means.
+  const subject = `${pausedNow ? "⏸️" : "☀️"} Fetti Lead Digest — ${today()} · ${last24.length} new (🔥 ${tier(last24, 1)} Tier 1)${pausedNow ? " · FOLLOW-UP OFF" : ""}`;
   const res = await notifyTeam(subject, body);
   return {
     sent: res.sent,
