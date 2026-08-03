@@ -13,6 +13,7 @@
 //   npx tsx scripts/verify-deal-analyzer.ts
 import { numOrNull, entered, pctOr, carryingCosts, dealAssumptions, overriddenAssumptions } from "../lib/underwrite/dealInputs";
 import { underwriteOne, DEFAULT_ASSUMPTIONS, type PropertyRow } from "../lib/underwrite/engine";
+import { qualifyDeal } from "../lib/underwrite/dealQualifier";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -72,6 +73,33 @@ const highVac = underwriteOne(row(), dealAssumptions({ vacancyPct: "15" }));
 chk(highVac.noi_annual < base.noi_annual, "a realistic vacancy assumption lowers NOI");
 const selfMgmt = underwriteOne(row(), dealAssumptions({ mgmtPct: "0" }));
 chk(selfMgmt.noi_annual > base.noi_annual, "$0 management (self-managed) RAISES NOI — a zero that must apply");
+
+// ── THE FLIP / BRRRR BRANCH. The first version of this guard never called qualifyDeal at all —
+//    which is exactly where the HOA figure was being dropped, so the gap it left was the gap that
+//    shipped. A guard that exercises only half the engine certifies only half of it.
+const flipRow = (over: Partial<PropertyRow> = {}): PropertyRow => ({
+  id: "f", address: "1 Test St", state: "IN", zip: "46201",
+  price: 250000, rent_monthly: 2200, arv: 340000, rehab_budget: 45000,
+  back_tax_status: "unknown", ...over,
+});
+const flipNoHoa = qualifyDeal(flipRow(), A);
+const flipWithHoa = qualifyDeal(flipRow({ hoa_monthly: 400 }), A);
+// Field names read off the DealQualifier type, not guessed — my first draft invented
+// flip.profit / rental.maxOffer and got NaN, which reads as a code bug and is a test bug.
+chk(flipWithHoa.flip.carry6mo > flipNoHoa.flip.carry6mo,
+  `HOA dues raise the 6-month FLIP CARRY ($${flipNoHoa.flip.carry6mo.toLocaleString()} -> $${flipWithHoa.flip.carry6mo.toLocaleString()}) — they were omitted from it entirely`);
+chk(flipWithHoa.flip.profitAtGivenArv! < flipNoHoa.flip.profitAtGivenArv!,
+  `so the flip PROFIT at the given ARV falls ($${flipNoHoa.flip.profitAtGivenArv!.toLocaleString()} -> $${flipWithHoa.flip.profitAtGivenArv!.toLocaleString()})`);
+chk(flipWithHoa.flip.arvNeededProfit > flipNoHoa.flip.arvNeededProfit,
+  "and the ARV required to clear the profit floor rises");
+chk(flipWithHoa.rental.pitiaAtMaxLtv > flipNoHoa.rental.pitiaAtMaxLtv,
+  "HOA already reached the rental PITIA — that half was never broken");
+chk(qualifyDeal(flipRow({ hoa_monthly: 0 }), A).flip.carry6mo === flipNoHoa.flip.carry6mo,
+  "$0 HOA equals no HOA");
+
+// pctOr must not accept a zero amortization or target DSCR — both divide by zero downstream.
+chk(dealAssumptions({ amortYears: "0" }).amort_years === A.amort_years, "a 0-year amortization falls back");
+chk(dealAssumptions({ targetDscr: "0" }).target_dscr === A.target_dscr, "a 0 target DSCR falls back");
 
 console.log("");
 if (bad) { console.error(`FAIL — ${bad} problem(s). An input that does not change the verdict is decoration.\n`); process.exit(1); }

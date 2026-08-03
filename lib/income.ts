@@ -191,7 +191,9 @@ export function computeIncome(sources: IncomeSource[], loanType: LoanType): Inco
   for (const l of lines) {
     if (l.isRentalLoss) { derivedDebts += -l.monthly; continue; }  // net rental loss → debt, not income
     incomeSum += l.monthly;                                        // self-emp loss (negative) offsets income here
-    byBorrower[l.borrower] = (byBorrower[l.borrower] || 0) + Math.max(0, l.monthly);
+    // NOT clamped at zero per borrower: the headline total is not, so clamping here made the two
+    // displayed borrower incomes sum to MORE than the total on any file with a co-borrower loss.
+    byBorrower[l.borrower] = (byBorrower[l.borrower] || 0) + l.monthly;
   }
   const monthlyTotal = Math.max(0, incomeSum);                     // aggregate never negative
   const warnings = lines.filter((l) => l.flag).map((l) => `${SOURCE_META[l.type]?.label || l.type}: ${l.flag}`);
@@ -248,7 +250,10 @@ export function maxLoanFromPayment(
   const maxPI = loan / a;
   const mi = loan * mf;
   const dRaw = Math.max(0, pos(downPct) / 100);
-  const d = Math.min(0.5, dRaw);
+  // The 50% clamp silently rewrote a typed down payment above 50% — an all-cash-heavy investor
+  // putting 60% down got a max PURCHASE PRICE computed as if they had put 50%, understating what
+  // they can buy. Only the degenerate 100% case needs special handling, and it is handled below.
+  const d = Math.min(0.99, dRaw);
   const maxPrice = dRaw >= 1 ? loan : loan / (1 - d);
   return { maxPI, maxLoan: loan, maxPrice, mi };
 }

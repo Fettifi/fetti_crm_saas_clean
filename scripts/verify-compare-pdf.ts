@@ -79,6 +79,23 @@ const comparison = (quotes: CompareQuote[], over: Partial<Comparison> = {}): Com
   chk(/Lender's "Best"/.test(odd.text), "curly quotes normalise");
   chk(/30-year/.test(odd.text), "and a non-breaking hyphen in a term renders");
 
+  // ── 6. VULGAR FRACTIONS. Lenders quote 6⅛% and 7¾%. The blanket ASCII strip DELETED them, so
+  //    "6⅛%" reached the borrower as "6%" — an eighth off a rate on a comparison document.
+  const frac = (await pdfText(new Uint8Array(await buildComparisonPdf(comparison([
+    quote(1, { rate: "6\u215B%", apr: "7\u00BE%", points: "1\u00BD" }),
+  ]))))).text;
+  chk(/6\s*1\/8\s*%/.test(frac), "a 1/8 in the RATE survives as 1/8, not deleted down to 6%");
+  chk(/7\s*3\/4\s*%/.test(frac), "and 3/4 in the APR");
+  chk(/1\s*1\/2/.test(frac), "and 1/2 in the points");
+  chk(!/^6%/m.test(frac.replace(/\s+/g, " ")), "the bare truncated rate does not appear");
+
+  // ── 7. A TRUNCATED CELL SAYS SO.
+  const longTerm = "5% year one, 4% year two, 3% year three, 2% year four, 1% year five, then open with no penalty thereafter and a 60-day notice requirement";
+  const trunc = (await pdfText(new Uint8Array(await buildComparisonPdf(comparison(
+    Array.from({ length: 4 }, (_, i) => quote(i + 1, { prepay: longTerm })),
+  ))))).text;
+  chk(/\.\.\./.test(trunc), "a cell cut for space is marked with an ellipsis rather than ending mid-sentence");
+
   console.log("");
   if (bad) { console.error(`FAIL — ${bad} problem(s). An option the borrower was quoted, missing from the document they compare on, is the whole point of the tool failing.\n`); process.exit(1); }
   console.log(`PASS — every option reaches the borrower, and every sign survives.\n`);

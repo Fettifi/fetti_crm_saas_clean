@@ -110,7 +110,10 @@ export function qualifyDeal(p: PropertyRow, a: Assumptions): DealQualifier {
   // ---- FLIP --------------------------------------------------------------------
   const closing = (price * a.closing_cost_pct) / 100;
   const allIn = r0(price + rehab + closing);
-  const carry6mo = r0(loanLtv * (a.rate_pct / 100) * 0.5 + (taxesA + insA) * 0.5);
+  // HOA WAS DROPPED FROM THE FLIP CARRY. It reaches the rental math (pitia, piBudget) but not
+  // this, so the flip profit, the required-ARV thresholds and the max offer all ignored a real
+  // monthly obligation on any condo or HOA-governed property — the deals where it is largest.
+  const carry6mo = r0(loanLtv * (a.rate_pct / 100) * 0.5 + (taxesA + insA) * 0.5 + hoa_m * 6);
   const profitFloor = r0(Math.max(25000, allIn * 0.15));
   const SELL = 0.07; // agent + seller closing on exit
   const arvNeededProfit = r0((allIn + carry6mo + profitFloor) / (1 - SELL));

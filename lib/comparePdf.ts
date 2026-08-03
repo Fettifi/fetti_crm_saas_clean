@@ -36,6 +36,20 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
     .replace(/\u2026/g, "...")
     .replace(/[\u00A0\u2007\u202F\u2009\u200A]/g, " ")   // non-breaking / thin spaces
     .replace(/[\u2022\u2605\u2606\u2713\u2714\u00B7]/g, "*")
+    // VULGAR FRACTIONS. Lenders quote rates as 6⅛% and 7¾%. The blanket strip below DELETED the
+    // fraction, so "6⅛%" reached the borrower as "6%" — an eighth of a point removed from a rate
+    // on a comparison document. Same class as the U+2212 minus: a character-strip that changes a
+    // number is not cosmetic.
+    .replace(/\u00BC/g, "1/4").replace(/\u00BD/g, "1/2").replace(/\u00BE/g, "3/4")
+    .replace(/\u2150/g, "1/7").replace(/\u2151/g, "1/9").replace(/\u2152/g, "1/10")
+    .replace(/\u2153/g, "1/3").replace(/\u2154/g, "2/3").replace(/\u2155/g, "1/5")
+    .replace(/\u2156/g, "2/5").replace(/\u2157/g, "3/5").replace(/\u2158/g, "4/5")
+    .replace(/\u2159/g, "1/6").replace(/\u215A/g, "5/6").replace(/\u215B/g, "1/8")
+    .replace(/\u215C/g, "3/8").replace(/\u215D/g, "5/8").replace(/\u215E/g, "7/8")
+    .replace(/\u2044/g, "/")
+    // ANY REMAINING DIGIT-BEARING CHARACTER must not vanish silently. Superscripts, full-width
+    // digits and other numerals get folded to ASCII rather than deleted.
+    .replace(/[\uFF10-\uFF19]/g, (c) => String(c.charCodeAt(0) - 0xFF10))
     .replace(/[^\x20-\x7E]/g, "");
   const yAt = (size: number) => H - cur - size;
   const text = (str: string, size: number, f = font, color = SLATE, x = M) => page.drawText(safe(str), { x, y: yAt(size), size, font: f, color });
@@ -65,7 +79,7 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
   page.drawText(`NMLS #${BRAND.nmls} · CA DFPI Financing Law License #60DBO-153798`, { x: M + 58, y: H - M - 34, size: 7.5, font, color: GREY });
   const num = c.number || "";
   page.drawText(num, { x: RIGHT - font.widthOfTextAtSize(num, 8), y: H - M - 14, size: 8, font, color: GREY });
-  const dstr = fdate(c.created_at);
+  const dstr = fdate(c.updated_at || c.created_at);
   page.drawText(dstr, { x: RIGHT - font.widthOfTextAtSize(dstr, 8), y: H - M - 26, size: 8, font, color: GREY });
   cur = M + 56;
   page.drawLine({ start: { x: M, y: H - cur }, end: { x: RIGHT, y: H - cur }, thickness: 2, color: EMERALD });
@@ -125,7 +139,15 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
 
     // Data rows.
     rows.forEach((r, ri) => {
-      const valLines = quotes.map((q) => wrap(cellValue(q, r.key), font, fs, colW - 10).slice(0, 3));
+      // A cell cut to three lines with no marker dropped the tail of a long term — a prepayment
+      // schedule, a lock description — from the borrower's copy with nothing to indicate it.
+      const valLines = quotes.map((q) => {
+        const all = wrap(cellValue(q, r.key), font, fs, colW - 10);
+        if (all.length <= 3) return all;
+        const cut = all.slice(0, 3);
+        cut[2] = (cut[2] || "").replace(/\s*\S*$/, "") + " ...";
+        return cut;
+      });
       const maxLines = Math.max(1, ...valLines.map((a) => a.length));
       const rh = 7 + maxLines * (fs + 3);
       if (ri % 2) page.drawRectangle({ x: M, y: H - cur - rh + 4, width: CW, height: rh, color: LIGHT });

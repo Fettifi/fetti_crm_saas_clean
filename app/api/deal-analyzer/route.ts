@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
     if (!zip && geo?.zip) zip = geo.zip;
     const st = state || geo?.state || "";
     const loc = zip ? resolveLocation(zip) : null;
+    const isRefiPurpose = /refi|refinance|cash.?out|hold|brrrr/i.test(String(body?.purpose || body?.strategy || ""));
     const cityStateZip = [city || geo?.city, st, zip].filter(Boolean).join(" ");
 
     // 2) Fan out the intel pulls in parallel: property facts, neighborhood/market, Census.
@@ -107,8 +108,23 @@ export async function POST(req: NextRequest) {
       price: purchasePrice, rent_monthly: effRent || null,
       // Entered figure wins; then the web pull; then the engine's %-of-price fallback (which
       // flags itself as an estimate).
-      taxes_annual: inTaxes ?? (Number(web?.annualPropertyTax) || null),
-      insurance_annual: inIns,
+      // PRECEDENCE, and it was wrong in the most expensive direction. The scraped
+      // `annualPropertyTax` is the CURRENT OWNER'S bill — on a purchase the property reassesses to
+      // the sale price, so the seller's (often long-held, often capped) bill understates the
+      // buyer's tax, inflating NOI, cap rate and cashflow on the one tool that answers "should I
+      // buy this?". Entered wins; then the ZIP-accurate rate model this route ALREADY RESOLVED
+      // and then threw away; the seller's bill is used only on a refi, where the owner does not
+      // change, and only as a last resort.
+      taxes_annual: inTaxes ?? (
+        loc?.taxRatePct && purchasePrice > 0 && !isRefiPurpose
+          ? Math.round((purchasePrice * loc.taxRatePct) / 100)
+          : (loc?.taxRatePct && purchasePrice > 0
+              ? (Number(web?.annualPropertyTax) || Math.round((purchasePrice * loc.taxRatePct) / 100))
+              : (Number(web?.annualPropertyTax) || null))),
+      // The ZIP insurance model was resolved and discarded too — insurance fell all the way
+      // through to the engine's flat %-of-price fallback even when a better figure existed.
+      insurance_annual: inIns ?? (loc && (loc as any).insRatePct && purchasePrice > 0
+        ? Math.round((purchasePrice * (loc as any).insRatePct) / 100) : null),
       hoa_monthly: inHoa ?? (Number(web?.hoaMonthly) || null),
       rehab_budget: rehabBudget || null, arv: effArv || null, back_tax_status: "unknown", notes: str(body?.notes, 400) || null,
     };
@@ -135,8 +151,11 @@ export async function POST(req: NextRequest) {
       // supplied a real quoted rate or we assumed one.
       assumptionsOverridden,
       carryingCostSource: {
-        taxes: inTaxes != null ? "entered" : (Number(web?.annualPropertyTax) ? "web" : "estimated %-of-price"),
-        insurance: inIns != null ? "entered" : "estimated %-of-price",
+        taxes: inTaxes != null ? "entered"
+          : (loc?.taxRatePct && !isRefiPurpose ? `reassessed at the purchase price using the ${loc.countyName || zip} effective rate (${loc.taxRatePct}%) — a purchase resets the assessment`
+          : Number(web?.annualPropertyTax) ? "current owner's bill from public records — verify, a sale usually reassesses"
+          : "estimated %-of-price"),
+        insurance: inIns != null ? "entered" : (loc && (loc as any).insRatePct ? `regional model for ${loc.countyName || zip}` : "estimated %-of-price"),
         hoa: inHoa != null ? "entered" : (Number(web?.hoaMonthly) ? "web" : "none on file"),
       },
     };

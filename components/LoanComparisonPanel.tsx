@@ -32,10 +32,14 @@ export default function LoanComparisonPanel() {
     setUploading(true); setErr(null); setMsg(null);
     try {
       const fd = new FormData();
-      Array.from(files).slice(0, 6).forEach((f) => fd.append("files", f));
+      // SEND THEM ALL. The client cap made the server see 6, so the server could never detect or
+      // report an overflow — the same client-cap-hides-the-server-guard shape as the credit report
+      // on /income. The server owns the cap because it is the only side that can say what it skipped.
+      Array.from(files).forEach((f) => fd.append("files", f));
       const r = await fetch("/api/compare/extract", { method: "POST", body: fd });
       const j = await r.json();
       if (!r.ok) { setErr(j.error || "Couldn't read those files."); return; }
+      if (j?.warning) setErr(j.warning);
       setQuotes((prev) => [...prev, ...(j.quotes || [])]);
       setMsg(`Read ${j.read} of ${j.uploaded} file(s). Review and edit below, then preview or email.`);
     } catch (e) { setErr(e instanceof Error ? e.message : "Extraction failed"); }

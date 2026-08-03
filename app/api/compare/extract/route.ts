@@ -84,7 +84,12 @@ export async function POST(req: NextRequest) {
   if (!key) return NextResponse.json({ error: "Quote reading needs ANTHROPIC_API_KEY." }, { status: 503 });
   try {
     const form = await req.formData();
-    const files = ([...form.getAll("files"), ...form.getAll("file")].filter((f) => f instanceof Blob) as Blob[]).slice(0, 6);
+    // The cap is a real cost bound (each file is an AI read), but it was applied SILENTLY and the
+    // success message then reported a complete read. Report what was not read.
+    const FILE_GUARD = 6;
+    const allFiles = ([...form.getAll("files"), ...form.getAll("file")].filter((f) => f instanceof Blob) as Blob[]);
+    const fileOverflow = Math.max(0, allFiles.length - FILE_GUARD);
+    const files = allFiles.slice(0, FILE_GUARD);
     if (!files.length) return NextResponse.json({ error: "Upload at least one quote PDF." }, { status: 400 });
     // Guard memory: each file is base64'd in-memory (~1.33×). Reject oversized uploads.
     if (files.some((f) => f.size > 20 * 1024 * 1024)) return NextResponse.json({ error: "Each file must be under 20 MB." }, { status: 413 });
@@ -93,7 +98,7 @@ export async function POST(req: NextRequest) {
     const quotes = results.filter((q): q is CompareQuote => !!q);
     if (!quotes.length) return NextResponse.json({ error: "Couldn't read any of those files — try clearer PDFs or images." }, { status: 422 });
 
-    return NextResponse.json({ ok: true, quotes, read: quotes.length, uploaded: files.length });
+    return NextResponse.json({ ok: true, quotes, read: quotes.length, uploaded: files.length , ...(fileOverflow ? { fileOverflow, warning: `${fileOverflow} file(s) beyond the ${FILE_GUARD}-file limit were NOT read.` } : {}) });
   } catch (e: any) {
     console.error("[compare/extract] error:", e?.message || e);
     return NextResponse.json({ error: "Extraction failed — please try again." }, { status: 500 });

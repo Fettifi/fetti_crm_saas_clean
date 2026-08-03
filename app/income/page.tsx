@@ -51,14 +51,25 @@ export default function IncomeCalcPage() {
   // returns 200 OK, so routing these through crErr (which only fires on !res.ok) is how they
   // were being lost. They must sit next to the DTI they distort.
   const [crWarn, setCrWarn] = useState<string[]>([]);
+  // The PDF builder suppresses per-line flags and engine warnings on the BORROWER copy by design.
+  // /income only ever asked for that copy, so every caution the engine raised — gross-up not
+  // documented, rental not netted against PITIA — was unavailable to the LO in printed form.
+  const [pdfAudience, setPdfAudience] = useState<"lender" | "borrower">("lender");
   // DRAFT TEXT for the per-source override boxes. A controlled input whose value is the parsed
   // NUMBER erases the decimal point as it is typed: "6." parses to 6, re-renders as "6", and the
   // next keystroke yields 65. The LO does not see a rejected entry — they get a wrong figure.
   const [ovrText, setOvrText] = useState<Record<string, string>>({});
+  // Draft text for the self-employment Year 1 / Year 2 boxes. `snum()` on a controlled input whose
+  // value is the parsed NUMBER erased the minus sign as it was typed, so the engine's flagship
+  // "net self-employment LOSS" case — which reduces qualifying income — was UNREACHABLE from the
+  // screen. Same fix as the override boxes: keep the text, commit the number.
+  const [yrText, setYrText] = useState<Record<string, string>>({});
 
   async function uploadCreditReport(files: FileList | null) {
     if (!files || !files.length) return;
-    setCrBusy(true); setCrErr(""); setCrWarn([]);
+    // NOT reset: the liabilities from earlier uploads ACCUMULATE, so wiping their not-read
+    // warnings erased a disclosure about rows that are still in the total.
+    setCrBusy(true); setCrErr("");
     try {
       const fd = new FormData();
       // SEND EVERY FILE. This used to .slice(0, 4) while the server guard is 25 — so an 8-page
@@ -70,11 +81,21 @@ export default function IncomeCalcPage() {
       const res = await fetch("/api/income/credit-report", { method: "POST", body: fd });
       const j = await res.json();
       if (!res.ok) { setCrErr(j?.error || "Couldn't read that report."); return; }
-      setLiabs((prev) => [...prev, ...(j.liabilities || [])]);
+      // DEDUPE ACROSS UPLOADS. Re-uploading the same report appended every tradeline again and
+      // double-counted it into DTI — silently making the borrower look worse, or (on a
+      // re-upload after a correction) counting a paid-off account twice.
+      setLiabs((prev) => {
+        const key = (l: any) => `${String(l.creditor || "").toLowerCase().trim()}|${l.type}|${Math.round(Number(l.monthly) || 0)}|${l.balance == null ? "" : Math.round(Number(l.balance))}`;
+        const seen = new Set(prev.map(key));
+        const added = (j.liabilities || []).filter((l: any) => !seen.has(key(l)));
+        const dropped = (j.liabilities || []).length - added.length;
+        if (dropped > 0) setCrWarn((w) => [...new Set([...w, `${dropped} tradeline(s) already on the list were not added again (duplicate upload).`])]);
+        return [...prev, ...added];
+      });
       if (j.borrower && !borrowerName) setBorrowerName(j.borrower);
       // Every "we did not read this" the route can produce. Dropping these made a partially-read
       // report indistinguishable from a complete one.
-      setCrWarn([j.warning, j.formatWarning, j.tradelineWarning].filter(Boolean) as string[]);
+      setCrWarn((prev) => [...new Set([...prev, ...[j.warning, j.formatWarning, j.tradelineWarning].filter(Boolean) as string[]])]);
     } catch { setCrErr("Upload failed — please try again."); } finally { setCrBusy(false); }
   }
   const updLiab = (id: string, patch: Partial<Liab>) => setLiabs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -90,7 +111,12 @@ export default function IncomeCalcPage() {
   const enteredDebts = num(monthlyDebts) + liabTotal;
   const debts = enteredDebts + r.derivedDebts;            // rental losses count as debt
   const housing = num(housingPayment);
-  const frontCap = loanType === "fha" ? 31 : undefined;
+  // The FHA front-end cap BINDS the max payment, and 31% is a guideline that AUS routinely
+  // exceeds with compensating factors — the LOS twin deliberately removed it. Hardcoding it here
+  // gave the same borrower two different answers on two screens.
+  const [fhaFrontCap, setFhaFrontCap] = useState("31");
+  const frontCap = loanType === "fha" && fhaFrontCap.trim() !== "" && Number(fhaFrontCap) > 0
+    ? Number(fhaFrontCap) : undefined;
   const dti = useMemo(() => computeDti(r.monthlyTotal, debts, housing), [r.monthlyTotal, debts, housing]);
   const maxPay = useMemo(() => maxHousingPayment(r.monthlyTotal, debts, num(targetDti), frontCap), [r.monthlyTotal, debts, targetDti, frontCap]);
   const autoMi = miAnnualFactor(loanType, num(downPct));
@@ -106,7 +132,7 @@ export default function IncomeCalcPage() {
         body: JSON.stringify({
           borrowerName: borrowerName || "Borrower",
           loanType: loanType === "fha" ? "FHA" : "Conventional",
-          audience: "borrower",
+          audience: pdfAudience,
           result: r,
           qualification: {
             label: "Max housing payment (PITIA)", maxPITIA: maxPay, maxPI: ml.maxPI, maxLoan: ml.maxLoan, maxPrice: ml.maxPrice,
@@ -124,7 +150,9 @@ export default function IncomeCalcPage() {
 
   const inp = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none";
   const lbl = "text-xs text-slate-400 mb-1 block";
-  const dtiColor = (v: number) => (v === 0 ? "text-slate-500" : v <= (frontCap ? 43 : 45) ? "text-emerald-400" : v <= 50 ? "text-amber-400" : "text-red-400");
+  // Coloured against the target the engine is ACTUALLY using, not a hardcoded 43/45 that
+  // contradicted the max payment shown beside it.
+  const dtiColor = (v: number) => (v === 0 ? "text-slate-500" : v <= num(targetDti) ? "text-emerald-400" : v <= num(targetDti) + 5 ? "text-amber-400" : "text-red-400");
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
@@ -134,6 +162,14 @@ export default function IncomeCalcPage() {
 
         <div className="flex items-center gap-2 flex-wrap mt-3">
           <input value={borrowerName} onChange={(e) => setBorrowerName(e.target.value)} placeholder="Borrower name (for the PDF)" className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white w-56" />
+          {/* WHICH COPY. The borrower copy suppresses per-line flags and engine warnings by
+              design; this screen only ever produced that one, so the LO could not print the
+              cautions the engine raised. */}
+          <select value={pdfAudience} onChange={(e) => setPdfAudience(e.target.value as "lender" | "borrower")}
+            className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white">
+            <option value="lender">Lender / file copy (shows all flags)</option>
+            <option value="borrower">Borrower copy (flags hidden)</option>
+          </select>
           <button onClick={downloadPdf} disabled={pdfBusy || !r.monthlyTotal} className="text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-1.5 rounded-lg">{pdfBusy ? "Building…" : "⬇ Download PDF summary"}</button>
           {pdfErr && <span className="text-xs text-red-300">{pdfErr}</span>}
         </div>
@@ -172,12 +208,28 @@ export default function IncomeCalcPage() {
                       <div className="flex items-end gap-2">
                         <div className="flex-1"><label className={lbl}>Year 1 (prior)</label>
                           {meta.isSelfEmp
-                            ? <input type="text" value={s.year1 ?? ""} onChange={(e) => update(s.id, { year1: snum(e.target.value) })} className={inp} placeholder="$0 (net)" />
+                            ? <input type="text" inputMode="decimal"
+                                value={numericBoxValue(yrText[s.id + ":1"], s.year1 ?? null)}
+                                onChange={(e) => {
+                                  const c = commitNumericText(e.target.value, { allowNegative: true });
+                                  setYrText((t) => ({ ...t, [s.id + ":1"]: c.text }));
+                                  update(s.id, { year1: c.value ?? undefined });
+                                }}
+                                onBlur={() => setYrText((t) => { const n = { ...t }; delete n[s.id + ":1"]; return n; })}
+                                className={inp} placeholder="$0 (net — a LOSS may be negative)" />
                             : <CurrencyInput value={s.year1 ?? ""} onChange={(v) => update(s.id, { year1: num(v) })} className={inp} placeholder="$0" />}
                         </div>
                         <div className="flex-1"><label className={lbl}>Year 2 (recent)</label>
                           {meta.isSelfEmp
-                            ? <input type="text" value={s.year2 ?? ""} onChange={(e) => update(s.id, { year2: snum(e.target.value) })} className={inp} placeholder="$0 (net)" />
+                            ? <input type="text" inputMode="decimal"
+                                value={numericBoxValue(yrText[s.id + ":2"], s.year2 ?? null)}
+                                onChange={(e) => {
+                                  const c = commitNumericText(e.target.value, { allowNegative: true });
+                                  setYrText((t) => ({ ...t, [s.id + ":2"]: c.text }));
+                                  update(s.id, { year2: c.value ?? undefined });
+                                }}
+                                onBlur={() => setYrText((t) => { const n = { ...t }; delete n[s.id + ":2"]; return n; })}
+                                className={inp} placeholder="$0 (net — a LOSS may be negative)" />
                             : <CurrencyInput value={s.year2 ?? ""} onChange={(v) => update(s.id, { year2: num(v) })} className={inp} placeholder="$0" />}
                         </div>
                       </div>
@@ -289,7 +341,7 @@ export default function IncomeCalcPage() {
               <div><label className={lbl}>Other monthly debts <span className="text-slate-600">(not listed above)</span></label><CurrencyInput value={monthlyDebts} onChange={setMonthlyDebts} className={inp} placeholder="$0 / mo" /></div>
               <div><label className={lbl}>Proposed housing <span className="text-slate-600">(PITIA)</span></label><CurrencyInput value={housingPayment} onChange={setHousingPayment} className={inp} placeholder="$0 / mo" /></div>
             </div>
-            <div><label className={lbl}>Target back-end DTI (for max payment){frontCap ? " · FHA front cap 31%" : ""}</label><select value={targetDti} onChange={(e) => setTargetDti(e.target.value)} className={inp}>{DTI_TARGETS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+            <div><label className={lbl}>Target back-end DTI (for max payment)</label><select value={targetDti} onChange={(e) => setTargetDti(e.target.value)} className={inp}>{DTI_TARGETS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
 
             <div className="text-xs uppercase tracking-wide text-slate-500 pt-2">Max loan they qualify for</div>
             <div className="grid grid-cols-2 gap-3">
@@ -332,7 +384,7 @@ export default function IncomeCalcPage() {
 
             <div className="grid grid-cols-2 gap-3 my-4">
               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-center">
-                <div className="text-[10px] uppercase text-slate-500">Front-end DTI{frontCap ? " (cap 31%)" : ""}</div>
+                <div className="text-[10px] uppercase text-slate-500">Front-end DTI{frontCap ? ` (cap ${frontCap}%)` : ""}</div>
                 <div className={`text-2xl font-bold ${dtiColor(dti.front)}`}>{dti.front ? dti.front.toFixed(1) + "%" : "—"}</div>
               </div>
               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-center">

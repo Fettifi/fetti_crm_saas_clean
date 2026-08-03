@@ -27,9 +27,9 @@ export function entered(v: any): boolean {
 
 /** A bounded assumption: out-of-range or absent falls back to the house default rather than
  *  letting a typo (or a hostile body) drive a 900% vacancy rate into an investor's analysis. */
-export function pctOr(v: any, d: number, max = 100): number {
+export function pctOr(v: any, d: number, max = 100, min = 0): number {
   const n = Number(v);
-  return v !== "" && v != null && Number.isFinite(n) && n >= 0 && n <= max ? n : d;
+  return v !== "" && v != null && Number.isFinite(n) && n >= min && n <= max ? n : d;
 }
 
 export type DealCarrying = { taxesAnnual: number | null; insuranceAnnual: number | null; hoaMonthly: number | null };
@@ -48,8 +48,10 @@ export function dealAssumptions(body: any): Assumptions {
   return {
     ...A,
     rate_pct: pctOr(body?.ratePct, A.rate_pct, 30),
-    amort_years: pctOr(body?.amortYears, A.amort_years, 40),
-    target_dscr: pctOr(body?.targetDscr, A.target_dscr, 5),
+    // A LOWER BOUND OF ZERO divided by zero in the payment math: amort_years 0 and target_dscr 0
+    // are not "conservative", they are undefined. Both must be strictly positive.
+    amort_years: pctOr(body?.amortYears, A.amort_years, 40, 1),
+    target_dscr: pctOr(body?.targetDscr, A.target_dscr, 5, 0.01),
     max_ltv_pct: pctOr(body?.maxLtvPct, A.max_ltv_pct),
     vacancy_pct: pctOr(body?.vacancyPct, A.vacancy_pct),
     mgmt_pct: pctOr(body?.mgmtPct, A.mgmt_pct),
