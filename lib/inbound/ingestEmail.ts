@@ -13,7 +13,7 @@
 //                = false) — otherwise every newsletter would ping Ramon.
 import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { logComms, sendEmail } from "@/lib/comms";
+import { logComms, sendEmail, countRecentOutbound } from "@/lib/comms";
 import { logActivity } from "@/lib/activity";
 import { logHotLeadReply } from "@/lib/notify/hotLeadReply";
 import { isRevocation } from "@/lib/smsConsent";
@@ -164,7 +164,12 @@ export async function ingestInboundEmail(input: ParsedInbound, opts: IngestOpts 
       const { markConciergeReply } = await import("@/lib/markConcierge");
       const { magicApplyLink } = await import("@/lib/magicLink");
       const appLink = magicApplyLink(lead);
-      const r = await markConciergeReply({ lead, history: [{ role: "user", content: text }], appLink, firstAiReply: true });
+      // firstAiReply WAS HARDCODED TRUE on every email auto-reply, so every borrower email
+      // reply hit the "introduce yourself as the AI assistant" branch forever — and that branch
+      // was the one shipping the literal characters ${COMMS_PERSONA} to the model. Derive it the
+      // way commsWatchdog.ts and the SMS inbound route already do: count prior ai_reply rows.
+      const priorAi = await countRecentOutbound(lead.id, "ai_reply", 365 * 86400000).catch(() => 0);
+      const r = await markConciergeReply({ lead, history: [{ role: "user", content: text }], appLink, firstAiReply: priorAi === 0 });
       if (!r.ok || !r.reply || r.flagged) return;
       const em = await sendEmail(from, subject?.toLowerCase().startsWith("re:") ? subject : `Re: ${subject || "your Fetti inquiry"}`, {
         html: `<div style="font:15px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#0f172a">${r.reply.replace(/\n/g, "<br>")}</div>`,

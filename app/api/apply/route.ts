@@ -509,9 +509,9 @@ export async function POST(req: NextRequest) {
               const res = await respondToLead({
                 id: data.id, kind: "returning", name: full_name, email,
                 phone: smsOk ? phone : null, loan_purpose: body.loan_purpose, state: body.state ?? (data as any)?.state ?? null,
-                message: `Hey ${first}, it's ${COMMS_PERSONA} at Fetti — saw you stopped by again about the ${purpose}. Anything I can help with? No rush; your saved application is here whenever you want it: ${backLink}`,
+                message: `Hey ${first}, it's ${COMMS_PERSONA} at Fetti — saw you stopped by again about the ${purpose}. Anything I can help with? No rush — I can pick up right where you left off: ${backLink}`,
                 emailSubject: "saw you came back",
-                emailBody: `Hey ${first} — noticed you stopped by again about the ${purpose}. Happy to answer whatever's on your mind — just reply here.\n\nAnd whenever you're ready, your saved application is still right here:\n${backLink}\n\n— Mark`,
+                emailBody: `Hey ${first} — noticed you stopped by again about the ${purpose}.\n\nUsually when someone comes back it's one of two things: the numbers didn't look right, or the paperwork looked like more than it is. Which one is it?\n\n— ${COMMS_PERSONA}`,
               });
               if (res.sent.length) console.log("[/api/apply] returning-lead touch sent via", res.sent.join("+"), "for", data.id);
             } catch (e) { console.warn("[/api/apply] returning-lead touch failed:", e); }

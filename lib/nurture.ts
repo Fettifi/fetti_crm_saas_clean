@@ -111,6 +111,28 @@ const DOC_CHASE_THROTTLE_DAYS = 2;
 // `ran` distinguishes "did the work" from "was invoked and bailed on the lock". The cron
 // route records a HEARTBEAT only when ran===true, so a permanently-bailing job shows up as
 // STALLED in the doctor instead of reporting healthy (see lib/heartbeat.ts).
+
+/**
+ * "YOUR SAVED APPLICATION IS RIGHT HERE" — TO SOMEONE WHO NEVER STARTED ONE.
+ *
+ * 185 emails to 160 leads asserted a saved application that did not exist. It is the same
+ * fabricated-prior-action defect as the d30 body telling a lead her file was "still sitting on
+ * my desk" when Fetti had never sent her anything — at ten times the volume, and it is the
+ * fastest way to tell a stranger the message is automated. Offer to START one instead; the
+ * magic link pre-fills what they already gave us either way, so nothing is lost.
+ */
+function applyCta(startedApplication: boolean, link: string): { sms: string; email: string } {
+  return startedApplication
+    ? {
+        sms: ` Whenever you're ready, your saved application is right here: ${link}`,
+        email: `\n\nP.S. Whenever you're ready your saved application is right here — or just reply and I'll help: ${link}`,
+      }
+    : {
+        sms: ` If you want, I can start an application and pre-fill what you've already given me: ${link}`,
+        email: `\n\nP.S. If it's useful, I can start an application and pre-fill what you've already given me — or just reply and I'll help: ${link}`,
+      };
+}
+
 export async function runNurture(): Promise<{ considered: number; sent: number; chased: number; reactivated: number; reviewsRequested: number; ran: boolean; firstTouchesHeld?: number; dripSuppressedInProcess?: number }> {
   // OVERLAP GUARD: the daily cron and the Funnel-page "Run follow-ups" button can
   // overlap and double-send TCPA texts/emails to every unprocessed lead. The old guard
@@ -403,9 +425,11 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
         // Conversion CTA: the PRE-FILLED application (magic link), not the bare doc-upload
         // page — a drip lead hasn't finished applying, so "finish the app" IS the next step.
         const link = magicApplyLink(l);
-        const finishLine = ` Whenever you're ready, your saved application is right here: ${link}`;
+        const started = !!(l as any).raw?.app_completed || String((l as any).stage || "") === "Application";
+        const cta = applyCta(started, link);
+        const finishLine = cta.sms;
         const emailT = renderTouch(EMAIL_TOUCHES[STEP_TOUCH[due.step]] || EMAIL_TOUCHES.d30, l);
-        const emailBody = emailT.body + `\n\nP.S. Whenever you're ready your saved application is right here — or just reply and I'll help: ${link}` + textMeLine;
+        const emailBody = emailT.body + cta.email + textMeLine;
         const res = await respondToLead({
           id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
           message: due.msg(name, purpose) + finishLine + bookLine,   // SMS copy
@@ -429,13 +453,15 @@ export async function runNurture(): Promise<{ considered: number; sent: number; 
     const msg = REACTIVATION[rIdx](name, purpose);
     try {
       const link = magicApplyLink(l);
-      const finishLine = ` Your saved application is still here whenever you want it: ${link}`;
+      const startedR = !!(l as any).raw?.app_completed || String((l as any).stage || "") === "Application";
+      const ctaR = applyCta(startedR, link);
+      const finishLine = ctaR.sms;
       const emailT = renderTouch(EMAIL_TOUCHES[REACTIVATION_KEYS[rIdx]] || EMAIL_TOUCHES.r1, l);
       const res = await respondToLead({
         id: l.id, kind: "nurture", name, email: l.email, phone: sendPhone, loan_purpose: l.loan_purpose, state: (l as any).state,
         message: msg + finishLine + bookLine,                        // SMS copy
         emailSubject: emailT.subject,                                 // email copy
-        emailBody: emailT.body + `\n\nP.S. Your saved application is still here whenever you want it — or just reply: ${link}` + textMeLine,
+        emailBody: emailT.body + ctaR.email + textMeLine,
       });
       if ((res?.sent || []).length) {
         await supabaseAdmin.from("leads").update({ nurture_step: curStep + 1, last_nurture_at: new Date().toISOString() }).eq("id", l.id);
