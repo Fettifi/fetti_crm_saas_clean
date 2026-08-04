@@ -260,6 +260,26 @@ const num = (v: any): number | null => (typeof v === "number" && isFinite(v) ? v
  *     ("extr reac tale" vs "extreme reach talent"), and it cannot match two unrelated names
  *     without them agreeing word-for-word from the first letters.
  */
+/**
+ * An employer name reduced for comparison, with BANK-STATEMENT NOISE REMOVED.
+ *
+ * A payroll deposit prints as an ACH descriptor — "Dbs Bank Ltd Payroll PPD ID: 9111111103" —
+ * not as an employer name. Comparing that raw against the "DBS BANK LTD" on the W-2 never
+ * matches, which is how the same job got counted twice on a live FHA file (see the benefit
+ * duplicate check below).
+ */
+export function payerStem(s?: string | null): string {
+  const ach = String(s || "").toLowerCase()
+    .replace(/\b(?:ppd|ccd|ctx|co)\s*id\s*:?\s*\d+/g, " ")     // "PPD ID: 9111111103"
+    .replace(/\b(?:des|indn|orig|trn|trace|eed|id)\s*:\s*\S*/g, " ")
+    .replace(/\b(?:bene|benefit|beneficiary|ach|eft|direct\s+dep(?:osit)?|dir\s+dep|deposit|credit|memo)\b/g, " ")
+    .replace(/\b\d{6,}\b/g, " ");
+  const raw = ach.replace(/[^a-z0-9]+/g, " ").trim();
+  const stripped = raw.replace(/\b(incorporated|inc|corporation|corp|company|co|llc|llp|lp|ltd|the|of|and|group|holdings|enterprises|executive|services|service|staffing|solutions|payroll|dba|na|usa)\b/g, " ").replace(/\s+/g, " ").trim();
+  const out = (stripped || raw).replace(/ /g, "");
+  return out.length >= 4 ? out : raw.replace(/ /g, "");
+}
+
 export function sameEmployerStem(a: string, b: string): boolean {
   const [sa, ia = ""] = String(a).split("\u0000");
   const [sb, ib = ""] = String(b).split("\u0000");
@@ -373,16 +393,7 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
     // would share one payroll and one W-2 anyway, whereas multiple stubs per employer is the
     // normal case on every file. So ALL streams sharing an employer stem now merge; only a
     // distinct case number (IHSS recipients) keeps them apart.
-    const empStem = (s?: string | null): string => {
-      const raw = String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-      const stripped = raw.replace(/\b(incorporated|inc|corporation|corp|company|co|llc|llp|lp|ltd|the|of|and|group|holdings|enterprises|executive|services|service|staffing|solutions|payroll|dba|na|usa)\b/g, " ").replace(/\s+/g, " ").trim();
-      // Fall back to the FULL name when stripping leaves too little to identify an employer:
-      // "ABC Services" reduces to "abc" (3 chars), which the length guard below would skip,
-      // so two stubs from one small employer would never merge. "abcservices" is both long
-      // enough and more specific.
-      const out = (stripped || raw).replace(/ /g, "");
-      return out.length >= 4 ? out : raw.replace(/ /g, "");
-    };
+    const empStem = payerStem;
     // A stream's DISTINGUISHING IDENTITY: an IHSS-style payer covers several genuinely
     // separate assignments under ONE employer name, told apart by a case number or a named
     // recipient. Two such streams must never merge (that would silently drop a real income
@@ -686,6 +697,34 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
       const m = f.nonTaxable ? num(f.monthlyBenefit)! * grossUp : num(f.monthlyBenefit)!;
       const bt = (f.benefitType || "").toLowerCase();
       const label = `${f.employerOrPayer || bt || f.docType} benefit`;
+
+      // A PAYROLL DEPOSIT IS NOT A BENEFIT — IT IS THE WAGES, ARRIVING.
+      //
+      // Magali Lopez Villafuerte (FF-202607-8421, FHA), found 2026-08-03. The reader took a
+      // payroll ACH deposit off her bank statement, typed it `ssa_award` / `fixed_benefit`, and
+      // counted $3,515.32/mo as a separate fixed benefit — on top of the DBS Bank wages already
+      // counted from two W-2s and two pay stubs. Qualifying income read $23,268 against a true
+      // $19,753: an 18% overstatement on a government-insured file.
+      //
+      // It survived every existing control because the employer-merge only ever ran over WAGE
+      // streams, and this stream was never a wage stream. So the check belongs HERE, on the way
+      // out: if this "benefit" is paid by an employer already counted as wages for this
+      // borrower, it is the same money and must not be added again. Flagged, never silently
+      // dropped — the LO can Omit to add it back if it really is separate.
+      const ps = payerStem(f.employerOrPayer);
+      const dupOf = ps.length >= 4
+        ? countedWage.find((w) => {
+            const ws = payerStem(w.employer);
+            return ws.length >= 4 && (ws === ps || sameEmployerStem(`${ws}\u0000`, `${ps}\u0000`));
+          })
+        : undefined;
+      if (dupOf) {
+        flags.push({
+          text: `${label}: this is a payroll deposit from ${dupOf.employer}, whose wages are already counted — the same money arriving in the bank, not a second income. Excluded as a DUPLICATE. Omit to add it back.`,
+          addBackMonthly: rd(m), borrower: b,
+        });
+        continue;
+      }
       // Continuance (must continue ≥3 yr) and, for support/alimony, ≥6-mo receipt history —
       // else the income is held BACK (flag + add-back), not counted (Fannie B3-3.1-09).
       const cont = num(f.continuanceMonthsRemaining);

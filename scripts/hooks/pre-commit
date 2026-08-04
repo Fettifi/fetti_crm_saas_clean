@@ -43,7 +43,7 @@ MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingD
 UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite' -e 'deal-analyzer' -e 'scripts/verify-deal-analyzer')
 SSN=$(printf '%s\n' "$CHANGED" | grep -F -e 'los/extract' -e '1003/page' -e 'lib/urla.ts' -e 'scripts/verify-ssn-merge')
 PA=$(printf '%s\n' "$CHANGED" | grep -F -e 'preapproval' -e 'letter/' -e 'preapprovals')
-DOC=$(printf '%s\n' "$CHANGED" | grep -F -e 'docContent' -e 'credit-liabilities' -e 'files/[id]/docs' -e 'verify-doc-detection')
+DOC=$(printf '%s\n' "$CHANGED" | grep -F -e 'docContent' -e 'credit-liabilities' -e 'files/[id]/docs' -e 'verify-doc-detection' -e 'verify-income' -e 'IncomeQualifier')
 # WHO IS A REAL PERSON. The Shield verdict now decides whether a lead is nurtured at all, so a
 # band written wrongly either silences a borrower or clears a bot. On 2026-08-02 a backfill
 # wrote a verdict outside the declared union on 190 rows, collapsed the whole "watch" tier into

@@ -17,7 +17,7 @@
 //
 //   npx tsx scripts/verify-doc-detection.ts
 import { readFileSync, existsSync } from "fs";
-import { looksLikeCreditReport, isScan, pdfText } from "../lib/docContent";
+import { looksLikeCreditReport, looksLikeIncomeDoc, isScan, pdfText } from "../lib/docContent";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -81,6 +81,50 @@ const TAXRET = `Form 1040 U.S. Individual Income Tax Return  Schedule C  Schedul
   chk(/console\.warn\(.\[docContent\]/.test(dc),
     "and a parse failure is logged rather than returned as '' — silently, that is indistinguishable from a scan");
 
+  // ── INCOME: every miss is a wrong number, not a missing feature ─────────────────────────
+  console.log("\nincome selection reads the documents too:");
+  const inc = code("app/api/los/files/[id]/verify-income/route.ts");
+  chk(/looksLikeIncomeDoc\(await pdfText\(/.test(inc),
+    "verify-income CALLS the content detector on the PDFs the filenames did not pick up");
+  chk(/const candidates = \[\.\.\.nameMatched, \.\.\.byContent\]/.test(inc),
+    "and ADDS them — the credit pull only needs one report, but income needs EVERY document");
+  chk(/INCOME_RE\.test/.test(inc), "the filename pass survives as the cheap fast path");
+  chk(/contentNotice/.test(inc) && /contentNotice/.test(code("components/los/IncomeQualifier.tsx")),
+    "and the LO is told which documents were counted by content — otherwise the income just quietly changes");
+
+  console.log("\nit types them correctly:");
+  for (const [kind, text] of [
+    ["w2", "Form W-2 Wage and Tax Statement OMB No. 1545-0008 Social security wages Medicare wages Employer identification number"],
+    ["paystub", "EARNINGS STATEMENT Gross Pay Net Pay Pay Period ending YTD year-to-date Overtime Federal income tax withheld Direct Deposit"],
+    ["1040", "Form 1040 U.S. Individual Income Tax Return Adjusted gross income Schedule C Taxable income Total income"],
+    ["bank_statement", "Statement period Beginning balance Ending balance Deposits and credits Withdrawals and debits Available balance Service charge"],
+    ["lease", "RESIDENTIAL LEASE AGREEMENT Landlord Tenant Monthly rent Security deposit Term of the lease"],
+  ] as [string, string][]) {
+    const v = looksLikeIncomeDoc(text.repeat(8));
+    chk(v.ok && v.kind === kind, `a ${kind} reads as ${v.ok ? v.kind : "nothing"}`);
+  }
+
+  console.log("\nand a credit report is NEVER handed to the income engine:");
+  chk(!looksLikeIncomeDoc(TRIMERGE).ok, "a plain tri-merge does not read as income");
+  // AND THE EXCLUSION IS LOAD-BEARING, NOT DECORATIVE.
+  // Ramon's own two reports score 0 on income markers with or without the credit check, so
+  // asserting against them proves nothing about the check. Many tri-merges DO carry an employment
+  // section — employer names, positions, sometimes stated income — and a bank-statement-heavy
+  // report carries balance vocabulary. This text is deliberately BOTH: it would score as a bank
+  // statement on its own, and the credit-report exclusion is the only thing stopping it being fed
+  // to the income engine as one.
+  const CREDIT_WITH_INCOME_WORDS = (TRIMERGE + `
+    EMPLOYMENT: ACME CORPORATION  Position: Operator  Verified
+    Statement period  Beginning balance  Ending balance  Deposits and credits
+    Withdrawals and debits  Available balance  Service charge
+  `.repeat(4));
+  const both = looksLikeIncomeDoc(CREDIT_WITH_INCOME_WORDS);
+  chk(!both.ok,
+    `a credit report carrying employment and balance vocabulary is still refused by the income engine (got ${both.kind})`);
+  const dc0 = code("lib/docContent.ts");
+  chk(/if \(looksLikeCreditReport\(t\)\.ok\) return \{ ok: false/.test(dc0),
+    "because looksLikeIncomeDoc rejects anything that reads as a credit report first");
+
   console.log("\nhe can also rename a document:");
   const docs = code("app/api/los/files/[id]/docs/route.ts");
   chk(/patch\.name = nm/.test(docs), "PATCH accepts a new name");
@@ -93,8 +137,10 @@ const TAXRET = `Form 1040 U.S. Individual Income Tax Return  Schedule C  Schedul
   if (REAL.every((f) => existsSync(f))) {
     console.log("\nagainst his actual documents:");
     for (const f of REAL) {
-      const v = looksLikeCreditReport(await pdfText(readFileSync(f)));
+      const t = await pdfText(readFileSync(f));
+      const v = looksLikeCreditReport(t);
       chk(v.ok, `${f.split("/").pop()} reads as a credit report (${v.score}/14) despite its name`);
+      chk(!looksLikeIncomeDoc(t).ok, `${f.split("/").pop()} is NOT offered to the income engine`);
     }
   }
 

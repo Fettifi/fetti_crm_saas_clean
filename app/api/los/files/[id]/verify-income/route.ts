@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { pdfText, looksLikeIncomeDoc, INCOME_KIND_RANK } from "@/lib/docContent";
 import { logActivity } from "@/lib/activity";
 import { getSetting, setSetting } from "@/lib/settings";
 import { assembleUrla, isInvestmentDeal, type Urla } from "@/lib/urla";
@@ -244,9 +245,41 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (/statement/.test(s)) return 5;                              // statements: weak income evidence, large — last
       return 4;
     };
-    const candidates = ((docs || []) as any[])
-      .filter((d: any) => d.storage_path && (String(d.category || "").toLowerCase() === "income" || INCOME_RE.test(`${d.name || ""} ${d.file_name || ""} ${d.category || ""}`)))
-      .sort((a: any, b: any) => rank(a) - rank(b));
+    // A FILENAME IS NOT EVIDENCE — AND HERE EVERY MISS IS A WRONG NUMBER.
+    //
+    // Selection was `category === "income" || INCOME_RE.test(name + file_name + category)`. The
+    // credit pull had the same defect and hid two real reports behind `dhqPDF.aspx-37.pdf`
+    // (Ramon, 2026-08-03). This one is worse: the credit pull only needs to find ONE report, but
+    // income needs EVERY document — each feeds the qualifying number, so a pay stub excluded
+    // because a browser saved it as `Name_of_file_1_.PDF` does not produce an error, it produces
+    // a quietly understated income on a file that then gets declined or re-priced.
+    //
+    // So content detection does not merely fill in when the names find nothing. It runs over the
+    // PDFs the names did NOT pick up and ADDS any that read as income. Local text extraction and
+    // a regex — no model call. A document that reads as a credit report is never added.
+    const nameMatched = ((docs || []) as any[])
+      .filter((d: any) => d.storage_path && (String(d.category || "").toLowerCase() === "income" || INCOME_RE.test(`${d.name || ""} ${d.file_name || ""} ${d.category || ""}`)));
+    const picked = new Set(nameMatched.map((d: any) => d.id));
+    const byContent: any[] = [];
+    const unnamed = ((docs || []) as any[]).filter(
+      (d: any) => d.storage_path && !picked.has(d.id) && /\.pdf$/i.test(d.file_name || d.storage_path || ""));
+    await Promise.all(unnamed.slice(0, 40).map(async (d: any) => {
+      try {
+        const { data: blob } = await supabaseAdmin.storage.from(BUCKET).download(d.storage_path);
+        if (!blob) return;
+        const v = looksLikeIncomeDoc(await pdfText(Buffer.from(await blob.arrayBuffer())));
+        if (v.ok) byContent.push({ ...d, __contentKind: v.kind });
+      } catch { /* unreadable — the name pass already decided about it */ }
+    }));
+
+    const candidates = [...nameMatched, ...byContent]
+      // Where the FILENAME gives no signal, fall back to what the document actually is. Only for
+      // the default bucket, so a file whose income is already settled is not re-ordered under it.
+      .sort((a: any, b: any) => {
+        const ra = rank(a) === 4 && a.__contentKind ? INCOME_KIND_RANK[a.__contentKind as keyof typeof INCOME_KIND_RANK] : rank(a);
+        const rb = rank(b) === 4 && b.__contentKind ? INCOME_KIND_RANK[b.__contentKind as keyof typeof INCOME_KIND_RANK] : rank(b);
+        return ra - rb;
+      });
     if (!candidates.length) return NextResponse.json({ error: "No income documents are uploaded on this file yet (W-2, pay stubs, 1099, bank statements). Request and collect them first." }, { status: 422 });
     // Reserve a slot for a pay stub so a W-2/1099-heavy file never buries the current
     // stub past the priority window — the prompt qualifies a wage-earner on the current
@@ -570,7 +603,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Freeze this read against the doc-set fingerprint so the SAME file returns the SAME
     // number until its documents change (or the LO forces a re-read).
+    // WHY THE NUMBER MOVED. A document included on its CONTENTS is one whose name gave no clue
+    // what it was — and one that every previous run of this file silently left out. Naming it
+    // here is the difference between "the income changed" and "the income changed because a pay
+    // stub called Name_of_file_1_.PDF is now being counted."
+    const contentIncluded = candidates
+      .filter((d: any) => d.__contentKind)
+      .map((d: any) => ({ doc: d.name || d.file_name || "document", readAs: d.__contentKind }));
     const payload = { perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage,
+      contentIncluded,
+      ...(contentIncluded.length ? { contentNotice: `${contentIncluded.length} document(s) were included by reading them, not by their filename: ${contentIncluded.map((c: any) => `${c.doc} (${c.readAs})`).join(", ")}. Earlier runs of this file left them out.` } : {}),
       // The DSCR panel prefills its Gross monthly rent from this, so the rent the LO sees in
       // the qualification box is the one actually read off the lease.
       dscrRent: effectiveMethod === "dscr" && rental?.monthlyGrossRent ? rental.monthlyGrossRent : null,

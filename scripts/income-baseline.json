@@ -201,13 +201,16 @@
       "file": "FF-202608-1913",
       "borrower": "Charletha Osborne",
       "candidates": [
+        "36e732e6-cb86-4959-a189-86ad50b9581e|Pay stubs — last 30 days — additional",
         "7248910f-759d-46d2-bce0-1cc787c06dc2|Mortgage statement",
         "7ad42455-f816-4c76-8acc-3f55a47c2150|Bank statements — last 2 months",
         "7be22bc2-0d61-4277-aa9e-c34dbe4ce8b1|W-2s — last 2 years — additional",
         "7cef0e2b-8cfe-462e-be28-59775ff96706|Bank statements — last 2 months — additional",
+        "80c81502-91a8-43fa-a1a6-20b534ff51ca|Pay stubs — last 30 days — additional",
         "9d94b9ad-972c-4182-af38-51a2d3e0c9a7|W-2s — last 2 years",
         "9ddf7244-40cc-45e3-a69c-fe0b99e7b360|Bank statements — last 2 months — additional",
         "bff8e07b-36e4-4d5c-899b-7a1ddac28041|Bank statements — last 2 months — additional",
+        "c5677a5a-d9fc-427c-840b-057886c194d4|Pay stubs — last 30 days",
         "c5d0a3e6-a5e9-4ab0-b56d-1af8bc368d86|Bank statements — last 2 months — additional",
         "c6df7a60-51bb-4281-b9e6-8eeb540ef935|2025 tax return",
         "f61c66ca-e0ab-4442-895c-1a0cc6cd3974|Bank statements — last 2 months — additional",
@@ -334,7 +337,13 @@
         "f4a04823-f2c0-490a-8d3c-06bb4746e1d7|Tax returns — last 2 years",
         "ff24f69e-193d-422a-a296-daab3658dbb8|Pay stubs — last 30 days"
       ],
-      "cachedIncome": 19753
+      "cachedIncome": null
+    },
+    "769715b1-05a2-4053-9476-2dbc0bb59ed3": {
+      "file": "FF-202608-1250",
+      "borrower": "Joseph Hixon",
+      "candidates": [],
+      "cachedIncome": null
     }
   }
 }

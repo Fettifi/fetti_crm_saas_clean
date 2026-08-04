@@ -538,6 +538,14 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
                 <span>🔒 Locked to the documents on file{verified.verifiedAt ? ` · verified ${fmtWhen(verified.verifiedAt)}` : ""} — stays the same unless the docs change.</span>
                 <button onClick={() => verifyIncome(true)} disabled={verifying} className="text-emerald-400 hover:underline disabled:opacity-50">↻ re-read documents</button>
               </div>
+              {/* A DOCUMENT COUNTED BECAUSE WE READ IT, NOT BECAUSE OF ITS NAME. These are the
+                  ones every earlier run of this file silently left out — say so, because
+                  otherwise the income just quietly changed. */}
+              {verified.contentNotice && (
+                <div className="mt-1.5 text-[11px] text-amber-300 bg-amber-950/25 border border-amber-800/40 rounded-lg px-2 py-1.5">
+                  📄 {verified.contentNotice}
+                </div>
+              )}
               <div className="mt-1 text-[10px] text-slate-500">Uncheck a line to drop it, set B1/B2 for a couple, or <span className="text-emerald-400">+ Add income</span> below to count income the read held back. The total is the sum of the checked lines — your call.</div>
               <div className="mt-1.5 space-y-1">
                 {allLines.map((l: any) => {
