@@ -9,6 +9,7 @@
 //   npx tsx scripts/verify-preapproval-from-calc.ts
 import { readFileSync } from "fs";
 import { maxHousingPayment, maxLoanFromPayment, miAnnualFactor } from "../lib/income";
+import { programFromProduct } from "../lib/loanProgram";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -101,6 +102,36 @@ chk(/co_borrower_email: b1\.email/.test(pa),
   "the co-borrower's own email comes off the 1003, so 'send to both' has an address to use");
 chk(/nm\(b1\)\.toLowerCase\(\) !== nm\(b0\)\.toLowerCase\(\)/.test(pa),
   "and one person is never printed as their own co-borrower (a live file carries exactly that)");
+
+// ── the programme on the screen is the programme on the letter ────────────────────────────────
+// Verified live on Magali's FHA file 2026-08-04: the LOS product "FHA Purchase + Down Payment
+// Assistance" is not one of the twelve dropdown options, so the browser rendered the FIRST option
+// — Conventional — while state still held the raw string. An FHA deal read as conventional on the
+// screen he issues from, on the same day he asked for the FHA-vs-conventional ratios to be right.
+console.log("\nthe loan programme survives the pull:");
+// EVERY product string in loan_files on 2026-08-04, with the answer the letter must carry.
+// Not invented — read off the table, which is the only reason these cases mean anything.
+const PRODUCTS: [string, string][] = [
+  ["FHA Purchase + Down Payment Assistance", "FHA"],                              // Magali's file
+  ["First-Time Homebuyer (Conventional) + Down Payment Assistance", "First-Time Homebuyer"],
+  ["First-Time Homebuyer (Conventional)", "First-Time Homebuyer"],
+  ["DSCR Purchase", "DSCR"], ["DSCR Cash-Out Refinance", "DSCR"], ["DSCR", "DSCR"],
+  ["VA Purchase", "VA"], ["Investment HELOC", "HELOC"],
+  // A purpose is not a programme. Every one of these is live in the LOS right now, and each
+  // used to render as "Conventional" — an assertion about the loan that nobody made.
+  ["Refinance", ""], ["Cash-Out Refinance", ""], ["Purchase", ""], ["purchase", ""],
+  ["Working Capital", ""], ["hardmoney", ""], ["", ""], [null as any, ""],
+];
+for (const [product, want] of PRODUCTS) {
+  const got = programFromProduct(product);
+  chk(got === want, `  "${product ?? "(null)"}" → ${got === "" ? "(blank — the LO picks)" : got}${got === want ? "" : `  EXPECTED ${want || "(blank)"}`}`);
+}
+chk(programFromProduct("fha") === "FHA" && programFromProduct("conventional") === "Conventional",
+  "the calculator's own lower-case spelling maps too — it is not one of the dropdown options either");
+chk(/loan_type: programFromProduct\(lf\.product\)/.test(pa), "the loan-file pull runs through it");
+chk(/fromCalc\.loan_type = programFromProduct\(program\)/.test(pa), "so does the calculator handoff");
+chk(/value=\{LOAN_TYPES\.includes\(f\.loan_type\) \? f\.loan_type : ""\}/.test(pa),
+  "and the select shows blank for a value it cannot represent — never a silent first option");
 
 // ── both borrowers ───────────────────────────────────────────────────────────────────────────
 console.log("\nboth borrowers receive it:");

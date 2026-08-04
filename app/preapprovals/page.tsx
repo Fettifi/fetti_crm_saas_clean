@@ -3,6 +3,7 @@
 // Pre-Approvals: issue branded, compliant mortgage pre-approval letters (pull
 // from a loan file or enter manually), then share/print the letter.
 import { useEffect, useState } from "react";
+import { LOAN_PROGRAMS, programFromProduct } from "@/lib/loanProgram";
 import { FileCheck2, Loader2, Copy, Check, ExternalLink, Plus, Ban, Download, Upload } from "lucide-react";
 import AddressInput from "@/components/AddressInput";
 import CurrencyInput from "@/components/ui/CurrencyInput";
@@ -12,8 +13,9 @@ import { BRAND } from "@/lib/brand";
 type PA = { id: string; letter_number: string; share_token: string; borrower_name: string; loan_type?: string; loan_amount?: number; status: string; expires_on?: string; created_at: string };
 type LoanFile = { id: string; lead_id?: string; borrower_name: string; email?: string; product?: string; occupancy?: string; property_address?: string; property_value?: number; loan_amount?: number };
 
-const LOAN_TYPES = ["Conventional", "FHA", "VA", "USDA", "Jumbo", "First-Time Homebuyer", "DSCR", "Bank-Statement (Self-Employed)", "Fix & Flip", "Bridge", "HELOC", "Reverse (HECM)"];
+const LOAN_TYPES: readonly string[] = LOAN_PROGRAMS;
 const TERMS = ["30-year fixed", "15-year fixed", "20-year fixed", "5/1 ARM", "7/1 ARM", "12-month interest-only", "Other"];
+
 const OCC = ["Primary residence", "Second home", "Investment"];
 // Every term-sheet field, from the ONE registry the extractor, the PDF and the public letter
 // also read (lib/preapprovalFields.ts). This was a hand-written list of 10 while the extractor
@@ -160,7 +162,9 @@ export default function PreApprovals() {
         const v = qs.get(k); if (v) fromCalc[k] = v;
       }
       const program = qs.get("program");
-      if (program) fromCalc.loan_type = program;
+      // The qualification screen sends its own spelling ("fha", "conventional"), which is not one
+      // of the dropdown options either — the same coercion applies.
+      if (program) fromCalc.loan_type = programFromProduct(program) || program;
       if (Object.keys(fromCalc).length) {
         // The persisted review wins on qualifying income — it is what he settled on and what the
         // worksheet prints. The calculator's copy is only a snapshot of the same number.
@@ -174,7 +178,8 @@ export default function PreApprovals() {
     const lf = (known || files).find((x) => x.id === id); if (!lf) return;
     setF((p: any) => ({
       ...p, loan_file_id: lf.id, lead_id: lf.lead_id || "",
-      borrower_name: lf.borrower_name || p.borrower_name, loan_type: lf.product || p.loan_type,
+      borrower_name: lf.borrower_name || p.borrower_name,
+      loan_type: programFromProduct(lf.product) || p.loan_type,
       borrower_email: lf.email || p.borrower_email,
       property_address: lf.property_address || p.property_address,
       purchase_price: lf.property_value ? String(lf.property_value) : p.purchase_price,
@@ -221,7 +226,7 @@ export default function PreApprovals() {
           lead_id: p.lead_id, loan_file_id: p.loan_file_id,
           ...(ex.borrower_name && { borrower_name: ex.borrower_name }),
           ...(ex.co_borrower && { co_borrower: ex.co_borrower }),
-          ...(ex.loan_type && { loan_type: ex.loan_type }),
+          ...(ex.loan_type && { loan_type: programFromProduct(ex.loan_type) || ex.loan_type }),
           ...(ex.loan_amount != null && { loan_amount: numStr(ex.loan_amount) }),
           ...(ex.purchase_price != null && { purchase_price: numStr(ex.purchase_price) }),
           ...(ex.down_payment != null && { down_payment: numStr(ex.down_payment) }),
@@ -391,7 +396,9 @@ export default function PreApprovals() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="text-xs text-slate-500">Borrower name *</label><input value={f.borrower_name} onChange={(e) => set("borrower_name", e.target.value)} className={field} required /></div>
             <div><label className="text-xs text-slate-500">Co-borrower</label><input value={f.co_borrower} onChange={(e) => set("co_borrower", e.target.value)} className={field} /></div>
-            <div><label className="text-xs text-slate-500">Loan program</label><select value={f.loan_type} onChange={(e) => set("loan_type", e.target.value)} className={field}>{LOAN_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+            {/* A blank first option, so an unmapped programme reads as EMPTY instead of silently
+                showing whichever option happens to be first. */}
+            <div><label className="text-xs text-slate-500">Loan program</label><select value={LOAN_TYPES.includes(f.loan_type) ? f.loan_type : ""} onChange={(e) => set("loan_type", e.target.value)} className={field}><option value="">— pick a programme —</option>{LOAN_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
             <div><label className="text-xs text-slate-500">Occupancy</label><select value={f.occupancy} onChange={(e) => set("occupancy", e.target.value)} className={field}>{OCC.map((t) => <option key={t}>{t}</option>)}</select></div>
             <div><label className="text-xs text-slate-500">Purchase price</label><CurrencyInput value={f.purchase_price} onChange={(v) => set("purchase_price", v)} className={field} /></div>
             <div><label className="text-xs text-slate-500">Down payment</label><CurrencyInput value={f.down_payment} onChange={(v) => set("down_payment", v)} className={field} /></div>
