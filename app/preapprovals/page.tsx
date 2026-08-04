@@ -69,6 +69,7 @@ export default function PreApprovals() {
   const [conflicts, setConflicts] = useState<{ field: string; kept: string; also: string; from: string }[]>([]);
   const [prefilled, setPrefilled] = useState<string | null>(null);
   const [fromCalculator, setFromCalculator] = useState<string | null>(null);
+  const [settledIncome, setSettledIncome] = useState<number | null>(null);
   const [hidden, setHidden] = useState<string[]>([]);
   const set = (k: string, v: string) => setF((p: any) => ({ ...p, [k]: v }));
 
@@ -114,6 +115,25 @@ export default function PreApprovals() {
       }));
       setPrefilled(lf?.borrower_name || nm(b0) || "the loan file");
     } catch { /* the loan-file row already prefilled the basics */ }
+
+    // THE INCOME ON THE LETTER IS THE NUMBER HE SETTLED ON — READ, NEVER RE-DERIVED.
+    //
+    // The income summary's figure is the AI read PLUS his decisions: excluded borrowers,
+    // unticked lines, omitted flags, added income, a typed override. IncomeQualifier persists
+    // that final figure as `settledMonthlyIncome` on the review. The letter reads it here, so it
+    // agrees with the worksheet no matter when it is issued — a second computation of one
+    // borrower's income is how two documents on one deal end up disagreeing.
+    try {
+      const rr = await fetch(`/api/los/files/${fileId}/income-review`);
+      if (rr.ok) {
+        const rv = (await rr.json())?.review;
+        const settled = Number(rv?.settledMonthlyIncome);
+        if (isFinite(settled) && settled > 0) {
+          setF((p: any) => ({ ...p, qualifying_income: `$${Math.round(settled).toLocaleString()}/mo` }));
+          setSettledIncome(Math.round(settled));
+        }
+      }
+    } catch { /* the letter simply carries no income figure rather than a guessed one */ }
   }
 
   useEffect(() => {
@@ -135,7 +155,9 @@ export default function PreApprovals() {
       const program = qs.get("program");
       if (program) fromCalc.loan_type = program;
       if (Object.keys(fromCalc).length) {
-        setF((p: any) => ({ ...p, ...fromCalc }));
+        // The persisted review wins on qualifying income — it is what he settled on and what the
+        // worksheet prints. The calculator's copy is only a snapshot of the same number.
+        setF((p: any) => { const { qualifying_income, ...rest } = fromCalc; return { ...p, ...rest, qualifying_income: p.qualifying_income || qualifying_income || "" }; });
         setFromCalculator(program || "the qualification screen");
       }
     })();
@@ -295,6 +317,11 @@ export default function PreApprovals() {
         {fromCalculator && (
           <div className="mt-4 rounded-xl border border-emerald-700/40 bg-emerald-950/20 px-4 py-2.5 text-sm text-emerald-200">
             🧮 Carried over from the income calculator on <span className="font-semibold">{fromCalculator}</span> — max loan, max price, required down payment, payment, rate and DTI are the figures that screen worked out. Change anything before you issue.
+          </div>
+        )}
+        {settledIncome != null && (
+          <div className="mt-2 text-[12px] text-slate-400">
+            Qualifying income on this letter: <span className="font-semibold text-slate-200">${settledIncome.toLocaleString()}/mo</span> — read from the income summary, not recalculated.
           </div>
         )}
         {prefilled && (

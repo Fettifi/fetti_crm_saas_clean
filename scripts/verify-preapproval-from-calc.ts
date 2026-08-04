@@ -55,6 +55,19 @@ chk(/const fromCalc: Record<string, string> = \{\}/.test(pa) && /qs\.get\(k\)/.t
 chk(/setFromCalculator/.test(pa) && /income calculator/.test(readFileSync("app/preapprovals/page.tsx", "utf8")),
   "and tells him where the figures came from");
 
+// ── the income on the letter is the number he SETTLED on ────────────────────────────────────
+console.log("\nthe letter reads the settled income, it does not recompute it:");
+const iq = code("components/los/IncomeQualifier.tsx");
+chk(/settledMonthlyIncome: Math\.round\(income \|\| 0\)/.test(iq),
+  "the income summary PERSISTS the figure the LO settled on (after exclusions, omits, overrides)");
+chk(/settledPerBorrower/.test(iq), "and the per-borrower split alongside it");
+chk(/income-review`\)/.test(pa) && /settledMonthlyIncome/.test(pa),
+  "the pre-approval screen READS it from the review rather than deriving its own");
+chk(/qualifying_income: p\.qualifying_income \|\| qualifying_income/.test(pa),
+  "and the persisted figure WINS over the calculator's snapshot — one number, one source");
+chk(/read from the income summary, not recalculated/.test(readFileSync("app/preapprovals/page.tsx", "utf8")),
+  "the screen says so, so he can see which number the letter will carry before issuing");
+
 // ── both borrowers ───────────────────────────────────────────────────────────────────────────
 console.log("\nboth borrowers receive it:");
 const send = code("lib/notify/sendPreapproval.ts");
