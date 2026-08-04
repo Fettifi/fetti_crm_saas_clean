@@ -337,6 +337,10 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         if (Array.isArray(rv.excluded)) setExcluded(new Set(rv.excluded));
         if (typeof rv.incomeOverride === "string" && rv.incomeOverride !== "") { incomeEditedRef.current = true; setIncomeInput(rv.incomeOverride); }
         if (typeof rv.rentOverride === "string" && rv.rentOverride !== "") { rentEditedRef.current = true; setRentInput(rv.rentOverride); }
+        if (Array.isArray(rv.liabs)) setLiabs(rv.liabs);
+        if (Array.isArray(rv.liabDocs)) setLiabDocs(rv.liabDocs);
+        if (Array.isArray(rv.liabWarn)) setLiabWarn(rv.liabWarn);
+        if (typeof rv.debtsInput === "string") setDebtsInput(rv.debtsInput);
       }
       setReviewLoaded(true);
     }).catch(() => setReviewLoaded(true));
@@ -346,13 +350,29 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   // Persist the review (debounced) whenever the LO's decisions change — only after the
   // initial load and only once there's a verified result to attach them to.
   useEffect(() => {
-    if (!fileId || !reviewLoaded || !verified) return;
+    // Save whenever there is anything worth saving — NOT only once income has been verified.
+    // The old gate required `verified`, so pulling credit BEFORE running the income read (a
+    // perfectly normal order of work) persisted nothing and the tradelines were lost on reload.
+    if (!fileId || !reviewLoaded) return;
+    if (!verified && !liabs.length && !debtsInput) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setReviewSaved("saving");
     saveTimer.current = setTimeout(() => {
       const review = {
         verified, flagDecisions, flagNotes, lineIncluded, lineBorrower, addedLines,
         excluded: Array.from(excluded),
+        // THE CREDIT PULL IS PART OF THE FILE, NOT A SESSION.
+        //
+        // Ramon, 2026-08-04: "every question of credit liabilities every time I go into the file.
+        // The income is saving. Why isn't the credit saving as well?"
+        //
+        // It wasn't saved at all. The review carried every income decision and none of the credit
+        // pull, so the tradelines vanished on reload, the DTI silently dropped back to the seeded
+        // lump sum, and he had to re-pull — which re-runs a full vision read of two 16-page
+        // tri-merges and BILLS FOR IT every time he opens the file. His include/exclude decisions
+        // on individual tradelines were thrown away with them.
+        liabs, liabDocs, liabWarn,
+        debtsInput,
         incomeOverride: incomeEditedRef.current ? incomeInput : "",
         rentOverride: rentEditedRef.current ? rentInput : "",
         // THE NUMBER THE LO ACTUALLY SETTLED ON, STORED WHERE OTHERS CAN READ IT.
@@ -377,7 +397,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     }, 800);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileId, reviewLoaded, verified, flagDecisions, flagNotes, lineIncluded, lineBorrower, addedLines, excluded, incomeInput, rentInput]);
+  }, [fileId, reviewLoaded, verified, flagDecisions, flagNotes, lineIncluded, lineBorrower, addedLines, excluded, incomeInput, rentInput, liabs, liabDocs, liabWarn, debtsInput]);
   // The PDF/email payload built from the EFFECTIVE on-screen state so the printed
   // headline income AND breakdown match exactly what the LO sees — reflecting a typed
   // income override, excluded borrowers, and any B1/B2 line reassignment. (Never ship

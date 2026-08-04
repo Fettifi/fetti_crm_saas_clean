@@ -68,6 +68,25 @@ chk(/qualifying_income: p\.qualifying_income \|\| qualifying_income/.test(pa),
 chk(/read from the income summary, not recalculated/.test(readFileSync("app/preapprovals/page.tsx", "utf8")),
   "the screen says so, so he can see which number the letter will carry before issuing");
 
+// ── the credit pull survives closing the file ───────────────────────────────────────────────
+console.log("\nthe credit pull is part of the file, not the session:");
+// ASSERT INSIDE THE REVIEW OBJECT, NOT ANYWHERE IN THE FILE. The first version of this matched
+// `liabs, liabDocs, liabWarn,` — which the effect's DEPENDENCY ARRAY also contains — so deleting
+// the line from the review left the guard green. Seventh vacuous assertion in a day; scope the
+// search to the object being built.
+const reviewObj = (iq.match(/const review = \{[\s\S]*?\n      \};/) || [""])[0];
+chk(/\bliabs, liabDocs, liabWarn,/.test(reviewObj),
+  "the review object itself PERSISTS the pulled tradelines (they vanished on every reload)");
+chk(/\bdebtsInput,/.test(reviewObj), "and the debts figure, which reverted to the seeded lump sum with them");
+chk(/if \(Array\.isArray\(rv\.liabs\)\) setLiabs\(rv\.liabs\)/.test(iq),
+  "and RESTORES them when the file is reopened — including his per-tradeline include/exclude decisions");
+chk(/if \(typeof rv\.debtsInput === "string"\) setDebtsInput\(rv\.debtsInput\)/.test(iq),
+  "and the debts figure with them");
+chk(/liabs, liabDocs, liabWarn, debtsInput\]\)/.test(iq),
+  "the save fires when any of them changes — a persist that never runs is not a persist");
+chk(/if \(!verified && !liabs\.length && !debtsInput\) return;/.test(iq),
+  "and pulling credit BEFORE running income still saves — the old gate required a verified income first");
+
 // ── both borrowers ───────────────────────────────────────────────────────────────────────────
 console.log("\nboth borrowers receive it:");
 const send = code("lib/notify/sendPreapproval.ts");
