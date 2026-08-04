@@ -34,7 +34,7 @@ const SNAP = path.join(process.cwd(), "scripts", "income-replay-snapshot.json");
 const save = process.argv.includes("--save");
 const money = (n: any) => (n == null ? "—" : `$${Math.round(Number(n)).toLocaleString()}`);
 
-type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: number; perBorrower: Record<string, number> };
+type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: number; shipped: number; perBorrower: Record<string, number> };
 
 (async () => {
   console.log("\nINCOME REPLAY — every real file re-run through the engine\n");
@@ -43,6 +43,9 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
   if (error) throw new Error(`loan_files: ${error.message}`);
 
   const now: Record<string, Row> = {};
+  const unreplayable: string[] = [];   // non-standard methods — reported, never counted as passing
+  const drift: string[] = [];          // stored number no longer matches a replay of its own facts
+  let withPayload = 0, withFacts = 0;
   for (const f of files || []) {
     const { data: row, error: e2 } = await supabaseAdmin
       .from("app_settings").select("value").eq("key", `los_income_verify:${f.id}`).maybeSingle();
@@ -52,23 +55,51 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
     try { p = JSON.parse((row as any).value)?.payload; } catch { continue; }
     // Only files verified since factsUsed shipped can be replayed; older ones are skipped, not
     // silently treated as passing.
+    withPayload++;
     if (!p || !Array.isArray(p.factsUsed) || !p.factsUsed.length) continue;
+    withFacts++;
+    // COMPARE THE NUMBER THAT ACTUALLY SHIPS, OR ADMIT THAT YOU CANNOT.
+    //
+    // The first version of this replayed computeQualifyingIncome and snapshotted ITS output —
+    // which is the raw engine result, not the qualifying income the LO sees. The route runs a
+    // method branch after it (DSCR replaces personal income with rent; bank-statement and
+    // alt-doc paths rebuild the totals entirely). So on those files the guard would have
+    // compared a number nobody reads and passed while the borrower's real figure moved. That is
+    // the exact shape of defect this corpus exists to stop, built into the corpus itself.
+    //
+    // On `standard` files the route leaves the engine result untouched, so a replay IS the
+    // shipped number and is compared against it. Every other method is reported as NOT
+    // REPLAYABLE and counted separately — never silently treated as passing.
+    const method = String(p.method || "standard");
+    const stored = Math.round(Number(p.qualifyingMonthlyIncome) || 0);
     const replay = computeQualifyingIncome(p.factsUsed as DocFact[], { loanType: p.loanType });
+    const replayQ = Math.round(replay.qualifyingMonthlyIncome || 0);
+
+    if (method !== "standard") { unreplayable.push(`${f.file_number} (method: ${method}, ships ${money(stored)})`); continue; }
+
+    // The engine must agree with itself: replaying the very facts the route handed it must
+    // reproduce the number the route stored. A mismatch means the logic moved under a file
+    // nobody re-read, and the snapshot below would otherwise enshrine the drift.
+    if (stored && Math.abs(stored - replayQ) > 1) {
+      drift.push(`${f.file_number}: the file SHIPS ${money(stored)} but replaying its own facts now gives ${money(replayQ)}`);
+    }
+
     now[f.file_number] = {
       file: f.file_number,
       loanType: String(p.loanType || ""),
       facts: p.factsUsed,
-      qualifying: Math.round(replay.qualifyingMonthlyIncome || 0),
+      qualifying: replayQ,
+      shipped: stored,
       perBorrower: Object.fromEntries(Object.entries(replay.perBorrowerMonthly || {}).map(([k, v]) => [k, Math.round(Number(v) || 0)])),
     };
-
-    // THE ENGINE MUST AGREE WITH ITSELF. A replay of the very facts it was given must reproduce
-    // the number it stored. A divergence means the logic moved under a file that nobody re-read.
-    const stored = Math.round(Number(p.qualifyingMonthlyIncome) || 0);
-    if (stored && Math.abs(stored - now[f.file_number].qualifying) > 1) {
-      console.log(`  drift  ${f.file_number}: stored ${money(stored)} but replaying its own facts now gives ${money(now[f.file_number].qualifying)}`);
-    }
   }
+
+  // COVERAGE IS PART OF THE VERDICT. A corpus that silently covers three of twenty-three files
+  // reads as "all green" and is worth almost nothing.
+  console.log(`  coverage: ${withFacts} of ${withPayload} verified file(s) carry replayable facts; ` +
+              `${Object.keys(now).length} on the standard method, ${unreplayable.length} not replayable\n`);
+  for (const u of unreplayable) console.log(`  skip   ${u}`);
+  for (const d of drift) console.log(`  DRIFT  ${d}`);
 
   const count = Object.keys(now).length;
   if (!count) {
@@ -78,7 +109,7 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
   }
 
   if (save || !existsSync(SNAP)) {
-    const lean = Object.fromEntries(Object.entries(now).map(([k, v]) => [k, { file: v.file, loanType: v.loanType, qualifying: v.qualifying, perBorrower: v.perBorrower, factCount: v.facts.length }]));
+    const lean = Object.fromEntries(Object.entries(now).map(([k, v]) => [k, { file: v.file, loanType: v.loanType, qualifying: v.qualifying, shipped: v.shipped, perBorrower: v.perBorrower, factCount: v.facts.length }]));
     writeFileSync(SNAP, JSON.stringify({ savedAt: null, files: lean }, null, 1) + "\n");
     console.log(`  ${existsSync(SNAP) && !save ? "No snapshot existed — created" : "Snapshot saved"}: ${count} file(s)\n`);
     process.exit(0);
@@ -101,6 +132,11 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
   }
 
   console.log("");
+  if (drift.length) {
+    console.error(`FAIL — ${drift.length} file(s) SHIP a number their own facts no longer reproduce. The stored\n` +
+      `figure and the current logic disagree; re-verify the file or fix the logic before snapshotting.\n`);
+    process.exit(1);
+  }
   if (bad) {
     console.error(`FAIL — ${bad} of ${checked} real file(s) changed. Replaying the exact documents the engine was given\n` +
       `produces a different qualifying income than it did before this change. If every move is intended:\n` +
