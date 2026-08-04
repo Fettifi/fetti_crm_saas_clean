@@ -696,11 +696,20 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
         const expected = perPeriodReg * FREQ[stub.payFrequency] * (months / 12);
         return num(stub.ytdRegular)! >= expected * 0.8;      // within a period or two of the run-rate
       })();
+      // AND THE DIFFERENCE MUST BE MATERIAL. A YTD-gross minus YTD-regular of a fraction of a
+      // percent is OCR rounding, not a bonus — Magali's re-read produced $1,050 on $66,354 of YTD
+      // regular (1.6%) and credited her $81/mo of "variable 2-yr avg" that her own QC said does
+      // not exist in any stub or W-2. A real bonus, commission run or overtime block clears 2%
+      // comfortably; noise does not.
+      const ytdDiff = stub && num(stub.ytdGross) != null && num(stub.ytdRegular) != null
+        ? Math.max(0, num(stub.ytdGross)! - num(stub.ytdRegular)!) : 0;
+      const ytdDiffMaterial = ytdDiff > 0 && num(stub?.ytdRegular) != null && num(stub!.ytdRegular)! > 0
+        && ytdDiff / num(stub!.ytdRegular)! >= 0.02;
       const currentVarAnnual = perPeriodOt != null && perPeriodOt > 0
         ? perPeriodOt * FREQ[stub!.payFrequency!]
-        : (showsVariableOnItsFace || ytdRegularLooksYtd)
-            && stub && num(stub.ytdGross) != null && num(stub.ytdRegular) != null && stub.ytdThroughDate && elapsedMonths(stub.ytdThroughDate) > 0
-            ? Math.max(0, num(stub.ytdGross)! - num(stub.ytdRegular)!) / elapsedMonths(stub.ytdThroughDate) * 12 : 0;
+        : (showsVariableOnItsFace || (ytdRegularLooksYtd && ytdDiffMaterial))
+            && stub && stub.ytdThroughDate && elapsedMonths(stub.ytdThroughDate) > 0
+            ? ytdDiff / elapsedMonths(stub.ytdThroughDate) * 12 : 0;
       const priorW2 = w2s.find((w) => num(w.w2Box5) != null || num(w.w2Box1) != null);
       const priorVarAnnual = priorW2 ? Math.max(0, wageOf(priorW2) - annualBase) : null;
       if (priorVarAnnual == null) {
