@@ -664,10 +664,43 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
       // YTD-over-base) with the PRIOR full year's variable (W-2 total − annualized base),
       // averaged over 24 months — countable only when a prior-year W-2 seasons it.
       let variableMonthly = 0, varBasis = "";
-      const currentVarAnnual = stub && num(stub.otPerPeriod) != null
-        ? num(stub.otPerPeriod)! * FREQ[stub.payFrequency!]
-        : (stub && num(stub.ytdGross) != null && num(stub.ytdRegular) != null && stub.ytdThroughDate && elapsedMonths(stub.ytdThroughDate) > 0
-            ? Math.max(0, num(stub.ytdGross)! - num(stub.ytdRegular)!) / elapsedMonths(stub.ytdThroughDate) * 12 : 0);
+      //
+      // VARIABLE PAY MUST BE DOCUMENTED, NOT INFERRED BY SUBTRACTION.
+      //
+      // Milton Gonzalez (FF-202607-8421, FHA), 2026-08-04. His stubs are pure salary — regular
+      // equals gross, no OT line. But the reader had put ONE PERIOD's regular ($9,545.46) into
+      // `ytdRegular`, and the fallback below subtracted that from SEVEN MONTHS of YTD gross
+      // ($66,818): six months of ordinary salary read as "variable pay", $98,182/yr of it, and
+      // $4,091/mo was added on top of his base. $13,636 against a true $9,545 on a
+      // government-insured file. The engine's own QC caught it — "his stubs are pure SALARY... the
+      // extra ~$4,091/mo has no documented variable component" — and the number shipped anyway.
+      //
+      // A subtraction between two fields is only as good as the weaker field. So variable income
+      // now requires the stub to actually SHOW variable pay:
+      //   • an OT/bonus line, or
+      //   • gross exceeding regular on the period itself, or
+      //   • a ytdRegular that is plausibly a YEAR-TO-DATE figure (it must be at least most of
+      //     regular × periods elapsed — one period's worth is a misread, not a small bonus).
+      // Otherwise there is no variable component, whatever the arithmetic says.
+      const perPeriodOt = stub ? num(stub.otPerPeriod) : null;
+      const perPeriodGross = stub ? num(stub.grossPerPeriod) : null;
+      const perPeriodReg = stub ? num(stub.regularPerPeriod) : null;
+      const showsVariableOnItsFace =
+        (perPeriodOt != null && perPeriodOt > 0) ||
+        (perPeriodGross != null && perPeriodReg != null && perPeriodGross > perPeriodReg + 0.005);
+      // Is `ytdRegular` plausibly year-to-date, or is it one period wearing a YTD label?
+      const ytdRegularLooksYtd = (() => {
+        if (!stub || num(stub.ytdRegular) == null || perPeriodReg == null || !stub.payFrequency) return false;
+        const months = elapsedMonths(stub.ytdThroughDate);
+        if (!(months > 0)) return false;
+        const expected = perPeriodReg * FREQ[stub.payFrequency] * (months / 12);
+        return num(stub.ytdRegular)! >= expected * 0.8;      // within a period or two of the run-rate
+      })();
+      const currentVarAnnual = perPeriodOt != null && perPeriodOt > 0
+        ? perPeriodOt * FREQ[stub!.payFrequency!]
+        : (showsVariableOnItsFace || ytdRegularLooksYtd)
+            && stub && num(stub.ytdGross) != null && num(stub.ytdRegular) != null && stub.ytdThroughDate && elapsedMonths(stub.ytdThroughDate) > 0
+            ? Math.max(0, num(stub.ytdGross)! - num(stub.ytdRegular)!) / elapsedMonths(stub.ytdThroughDate) * 12 : 0;
       const priorW2 = w2s.find((w) => num(w.w2Box5) != null || num(w.w2Box1) != null);
       const priorVarAnnual = priorW2 ? Math.max(0, wageOf(priorW2) - annualBase) : null;
       if (priorVarAnnual == null) {
@@ -680,7 +713,10 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
         variableMonthly = (priorVarAnnual + currentVarAnnual) / 24;  // seasoned 2-yr average
         varBasis = `variable 2-yr avg`;
       }
-      add(b, baseMonthly + variableMonthly, `${employer} — wages`, [baseBasis, varBasis].filter(Boolean).join(" + "), sid);
+      // And do not PRINT "+ variable 2-yr avg" on a line whose variable component is zero — the
+      // basis is what Ramon reads to check the math, and it said that on both borrowers here.
+      add(b, baseMonthly + variableMonthly, `${employer} — wages`,
+        [baseBasis, variableMonthly > 0 ? varBasis : ""].filter(Boolean).join(" + "), sid);
       countedWage.push({ employer, monthly: baseMonthly + variableMonthly, w2Years: w2s.length });
     }
     // SECONDARY-EMPLOYMENT seasoning note: when 2+ current jobs are summed, any job beyond
