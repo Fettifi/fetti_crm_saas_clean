@@ -27,7 +27,7 @@ async function sendOne(to: string, subject: string, html: string, pdfB64: string
 export async function sendPreapprovalEmails(
   l: any,
   pdfBytes: Uint8Array,
-  opts: { borrower_email?: string | null; agent_email?: string | null }
+  opts: { borrower_email?: string | null; co_borrower_email?: string | null; agent_email?: string | null }
 ): Promise<string[]> {
   const pdfB64 = Buffer.from(pdfBytes).toString("base64");
   const filename = `Pre-Approval-${l.letter_number}.pdf`;
@@ -38,6 +38,17 @@ export async function sendPreapprovalEmails(
     const first = (l.borrower_name || "there").split(" ")[0];
     const html = `Hi ${first},<br><br>Congratulations — your <b>pre-approval letter</b> from Fetti Financial Services is attached, and you can view or download it anytime here:<br><a href="${link}">${link}</a><br><br>Share it with your real estate agent or seller when you're ready to make an offer. A Fetti specialist will be in touch with next steps.<br><br>— Fetti Financial Services LLC · NMLS #2267023`;
     if (await sendOne(opts.borrower_email, "Your Fetti Financial Services LLC pre-approval letter", html, pdfB64, filename)) sent.push("borrower");
+  }
+  // BOTH BORROWERS GET THEIR OWN COPY.
+  // Ramon, 2026-08-04: "make sure I can send the preapproval to both borrowers at the same time."
+  // There was one borrower address and one agent address, so a co-borrower — a spouse on the
+  // loan, an equal party to the application — never received the letter naming them.
+  if (opts.co_borrower_email && opts.co_borrower_email !== opts.borrower_email) {
+    // Addressed to the CO-BORROWER by their own name — they are an equal party to the
+    // application, not a cc on someone else's letter.
+    const coFirst = (l.co_borrower || "there").split(" ")[0];
+    const coHtml = `Hi ${coFirst},<br><br>Congratulations — the <b>pre-approval letter</b> from Fetti Financial Services for you and ${(l.borrower_name || "your co-borrower").split(" ")[0]} is attached, and you can view or download it anytime here:<br><a href="${link}">${link}</a><br><br>Share it with your real estate agent or seller when you're ready to make an offer. A Fetti specialist will be in touch with next steps.<br><br>— Fetti Financial Services LLC · NMLS #2267023`;
+    if (await sendOne(opts.co_borrower_email, "Your Fetti Financial Services LLC pre-approval letter", coHtml, pdfB64, filename)) sent.push("co-borrower");
   }
   if (opts.agent_email) {
     const html = `Hello,<br><br>Attached is the <b>pre-approval letter</b> for your client <b>${l.borrower_name}</b>${l.loan_amount ? ` (up to $${Math.round(Number(l.loan_amount)).toLocaleString()})` : ""}, issued by Fetti Financial Services.<br><br>View online: <a href="${link}">${link}</a><br><br>We'd love to be your lending partner — fast closes, constant updates. Reach out anytime.<br><br>— Fetti Financial Services LLC · NMLS #2267023`;

@@ -52,9 +52,12 @@
     "verify:automation-status": "tsx scripts/verify-automation-status.ts",
     "verify:ssn-merge": "tsx scripts/verify-ssn-merge.ts",
     "verify:preapproval-fields": "tsx scripts/verify-preapproval-fields.ts",
+    "verify:officer-nmls": "tsx scripts/verify-officer-nmls.ts",
+    "audit:officer-nmls": "tsx scripts/audit-preapproval-nmls.ts",
     "verify:doc-detection": "tsx scripts/verify-doc-detection.ts",
     "verify:stalled": "tsx scripts/verify-stalled-worklist.ts",
-    "verify:income-replay": "tsx scripts/verify-income-replay.ts"
+    "verify:income-replay": "tsx scripts/verify-income-replay.ts",
+    "verify:preapproval-from-calc": "tsx scripts/verify-preapproval-from-calc.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

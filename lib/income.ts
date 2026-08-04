@@ -238,7 +238,10 @@ export function miAnnualFactor(loanType: LoanType, downPct: number): number {
 // required). maxPrice backs in the down payment (clamped — 100% down ⇒ price=loan).
 export type MaxLoan = { maxPI: number; maxLoan: number; maxPrice: number; mi: number };
 export function maxLoanFromPayment(
-  maxPITIA: number, monthlyTaxesInsHoa: number, ratePct: number, termMonths: number, downPct: number, miAnnualPct = 0
+  maxPITIA: number, monthlyTaxesInsHoa: number, ratePct: number, termMonths: number, downPct: number, miAnnualPct = 0,
+  // FHA UFMIP (1.75%), the VA funding fee, the USDA guarantee fee: a government fee ROLLED INTO
+  // the loan. The borrower pays P&I on the financed total, but buys a house with the BASE loan.
+  financedFeePct = 0,
 ): MaxLoan {
   const budget = Math.max(0, pos(maxPITIA) - pos(monthlyTaxesInsHoa)); // P&I + MI
   const r = pos(ratePct) / 100 / 12;
@@ -246,9 +249,22 @@ export function maxLoanFromPayment(
   if (budget <= 0 || r <= 0) return { maxPI: 0, maxLoan: 0, maxPrice: 0, mi: 0 }; // require a real rate
   const a = pvFactor(r, n);
   const mf = pos(miAnnualPct) / 100 / 12;
-  const loan = (budget * a) / (1 + mf * a);   // base loan (P&I + MI = budget)
-  const maxPI = loan / a;
-  const mi = loan * mf;
+  // THE PAYMENT IS ON THE FINANCED LOAN; THE HOUSE IS BOUGHT WITH THE BASE LOAN.
+  //
+  // Ramon, 2026-08-04: "make sure you have the ratios right — the required down payment and the
+  // max price for an FHA versus a conventional loan."
+  //
+  // This solved for one loan and treated it as the base, so FHA's max loan and max PRICE were
+  // overstated by the whole UFMIP — 1.75% of the loan, ~$7,000 on a $400,000 base — and the
+  // payment was computed on a principal $7,000 smaller than the borrower would actually owe.
+  // lib/closingCosts.ts has financed UFMIP correctly all along and lib/pricer.ts even re-derives
+  // LTV after rolling it in; this screen, the one a borrower is shown, did not. Two engines, two
+  // answers, on the number that decides what house they can write an offer on.
+  const feeMult = 1 + Math.max(0, pos(financedFeePct)) / 100;
+  const financed = (budget * a) / (1 + mf * a);   // P&I + MI are paid on THIS
+  const loan = financed / feeMult;               // ...but this is what buys the house
+  const maxPI = financed / a;
+  const mi = financed * mf;
   const dRaw = Math.max(0, pos(downPct) / 100);
   // The 50% clamp silently rewrote a typed down payment above 50% — an all-cash-heavy investor
   // putting 60% down got a max PURCHASE PRICE computed as if they had put 50%, understating what

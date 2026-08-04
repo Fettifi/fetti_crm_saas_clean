@@ -7,6 +7,7 @@ import { FileCheck2, Loader2, Copy, Check, ExternalLink, Plus, Ban, Download, Up
 import AddressInput from "@/components/AddressInput";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import { PA_FIELDS } from "@/lib/preapprovalFields";
+import { BRAND } from "@/lib/brand";
 
 type PA = { id: string; letter_number: string; share_token: string; borrower_name: string; loan_type?: string; loan_amount?: number; status: string; expires_on?: string; created_at: string };
 type LoanFile = { id: string; lead_id?: string; borrower_name: string; email?: string; product?: string; occupancy?: string; property_address?: string; property_value?: number; loan_amount?: number };
@@ -41,6 +42,8 @@ export default function PreApprovals() {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [justIssued, setJustIssued] = useState<PA | null>(null);
+  // A refusal from the API gets its OWN banner — see the else-branch in issue().
+  const [issueError, setIssueError] = useState<string | null>(null);
   const [emailed, setEmailed] = useState<string[]>([]);
   const [tsBusy, setTsBusy] = useState(false);
   const [tsMsg, setTsMsg] = useState<{ ok?: boolean; text: string } | null>(null);
@@ -51,8 +54,13 @@ export default function PreApprovals() {
     borrower_name: "", co_borrower: "", loan_type: "", purchase_price: "", down_payment: "",
     loan_amount: "", interest_rate: "", term: "", property_address: "", occupancy: "",
     conditions: "Standard documentation required: income, assets, and employment verification; satisfactory appraisal; clear title.",
-    officer_name: "Ramon Dent", officer_nmls: "2267023", expires_on: "",
-    borrower_email: "", agent_email: "", other_terms: [] as any[],
+    // THE INDIVIDUAL ORIGINATOR'S ID, NOT THE COMPANY'S. This field renders into
+    // "Mortgage Loan Originator · NMLS #____" under the signature, on both the PDF and the
+    // public letter. It defaulted to 2267023 — the LLC's id — so letters sent to listing
+    // agents named the company's licence in the field labelled as Ramon's own. The company id
+    // is already on the letterhead and in the licensing footer of the same page.
+    officer_name: BRAND.mlo.name, officer_nmls: BRAND.mlo.nmls, expires_on: "",
+    borrower_email: "", co_borrower_email: "", agent_email: "", other_terms: [] as any[],
     ...Object.fromEntries(ALL_EXTRA_KEYS.map((k) => [k, ""])),
   };
   const [f, setF] = useState<any>({ ...BLANK });
@@ -60,6 +68,7 @@ export default function PreApprovals() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<{ field: string; kept: string; also: string; from: string }[]>([]);
   const [prefilled, setPrefilled] = useState<string | null>(null);
+  const [fromCalculator, setFromCalculator] = useState<string | null>(null);
   const [hidden, setHidden] = useState<string[]>([]);
   const set = (k: string, v: string) => setF((p: any) => ({ ...p, [k]: v }));
 
@@ -110,8 +119,25 @@ export default function PreApprovals() {
   useEffect(() => {
     (async () => {
       const loaded = await load();
-      const fileId = new URLSearchParams(window.location.search).get("file");
+      const qs = new URLSearchParams(window.location.search);
+      const fileId = qs.get("file");
       if (fileId) await prefillFromFile(fileId, loaded);
+      // FIGURES HANDED OVER FROM THE INCOME CALCULATOR.
+      // Ramon wants the letter issued straight off the qualification screen, carrying what that
+      // screen worked out — the programme, the max loan and price, the required down payment,
+      // the payment, the rate. They arrive as parameters and are applied AFTER the 1003 prefill
+      // so the calculator's answer wins on the figures it owns.
+      const fromCalc: Record<string, string> = {};
+      for (const k of ["loan_amount", "purchase_price", "down_payment", "interest_rate", "term",
+                       "monthly_payment", "qualifying_income", "dti", "ltv"]) {
+        const v = qs.get(k); if (v) fromCalc[k] = v;
+      }
+      const program = qs.get("program");
+      if (program) fromCalc.loan_type = program;
+      if (Object.keys(fromCalc).length) {
+        setF((p: any) => ({ ...p, ...fromCalc }));
+        setFromCalculator(program || "the qualification screen");
+      }
     })();
   }, []);
 
@@ -200,7 +226,7 @@ export default function PreApprovals() {
 
   async function issue(e: React.FormEvent) {
     e.preventDefault(); if (!f.borrower_name.trim()) return;
-    setSaving(true);
+    setSaving(true); setIssueError(null);
     try {
       const extra_terms: any = Object.fromEntries(
         ALL_EXTRA_KEYS.map((k) => [k, f[k]]).filter(([, v]) => v != null && String(v).trim() !== ""),
@@ -214,7 +240,21 @@ export default function PreApprovals() {
         setF({ ...BLANK, officer_name: f.officer_name, officer_nmls: f.officer_nmls });
         setUnmapped([]); setTsMsg(null); setConflicts([]); setHidden([]);
         await load();
+      } else {
+        // A REJECTED ISSUE MUST SAY SO, IN ITS OWN BANNER. This branch did not exist: a non-2xx
+        // left the button un-spinning, the form untouched and NOTHING on screen, which reads as
+        // "nothing happened" rather than "the letter was refused". The API now rejects a company
+        // NMLS in the officer field (400) — a guard nobody can see is a guard that does nothing.
+        //
+        // It cannot reuse `warnings`: that list only renders INSIDE the green "✅ Letter issued"
+        // box, so a rejection would either show nowhere or print an error inside a success
+        // banner left over from the PREVIOUS letter. `justIssued` is cleared for the same reason.
+        setJustIssued(null); setWarnings([]);
+        setIssueError(j.error || "The letter could not be issued. Nothing was saved.");
       }
+    } catch {
+      setJustIssued(null); setWarnings([]);
+      setIssueError("Connection error — the letter was not issued.");
     } finally { setSaving(false); }
   }
   async function voidLetter(id: string) {
@@ -232,6 +272,13 @@ export default function PreApprovals() {
         <h1 className="text-2xl font-bold flex items-center gap-2"><FileCheck2 className="w-6 h-6 text-emerald-400" /> Pre-Approvals</h1>
         <p className="text-slate-400 text-sm mt-1">Issue a branded, compliant pre-approval letter. Share the link or print to PDF.</p>
 
+        {issueError && (
+          <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 p-4">
+            <div className="font-semibold text-red-300">❌ Letter not issued</div>
+            <div className="text-xs text-red-200/90 mt-1">{issueError}</div>
+          </div>
+        )}
+
         {justIssued && (
           <div className="mt-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4">
             <div className="font-semibold">✅ Letter issued — {justIssued.letter_number}</div>
@@ -245,6 +292,11 @@ export default function PreApprovals() {
           </div>
         )}
 
+        {fromCalculator && (
+          <div className="mt-4 rounded-xl border border-emerald-700/40 bg-emerald-950/20 px-4 py-2.5 text-sm text-emerald-200">
+            🧮 Carried over from the income calculator on <span className="font-semibold">{fromCalculator}</span> — max loan, max price, required down payment, payment, rate and DTI are the figures that screen worked out. Change anything before you issue.
+          </div>
+        )}
         {prefilled && (
           <div className="mt-4 rounded-xl border border-sky-700/40 bg-sky-950/20 px-4 py-2.5 text-sm text-sky-200">
             📁 Prefilled from <span className="font-semibold">{prefilled}</span>&rsquo;s loan file — borrower and co-borrower names, property and amounts come straight from the 1003. Review, add the terms, then issue.
@@ -363,6 +415,10 @@ export default function PreApprovals() {
             <div className="text-xs text-slate-400 mb-2">📧 Email the PDF letter automatically — <span className="text-slate-500">both optional, leave blank to skip</span></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs text-slate-500">Borrower email</label><input type="email" value={f.borrower_email} onChange={(e) => set("borrower_email", e.target.value)} placeholder="optional" className={field} /></div>
+              {/* BOTH BORROWERS, NOT JUST THE FIRST. Ramon: "make sure I can send the preapproval
+                  to both borrowers at the same time." There was only ever one borrower address,
+                  so a co-borrower never received their own letter. */}
+              <div><label className="text-xs text-slate-500">Co-borrower email</label><input type="email" value={f.co_borrower_email} onChange={(e) => set("co_borrower_email", e.target.value)} placeholder={f.co_borrower ? `${String(f.co_borrower).split(" ")[0]}'s email` : "optional"} className={field} /></div>
               <div><label className="text-xs text-slate-500">Agent email</label><input type="email" value={f.agent_email} onChange={(e) => set("agent_email", e.target.value)} placeholder="optional" className={field} /></div>
             </div>
           </div>

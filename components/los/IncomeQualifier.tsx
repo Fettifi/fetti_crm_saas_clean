@@ -24,7 +24,7 @@ type Metrics = {
   byBorrower?: Record<number, number>;
 };
 type Tone = "ok" | "warn" | "bad" | "none";
-type Quote = { program: "conventional" | "fha"; label: string; maxPITIA: number; maxPI: number; maxLoan: number; maxPrice: number; mi: number; miMonthly: number; front: number; back: number; verdict: { tone: Tone; text: string } };
+type Quote = { program: "conventional" | "fha"; label: string; maxPITIA: number; maxPI: number; maxLoan: number; maxPrice: number; mi: number; miMonthly: number; front: number; back: number; verdict: { tone: Tone; text: string }; downUsed: number; downFloored: boolean };
 
 export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }: { metrics?: Metrics; loan?: { noteRatePercent?: number; termMonths?: number }; fileId?: string; borrowerEmail?: string }) {
   const isInvestment = !!metrics?.isInvestment;
@@ -225,9 +225,17 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     // still computed + shown for the LO's awareness, it just no longer caps the max.
     const frontCap = undefined;
     const backTarget = program === "fha" ? num(fhaDti) : num(targetDti);
-    const mi = program === "fha" ? miAnnualFactor("fha", downN) : (downN < 20 ? miAnnualFactor("conventional", downN) : 0);
+    // EACH PROGRAM HAS ITS OWN FLOOR, AND ONE SLIDER CANNOT SPEAK FOR BOTH.
+    // FHA's minimum investment is 3.5% (96.5% LTV); conventional's floor is 3% (the 97% LTV
+    // programmes). Typing 3% previously produced an "FHA max price" for a loan FHA will not
+    // make — a number a borrower could take to a listing agent and write an offer on.
+    const floorPct = program === "fha" ? 3.5 : 3;
+    const downUsed = Math.max(downN, floorPct);
+    const downFloored = downUsed > downN + 0.0001;
+    const mi = program === "fha" ? miAnnualFactor("fha", downUsed) : (downUsed < 20 ? miAnnualFactor("conventional", downUsed) : 0);
     const maxPITIA = maxHousingPayment(income, debts, backTarget, frontCap);
-    const mlq = maxLoanFromPayment(maxPITIA, escrowN, qualRateN, term, downN, mi);
+    // FHA finances UFMIP 1.75% into the loan; conventional has no such fee.
+    const mlq = maxLoanFromPayment(maxPITIA, escrowN, qualRateN, term, downUsed, mi, program === "fha" ? 1.75 : 0);
     const miMonthly = mi && amount ? (amount * mi) / 100 / 12 : 0;
     const pitia = proposedPandI + escrowN + miMonthly;
     const front = income ? (pitia / income) * 100 : 0;
@@ -236,7 +244,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     if (!escrowKnown) verdict = { tone: "none", text: "Enter taxes + insurance + HOA to complete PITIA." };
     else if (program === "fha") verdict = (back <= num(fhaDti)) ? { tone: num(fhaDti) > 50 ? "warn" : "ok", text: `${num(fhaDti) > 50 ? "▲" : "✓"} Qualifies — ${front.toFixed(0)}/${back.toFixed(0)} ≤ ${num(fhaDti)}% back${num(fhaDti) > 43 ? " (FHA AUS / compensating factors)" : ""}` } : { tone: "bad", text: `✕ ${front.toFixed(0)}/${back.toFixed(0)} over ${num(fhaDti)}%` };
     else verdict = (back <= backTarget) ? { tone: "ok", text: `✓ Qualifies — DTI ${back.toFixed(0)}% ≤ ${backTarget}%` } : { tone: "bad", text: `✕ DTI ${back.toFixed(0)}% over ${backTarget}%` };
-    return { program, label: program === "fha" ? "FHA" : "Conventional", maxPITIA, maxPI: mlq.maxPI, maxLoan: mlq.maxLoan, maxPrice: mlq.maxPrice, mi, miMonthly, front, back, verdict };
+    return { program, label: program === "fha" ? "FHA" : "Conventional", maxPITIA, maxPI: mlq.maxPI, maxLoan: mlq.maxLoan, maxPrice: mlq.maxPrice, mi, miMonthly, front, back, verdict, downUsed, downFloored };
   }
   const conv = useMemo(() => quote("conventional"), [income, debts, targetDti, escrowN, qualRateN, term, downN, proposedPandI, amount, escrowKnown]); // eslint-disable-line
   const fha = useMemo(() => quote("fha"), [income, debts, fhaDti, escrowN, qualRateN, term, downN, proposedPandI, amount, escrowKnown]); // eslint-disable-line
@@ -347,6 +355,21 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         excluded: Array.from(excluded),
         incomeOverride: incomeEditedRef.current ? incomeInput : "",
         rentOverride: rentEditedRef.current ? rentInput : "",
+        // THE NUMBER THE LO ACTUALLY SETTLED ON, STORED WHERE OTHERS CAN READ IT.
+        //
+        // Ramon, 2026-08-04, about issuing a pre-approval: "make sure it's for sure going to pull
+        // the information the way I have it in the income summary. I'm concerned you're not gonna
+        // get that right."
+        //
+        // He was right to be. The settled figure — after excluded borrowers, unticked lines,
+        // omitted flags and any typed override — was computed HERE, in the browser, and never
+        // written down. Anything downstream (the pre-approval letter, the pricer) could only
+        // re-derive it, and a second implementation of a number is how two documents on one deal
+        // end up disagreeing. So the figure he is looking at is persisted with the review, and
+        // the letter READS it rather than recomputing it.
+        settledMonthlyIncome: Math.round(income || 0),
+        settledPerBorrower: Object.fromEntries(Object.entries(incomeCalc.byB || {}).map(([b, v]) => [b, Math.round(Number(v) || 0)])),
+        settledAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       fetch(`/api/los/files/${fileId}/income-review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review }) })
@@ -460,6 +483,26 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     setExcluded((prev) => { const n = new Set(prev); if (n.has(b)) n.delete(b); else if (includedBorrowers.length > 1) n.add(b); return n; });
   }
 
+  // Hand the calculator's own figures to the pre-approval screen. Everything the letter needs
+  // that this screen already knows travels with it; the LO fills in only what is genuinely new
+  // (property address, expiry, who to email).
+  function issuePreapproval(q: Quote) {
+    const p = new URLSearchParams({
+      file: String(fileId),
+      program: q.program === "fha" ? "FHA" : "Conventional",
+      loan_amount: String(Math.round(q.maxLoan)),
+      purchase_price: String(Math.round(q.maxPrice)),
+      down_payment: String(Math.round(q.maxPrice * (q.downUsed / 100))),
+      interest_rate: qualRateN > 0 ? `${qualRateN}%` : "",
+      term: term === 180 ? "15-year fixed" : "30-year fixed",
+      monthly_payment: money(q.maxPITIA),
+      qualifying_income: money(income),
+      dti: `${q.back.toFixed(0)}%`,
+      ltv: `${(100 - q.downUsed).toFixed(1)}%`,
+    });
+    window.location.href = `/preapprovals?${p.toString()}`;
+  }
+
   const QuoteCard = ({ q }: { q: Quote }) => (
     <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
       <div className="flex items-center justify-between mb-2"><div className="text-sm font-bold text-white">{q.label}</div>{q.miMonthly > 0 && <span className="text-[10px] text-slate-400">MI {money(q.miMonthly)}/mo</span>}</div>
@@ -475,7 +518,34 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         <div><div className="text-[10px] uppercase text-slate-500">Max price</div><div className="text-sm font-semibold text-emerald-300">{noRate || !escrowKnown ? "—" : money(q.maxPrice)}</div></div>
         <div><div className="text-[10px] uppercase text-slate-500">Max PITIA</div><div className="text-sm font-semibold text-slate-200">{escrowKnown ? money(q.maxPITIA) + "/mo" : "—"}</div></div>
       </div>
+      <div className="grid grid-cols-2 gap-2 mt-2 text-center">
+        <div><div className="text-[10px] uppercase text-slate-500">Down payment</div>
+          <div className="text-sm font-semibold text-slate-200">{noRate || !escrowKnown ? "—" : `${money(q.maxPrice * (q.downUsed / 100))} · ${q.downUsed}%`}</div></div>
+        <div><div className="text-[10px] uppercase text-slate-500">{q.program === "fha" ? "MIP (annual)" : "PMI (annual)"}</div>
+          <div className="text-sm font-semibold text-slate-200">{q.mi ? `${q.mi}%` : "none"}</div></div>
+      </div>
+      {/* Each programme has its own minimum investment: FHA 3.5%, conventional 3%. One slider
+          cannot speak for both — say so rather than quoting a loan the programme will not make. */}
+      {q.downFloored && (
+        <div className="mt-1.5 text-[10px] text-amber-300">
+          Using {q.downUsed}% — {q.label}&rsquo;s minimum. You entered {downPct}%.
+        </div>
+      )}
+      {q.program === "fha" && (
+        <div className="mt-1 text-[10px] text-slate-500">Includes UFMIP 1.75% financed — payment is on {money(q.maxLoan * 1.0175)}.</div>
+      )}
       <div className={`mt-2 text-[11px] rounded-lg px-2 py-1.5 ${toneCls[q.verdict.tone]}`}>{q.verdict.text}</div>
+      {/* ISSUE THE LETTER FROM THE NUMBERS ON SCREEN.
+          Ramon, 2026-08-04: "the approval to be generated directly from the calculation screen —
+          that's the whole purpose, so we can show a borrower and myself what they qualify for and
+          what it potentially looks like." This hands off to the SAME pre-approval screen, with
+          THESE figures — not a lesser path and not a re-derivation. */}
+      {fileId && !noRate && escrowKnown && q.maxLoan > 0 && (
+        <button onClick={() => issuePreapproval(q)}
+          className="mt-2 w-full text-xs font-semibold bg-emerald-700/80 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg">
+          📄 Pre-approval on {q.label}
+        </button>
+      )}
     </div>
   );
 

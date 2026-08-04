@@ -3,11 +3,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
-import { BRAND } from "@/lib/brand";
 import { buildPreApprovalPdf } from "@/lib/preapprovalPdf";
 import { sendPreapprovalEmails } from "@/lib/notify/sendPreapproval";
 import { setSetting } from "@/lib/settings";
 import { PA_LETTER_KEYS, PA_INTERNAL_KEYS } from "@/lib/preapprovalFields";
+import { assertIndividualNmls, CompanyNmlsInOfficerFieldError } from "@/lib/officerIdentity";
 
 // Term-sheet fields the preapprovals table has no column for, persisted in app_settings keyed by
 // letter id. TWO keys, deliberately:
@@ -52,6 +52,16 @@ export async function POST(req: NextRequest) {
     if (!b.borrower_name || !String(b.borrower_name).trim()) {
       return NextResponse.json({ error: "Borrower name is required." }, { status: 400 });
     }
+    // WHOSE LICENCE GOES UNDER THE SIGNATURE. Resolved before anything else is built, so a
+    // company id in the individual-originator field stops the letter instead of printing on it.
+    // See lib/officerIdentity.ts for why this is a rejection and not a silent correction.
+    let officerNmls: string;
+    try { officerNmls = assertIndividualNmls(b.officer_nmls); }
+    catch (e) {
+      if (e instanceof CompanyNmlsInOfficerFieldError) return NextResponse.json({ error: e.message }, { status: 400 });
+      throw e;
+    }
+
     const num = (v: any) => (v === "" || v == null ? null : Number(String(v).replace(/[^0-9.]/g, "")));
     const purchase = num(b.purchase_price);
     const down = num(b.down_payment);
@@ -89,7 +99,19 @@ export async function POST(req: NextRequest) {
       occupancy: b.occupancy || null,
       conditions: b.conditions ? String(b.conditions).trim() : null,
       officer_name: b.officer_name ? String(b.officer_name).trim() : null,
-      officer_nmls: b.officer_nmls ? String(b.officer_nmls).trim() : BRAND.nmls,
+      // THE INDIVIDUAL ORIGINATOR'S ID — never the company's.
+      //
+      // This lands in the letter's signature block, on both the PDF and the public letter:
+      //     Mortgage Loan Originator · NMLS #<officer_nmls> · Fetti Financial Services LLC
+      // That field names a PERSON's licence. It fell back to BRAND.nmls, the LLC's id, so a
+      // letter issued with the field left empty — or by any caller that never sends it —
+      // printed the company licence where the originator's belongs, on a document whose whole
+      // purpose is to be forwarded to the listing agent. The company id is not missing from
+      // the letter: it is on the letterhead and in the licensing footer of the same page.
+      //
+      // A caller that explicitly sends the company id is REJECTED above, not silently fixed —
+      // a screen that thinks it is sending an originator's licence is a bug worth seeing.
+      officer_nmls: officerNmls,
       status: "issued",
       expires_on: expires,
       // Both optional — only fill what the LO entered.
@@ -144,10 +166,16 @@ export async function POST(req: NextRequest) {
 
     // Auto-email the PDF to whichever recipients were provided.
     let emailed: string[] = [];
-    if (data.borrower_email || data.agent_email) {
+    if (data.borrower_email || data.agent_email || validEmail(b.co_borrower_email)) {
       try {
         const pdf = await buildPreApprovalPdf(data, extra);
-        emailed = await sendPreapprovalEmails(data, pdf, { borrower_email: data.borrower_email, agent_email: data.agent_email });
+        // co_borrower_email has no column on `preapprovals`; it is used at send time and the
+        // recipients that actually received it are recorded in `emailed_to` below.
+        emailed = await sendPreapprovalEmails(data, pdf, {
+          borrower_email: data.borrower_email,
+          co_borrower_email: validEmail(b.co_borrower_email) ? String(b.co_borrower_email).trim().toLowerCase() : null,
+          agent_email: data.agent_email,
+        });
         if (emailed.length) await supabaseAdmin.from("preapprovals").update({ emailed_to: emailed }).eq("id", data.id);
       } catch (e) { console.warn("[preapproval] email failed:", e); }
     }
