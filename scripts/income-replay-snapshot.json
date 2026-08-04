@@ -1,0 +1,31 @@
+{
+ "savedAt": null,
+ "files": {
+  "FF-202607-1321": {
+   "file": "FF-202607-1321",
+   "loanType": "conventional",
+   "qualifying": 0,
+   "perBorrower": {},
+   "factCount": 3
+  },
+  "FF-202608-1913": {
+   "file": "FF-202608-1913",
+   "loanType": "fha",
+   "qualifying": 22547,
+   "perBorrower": {
+    "1": 22547
+   },
+   "factCount": 14
+  },
+  "FF-202607-8421": {
+   "file": "FF-202607-8421",
+   "loanType": "fha",
+   "qualifying": 29298,
+   "perBorrower": {
+    "1": 10208,
+    "2": 19090
+   },
+   "factCount": 14
+  }
+ }
+}

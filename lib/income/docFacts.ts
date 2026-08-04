@@ -283,7 +283,20 @@ export function payerStem(s?: string | null): string {
 export function sameEmployerStem(a: string, b: string): boolean {
   const [sa, ia = ""] = String(a).split("\u0000");
   const [sb, ib = ""] = String(b).split("\u0000");
-  if (ia !== ib) return false;                 // IHSS case/recipient must match exactly
+  // AN IDENTITY DISTINGUISHES ONLY WHEN BOTH SIDES DECLARE ONE.
+  //
+  // This required the identity suffix to match EXACTLY, so a stream carrying one and a stream
+  // carrying none could never merge. That is right for two IHSS recipients — both declare a case
+  // number and they differ — but wrong the moment a reader invents an identity on an ordinary
+  // employer.
+  //
+  // Milton Gonzalez, 2026-08-04: a re-read labelled a check number on ONE of his two Le Lycee pay
+  // stubs as "case#260059". That stub then had an identity while the other had none, so they
+  // never merged and BOTH counted as current — his one salary billed twice, 9,545 x 2 = 19,090,
+  // on an FHA file. Introduced by my own employer-merge fix.
+  //
+  // Two IHSS assignments still stay apart: both declare a case number and the numbers differ.
+  if (ia && ib && ia !== ib) return false;
   if (!sa || !sb) return false;
   if (sa === sb) return true;
   // CONTAINMENT, not just prefix. The parent entity can print BEFORE the site as easily as
