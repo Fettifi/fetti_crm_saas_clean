@@ -541,6 +541,25 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
               {/* A DOCUMENT COUNTED BECAUSE WE READ IT, NOT BECAUSE OF ITS NAME. These are the
                   ones every earlier run of this file silently left out — say so, because
                   otherwise the income just quietly changed. */}
+              {/* THE ENGINE DISAGREES WITH ITSELF ABOUT THIS BORROWER'S INCOME.
+                  A high-severity QC finding used to be one grey line among thirty while the
+                  number was handed onward as verified — that is how $4,091/mo of variable pay
+                  that existed in no document reached a live FHA file with its own reviewer
+                  objecting on the same screen. It is a contested number now, and it says so
+                  before anything else on the panel. */}
+              {verified.qcContested && (
+                <div className="mt-2 rounded-lg border border-red-500/50 bg-red-950/30 px-3 py-2.5">
+                  <div className="text-[13px] font-semibold text-red-300">⚠️ Contested — do not rely on this figure yet</div>
+                  <div className="text-[11px] text-red-200/80 mt-1">
+                    The QC reviewer disagrees with this worksheet on the borrower&rsquo;s own documents. Resolve or override before pricing, issuing a pre-approval, or sending to an underwriter.
+                  </div>
+                  <ul className="mt-1.5 space-y-1">
+                    {(verified.qcHigh || []).map((t: string, i: number) => (
+                      <li key={i} className="text-[11px] text-red-100/90">• {t}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {verified.contentNotice && (
                 <div className="mt-1.5 text-[11px] text-amber-300 bg-amber-950/25 border border-amber-800/40 rounded-lg px-2 py-1.5">
                   📄 {verified.contentNotice}

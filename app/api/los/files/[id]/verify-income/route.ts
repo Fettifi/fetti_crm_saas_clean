@@ -542,6 +542,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     try { qc = await verifyWorksheet(key as string, incomeReads, computed, { loanType, applicants, methodIds }); } catch { /* QC best-effort */ }
     const qcFlags = qc.findings.map((f) => ({ text: `QC${f.severity === "high" ? " ⚠️" : ""}: ${f.issue}`, addBackMonthly: 0, borrower: (f.borrower === 2 ? 2 : 1) as 1 | 2 }));
 
+    // A CHECKER THAT ONLY WRITES A NOTE IS NOT A CONTROL.
+    //
+    // Ramon, 2026-08-04. On the Magali/Milton file the QC reviewer said, in its own words, that
+    // the worksheet was "contradicted by his own YTD; over-counted" and named the exact figure:
+    // $4,091/mo of variable pay that existed in no stub and no W-2. That finding was rendered as
+    // one grey line among up to thirty flags, `addBackMonthly: 0`, and the income was handed
+    // onward as verified. The wrong number reached a government-insured file with its own
+    // reviewer objecting on the same screen.
+    //
+    // A HIGH-severity finding is the engine disagreeing with itself about a borrower's income.
+    // That is not an advisory note — it is a contested number, and it now says so in the payload
+    // so the LO's screen and every downstream consumer can refuse to treat it as settled.
+    const qcHigh = qc.findings.filter((f) => f.severity === "high").map((f) => f.issue);
+    const qcContested = qcHigh.length > 0;
+
     // Documents we couldn't read (truncated/corrupt uploads) become flags so the LO knows income
     // evidence was skipped and can re-request a clean copy — never silently omitted.
     const unreadableFlags = unreadable.map((nm) => `Couldn't read "${nm}" — the file looks truncated or corrupt; income from it was NOT counted. Re-request a clean copy from the borrower.`);
@@ -624,7 +639,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // fails loudly the next time a change moves its number. No borrower PII beyond what the
     // payload already holds; these are the same figures already stored in `report.perDoc`.
     const factsUsed = docFacts;
-    const payload = { factsUsed, perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage,
+    const payload = { factsUsed, qcContested, qcHigh, perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage,
       contentIncluded,
       ...(contentIncluded.length ? { contentNotice: `${contentIncluded.length} document(s) were included by reading them, not by their filename: ${contentIncluded.map((c: any) => `${c.doc} (${c.readAs})`).join(", ")}. Earlier runs of this file left them out.` } : {}),
       // The DSCR panel prefills its Gross monthly rent from this, so the rent the LO sees in
