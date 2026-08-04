@@ -610,7 +610,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const contentIncluded = candidates
       .filter((d: any) => d.__contentKind)
       .map((d: any) => ({ doc: d.name || d.file_name || "document", readAs: d.__contentKind }));
-    const payload = { perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage,
+    // EVERY REAL FILE BECOMES A PERMANENT TEST CASE.
+    //
+    // Ramon, 2026-08-04: "are you getting smarter? are we becoming better with each pass?"
+    // Four income defects surfaced on ONE file this week, and every synthetic test I wrote for
+    // them passed while the live file stayed wrong — because I reconstructed the documents from
+    // a summary instead of replaying what the engine actually received. The raw facts were never
+    // persisted, so there was nothing to replay.
+    //
+    // They are now. `factsUsed` is the exact DocFact array computeQualifyingIncome was given.
+    // scripts/verify-income-replay.ts feeds it back through the engine and compares against a
+    // committed snapshot, so every borrower file Ramon works turns into a regression test that
+    // fails loudly the next time a change moves its number. No borrower PII beyond what the
+    // payload already holds; these are the same figures already stored in `report.perDoc`.
+    const factsUsed = docFacts;
+    const payload = { factsUsed, perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage,
       contentIncluded,
       ...(contentIncluded.length ? { contentNotice: `${contentIncluded.length} document(s) were included by reading them, not by their filename: ${contentIncluded.map((c: any) => `${c.doc} (${c.readAs})`).join(", ")}. Earlier runs of this file left them out.` } : {}),
       // The DSCR panel prefills its Gross monthly rent from this, so the rent the LO sees in
