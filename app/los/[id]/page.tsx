@@ -34,6 +34,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [linkMsg, setLinkMsg] = useState<{ ok?: boolean; text: string } | null>(null);
   const [newDoc, setNewDoc] = useState("");
   const [saving, setSaving] = useState(false);
+  const [disposition, setDisposition] = useState<any>(null);
   // In-app document viewer — streams the file through our OWN origin (inline) so it
   // loads under CSP `frame-src 'self'` (framing the cross-origin Supabase URL was
   // blocked: "This content is blocked"). Works for PDFs and image docs.
@@ -186,7 +187,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/los/files/${id}`);
-    if (res.ok) { const j = await res.json(); setFile(j.file); setDocs(j.documents); setActivity(j.activity); }
+    if (res.ok) { const j = await res.json(); setFile(j.file); setDisposition(j.disposition || null); setDocs(j.documents); setActivity(j.activity); }
     setLoading(false);
     try { const r = await fetch(`/api/los/export?file=${id}&report=1`); if (r.ok) setMismo(await r.json()); } catch {}
     try { const sr = await fetch(`/api/los/screen?file=${id}`); if (sr.ok) { const sj = await sr.json(); if (sj.screen) setScreen(sj.screen); } } catch {}
@@ -214,6 +215,25 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
         setNotesState(r.ok ? "saved" : "error");
       } catch { setNotesState("error"); }
     }, 700);
+  }
+
+  // A withdrawal needs a reason on the record — it is the disposition, and which disposition it
+  // was cannot be reconstructed later from a status flip alone.
+  async function withdrawFile() {
+    const reason = window.prompt(
+      "Withdraw this file.\n\nWhy? (goes on the record — e.g. \"borrower withdrew — bought cash\", \"borrower chose another lender\")",
+      "Borrower withdrew the application",
+    );
+    if (reason == null) return;
+    const trimmed = reason.trim();
+    if (!trimmed) { alert("A reason is required to withdraw a file."); return; }
+    setSaving(true);
+    const r = await fetch(`/api/los/files/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "withdrawn", status_reason: trimmed, status_by: "lo" }),
+    });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error || "Couldn't withdraw the file."); }
+    await load(); setSaving(false);
   }
 
   async function patchFile(patch: any) {
@@ -462,11 +482,25 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
 
   const badge = (s: string) => s === "accepted" ? "text-emerald-400" : s === "received" ? "text-yellow-400" : s === "rejected" ? "text-red-400" : "text-slate-500";
   const code = borrowerCode(file.borrower_name, file.id);
+  // A withdrawn / denied / closed file is read-only for stage changes and is not chased.
+  const isActive = String(file.status || "active").toLowerCase() === "active";
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
       <div className="max-w-5xl mx-auto">
         <Link href="/los" className="text-slate-400 hover:text-white text-sm flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Loan files</Link>
+        {!isActive && (
+          <div className="mt-3 rounded-xl border border-amber-600/50 bg-amber-950/25 px-4 py-2.5">
+            <div className="text-sm font-semibold text-amber-200">
+              ⊘ This file is {String(file.status).toUpperCase()} — it is not being worked and the borrower is not being chased for documents.
+            </div>
+            {disposition?.reason && (
+              <div className="text-[12px] text-amber-100/80 mt-1">
+                {disposition.reason}{disposition.at ? ` · ${new Date(disposition.at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}` : ""}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-start justify-between gap-3 mt-3">
           <div>
@@ -520,9 +554,34 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
           <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">Stage {saving && <Loader2 className="w-3 h-3 animate-spin inline ml-1" />}</div>
           <div className="flex flex-wrap gap-2">
             {STAGES.map((s) => (
-              <button key={s} onClick={() => patchFile({ stage: s })}
-                className={`text-xs px-3 py-1.5 rounded-full ${file.stage === s ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 hover:bg-slate-700 text-slate-300"}`}>{s}</button>
+              <button key={s} onClick={() => patchFile({ stage: s })} disabled={!isActive}
+                className={`text-xs px-3 py-1.5 rounded-full disabled:opacity-40 ${file.stage === s ? "bg-emerald-500 text-slate-950 font-semibold" : "bg-slate-800 hover:bg-slate-700 text-slate-300"}`}>{s}</button>
             ))}
+          </div>
+
+          {/* WITHDRAW / REINSTATE.
+              A withdrawal is a disposition, not a delete: the file, its documents and its history
+              all stay, and it can be reinstated. Under Reg B / HMDA "withdrawn by the applicant"
+              is its own action-taken code, distinct from a denial and from a file closed for
+              incompleteness — which is why the reason is required rather than optional.
+              The real effect: a withdrawn file stops being chased for documents. */}
+          <div className="mt-3 pt-3 border-t border-slate-800 flex items-center gap-2 flex-wrap">
+            {isActive ? (
+              <button onClick={withdrawFile} disabled={saving}
+                className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-amber-900/60 text-slate-300 hover:text-amber-200 disabled:opacity-50">
+                ⊘ Withdraw this file
+              </button>
+            ) : (
+              <button onClick={() => patchFile({ status: "active" })} disabled={saving}
+                className="text-xs px-3 py-1.5 rounded-lg bg-emerald-700/70 hover:bg-emerald-600 text-white disabled:opacity-50">
+                ↺ Reinstate this file
+              </button>
+            )}
+            <span className="text-[11px] text-slate-500">
+              {isActive
+                ? "Keeps the file and every document; stops document chasing. Reversible."
+                : `${String(file.status).replace(/^./, (c: string) => c.toUpperCase())}${disposition?.reason ? ` — ${disposition.reason}` : ""}`}
+            </span>
           </div>
         </div>
 

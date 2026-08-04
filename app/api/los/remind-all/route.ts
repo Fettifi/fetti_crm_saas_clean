@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { sendDocRequest } from "@/lib/notify/docRequest";
+import { mayChaseDocs } from "@/lib/los";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -14,8 +15,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 export async function POST() {
   try {
     const { data: files } = await supabaseAdmin
-      .from("loan_files").select("id, share_token, file_number, borrower_name, email, phone, lead_id, status")
-      .neq("status", "closed");
+      .from("loan_files").select("id, share_token, file_number, borrower_name, email, phone, lead_id, status");
     const { data: docs } = await supabaseAdmin
       .from("loan_documents").select("loan_file_id, name, required, status").eq("status", "needed");
     const needByFile = new Map<string, { name: string; required: boolean }[]>();
@@ -28,6 +28,10 @@ export async function POST() {
     const reminded: any[] = [];
     const skipped: any[] = [];
     for (const f of files || []) {
+      // ONE PREDICATE DECIDES WHO MAY BE CHASED. This was `.neq("status","closed")`, which would
+      // have kept texting and emailing a borrower who WITHDREW their application — the exact
+      // path that put unconsented texts on handsets on 2026-08-01.
+      if (!mayChaseDocs(f.status)) { skipped.push({ name: f.borrower_name, reason: `file is ${f.status} — not chased` }); continue; }
       const need = needByFile.get(f.id) || [];
       const missing = need.filter((d) => d.required).map((d) => d.name);
       if (!missing.length) { skipped.push({ name: f.borrower_name, reason: "no required docs outstanding" }); continue; }

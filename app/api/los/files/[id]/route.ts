@@ -3,11 +3,11 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
-import { STAGES, deleteLoanFileCascade } from "@/lib/los";
+import { STAGES, deleteLoanFileCascade, FILE_STATUSES } from "@/lib/los";
 import { assembleUrla } from "@/lib/urla";
 import { sendMetaFundedEvent } from "@/lib/metaCapi";
 import { advanceLeadStage } from "@/lib/leadStage";
-import { cfg } from "@/lib/settings";
+import { cfg, setSetting, getSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -132,7 +132,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Attach per-borrower attribution so the LO can view/filter outstanding items by borrower.
   const docMap = (lead?.raw?.doc_borrowers && typeof lead.raw.doc_borrowers === "object") ? lead.raw.doc_borrowers : {};
   const docsOut = (documents || []).map((d: any) => ({ ...d, borrowerName: docMap[d.id] || null }));
-  return NextResponse.json({ file, documents: docsOut, activity: activity || [], lead });
+  // The disposition (why a file was withdrawn/denied/closed, by whom, when) so the LO sees the
+  // reason on the file rather than having to dig it out of the activity log.
+  let disposition: any = null;
+  if (String(file.status || "active").toLowerCase() !== "active") {
+    try { const raw = await getSetting(`FILE_DISPOSITION:${id}`); if (raw) disposition = JSON.parse(raw); } catch { /* optional */ }
+  }
+  return NextResponse.json({ file, documents: docsOut, activity: activity || [], lead, disposition });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -140,8 +146,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     const body = await req.json();
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    let disposition: { status: string; reason: string; by: string; at: string } | null = null;
+    let clearDisposition = false;
     if (typeof body.stage === "string" && (STAGES as readonly string[]).includes(body.stage)) patch.stage = body.stage;
-    if (typeof body.status === "string") patch.status = body.status;
+    // WITHDRAWING IS A DISPOSITION, NOT A DELETE.
+    //
+    // Ramon, 2026-08-04. The file, its documents and its history all stay — under Reg B / HMDA
+    // "application withdrawn by the applicant" is its own action-taken code, distinct from a
+    // denial and from a file closed for incompleteness, and which one it was is not something we
+    // may infer later. So the reason and WHO withdrew it are recorded at the moment it happens,
+    // and the file can be reinstated.
+    if (typeof body.status === "string") {
+      const next = body.status.toLowerCase();
+      if (!(FILE_STATUSES as readonly string[]).includes(next)) {
+        return NextResponse.json({ error: `status must be one of ${FILE_STATUSES.join(", ")}` }, { status: 400 });
+      }
+      patch.status = next;
+      // The reason, who, and when live in app_settings rather than new columns — `loan_files`
+      // has no disposition columns and a DDL migration is not worth blocking a withdrawal on.
+      // Same pattern the pre-approval terms already use. Written AFTER the row update below.
+      if (next !== "active") {
+        const reason = String(body.status_reason || "").trim().slice(0, 300);
+        if (!reason) return NextResponse.json({ error: "A reason is required to withdraw, deny, or close a file — it becomes the disposition on the record." }, { status: 400 });
+        disposition = { status: next, reason, by: String(body.status_by || "").trim().slice(0, 60) || "lo", at: new Date().toISOString() };
+      } else {
+        disposition = null; clearDisposition = true;
+      }
+    }
     if (typeof body.assigned_to === "string") patch.assigned_to = body.assigned_to;
     if (Array.isArray(body.compliance)) patch.compliance = body.compliance;
 
@@ -156,6 +187,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { data: file, error } = await supabaseAdmin
       .from("loan_files").update(patch).eq("id", id).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    // Persist / clear the disposition, and log it as its OWN event — "withdrawn by the applicant"
+    // is a fact about the application that has to be reconstructable later, not a status flip.
+    if (disposition) {
+      try { await setSetting(`FILE_DISPOSITION:${id}`, JSON.stringify(disposition)); } catch (e) { console.warn("[los] disposition persist failed:", e); }
+      await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: file.lead_id, actor: "lo",
+        action: `file.${disposition.status}`, detail: { reason: disposition.reason, by: disposition.by, at: disposition.at, prior_stage: file.stage } });
+    } else if (clearDisposition) {
+      try { await setSetting(`FILE_DISPOSITION:${id}`, ""); } catch { /* best effort */ }
+      await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: file.lead_id, actor: "lo", action: "file.reinstated", detail: {} });
+    }
 
     if (patch.stage) {
       await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: file.lead_id, actor: "lo", action: "stage.changed", detail: { stage: patch.stage } });

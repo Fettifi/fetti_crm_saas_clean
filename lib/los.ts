@@ -18,6 +18,30 @@ export const STAGES = [
   "Closed",
 ] as const;
 
+// ── FILE STATUS: WHO MAY STILL BE CONTACTED ─────────────────────────────────────────────────
+//
+// Ramon, 2026-08-04: "add another link to withdraw a file in the LOS."
+//
+// A withdrawal is a real, reportable disposition, not a delete — under Reg B / HMDA
+// "application withdrawn by the applicant" is its own action-taken code, distinct from a denial
+// and from a file closed for incompleteness. So the file, its documents and its history all
+// stay; only its status changes, and it can be reinstated.
+//
+// The part that matters more than the label: a withdrawn borrower must STOP being chased. The
+// bulk document reminder selected `.neq("status", "closed")`, so a new status would have left
+// the borrower receiving texts and emails for documents on a loan they had already withdrawn —
+// and the LOS document chaser is the same path that put 16 unconsented texts on handsets on
+// 2026-08-01. One predicate, read by every sender, so a status can never be decorative.
+export const FILE_STATUSES = ["active", "withdrawn", "denied", "closed"] as const;
+export type FileStatus = (typeof FILE_STATUSES)[number];
+
+/** A file still being worked: it counts in the pipeline and its borrower may be contacted. */
+export const isActiveFile = (status?: string | null): boolean =>
+  String(status || "active").toLowerCase() === "active";
+
+/** May we chase this borrower for documents on this file? Only on an active file. */
+export const mayChaseDocs = (status?: string | null): boolean => isActiveFile(status);
+
 export function shareToken(): string {
   // Unguessable, URL-safe. Two UUIDs of entropy, hex, no dashes.
   const rnd = () =>
