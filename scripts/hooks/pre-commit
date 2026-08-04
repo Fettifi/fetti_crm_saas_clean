@@ -69,8 +69,13 @@ RENT=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/rentalIncome' -e 'lib/d
 LTV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/scenario' -e 'verify-scenario-ltv')
 BIZ=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/bizApp' -e 'verify-bizapp')
 GOV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/governor' -e 'lib/conversationGovernor' -e 'verify-governor')
+# AN IMPORT THAT ONLY RESOLVES ON THIS MACHINE. On 2026-08-04 lib/officerIdentity.ts was never
+# committed; three commits imported it. tsc passed, npm run build passed, every guard passed —
+# all of them read the DISK. Vercel only has what git has, so every production build died at
+# "Module not found" and three fixes reached nobody for hours. 0.6s, so it runs on any TS commit.
+ANYTS=$(printf '%s\n' "$CHANGED" | grep -E '\.(ts|tsx)$')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && [ -z "$NMLS" ] && [ -z "$GUARDMETA" ] && [ -z "$RENT" ] && [ -z "$LTV" ] && [ -z "$BIZ" ] && [ -z "$GOV" ] && exit 0
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && [ -z "$NMLS" ] && [ -z "$GUARDMETA" ] && [ -z "$RENT" ] && [ -z "$LTV" ] && [ -z "$BIZ" ] && [ -z "$GOV" ] && [ -z "$ANYTS" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
@@ -78,6 +83,17 @@ printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" "$UW" "$INCOV" "$AVM" "$DOCS" |
 echo ""
 
 FAILED=""
+
+# Runs first alongside the guard-of-guards: a commit that cannot BUILD makes every check below
+# it academic. Compares imports against `git ls-files`, which is the only thing on this machine
+# that knows the difference between a file I have and a file I shipped.
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:tracked-imports"
+  OUT=$(npm run --silent verify:tracked-imports 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:tracked-imports"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
 
 # Runs FIRST: if the guards themselves are broken, every PASS printed below it is unreliable.
 if [ -n "$GUARDMETA" ]; then
