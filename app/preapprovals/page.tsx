@@ -106,8 +106,15 @@ export default function PreApprovals() {
       setF((p: any) => ({
         ...p,
         ...(nm(b0) && { borrower_name: nm(b0) }),
-        ...(nm(b1) && { co_borrower: nm(b1) }),
+        // A file in the pipeline right now (FF-202606-4509) carries the borrower's own name in the
+        // co-borrower slot. Printing it would name one person twice on a letter that goes to a
+        // listing agent. Same person is not a co-borrower.
+        ...(nm(b1) && nm(b1).toLowerCase() !== nm(b0).toLowerCase() && { co_borrower: nm(b1) }),
         ...(b0?.email && !p.borrower_email && { borrower_email: b0.email }),
+        // The co-borrower's own address, so "send to both borrowers" has something to send to.
+        // Their name was already pulled and their email was not, which left the LO typing an
+        // address the 1003 already held — or, more often, not sending the second letter at all.
+        ...(b1?.email && !p.co_borrower_email && { co_borrower_email: b1.email }),
         ...(line && { property_address: line }),
         ...(urla?.loan?.amount ? { loan_amount: String(urla.loan.amount) } : {}),
         ...(urla?.property?.presentValue ? { purchase_price: String(urla.property.presentValue) } : {}),
@@ -365,8 +372,17 @@ export default function PreApprovals() {
         <form onSubmit={issue} className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 mt-4 space-y-3">
           {files.length > 0 && (
             <div>
+              {/* ONE WAY TO PULL A FILE, NOT TWO.
+                  Ramon, 2026-08-04: "in the drop down, when I'm pulling information from files, the
+                  co borrower doesn't show up, which it should."
+                  This called `pull()`, which reads only the loan_files ROW — and that row has no
+                  co-borrower on it. The co-borrower's legal name and email live on the 1003, which
+                  only `prefillFromFile()` fetches. So arriving from the LOS page (?file=<id>) gave a
+                  complete letter and choosing the same borrower from this dropdown silently gave a
+                  lesser one: no co-borrower, no co-borrower email, no settled income. Same fact,
+                  two paths, one of them partial. There is now one path. */}
               <label className="text-xs text-slate-500">Pull from a loan file (optional)</label>
-              <select onChange={(e) => e.target.value && pull(e.target.value)} defaultValue="" className={field}>
+              <select onChange={(e) => e.target.value && prefillFromFile(e.target.value, files)} defaultValue="" className={field}>
                 <option value="">— Start blank or pick a borrower —</option>
                 {files.map((lf) => <option key={lf.id} value={lf.id}>{lf.borrower_name || "Borrower"} · {lf.product || "—"}</option>)}
               </select>

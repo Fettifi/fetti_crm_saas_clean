@@ -57,7 +57,14 @@
     "verify:doc-detection": "tsx scripts/verify-doc-detection.ts",
     "verify:stalled": "tsx scripts/verify-stalled-worklist.ts",
     "verify:income-replay": "tsx scripts/verify-income-replay.ts",
-    "verify:preapproval-from-calc": "tsx scripts/verify-preapproval-from-calc.ts"
+    "verify:preapproval-from-calc": "tsx scripts/verify-preapproval-from-calc.ts",
+    "verify:assertions": "tsx scripts/verify-assertions.ts",
+    "verify:bizapp": "tsx scripts/verify-bizapp.ts",
+    "verify:rental-income": "tsx scripts/verify-rental-income.ts",
+    "verify:scenario-ltv": "tsx scripts/verify-scenario-ltv.ts",
+    "verify:governor-rules": "tsx scripts/verify-governor-rules.ts",
+    "verify:governor": "tsx scripts/verify-governor.ts",
+    "verify:stale-files": "tsx scripts/verify-stale-files.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

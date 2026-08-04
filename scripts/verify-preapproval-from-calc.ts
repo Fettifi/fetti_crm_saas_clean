@@ -87,6 +87,21 @@ chk(/liabs, liabDocs, liabWarn, debtsInput\]\)/.test(iq),
 chk(/if \(!verified && !liabs\.length && !debtsInput\) return;/.test(iq),
   "and pulling credit BEFORE running income still saves — the old gate required a verified income first");
 
+// ── pulling a file from the dropdown is the SAME pull ────────────────────────────────────────
+// Ramon, 2026-08-04: "in the drop down, when I'm pulling information from files, the co borrower
+// doesn't show up, which it should." The dropdown called pull(), which reads only the loan_files
+// ROW — and the co-borrower is not on that row, it is on the 1003. Arriving from the LOS page
+// gave a complete letter; picking the same borrower from the dropdown gave a lesser one.
+console.log("\nthe dropdown pulls the same thing the LOS link pulls:");
+chk(/prefillFromFile\(e\.target\.value, files\)/.test(pa),
+  "the dropdown reads the 1003, not just the loan-file row (the row has no co-borrower on it)");
+chk(!/onChange=\{\(e\) => e\.target\.value && pull\(/.test(pa),
+  "and the partial path is gone — one way to pull a file, not two");
+chk(/co_borrower_email: b1\.email/.test(pa),
+  "the co-borrower's own email comes off the 1003, so 'send to both' has an address to use");
+chk(/nm\(b1\)\.toLowerCase\(\) !== nm\(b0\)\.toLowerCase\(\)/.test(pa),
+  "and one person is never printed as their own co-borrower (a live file carries exactly that)");
+
 // ── both borrowers ───────────────────────────────────────────────────────────────────────────
 console.log("\nboth borrowers receive it:");
 const send = code("lib/notify/sendPreapproval.ts");

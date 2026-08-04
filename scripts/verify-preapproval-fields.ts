@@ -44,7 +44,10 @@ const LETTER = {
   // paper and overprinted its own label.
   property_address: "14829 Northwest Sagebrush Ridge Parkway, Building 7 Unit 214C, Scottsdale, Arizona 85259",
   occupancy: "Investment", conditions: "Executed lease required prior to funding; entity formation documents; six months PITIA reserves verified.",
-  officer_name: "Ramon Dent", officer_nmls: "2267023", expires_on: "2026-10-01", created_at: "2026-08-03",
+  // The INDIVIDUAL originator's id. This fixture carried the company's (2267023) — a test
+  // fixture that encodes the defect keeps the defect alive, because every later reader treats
+  // it as the known-good shape. scripts/verify-officer-nmls.ts owns that rule.
+  officer_name: "Ramon Dent", officer_nmls: "2235992", expires_on: "2026-10-01", created_at: "2026-08-03",
 };
 
 (async () => {

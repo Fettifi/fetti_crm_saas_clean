@@ -8,6 +8,7 @@
 // lead's first-class columns, (3) the parsed notes blob. Nothing is "hidden"
 // anymore — it all lands in a typed object.
 
+import { BRAND } from "./brand";
 import { decryptField } from "./crypto";
 import { PROPERTY_TAX_RATE, INSURANCE_RATE, zipToState } from "./pricer";
 
@@ -209,12 +210,16 @@ function mapCitizenship(s?: string): string | undefined {
 }
 
 // Default loan officer / originator (the licensed MLO must appear on the 1003).
+//
+// `nmls` is the INDIVIDUAL's and `companyNmls` is the LLC's — they are read from BRAND so the
+// two ids cannot drift apart across the files that print them. This file already had them the
+// right way round; app/preapprovals defaulted the letter's officer field to the company id.
 export const DEFAULT_ORIGINATOR: UrlaOriginator = {
-  name: "Ramon Dent",
-  nmls: "2235992",
-  email: "ramon@fettifi.com",
+  name: BRAND.mlo.name,
+  nmls: BRAND.mlo.nmls,
+  email: BRAND.mlo.email,
   company: "FETTI FINANCIAL SERVICES LLC",
-  companyNmls: "2267023",
+  companyNmls: BRAND.nmls,
   stateLicense: "CA#60DBO-153798",
   companyAddress: { street: "5777 W CENTURY BLVD STE 1435", city: "LOS ANGELES", state: "CA", zip: "90045", country: "US" },
 };

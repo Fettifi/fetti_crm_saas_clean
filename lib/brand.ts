@@ -4,7 +4,24 @@
 export const BRAND = {
   company: "Fetti Financial Services LLC",
   short: "Fetti",
+  // THE COMPANY'S id. This is the one that belongs on brand artwork, the letterhead, the
+  // licensing footer, advertising and every consumer disclosure — anywhere the licensee
+  // being named is the LLC.
+  //
+  // It does NOT belong in a field labelled as the individual originator's licence. See
+  // BRAND.mlo below and scripts/verify-officer-nmls.ts.
   nmls: "2267023",
+  // THE LICENSED INDIVIDUAL. NMLS advertising and disclosure rules want the ORIGINATOR's own
+  // unique identifier wherever a named person signs — the 1003, the pre-approval letter's
+  // signature block, a quote letter attributed to him. The company id in that slot names the
+  // wrong licensee on a document that is forwarded to listing agents and sellers.
+  //
+  // Both ids are printed on a pre-approval: the company's on the letterhead and in the
+  // licensing footer, Ramon's under his signature. They are not alternatives to each other.
+  //
+  // Deliberately NOT used on brand artwork, social posts, or any company-level advertising —
+  // that copy names the LLC and carries `nmls` above.
+  mlo: { name: "Ramon Dent", nmls: "2235992", email: "ramon@fettifi.com" },
   mission:
     "Help every client. Home buyers, real estate investors, and business owners. Get the right loan and close it fast. We find a path.",
   voice:

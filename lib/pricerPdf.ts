@@ -1,7 +1,9 @@
 // Borrower-facing "Estimated Monthly Payment" sales sheet (single US-Letter page).
 // Built from a Quick Pricer scenario; Fetti letterhead + full PITIA breakdown +
 // compliance. Shared by the /api/pricer/pdf download.
+import { BRAND } from "@/lib/brand";
 import { LICENSING_NOTE } from "@/lib/legal";
+import { originatorAttribution } from "@/lib/officerIdentity";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
@@ -134,8 +136,16 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
   para(`This is an ESTIMATE for planning purposes, not a quote, loan offer, or commitment to lend. Property taxes use the property location's effective tax rate (U.S. Census ACS data) and will vary by the actual assessment and exemptions. Homeowner's insurance is an estimate based on regional averages and location risk — it is not an insurance quote and will vary by the property, coverage, deductible, and carrier. The interest rate is an estimate and is subject to market conditions, your credit, and final approval until locked. Mortgage insurance varies by program: conventional PMI applies over 80% LTV and can be removed as equity builds; FHA charges an annual MIP regardless of LTV; USDA charges an annual guarantee fee; VA loans carry NO monthly mortgage insurance. Actual figures are determined by the tax authority, an insurance quote, and final underwriting.`, 8, font, GREY);
   cur += 12;
 
-  text(d.officerName || "Fetti Financial Services LLC", 10.5, bold); cur += 13;
-  text(`${d.officerName ? "Mortgage Loan Originator · " : ""}NMLS #${d.officerNmls || "2267023"} · Fetti Financial Services LLC`, 8, font, GREY); cur += 16;
+  // WHOSE LICENCE SIGNS THIS SHEET. Two different attributions, and the id must match which
+  // one is printed:
+  //   • a NAMED originator signs → "Mortgage Loan Originator · NMLS #<the person's id>".
+  //     This defaulted to 2267023, the LLC's id, so an estimate signed by a person carried the
+  //     company's licence in a line labelled as that person's — the same defect the
+  //     pre-approval letter's officer field had.
+  //   • nobody named → the company signs, and the company id is correct.
+  // The licensing footer at the bottom of this page carries the company id either way.
+  text(d.officerName || BRAND.company, 10.5, bold); cur += 13;
+  text(originatorAttribution(d.officerName, d.officerNmls), 8, font, GREY); cur += 16;
   page.drawText("Fetti Financial Services. We Do Money!", { x: M, y: H - cur - 10, size: 9, font: bold, color: EMERALD }); cur += 18;
   page.drawLine({ start: { x: M, y: H - cur }, end: { x: RIGHT, y: H - cur }, thickness: 0.5, color: rgb(0.85, 0.87, 0.9) });
   cur += 10;

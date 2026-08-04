@@ -5,6 +5,7 @@
 import { use, useEffect, useState } from "react";
 import { Printer, Loader2, Download } from "lucide-react";
 import { LICENSING_NOTE } from "@/lib/legal";
+import { originatorAttribution } from "@/lib/officerIdentity";
 
 type Letter = {
   letter_number: string; borrower_name: string; co_borrower?: string; loan_type?: string;
@@ -131,7 +132,13 @@ export default function LetterPage({ params }: { params: Promise<{ token: string
           <div className="mt-6 text-[13.5px]">
             <div>Sincerely,</div>
             <div className="mt-5 font-semibold">{l.officer_name || "Fetti Financial Services LLC"}</div>
-            <div className="text-[10px] text-slate-500">Mortgage Loan Originator{l.officer_nmls ? ` · NMLS #${l.officer_nmls}` : ""} · Fetti Financial Services LLC</div>
+            {/* The ORIGINATOR's licence, not the company's — the company id is already on the
+                letterhead above and in the licensing footer below. Rows issued before the
+                defaults were fixed carry #2267023 here; the shared builder renders the correct
+                individual id without touching the stored row, so a live link stops serving the
+                wrong licensee immediately. lib/preapprovalPdf.ts calls the SAME function — this
+                line and the PDF's cannot drift. */}
+            <div className="text-[10px] text-slate-500">{originatorAttribution(l.officer_name, l.officer_nmls)}</div>
           </div>
 
           <div className="mt-5 pt-3 border-t border-slate-200 text-[9px] text-slate-400 leading-snug">

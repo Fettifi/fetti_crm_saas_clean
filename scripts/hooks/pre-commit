@@ -43,14 +43,34 @@ MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingD
 UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite' -e 'deal-analyzer' -e 'scripts/verify-deal-analyzer')
 SSN=$(printf '%s\n' "$CHANGED" | grep -F -e 'los/extract' -e '1003/page' -e 'lib/urla.ts' -e 'scripts/verify-ssn-merge')
 PA=$(printf '%s\n' "$CHANGED" | grep -F -e 'preapproval' -e 'letter/' -e 'preapprovals')
+# WHOSE LICENCE PRINTS UNDER THE SIGNATURE. Fetti has two NMLS ids — the LLC's (2267023) and
+# Ramon's own (2235992) — and the pre-approval letter prints both, in different slots. The
+# letter's officer field defaulted to the COMPANY id in two independent places, so letters sent
+# to listing agents named the wrong licensee in the field reserved for the individual
+# originator. It is a correct-LOOKING value: 2267023 is a real Fetti licence that belongs in ~30
+# other places in this repo, so nothing about reading the code tells you it is wrong here.
+# Scoped wider than $PA because brand.ts, urla.ts and the pricer sheet all carry an id too.
+NMLS=$(printf '%s\n' "$CHANGED" | grep -F -e 'officerIdentity' -e 'lib/brand.ts' -e 'lib/urla.ts' -e 'preapproval' -e 'letter/' -e 'pricerPdf' -e 'verify-officer-nmls')
 DOC=$(printf '%s\n' "$CHANGED" | grep -F -e 'docContent' -e 'credit-liabilities' -e 'files/[id]/docs' -e 'verify-doc-detection' -e 'verify-income' -e 'IncomeQualifier')
 # WHO IS A REAL PERSON. The Shield verdict now decides whether a lead is nurtured at all, so a
 # band written wrongly either silences a borrower or clears a bot. On 2026-08-02 a backfill
 # wrote a verdict outside the declared union on 190 rows, collapsed the whole "watch" tier into
 # "clean", and split one fact across two spellings that two different readers each read one of.
 SHIELD=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/leadShield' -e 'lib/leadReality' -e 'shield-sweep' -e 'lib/notify/leadDigest' -e 'scripts/shield-' -e 'scripts/verify-shield')
+# THE GUARDS THEMSELVES. Ramon, 2026-08-04: "No longer make assumption or assertions ever.
+# Validate and verify every decision, every action so that they make sense." Said after the
+# SEVENTH assertion in one day printed "ok" while checking nothing — one matched an import line,
+# one a dependency array, one had its arguments reversed so a message string served as the
+# condition. Nine guards were also sitting in scripts/ with no npm entry at all: unrunnable.
+# A guard that cannot fail is worse than no guard, because it reports safety that is not there.
+GUARDMETA=$(printf '%s\n' "$CHANGED" | grep -E 'scripts/verify-|scripts/hooks/pre-commit|^package\.json$')
+# The DSCR lease-rent engine and the LTV basis both produce numbers that leave the building.
+RENT=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/rentalIncome' -e 'lib/dscr' -e 'verify-rental-income')
+LTV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/scenario' -e 'verify-scenario-ltv')
+BIZ=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/bizApp' -e 'verify-bizapp')
+GOV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/governor' -e 'lib/conversationGovernor' -e 'verify-governor')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && exit 0
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && [ -z "$NMLS" ] && [ -z "$GUARDMETA" ] && [ -z "$RENT" ] && [ -z "$LTV" ] && [ -z "$BIZ" ] && [ -z "$GOV" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
@@ -58,6 +78,25 @@ printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" "$UW" "$INCOV" "$AVM" "$DOCS" |
 echo ""
 
 FAILED=""
+
+# Runs FIRST: if the guards themselves are broken, every PASS printed below it is unreliable.
+if [ -n "$GUARDMETA" ]; then
+  printf "   %-24s " "verify:assertions"
+  OUT=$(npm run --silent verify:assertions 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:assertions"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+for PAIR in "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules"; do
+  TRIG=${PAIR%%:*}; G=${PAIR#*:}
+  [ -z "$TRIG" ] && continue
+  printf "   %-24s " "$G"
+  OUT=$(npm run --silent "$G" 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED $G"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+done
 
 if [ -n "$SHIELD" ]; then
   printf "   %-18s " "verify:shield-verdict"
@@ -130,8 +169,16 @@ if [ -n "$DOC" ]; then
   fi
 fi
 
+if [ -n "$NMLS" ]; then
+  printf "   %-24s " "verify:officer-nmls"
+  OUT=$(npm run --silent verify:officer-nmls 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:officer-nmls"; printf '%s\n' "$OUT" | grep -v 'Warning\|fontkit' | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$PA" ]; then
-  for G in verify:preapproval verify:preapproval-fields; do
+  for G in verify:preapproval verify:preapproval-fields verify:preapproval-from-calc; do
     printf "   %-24s " "$G"
     OUT=$(npm run --silent "$G" 2>&1)
     if [ $? -eq 0 ]; then echo "PASS"; else
@@ -230,6 +277,15 @@ if [ -n "$FAILED" ]; then
   echo ""
   echo "   COMMIT BLOCKED —$FAILED"
   echo ""
+  case "$FAILED" in
+    *verify:officer-nmls*)
+      echo "   Fetti has TWO NMLS ids and they are not interchangeable: #2267023 is the LLC's"
+      echo "   (letterhead, licensing footer, advertising, brand artwork) and #2235992 is Ramon's"
+      echo "   own (the 1003, the signature block on a letter he signs). A pre-approval prints"
+      echo "   BOTH. The company id under \"Mortgage Loan Originator\" names the wrong licensee on"
+      echo "   a document written to be forwarded to a listing agent. Read the failing check."
+      ;;
+  esac
   case "$FAILED" in
     *verify:auth*)
       echo "   verify:auth is NEVER a false alarm — a route in apiProtected but missing from"
