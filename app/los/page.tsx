@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Loader2, RefreshCw, Link2, Check, Plus, FileUp, CheckSquare, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { borrowerCode } from "@/lib/borrowerCode";
+import StalledWorklist from "@/components/StalledWorklist";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
 
@@ -212,6 +213,11 @@ export default function LosBoard() {
             <p className="text-[11px] text-slate-500 mt-2">If the lead already has a file, this just opens it and copies the same link — no duplicates.</p>
           </div>
         )}
+
+        {/* The files that have gone quiet, ranked worst-first — above the board,
+            because a stalled file is invisible on a stage column that only shows
+            where a file IS, never how long it has been sitting there. */}
+        <StalledWorklist />
 
         {loading && !files.length && <div className="text-slate-500 mt-10 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>}
         {!loading && !files.length && <div className="text-slate-500 mt-10">No loan files yet. They open automatically when a lead applies.</div>}

@@ -38,7 +38,31 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(await metaManageCampaign(opts(req, false)));
 }
 
+// SPEND IS OFF, AND IT STAYS OFF UNTIL RAMON TURNS IT ON.
+//
+// Ramon, 2026-08-03: "let's make sure we don't have ads being active anywhere. I don't wanna see
+// any more bills or charges from Google, Meta, or anywhere else until we figure out how to get
+// all this stuff working correctly."
+//
+// This route is the only thing in the codebase that can resume Meta spend or raise a budget —
+// no cron and no AI tool reaches it, only a deliberate authenticated call. That is one mistaken
+// call away from a bill. So activation and budget INCREASES are now refused outright unless
+// ADS_SPEND_ENABLED is explicitly set to "true" in the environment, which it is not.
+//
+// PAUSING is deliberately still allowed with no flag: the kill switch must never need a key.
+const spendUnlocked = () => String(process.env.ADS_SPEND_ENABLED || "").toLowerCase() === "true";
+
 export async function POST(req: NextRequest) {
   if (!authed(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  return NextResponse.json(await metaManageCampaign(opts(req, true)));
+  const o = opts(req, true);
+  const wantsSpend = o.activate === true || o.dailyBudgetCents != null;
+  if (wantsSpend && !spendUnlocked()) {
+    return NextResponse.json({
+      error: "Ad spend is locked. Ramon paused all paid channels on 2026-08-02 and asked for no further charges. " +
+             "Activating a campaign or setting a budget is refused while ADS_SPEND_ENABLED is not \"true\". " +
+             "Pausing still works without it — the kill switch never needs a key.",
+      locked: true, requested: { activate: o.activate, dailyBudgetCents: o.dailyBudgetCents },
+    }, { status: 423 });
+  }
+  return NextResponse.json(await metaManageCampaign(o));
 }
