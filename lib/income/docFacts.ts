@@ -304,14 +304,31 @@ export function isAbbrevOf(a: string, b: string): boolean {
     .replace(/\s+/g, " ").trim();
   const ta = norm(a).split(" ").filter(Boolean), tb = norm(b).split(" ").filter(Boolean);
   if (ta.length < 2 || ta.length !== tb.length) return false;
-  let abbreviated = false;
+  let abbreviated = false, exact = 0, initials = 0;
   for (let i = 0; i < ta.length; i++) {
     const x = ta[i], y = tb[i];
-    if (x === y) continue;
+    if (x === y) { exact++; continue; }
     const [short, long] = x.length <= y.length ? [x, y] : [y, x];
-    if (short.length < 3 || !long.startsWith(short)) return false;
+    if (!long.startsWith(short)) return false;
+    // AN INITIALISM IS AN ABBREVIATION TOO.
+    //
+    // Milton Gonzalez (Magali Lopez Villafuerte file, 2026-08-03). His W-2s print
+    // "LE LYCEE FRANCAIS DE LOS ANGELES"; his pay stubs print "LE LYCEE FRANCAIS DE L.A."
+    // One employer, one job, four documents. The `short.length < 3` guard below rejected
+    // "l"→"los" and "a"→"angeles", so the two never merged — and the W-2 stream, now with no
+    // pay stub of its own, was declared a PRIOR employer and reported as a JOB CHANGE that
+    // never happened, with an offer to add $7,613/mo back as "concurrent" income. Ramon:
+    // "Milton's employer stayed the same... that's not correct?" It is not.
+    //
+    // So a ONE-LETTER token may match a longer word it prefixes — that is what an initialism
+    // is — but only as a minority of the name. At least half the tokens must still match
+    // EXACTLY, which keeps the guard that matters: a wrong merge silently deletes a real
+    // second job, and that is worse than the bug being fixed here.
+    if (short.length === 1) { initials++; abbreviated = true; continue; }
+    if (short.length < 3) return false;
     abbreviated = true;
   }
+  if (initials > 0 && exact < Math.ceil(ta.length / 2)) return false;
   return abbreviated;
 }
 
@@ -528,7 +545,14 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
         } else if (cls === "stale") {
           flags.push({ text: `${employer}: most recent pay stub is a few months old — held out of income until current employment is confirmed. Omit to count it.`, addBackMonthly: rd(wouldBe), borrower: b });
         } else {
-          flags.push({ text: `${employer}: prior/former employer — no current pay stub on file, so counted as work history (a job change), not current income. Omit to count it as concurrent income.`, addBackMonthly: rd(wouldBe), borrower: b });
+          // DESCRIBE THE EVIDENCE, DO NOT ASSERT A FACT WE DO NOT HAVE.
+          // Ramon, 2026-08-03: "Milton's employer stayed the same, and because a current check
+          // stub is not on file, it's calling it a prior employment... if I accept it, it's
+          // looking at it as a job change. That's not correct?" It is not. A missing pay stub is
+          // a missing DOCUMENT; it is not evidence that the borrower left the job. The engine
+          // must say what it lacks, not invent a job change — that assertion lands on an
+          // underwriting file and, if believed, changes how the loan is worked.
+          flags.push({ text: `${employer}: no current pay stub on file, so this employer is not counted as current income — W-2 history only. If he is still there, add a recent stub (or a VOE); Omit to count it now.`, addBackMonthly: rd(wouldBe), borrower: b });
         }
         continue;
       }

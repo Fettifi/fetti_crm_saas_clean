@@ -59,19 +59,64 @@ export default function PreApprovals() {
   const [unmapped, setUnmapped] = useState<{ field: string; value: string }[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<{ field: string; kept: string; also: string; from: string }[]>([]);
+  const [prefilled, setPrefilled] = useState<string | null>(null);
   const [hidden, setHidden] = useState<string[]>([]);
   const set = (k: string, v: string) => setF((p: any) => ({ ...p, [k]: v }));
 
   async function load() {
     const [pr, fr] = await Promise.all([fetch("/api/preapprovals"), fetch("/api/los/files")]);
     if (pr.ok) setList((await pr.json()).preapprovals);
-    if (fr.ok) setFiles((await fr.json()).files);
+    let loaded: LoanFile[] = [];
+    if (fr.ok) { loaded = (await fr.json()).files; setFiles(loaded); }
     setLoading(false);
+    return loaded;
   }
-  useEffect(() => { load(); }, []);
 
-  function pull(id: string) {
-    const lf = files.find((x) => x.id === id); if (!lf) return;
+  // STRAIGHT OFF THE BORROWER'S FILE.
+  //
+  // Ramon, 2026-08-03: "I would also like to generate a preapproval directly from the LOS screen
+  // so that everything is accurate right out of the borrower's file. That seems like it makes the
+  // most sense." It does — retyping a name and a loan amount that the file already holds is how
+  // a letter ends up disagreeing with the 1003 it came from.
+  //
+  // The LOS file page links here with ?file=<id>. The loan-file row gives the product, property
+  // and amounts; the 1003 gives the legal names (including the CO-BORROWER, which the loan-file
+  // row does not carry) and the property/loan detail the LO has already reviewed.
+  async function prefillFromFile(fileId: string, known: LoanFile[]) {
+    const lf = known.find((x) => x.id === fileId);
+    if (lf) pull(fileId, known);
+    try {
+      const r = await fetch(`/api/los/urla?file=${fileId}`);
+      if (!r.ok) return;
+      const { urla } = await r.json();
+      const b0 = urla?.borrowers?.[0], b1 = urla?.borrowers?.[1];
+      const nm = (b: any) => [b?.firstName, b?.lastName].filter(Boolean).join(" ").trim();
+      const addr = urla?.property?.address;
+      const line = [addr?.street, addr?.city, addr?.state, addr?.zip].filter(Boolean).join(", ");
+      setF((p: any) => ({
+        ...p,
+        ...(nm(b0) && { borrower_name: nm(b0) }),
+        ...(nm(b1) && { co_borrower: nm(b1) }),
+        ...(b0?.email && !p.borrower_email && { borrower_email: b0.email }),
+        ...(line && { property_address: line }),
+        ...(urla?.loan?.amount ? { loan_amount: String(urla.loan.amount) } : {}),
+        ...(urla?.property?.presentValue ? { purchase_price: String(urla.property.presentValue) } : {}),
+        ...(urla?.loan?.purpose ? { loan_purpose: String(urla.loan.purpose) } : {}),
+      }));
+      setPrefilled(lf?.borrower_name || nm(b0) || "the loan file");
+    } catch { /* the loan-file row already prefilled the basics */ }
+  }
+
+  useEffect(() => {
+    (async () => {
+      const loaded = await load();
+      const fileId = new URLSearchParams(window.location.search).get("file");
+      if (fileId) await prefillFromFile(fileId, loaded);
+    })();
+  }, []);
+
+  function pull(id: string, known?: LoanFile[]) {
+    const lf = (known || files).find((x) => x.id === id); if (!lf) return;
     setF((p: any) => ({
       ...p, loan_file_id: lf.id, lead_id: lf.lead_id || "",
       borrower_name: lf.borrower_name || p.borrower_name, loan_type: lf.product || p.loan_type,
@@ -197,6 +242,12 @@ export default function PreApprovals() {
               <a href={`/api/letter/${justIssued.share_token}/pdf`} className="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-1"><Download className="w-3.5 h-3.5" /> PDF</a>
               <button onClick={() => copyLink(justIssued.share_token)} className="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-1">{copied === justIssued.share_token ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />} Copy link</button>
             </div>
+          </div>
+        )}
+
+        {prefilled && (
+          <div className="mt-4 rounded-xl border border-sky-700/40 bg-sky-950/20 px-4 py-2.5 text-sm text-sky-200">
+            📁 Prefilled from <span className="font-semibold">{prefilled}</span>&rsquo;s loan file — borrower and co-borrower names, property and amounts come straight from the 1003. Review, add the terms, then issue.
           </div>
         )}
 

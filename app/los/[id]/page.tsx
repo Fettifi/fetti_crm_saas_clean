@@ -503,6 +503,11 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
               </button>
               <a href={`/file/${file.share_token}`} target="_blank" className="text-slate-400 hover:text-white p-2" title="Preview the borrower portal"><ExternalLink className="w-4 h-4" /></a>
               <a href={`/scenarios?loan_file_id=${id}`} className="flex items-center gap-2 text-sm bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg" title="Build a wholesaler pricing scenario from this file">📑 Price this deal</a>
+              {/* Ramon, 2026-08-03: "generate a preapproval directly from the LOS screen so that
+                  everything is accurate right out of the borrower's file." The names (both
+                  borrowers), property and amounts come off the 1003 rather than being retyped —
+                  a letter that disagrees with the application it came from is the thing to avoid. */}
+              <a href={`/preapprovals?file=${id}`} className="flex items-center gap-2 text-sm bg-emerald-700/80 hover:bg-emerald-600 px-3 py-2 rounded-lg" title="Issue a pre-approval letter prefilled from this file's 1003">📄 Pre-approval</a>
               <button onClick={() => setDelOpen(true)} title="Delete this loan file permanently" className="flex items-center gap-1.5 text-sm bg-slate-800 hover:bg-red-900/60 text-red-300 px-3 py-2 rounded-lg"><Trash2 className="w-4 h-4" /> Delete</button>
             </div>
             {linkMsg && <span className={`text-xs ${linkMsg.ok ? "text-emerald-400" : "text-amber-300"}`}>{linkMsg.text}</span>}
