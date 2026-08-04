@@ -348,12 +348,38 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     // window is authenticated by the session cookie. A stable per-doc window name
     // means re-clicking View focuses that doc's existing window instead of duplicating.
     const url = `/api/los/files/${id}/docs?doc_id=${doc_id}&inline=1`;
-    const w = window.open(url, `fettidoc_${doc_id}`, "popup=yes,width=1000,height=1200,resizable=yes,scrollbars=yes");
-    if (w) { try { w.focus(); } catch { /* */ } return; }
-    // Popup blocked (browser only) — fall back to the in-app viewer overlay.
     const isImage = /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(name || "");
-    setZoom(1);
-    setViewer({ url, name, isImage });
+    const inApp = () => { setZoom(1); setViewer({ url, name, isImage }); };
+
+    // A NON-NULL WINDOW IS NOT AN OPEN WINDOW.
+    //
+    // Ramon, 2026-08-03: "can't open pdf in dearman file." Every one of that file's 14 documents
+    // serves correctly — I fetched them all through the live endpoint: 200, application/pdf,
+    // %PDF- magic, and the 2.7MB statement renders fine in a browser tab. The failure is here.
+    //
+    // This trusted `if (w)`. A popup blocker returns null and the fallback fired, but the desktop
+    // app's webview and several blockers return a Window OBJECT that never navigates — so `w` was
+    // truthy, we focused a blank window, returned, and the in-app viewer never opened. Clicking
+    // View did nothing at all, which is exactly what "can't open" looks like.
+    //
+    // So: open it, then CHECK it actually became a real window, and fall back if not.
+    let w: Window | null = null;
+    try {
+      w = window.open(url, `fettidoc_${doc_id}`, "popup=yes,width=1000,height=1200,resizable=yes,scrollbars=yes");
+    } catch { w = null; }
+    if (!w || w.closed || typeof w.closed === "undefined") { inApp(); return; }
+    try { w.focus(); } catch { /* focus can throw in a webview; the window is still open */ }
+    // Give it a moment to actually load. A blocked or stillborn popup is closed (or still on
+    // about:blank with no document) by now — in which case show it in-app instead of leaving
+    // the LO looking at nothing.
+    setTimeout(() => {
+      try {
+        if (!w || w.closed) { inApp(); return; }
+        // Same-origin, so reading location is allowed; a popup that never navigated is still
+        // sitting on about:blank.
+        if (w.location && w.location.href === "about:blank") inApp();
+      } catch { /* cross-origin or gone — assume it opened */ }
+    }, 1200);
   }
   // LO uploads a file directly into the file. target = a doc_id (satisfy that item) or
   // "new" (add it as a fresh item — e.g. something the borrower emailed you).
