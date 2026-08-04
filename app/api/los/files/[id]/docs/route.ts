@@ -160,10 +160,31 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (typeof b.status === "string") patch.status = b.status;       // needed | received | accepted | rejected
     if (typeof b.notes === "string") patch.notes = b.notes;
+    // RENAME. Ramon, 2026-08-03: "you need to give me the ability to rename files that are in the
+    // los." A credit vendor's portal names its download `dhqPDF.aspx-37.pdf`, a phone names a
+    // photo `20260723_211741.jpg`, and a browser names a save `Name_of_file_1_.PDF` — none of
+    // which says what the document IS to anyone opening the file later, including an underwriter.
+    // The document's own name is the label the LOS shows; `file_name` stays as the immutable
+    // record of what was actually uploaded.
+    if (typeof b.name === "string") {
+      const nm = b.name.trim().slice(0, 120);
+      if (!nm) return NextResponse.json({ error: "A document name can't be blank." }, { status: 400 });
+      patch.name = nm;
+    }
+    if (typeof b.category === "string") patch.category = b.category.trim().slice(0, 60) || null;
     const { data: doc, error } = await supabaseAdmin
       .from("loan_documents").update(patch).eq("id", b.doc_id).eq("loan_file_id", id).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logActivity({ entity_type: "document", entity_id: doc.id, loan_file_id: id, actor: "lo", action: "doc.reviewed", detail: { name: doc.name, status: doc.status } });
+    // A rename is a different event from a review — the audit trail should say which happened,
+    // and keep the previous label so a file's history is legible.
+    const renamed = typeof b.name === "string";
+    await logActivity({
+      entity_type: "document", entity_id: doc.id, loan_file_id: id, actor: "lo",
+      action: renamed ? "doc.renamed" : "doc.reviewed",
+      detail: renamed
+        ? { name: doc.name, previous_name: b.previous_name || null, file_name: doc.file_name }
+        : { name: doc.name, status: doc.status },
+    });
     await maybeAdvanceStage(id);
     return NextResponse.json({ document: doc });
   } catch (e) {

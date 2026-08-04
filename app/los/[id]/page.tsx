@@ -221,6 +221,24 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     await fetch(`/api/los/files/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
     await load(); setSaving(false);
   }
+  // RENAME A DOCUMENT. Ramon asked for this after his credit vendor's portal delivered two
+  // reports called dhqPDF.aspx-36/37.pdf. The pull no longer depends on the name, but a file
+  // nobody can identify by its label is still a file an underwriter has to open to identify.
+  async function renameDoc(doc_id: string, previous_name: string) {
+    const name = window.prompt("Rename this document", previous_name);
+    if (name == null) return;                       // cancelled — not the same as clearing it
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === previous_name) return;
+    setDocBusy(doc_id);
+    try {
+      const r = await fetch(`/api/los/files/${id}/docs`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ doc_id, name: trimmed, previous_name }),
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error || "Couldn't rename that document."); }
+      await load();
+    } finally { setDocBusy(null); }
+  }
   async function patchDoc(doc_id: string, status: string, notes?: string) {
     await fetch(`/api/los/files/${id}/docs`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ doc_id, status, ...(notes !== undefined ? { notes } : {}) }) });
     await load();
@@ -542,6 +560,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => renameDoc(d.id, d.name)} disabled={docBusy === d.id} title="Rename this document" className="text-xs px-1.5 py-1 rounded text-slate-500 hover:text-sky-300 hover:bg-slate-800">✎</button>
                       {d.storage_path && <button onClick={() => viewDoc(d.id, d.name)} title={rejected ? "View the rejected copy" : "View"} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">View</button>}
                       <button onClick={() => pickUpload(d.id)} disabled={docBusy === d.id} title="Upload a file for this item (e.g. one the borrower emailed you)" className="text-xs px-2 py-1 rounded bg-sky-700/70 hover:bg-sky-600 disabled:opacity-50">{docBusy === d.id ? "…" : (provided ? "Replace" : "Upload")}</button>
                       {d.status === "received" && <button onClick={() => patchDoc(d.id, "accepted")} className="text-xs px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500">Accept</button>}

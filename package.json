@@ -51,7 +51,8 @@
     "verify:shield-verdict": "tsx scripts/verify-shield-verdict.ts",
     "verify:automation-status": "tsx scripts/verify-automation-status.ts",
     "verify:ssn-merge": "tsx scripts/verify-ssn-merge.ts",
-    "verify:preapproval-fields": "tsx scripts/verify-preapproval-fields.ts"
+    "verify:preapproval-fields": "tsx scripts/verify-preapproval-fields.ts",
+    "verify:doc-detection": "tsx scripts/verify-doc-detection.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
