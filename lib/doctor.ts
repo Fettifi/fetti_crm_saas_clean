@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { generateBatch } from "@/lib/content";
 import { healMetaToken } from "@/lib/metaHeal";
 import { recordHeartbeat, checkContinuity, pingWatchdog, type Continuity } from "@/lib/heartbeat";
+import { commsChecks } from "@/lib/commsHealth";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
@@ -107,6 +108,13 @@ export async function runDoctor(): Promise<{ status: string; checks: Check[]; re
     }
   } catch (e) { add("continuity_check", false, "warn", e instanceof Error ? e.message : "error"); }
 
+  // THE PHONE. Added 2026-08-05 after the office line sat dead on a busy signal for two days
+  // while this function reported "healthy" every hour. It checked ten database tables and the
+  // content queue; it never once asked whether callers could reach us.
+  try {
+    for (const c of await commsChecks()) add(c.name, c.ok, c.level, c.detail);
+  } catch (e) { add("comms_health", false, "warn", e instanceof Error ? e.message : "error"); }
+
   const criticalDown = checks.some((c) => c.level === "critical" && !c.ok);
   const warnDown = checks.some((c) => c.level === "warn" && !c.ok);
   const status = criticalDown ? "down" : warnDown ? "degraded" : "healthy";
@@ -119,10 +127,37 @@ export async function runDoctor(): Promise<{ status: string; checks: Check[]; re
   // Persist + alert on trouble
   try {
     await supabaseAdmin.from("doctor_reports").insert([{ status, checks, repairs }]);
-    if (status !== "healthy") await alertDiscord(status, checks, repairs);
+    if (status !== "healthy") { await alertDiscord(status, checks, repairs); await alertEmail(status, checks); }
   } catch { /* best-effort */ }
 
   return { status, checks, repairs, continuity };
+}
+
+// EMAIL, NOT SMS. The thing most likely to be broken is Twilio, and an alarm that reports
+// through the system it is watching is not an alarm. When the office line sat dead for two days
+// the only notification path was a webhook nobody was reading. This one lands in his inbox.
+async function alertEmail(status: string, checks: Check[]) {
+  const key = process.env.RESEND_API_KEY, to = process.env.LEAD_NOTIFY_EMAIL_TO, from = process.env.LEAD_NOTIFY_EMAIL_FROM;
+  if (!(key && to && from)) { console.error("[doctor] alert email SKIPPED — missing", { key: !!key, to: !!to, from: !!from }); return; }
+  const failed = checks.filter((c) => !c.ok);
+  const crit = failed.filter((c) => c.level === "critical");
+  // Lead with what is actually broken for the business, not with a check name.
+  const headline = crit.some((c) => c.name.startsWith("twilio:"))
+    ? "The phone may be down — callers could be getting a busy signal"
+    : `CRM ${status}`;
+  const rows = failed.map((c) => `${c.level === "critical" ? "⛔" : "⚠️"}  ${c.name}\n     ${c.detail}`).join("\n\n");
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from, to: to.split(",").map((s) => s.trim()),
+        subject: `${crit.length ? "⛔" : "⚠️"} ${headline}`,
+        html: `<p style="font:15px system-ui"><b>${headline}</b></p><pre style="font:13px ui-monospace,monospace;white-space:pre-wrap">${rows.replace(/</g, "&lt;")}</pre>`,
+      }),
+    });
+    if (!r.ok) console.error("[doctor] alert email REJECTED:", r.status, (await r.text()).slice(0, 300));
+  } catch (e: any) { console.error("[doctor] alert email failed:", e?.message); }
 }
 
 async function alertDiscord(status: string, checks: Check[], repairs: Repair[]) {

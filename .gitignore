@@ -15,3 +15,6 @@ tsconfig.tsbuildinfo
 # LEADING SLASH IS LOAD-BEARING: a bare "dataset/" matches at ANY depth and silently
 # excluded scripts/dataset/build.ts too, so the miner never got committed.
 /dataset/
+
+# Throwaway diagnostic scripts (agents + ad-hoc DB probes) — never committed
+scripts/_tmp-*
