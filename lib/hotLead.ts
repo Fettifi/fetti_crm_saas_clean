@@ -9,6 +9,7 @@
 // (app_settings) defaults OFF so his cell never rings until he turns it on. Throttled
 // to one page per lead / 30 min. The TwiML endpoints are gated by a single-use HMAC
 // nonce so nobody but our own page call can trigger a bridge.
+import { ownerCallFrom } from "@/lib/ownerCallFrom";
 import crypto from "crypto";
 import { after } from "next/server";
 import { signingSecret } from "@/lib/signingSecret";
@@ -46,7 +47,9 @@ export type PageResult = { paged: boolean; reason?: string };
  *  opts.force = LO-initiated (a click-to-call button): bypass the auto-page master
  *  switch and the throttle, since the human explicitly asked to dial this one now. */
 export async function pageOwnerHotLead(lead: any, pitch: string, opts?: { force?: boolean }): Promise<PageResult> {
-  const tsid = process.env.TWILIO_ACCOUNT_SID, ttok = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_FROM;
+  const tsid = process.env.TWILIO_ACCOUNT_SID, ttok = process.env.TWILIO_AUTH_TOKEN;
+  // Same reason as the live transfer: his cell answers the 10DLC line, not the toll-free one.
+  const from = await ownerCallFrom();
   const owner = ownerCellE164();
   if (!tsid || !ttok || !from || !owner) return { paged: false, reason: "voice_unconfigured" };
   if (!opts?.force && (await getSetting("HOTLEAD_VOICE_PAGE")) !== "on") return { paged: false, reason: "disabled" };

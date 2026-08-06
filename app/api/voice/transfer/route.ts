@@ -7,6 +7,7 @@
 // Auth: same Bearer VOICE_INGEST_TOKEN as /api/voice/ingest. Decision URLs carry an
 // HMAC of the call sid so only our announce call can act on it.
 import { NextRequest, NextResponse } from "next/server";
+import { ownerCallFrom } from "@/lib/ownerCallFrom";
 import { cfg, getSetting, setSetting } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
 import { decisionToken } from "@/lib/voiceTransfer";
@@ -29,7 +30,10 @@ export async function POST(req: NextRequest) {
   const callerName = String(b.caller_name || "an unknown caller").slice(0, 60);
   const reason = String(b.reason || "no reason given").slice(0, 180);
 
-  const tsid = process.env.TWILIO_ACCOUNT_SID, ttok = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_FROM;
+  const tsid = process.env.TWILIO_ACCOUNT_SID, ttok = process.env.TWILIO_AUTH_TOKEN;
+  // Ring HIS phone from the number his phone actually answers — not the client-facing
+  // toll-free line, which has gone unanswered on every attempt since it was adopted.
+  const from = await ownerCallFrom();
   const owner = ((await cfg("OWNER_CELL")) || process.env.LEAD_NOTIFY_SMS_TO || "").trim();
   if (!tsid || !ttok || !from || !owner) return NextResponse.json({ accepted: false, error: "transfer not configured" });
 

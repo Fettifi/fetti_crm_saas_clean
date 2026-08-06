@@ -43,7 +43,7 @@ async function sizesUnder(prefix: string, out: Map<string, number>, depth = 0): 
     .not("storage_path", "is", null);
   if (error) throw new Error("loan_documents: " + error.message);
 
-  const roots = [...new Set((docs || []).map((d: any) => String(d.storage_path).split("/")[0]))];
+  const roots: string[] = [...new Set(((docs || []) as any[]).map((d) => String(d.storage_path).split("/")[0] as string))];
   const real = new Map<string, number>();
   for (const r of roots) await sizesUnder(r, real);
   console.log(`Indexed ${real.size} object(s) in storage across ${roots.length} folder(s).\n`);
