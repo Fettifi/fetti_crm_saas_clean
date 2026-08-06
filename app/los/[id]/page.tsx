@@ -362,6 +362,46 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     } catch { setReqMsg({ text: "⚠️ Connection error" }); }
     setSendingReq(false);
   }
+  // DRAG A DOCUMENT STRAIGHT OUT OF THE LOS.
+  //
+  // Ramon, 2026-08-06: "I want to be able to drag the files directly out of the LOS into emails
+  // and portals… I don't wanna have to save them in another file folder considering they're
+  // already saved in my system."
+  //
+  // Chromium exposes exactly one mechanism for this: the `DownloadURL` drag flavour, formatted
+  // `<mime>:<filename>:<absolute-url>`. On drop, Chrome fetches that URL through the browser's
+  // own network stack — same-origin, so the staff session cookie rides along and the existing
+  // auth gate still applies — and materialises a real file in the target app. No Save-As, no
+  // downloads folder, no second copy to manage.
+  //
+  // Two limits worth knowing rather than discovering: the filename is delimited by colons, so a
+  // colon in it truncates the URL (sanitised below); and one drag carries ONE file — Chromium has
+  // no multi-file DownloadURL. Bundling several is what "Combine" already does.
+  function docMime(name: string): string {
+    const ext = (name.split(".").pop() || "").toLowerCase();
+    if (ext === "pdf") return "application/pdf";
+    if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+    if (ext === "png") return "image/png";
+    if (ext === "webp") return "image/webp";
+    if (ext === "gif") return "image/gif";
+    if (ext === "heic" || ext === "heif") return "image/heic";
+    if (ext === "tif" || ext === "tiff") return "image/tiff";
+    return "application/octet-stream";
+  }
+  function startDocDrag(d: Doc, e: React.DragEvent) {
+    if (!d.storage_path) { e.preventDefault(); return; }
+    // Give the dragged file the name it was uploaded under, falling back to the checklist label
+    // plus the real extension — an underwriter receiving "document" learns nothing.
+    const raw = d.file_name || `${d.name}.${(d.storage_path.split(".").pop() || "pdf")}`;
+    const fileName = raw.replace(/[:\r\n"\\/]/g, "-").slice(0, 120);
+    const url = `${window.location.origin}/api/los/files/${id}/docs?doc_id=${d.id}&inline=1`;
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("DownloadURL", `${docMime(fileName)}:${fileName}:${url}`);
+    // Fallbacks for targets that take a link rather than a file (Slack, a rich-text email body).
+    e.dataTransfer.setData("text/uri-list", url);
+    e.dataTransfer.setData("text/plain", url);
+  }
+
   function viewDoc(doc_id: string, name: string) {
     // Open each document in its OWN window so the LO can keep working in the CRM
     // while a document is up. The stream is same-origin + session-gated, so the new
@@ -643,8 +683,13 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                             {combineSel.includes(d.id) && <span className="text-[10px] text-emerald-400 font-bold w-3 text-center">{combineSel.indexOf(d.id) + 1}</span>}
                           </label>
                         : <span className="shrink-0 w-4 text-center text-slate-700" title="Only uploaded PDF / JPG / PNG can be combined">·</span>)}
-                      <div className="min-w-0">
-                      <div className="font-medium truncate">{d.name} {d.required && !provided && <span className="text-[10px] text-amber-400/70">required</span>}{borrowers.length > 1 && (d.borrowerName || primaryName) && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 align-middle">{(d.borrowerName || primaryName)!.split(" ")[0]}</span>}</div>
+                      <div
+                        className={`min-w-0 ${d.storage_path ? "cursor-grab active:cursor-grabbing" : ""}`}
+                        draggable={!!d.storage_path}
+                        onDragStart={(e) => startDocDrag(d, e)}
+                        title={d.storage_path ? "Drag this file straight into an email, a portal, or the desktop — no download needed" : undefined}
+                      >
+                      <div className="font-medium truncate">{d.storage_path && <span className="text-slate-600 mr-1 select-none" aria-hidden="true">⠿</span>}{d.name} {d.required && !provided && <span className="text-[10px] text-amber-400/70">required</span>}{borrowers.length > 1 && (d.borrowerName || primaryName) && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 align-middle">{(d.borrowerName || primaryName)!.split(" ")[0]}</span>}</div>
                       <div className={`text-xs ${badge(d.status)}`}>{rejected ? "rejected · not provided — awaiting new upload" : `${d.status}${d.file_name ? ` · ${d.file_name}` : ""}`}</div>
                       {rejected && d.notes && <div className="text-[11px] text-red-300/90 mt-0.5">↩︎ Sent back: {d.notes}</div>}
                       </div>
