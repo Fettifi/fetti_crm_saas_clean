@@ -100,6 +100,28 @@
 
     <div id="banner" class="banner"></div>
 
+    <!-- ATTACH FROM A LOAN FILE.
+         Dragging a document out of the LOS into Outlook does not work: Chromium hands the OS a
+         *promised* file, and Outlook is not a reliable promise target. Office.js is, so the LO
+         picks the file here and Outlook fetches each attachment itself. -->
+    <details class="opts" id="attachBox">
+      <summary>📎 Attach documents from a loan file</summary>
+      <div class="body">
+        <div class="field">
+          <label for="afSearch">Loan file</label>
+          <input type="text" id="afSearch" placeholder="Type a borrower name or file number…" autocomplete="off" />
+          <select id="afFile" style="width:100%;margin-top:6px"></select>
+        </div>
+        <div id="afDocs" style="max-height:210px;overflow:auto;margin-top:4px"></div>
+        <div class="mic-row" style="margin-top:8px">
+          <button class="link" id="afAll">Select all</button>
+          <span style="flex:1"></span>
+          <span class="timer" id="afMsg"></span>
+        </div>
+        <button class="primary" id="afGo" style="margin-top:6px">📎 Attach selected to this email</button>
+      </div>
+    </details>
+
     <div class="label">Tone</div>
     <div class="chips" id="tones"></div>
 
@@ -195,6 +217,71 @@
       return h;
     }
 
+    // ---- attach from a loan file ------------------------------------------------
+    // Office fetches each URL itself, so these are SHORT-LIVED SIGNED URLs from the
+    // server — our own /api/los routes are session-gated and would 401 for Office.
+    var afDocsCache = [];
+    function afSetMsg(t, bad){
+      var el = document.getElementById("afMsg");
+      if(el){ el.textContent = t || ""; el.style.color = bad ? "#b42318" : ""; }
+    }
+    function afLoadFiles(q){
+      fetch(API + "/api/outlook/attach" + (q ? "?q=" + encodeURIComponent(q) : ""), { headers: authHeaders() })
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          var sel = document.getElementById("afFile"); if(!sel) return;
+          sel.innerHTML = "";
+          var files = (j && j.files) || [];
+          if(!files.length){ sel.innerHTML = '<option value="">No loan files found</option>'; return; }
+          sel.innerHTML = '<option value="">— pick a file —</option>';
+          files.forEach(function(f){
+            var o = document.createElement("option");
+            o.value = f.id;
+            o.textContent = (f.borrower_name || "Borrower") + " · " + (f.file_number || "");
+            sel.appendChild(o);
+          });
+        })
+        .catch(function(){ afSetMsg("Couldn't load loan files.", true); });
+    }
+    function afLoadDocs(fileId){
+      var box = document.getElementById("afDocs"); if(!box) return;
+      box.innerHTML = ""; afDocsCache = []; afSetMsg("");
+      if(!fileId) return;
+      box.innerHTML = '<div style="font-size:12px;color:#667">Loading documents…</div>';
+      fetch(API + "/api/outlook/attach?file=" + encodeURIComponent(fileId), { headers: authHeaders() })
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          afDocsCache = (j && j.documents) || [];
+          box.innerHTML = "";
+          if(!afDocsCache.length){ box.innerHTML = '<div style="font-size:12px;color:#667">No uploaded documents on this file yet.</div>'; return; }
+          afDocsCache.forEach(function(d, i){
+            var row = document.createElement("label");
+            row.style.cssText = "display:flex;gap:8px;align-items:flex-start;padding:5px 2px;font-size:12.5px;cursor:pointer";
+            var cb = document.createElement("input");
+            cb.type = "checkbox"; cb.className = "afDoc"; cb.value = String(i); cb.style.marginTop = "2px";
+            var txt = document.createElement("span");
+            txt.innerHTML = "<b>" + (d.label || "Document") + "</b><br><span style='color:#667'>" + (d.name || "") + "</span>";
+            row.appendChild(cb); row.appendChild(txt); box.appendChild(row);
+          });
+          if(j && j.skipped > 0) afSetMsg(j.skipped + " file(s) could not be read from storage", true);
+        })
+        .catch(function(){ box.innerHTML = '<div style="font-size:12px;color:#b42318">Couldn\'t load documents.</div>'; });
+    }
+    // Attach sequentially: Outlook drops attachments if several addFileAttachmentAsync calls
+    // are in flight at once, and it does so silently.
+    function afAttach(list, done, okCount, failed){
+      okCount = okCount || 0; failed = failed || [];
+      if(!list.length) return done(okCount, failed);
+      var d = list.shift();
+      try{
+        Office.context.mailbox.item.addFileAttachmentAsync(d.url, d.name, function(res){
+          if(res && res.status === Office.AsyncResultStatus.Succeeded) okCount++;
+          else failed.push(d.name + (res && res.error ? " (" + res.error.message + ")" : ""));
+          afAttach(list, done, okCount, failed);
+        });
+      }catch(e){ failed.push(d.name); afAttach(list, done, okCount, failed); }
+    }
+
     // ---- element refs ----
     var $ = function(id){ return document.getElementById(id); };
     var banner=$("banner"), notes=$("notes"), mic=$("mic"), micLabel=$("micLabel"),
@@ -233,6 +320,47 @@
     });
 
     $("clear").onclick = function(){ notes.value=""; notes.focus(); };
+
+    // ---- attach panel wiring ----------------------------------------------------
+    (function(){
+      var box = document.getElementById("attachBox");
+      if(!box) return;
+      var search = document.getElementById("afSearch");
+      var sel = document.getElementById("afFile");
+      var go = document.getElementById("afGo");
+      var all = document.getElementById("afAll");
+      // Load the file list the first time the panel is opened, not on every pane launch.
+      var loaded = false;
+      box.addEventListener("toggle", function(){ if(box.open && !loaded){ loaded = true; afLoadFiles(""); } });
+      var t = null;
+      if(search) search.addEventListener("input", function(){
+        clearTimeout(t); t = setTimeout(function(){ afLoadFiles(search.value.trim()); }, 250);
+      });
+      if(sel) sel.addEventListener("change", function(){ afLoadDocs(sel.value); });
+      if(all) all.onclick = function(){
+        var boxes = document.querySelectorAll(".afDoc");
+        var anyOff = Array.prototype.some.call(boxes, function(c){ return !c.checked; });
+        Array.prototype.forEach.call(boxes, function(c){ c.checked = anyOff; });
+      };
+      if(go) go.onclick = function(){
+        var picked = Array.prototype.filter.call(document.querySelectorAll(".afDoc"), function(c){ return c.checked; })
+                      .map(function(c){ return afDocsCache[Number(c.value)]; })
+                      .filter(Boolean);
+        if(!picked.length){ afSetMsg("Tick at least one document.", true); return; }
+        // addFileAttachmentAsync only exists on a COMPOSE item. Say so plainly rather than
+        // failing silently when the pane is open on a message being read.
+        var item = (typeof Office !== "undefined" && Office.context && Office.context.mailbox) ? Office.context.mailbox.item : null;
+        if(!item || typeof item.addFileAttachmentAsync !== "function"){
+          afSetMsg("Open this on an email you're composing, then attach.", true); return;
+        }
+        go.disabled = true; afSetMsg("Attaching " + picked.length + "…");
+        afAttach(picked.slice(), function(ok, failed){
+          go.disabled = false;
+          if(failed.length) afSetMsg("Attached " + ok + ", failed " + failed.length + ": " + failed[0], true);
+          else afSetMsg("✓ Attached " + ok + " document" + (ok === 1 ? "" : "s"));
+        });
+      };
+    })();
 
     function toast(msg, isErr){
       toastEl.textContent = msg; toastEl.className = "show" + (isErr?" err":"");

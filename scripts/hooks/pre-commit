@@ -74,10 +74,11 @@ GOV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/governor' -e 'lib/conversationG
 # all of them read the DISK. Vercel only has what git has, so every production build died at
 # "Module not found" and three fixes reached nobody for hours. 0.6s, so it runs on any TS commit.
 ANYTS=$(printf '%s\n' "$CHANGED" | grep -E '\.(ts|tsx)$')
+OUTL=$(printf '%s\n' "$CHANGED" | grep -F -e 'api/outlook' -e 'taskpane.html' -e 'outlookAuth' -e 'verify-outlook-attach')
 DRAG=$(printf '%s\n' "$CHANGED" | grep -F -e 'los/[id]/page.tsx' -e 'verify-doc-dragout')
 CARD=$(printf '%s\n' "$CHANGED" | grep -F -e 'cardAuth' -e 'card-auth' -e 'CardAuthPanel' -e 'verify-card-auth')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && [ -z "$NMLS" ] && [ -z "$GUARDMETA" ] && [ -z "$RENT" ] && [ -z "$LTV" ] && [ -z "$BIZ" ] && [ -z "$GOV" ] && [ -z "$ANYTS" ] && [ -z "$CARD" ] && [ -z "$DRAG" ] && exit 0
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && [ -z "$NMLS" ] && [ -z "$GUARDMETA" ] && [ -z "$RENT" ] && [ -z "$LTV" ] && [ -z "$BIZ" ] && [ -z "$GOV" ] && [ -z "$ANYTS" ] && [ -z "$CARD" ] && [ -z "$DRAG" ] && [ -z "$OUTL" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
@@ -106,7 +107,7 @@ if [ -n "$GUARDMETA" ]; then
   fi
 fi
 
-for PAIR in "$DRAG:verify:doc-dragout" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules"; do
+for PAIR in "$OUTL:verify:outlook-attach" "$DRAG:verify:doc-dragout" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules"; do
   TRIG=${PAIR%%:*}; G=${PAIR#*:}
   [ -z "$TRIG" ] && continue
   printf "   %-24s " "$G"

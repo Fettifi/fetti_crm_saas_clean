@@ -67,7 +67,8 @@
     "verify:stale-files": "tsx scripts/verify-stale-files.ts",
     "verify:tracked-imports": "tsx scripts/verify-tracked-imports.ts",
     "verify:card-auth": "tsx scripts/verify-card-auth.ts",
-    "verify:doc-dragout": "tsx scripts/verify-doc-dragout.ts"
+    "verify:doc-dragout": "tsx scripts/verify-doc-dragout.ts",
+    "verify:outlook-attach": "tsx scripts/verify-outlook-attach.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
