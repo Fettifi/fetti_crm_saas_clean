@@ -32,7 +32,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const { data: obj } = await supabaseAdmin.storage.from(BUCKET).list(file.id, { search: sp.split("/").slice(1).join("/") });
       if (!obj?.length) return NextResponse.json({ error: "upload did not complete — the file is not in storage" }, { status: 400 });
       let fname = String(b?.file_name || sp.split("/").pop() || "document").slice(0, 120);
-      let size = Number(b?.size_bytes) || obj[0]?.metadata?.size || 0;
+      // STORAGE IS THE AUTHORITY ON SIZE, NOT THE BROWSER.
+      // This read `Number(b?.size_bytes) || obj[0]?.metadata?.size` — the client's claim first,
+      // the object's real metadata only as a fallback — while `obj` was already fetched two lines
+      // above. On 2026-08-06 one document was recorded as 86,596 bytes against a 87,448-byte
+      // object, which is enough to make any size-based comparison permanently unsatisfiable.
+      // The bytes in the bucket are the fact; what the browser said it was about to send is not.
+      let size = Number(obj[0]?.metadata?.size) || Number(b?.size_bytes) || 0;
       let sp2 = sp;
       // A HEIC big enough to take the signed-URL route is already in storage — pull it back,
       // convert, and store the JPEG beside it. (HEICs are typically 2-4MB+, so this is the

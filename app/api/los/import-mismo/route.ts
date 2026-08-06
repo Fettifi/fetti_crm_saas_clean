@@ -162,6 +162,9 @@ export async function POST(req: NextRequest) {
           uploaded_by: "system",
           storage_path: path,
           file_name: file.name || "1003.xml",
+          // The archived XML is a document like any other; without this the column is NULL
+          // and anything reasoning about document size silently skips it.
+          size_bytes: xml.length,
         }]);
         archived = true;
       }
