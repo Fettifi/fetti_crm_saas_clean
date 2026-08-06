@@ -117,6 +117,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (body.action === "send") {
       const names = borrowerNames(lead, loanFile);
       const amt = Math.max(0, Math.round(Number(body?.amount) || auths[key]?.amount || 0));
+      // A BLANKET AUTHORIZATION WITHOUT A CEILING CANNOT BE SENT.
+      //
+      // 2026-08-06: a link went out for FF-202607-6368 with amount 0, because the panel and this
+      // route both do `Number(...) || 0` and the LO left the box blank. blanketAuthText refuses to
+      // generate uncapped language (correctly — there is no safe version of it), so it THREW inside
+      // the public GET, which 500'd, which the borrower page rendered as "This authorization link is
+      // invalid or has expired." The borrower was told the link expired; it never worked, and the
+      // real cause was a blank amount field on our side.
+      //
+      // Refuse here, where the LO can still fix it, rather than shipping a link that is guaranteed
+      // to fail in the borrower's hands.
+      if (!(amt > 0)) {
+        return NextResponse.json({
+          error: "Set the blanket amount before sending — a card authorization has to state a dollar ceiling. Enter the maximum for this loan's fees and send again.",
+        }, { status: 422 });
+      }
       const ex = auths[key];
       auths[key] = {
         ...(ex || {} as any),

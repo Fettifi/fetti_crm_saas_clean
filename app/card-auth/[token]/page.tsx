@@ -17,6 +17,7 @@ export default function CardAuthPage({ params }: { params: Promise<{ token: stri
   const [info, setInfo] = useState<Info | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [loadErr, setLoadErr] = useState("");
   const [done, setDone] = useState<{ brand: string; last4: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -28,9 +29,16 @@ export default function CardAuthPage({ params }: { params: Promise<{ token: stri
     const s = qs.get("s") || "";
     setB(bi); setSig(s);
     const q = `b=${encodeURIComponent(bi)}&s=${encodeURIComponent(s)}`;
-    fetch(`/api/card-auth/${token}?${q}`).then((r) => (r.ok ? r.json() : Promise.reject())).then((j) => {
-      setInfo(j); if (j.alreadyAuthorized) setDone({ brand: "", last4: j.last4 || "" }); setLoading(false);
-    }).catch(() => { setNotFound(true); setLoading(false); });
+    // TELL THE BORROWER WHAT IS ACTUALLY WRONG. Every non-OK response used to collapse into
+    // "invalid or has expired" — so an authorization sent without its dollar limit (a blank box
+    // in the LOS) reached the borrower as a dead, expired link. Carry the server's own reason.
+    fetch(`/api/card-auth/${token}?${q}`)
+      .then(async (r) => {
+        const j = await r.json().catch(() => null);
+        if (!r.ok) { setNotFound(true); setLoadErr(j?.error || ""); setLoading(false); return; }
+        setInfo(j); if (j.alreadyAuthorized) setDone({ brand: "", last4: j.last4 || "" }); setLoading(false);
+      })
+      .catch(() => { setNotFound(true); setLoading(false); });
   }, [token]);
 
   async function submit() {
@@ -48,7 +56,7 @@ export default function CardAuthPage({ params }: { params: Promise<{ token: stri
   const fmtCard = (v: string) => v.replace(/\D/g, "").slice(0, 19).replace(/(.{4})/g, "$1 ").trim();
 
   if (loading) return <Center><Loader2 className="w-6 h-6 animate-spin text-emerald-600" /></Center>;
-  if (notFound || !info) return <Center><p className="text-slate-500">This authorization link is invalid or has expired. Please contact your Fetti specialist.</p></Center>;
+  if (notFound || !info) return <Center><p className="text-slate-500">{loadErr || "This authorization link is invalid or has expired. Please contact your Fetti specialist."}</p></Center>;
 
   return (
     <div className="min-h-screen bg-white text-slate-900">

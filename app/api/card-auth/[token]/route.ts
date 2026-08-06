@@ -43,6 +43,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   const { token } = await params;
   const r = await resolve(token, req.nextUrl.searchParams.get("b"), req.nextUrl.searchParams.get("s"));
   if (!r || !r.auth) return NextResponse.json({ error: "This authorization link is invalid or has expired." }, { status: 404 });
+  // AN INCOMPLETE AUTHORIZATION IS NOT AN EXPIRED ONE — SAY WHICH.
+  // blanketAuthText throws on a missing ceiling (by design). Unhandled, that threw a 500 here and
+  // the borrower page rendered ANY failure as "invalid or has expired", so a blank amount box in
+  // the LOS read to the borrower as a dead link. Answer honestly and tell them what happens next.
+  if (!(Number(r.auth.amount) > 0)) {
+    return NextResponse.json({
+      error: "This authorization isn't ready yet — it's missing the dollar limit it has to state. Your Fetti specialist has been notified and will send you a corrected link.",
+      reason: "missing_amount",
+    }, { status: 409 });
+  }
   return NextResponse.json({
     company: BRAND.company, nmls: BRAND.nmls,
     fileNumber: r.file.file_number,
@@ -60,6 +70,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   try {
     const r = await resolve(token, req.nextUrl.searchParams.get("b"), req.nextUrl.searchParams.get("s"));
     if (!r || !r.auth) return NextResponse.json({ error: "This authorization link is invalid or has expired." }, { status: 404 });
+    // Same ceiling check as the GET: never let a borrower submit card details against an
+    // authorization whose signed language we cannot generate.
+    if (!(Number(r.auth.amount) > 0)) {
+      return NextResponse.json({
+        error: "This authorization isn't ready yet — it's missing the dollar limit it has to state. Your Fetti specialist will send you a corrected link.",
+        reason: "missing_amount",
+      }, { status: 409 });
+    }
     const body = await req.json();
 
     const cardholder = String(body?.cardholder || "").trim().slice(0, 80);

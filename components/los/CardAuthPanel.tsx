@@ -47,6 +47,16 @@ export default function CardAuthPanel({ fileId }: { fileId: string }) {
     setBusy(i); setErr(""); setSendMsg((m) => ({ ...m, [i]: "" }));
     try {
       const amt = Number(String(amount[i] ?? "").replace(/[^0-9.]/g, "")) || 0;
+      // Catch the blank amount HERE, before a borrower ever receives a link that cannot open.
+      // A card authorization has to state a ceiling; with none, the borrower's page fails and —
+      // until 2026-08-06 — told them the link had expired, which was never true.
+      // Look the borrower up BY INDEX, not by array position — they coincide today only because
+      // every file happens to list its borrowers in order.
+      const existing = rows.find((x) => x.index === i)?.auth?.amount ?? 0;
+      if (!(amt > 0) && !(existing > 0)) {
+        setSendMsg((m) => ({ ...m, [i]: "⚠ Set the blanket amount first — the authorization has to state a dollar ceiling." }));
+        return;
+      }
       const cc = String(alsoEmail[i] ?? "").trim();
       const r = await fetch(`/api/los/files/${fileId}/card-auth`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ borrowerIndex: i, amount: amt, action: "send", ...(cc ? { also_email: cc } : {}) }) });
       const j = await r.json();

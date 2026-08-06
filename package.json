@@ -65,7 +65,8 @@
     "verify:governor-rules": "tsx scripts/verify-governor-rules.ts",
     "verify:governor": "tsx scripts/verify-governor.ts",
     "verify:stale-files": "tsx scripts/verify-stale-files.ts",
-    "verify:tracked-imports": "tsx scripts/verify-tracked-imports.ts"
+    "verify:tracked-imports": "tsx scripts/verify-tracked-imports.ts",
+    "verify:card-auth": "tsx scripts/verify-card-auth.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
