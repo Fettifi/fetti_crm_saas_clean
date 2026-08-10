@@ -12,7 +12,7 @@ type Req = { token: string; title: string; status: string; created_at: string; h
 
 const TOOLS: [EsignFieldType, string][] = [["signature", "✍️ Signature"], ["initials", "🅸 Initials"], ["date", "📅 Date"], ["name", "🅽 Name"], ["text", "📝 Text box"]];
 const COLORS = ["#0ea5e9", "#f59e0b", "#a855f7", "#ef4444", "#14b8a6"];
-// ~25s of independent attempts before the screen admits defeat and offers Try again.
+// ~34s of independent attempts before the screen admits defeat and offers Try again.
 const MAX_TRIES = 10;
 
 export default function EsignPage() {
@@ -69,7 +69,7 @@ export default function EsignPage() {
   // not the screen.
   const load = useCallback(async (): Promise<void> => {
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 5000);
+    const timer = setTimeout(() => ctl.abort(), 2500);   // a healthy call answers in ~0.5s
     setReloading(true);
     try {
       const r = await fetch("/api/esign/requests", { cache: "no-store", signal: ctl.signal });
@@ -93,7 +93,7 @@ export default function EsignPage() {
   // leaves the error on screen with a Try again button rather than a permanent spinner.
   useEffect(() => {
     if (loaded || tries === 0 || tries >= MAX_TRIES) return;
-    const id = setTimeout(() => { load(); }, 2500);
+    const id = setTimeout(() => { load(); }, 900);
     return () => clearTimeout(id);
   }, [loaded, tries, load]);
 
