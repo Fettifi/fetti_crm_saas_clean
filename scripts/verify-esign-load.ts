@@ -69,6 +69,12 @@ chk(/if\s*\(\s*!\s*r\.ok\s*\)\s*throw/.test(code),
 chk(/attempt\s*<\s*\d+/.test(code) && /return\s+load\s*\(\s*attempt\s*\+\s*1\s*\)/.test(code),
   "an interrupted load is retried rather than abandoned");
 
+// 3b. A retry is useless against a request that never settles, and that is exactly what a
+//     cold hard load produced here: eighteen seconds on "Loading" until a window focus
+//     rescued it. The request must be given a deadline so the retry has something to catch.
+chk(/new AbortController\(\)/.test(code) && /signal:\s*ctl\.signal/.test(code) && /ctl\.abort\(\)/.test(code),
+  "a hung request is aborted on a deadline so the retry can act on it");
+
 // 4. THE HEADLINE: the empty-state copy may only render once a load has succeeded.
 //    Located positionally in the STRIPPED code so this file's own commentary cannot
 //    satisfy it, and the index is proven found before anything is compared (an

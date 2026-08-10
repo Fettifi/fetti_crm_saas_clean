@@ -56,23 +56,32 @@ export default function EsignPage() {
   // envelopes appeared — which is why this looked intermittent rather than broken.
   // So: treat every non-ok outcome as a failure, RETRY it, and never claim emptiness
   // unless a load actually came back.
+  // A hung request is the OTHER half of the same bug. Measured on production after the
+  // first fix: on a cold hard load this request does not fail fast — it simply never
+  // settles, so a retry that waits on the promise waits forever and the page sat on
+  // "Loading your envelopes…" for eighteen seconds until a window focus rescued it.
+  // A timeout turns that hang into an ordinary failure the retry below can act on.
   const load = useCallback(async (attempt = 0): Promise<void> => {
     if (attempt === 0) setReloading(true);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 5000);
     try {
-      const r = await fetch("/api/esign/requests", { cache: "no-store" });
+      const r = await fetch("/api/esign/requests", { cache: "no-store", signal: ctl.signal });
       if (!r.ok) throw new Error(r.status ? `the server returned HTTP ${r.status}` : "the request was interrupted before it finished");
       const j = await r.json();
       setReqs(Array.isArray(j?.requests) ? j.requests : []);
       setLoadErr(null);
       setLoaded(true);
     } catch (e: any) {
-      // An interrupted first load is transient — back off and try again before surfacing.
+      // An interrupted or hung first load is transient — back off and try again before
+      // surfacing anything. Only a run of failures is worth telling Ramon about.
       if (attempt < 3) {
         await new Promise((res) => setTimeout(res, 400 * (attempt + 1)));
         return load(attempt + 1);
       }
-      setLoadErr(e?.message || "the request failed");
+      setLoadErr(e?.name === "AbortError" ? "it timed out" : (e?.message || "the request failed"));
     } finally {
+      clearTimeout(timer);
       if (attempt === 0) setReloading(false);
     }
   }, []);
