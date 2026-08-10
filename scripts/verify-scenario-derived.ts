@@ -102,6 +102,20 @@ chk(firstSave.derived?.ltv === 65 && firstSave.derived?.monthly_piti === 2760,
 const thenCleared = settleAll(firstSave, { ...DEAL, monthly_rent: null });
 chk(thenCleared.dscr === null, "so clearing the rent afterwards still clears the DSCR");
 
+// ── 11. THE PRE-SPLIT LUMP. Scenarios saved before PITIA was broken into taxes / insurance / HOA
+//       carry monthly_piti == P&I and NO `derived` map. "Not what we last produced" then read as
+//       "the LO typed it", so the payment kept the escrow-less lump and the ratio followed it —
+//       DSCR 2.00 printed on a deal whose true figure is 1.52, in the direction that makes a deal
+//       look fundable when it isn't. A payment equal to P&I while taxes and insurance are on the
+//       sheet is not a number any LO could have meant.
+const preSplit = settleAll({}, { ...DEAL, monthly_piti: 2100 });   // no `derived` — the old shape
+chk(preSplit.monthly_piti === 2760,
+  "a stored PITIA equal to P&I, with escrows present, is re-derived from the components");
+chk(preSplit.dscr === 1.5217,
+  `and the DSCR follows the components, not the stale lump (got ${preSplit.dscr}, lump would be 2.0)`);
+chk(preSplit.derived?.monthly_piti === 2760,
+  "and we claim that payment as ours again, so it keeps tracking its inputs");
+
 // ── THE EDITOR MUST KEEP ITS OWN `derived` MAP CURRENT.
 //    The client's ownership test compared every keystroke against a map that only ever arrived
 //    FROM the server — never sent on save, never refreshed between round-trips — so it recomputed

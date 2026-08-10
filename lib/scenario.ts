@@ -339,6 +339,28 @@ export function computePitia(s: Partial<Scenario>): number | null {
   return Math.round((pi + t + i + h) * 100) / 100;
 }
 
+/** IS THE STORED monthly_piti A STALE LUMP RATHER THAN THE LO'S OWN FIGURE?
+ *
+ *  `derived` is how we tell our number from the LO's — but scenarios saved BEFORE PITIA was split
+ *  into taxes / insurance / HOA (f07a62b) carry no `derived` map at all. "Not what we last
+ *  produced" then read as "the LO typed it", so the ratio followed the pre-split lump: on the
+ *  guard's own case the sheet printed DSCR 1.71 where the truth is 1.22 — a 40% overstatement, and
+ *  in the direction that makes a deal look fundable when it isn't.
+ *
+ *  The signature is provable, not a guess: a total housing payment that EQUALS the P&I while
+ *  taxes / insurance / HOA are populated is arithmetically impossible. It is the old lump left
+ *  behind. Ours and stale, not theirs — the components govern.
+ *
+ *  A monthly_piti that differs from P&I is still respected as the LO's figure; this narrows the
+ *  exception to the one shape that cannot be a real number. */
+export function statedPitiaIsStale(s: Partial<Scenario>): boolean {
+  const stated = num(s.monthly_piti);
+  const pi = num(s.principal_interest);
+  if (stated == null || pi == null) return false;
+  const escrows = (num(s.taxes_monthly) ?? 0) + (num(s.insurance_monthly) ?? 0) + (num(s.hoa_monthly) ?? 0);
+  return escrows > 0 && Math.abs(stated - pi) < 0.0051;
+}
+
 /** SETTLE THE DERIVED RATIOS against the inputs that are actually present.
  *
  *  A derived number must not outlive its inputs: clearing the rent used to leave the previously
@@ -362,7 +384,11 @@ export function settleDerived<T extends Partial<Scenario>>(base: T, priorDerived
     // OURS when: nothing was sent, OR it matches what we last derived, OR it matches what we would
     // derive right now (the editor recomputes locally, so a first save echoes our own figure back
     // before any `derived` map exists — without this every fresh scenario would look hand-typed).
-    const isOurs = incoming == null || close(incoming, prior[key]) || close(incoming, computed);
+    // ...or when it is the pre-split PITIA lump, which no LO could have meant (see
+    // statedPitiaIsStale). The PAYMENT has to be re-settled here for the same reason the ratio is:
+    // otherwise the sheet prints one payment and a DSCR built on a different one.
+    const isOurs = incoming == null || close(incoming, prior[key]) || close(incoming, computed)
+      || (key === "monthly_piti" && statedPitiaIsStale(base));
     if (!isOurs) return;   // the LO stated this figure — leave it, and stop claiming it as ours
     if (computed != null) { (base as any)[key] = computed; next[key] = computed; return; }
     (base as any)[key] = null;   // ours, and its inputs are gone
@@ -384,9 +410,12 @@ export function computeDscr(s: Partial<Scenario>): number | null {
   // still overrode it, so the sheet printed the LO's payment and a DSCR computed from a different
   // one. `derived` says which: if the stored figure is not what we last produced, the LO put it
   // there and the ratio has to follow it.
+  // ...unless it carries the pre-split signature, which is ours-and-stale however old the
+  // scenario is and whether or not a `derived` map survived.
   const stated = num(s.monthly_piti);
   const lastDerived = (s as any)?.derived?.monthly_piti;
-  const pitiaIsLOs = stated != null && (lastDerived == null || Math.abs(stated - Number(lastDerived)) >= 0.0051);
+  const pitiaIsLOs = stated != null && !statedPitiaIsStale(s)
+    && (lastDerived == null || Math.abs(stated - Number(lastDerived)) >= 0.0051);
   const piti = pitiaIsLOs ? stated : (computePitia(s) ?? stated);
   if (!rent || !piti) return null;
   // THE PROPERTY'S TOTAL DEBT SERVICE, not just this loan's payment. On a 2nd / HELOC the senior
