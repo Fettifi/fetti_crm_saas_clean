@@ -64,10 +64,16 @@ chk(!/\bif\s*\(\s*r\.ok\s*\)\s*\{/.test(code),
 chk(/if\s*\(\s*!\s*r\.ok\s*\)\s*throw/.test(code),
   "a non-ok response (including an aborted status 0) throws instead of being ignored");
 
-// 3. It must retry — one interrupted attempt on a cold page load is the normal case here,
-//    so a loader that surrenders on the first failure is still a broken loader.
-chk(/attempt\s*<\s*\d+/.test(code) && /return\s+load\s*\(\s*attempt\s*\+\s*1\s*\)/.test(code),
-  "an interrupted load is retried rather than abandoned");
+// 3. It must retry, and the retry must live OUTSIDE the loader. A self-recursing chain was
+//    tried and did not hold: when the promise never settles, the chain waits with it and the
+//    screen spins forever. The loop has to be driven by an effect that watches whether the
+//    list actually arrived, so each attempt is independent of the last one's fate.
+chk(/setTries\s*\(/.test(code) && /tries\s*>=\s*MAX_TRIES/.test(code) && /setTimeout\(\s*\(\)\s*=>\s*\{?\s*load\(\)/.test(code),
+  "retries are driven from outside the loader, so a lost result costs one attempt not the screen");
+
+// 3a. The give-up must be bounded, not infinite, and must end in something the LO can act on.
+chk(/const MAX_TRIES\s*=\s*\d+/.test(code) && /const gaveUp\s*=/.test(code),
+  "retrying is bounded and ends in an explicit gave-up state");
 
 // 3b. A retry is useless against a request that never settles, and that is exactly what a
 //     cold hard load produced here: eighteen seconds on "Loading" until a window focus
@@ -89,8 +95,8 @@ if (at >= 0) {
 }
 
 // 5. A load that fails must SAY so, with a way back.
-chk(/loadErr/.test(code) && /setLoadErr/.test(code), "a failed load surfaces an error state to the LO");
-chk(/onClick=\{\s*\(\)\s*=>\s*load\(\)\s*\}/.test(code), "the LO can retry the load by hand");
+chk(/loadErr/.test(code) && /setLoadErr/.test(code) && /\{gaveUp && \(/.test(code), "a load that gave up surfaces an error state to the LO");
+chk(/onClick=\{\s*\(\)\s*=>\s*\{?\s*setTries\(0\);\s*load\(\);?\s*\}?\s*\}/.test(code), "the LO can restart the load by hand after it gave up");
 
 // 6. Signed copy + certificate must be viewable ON the page — the actual ask.
 chk(/<iframe/.test(code), "documents render inline on the page (not download-only)");

@@ -12,6 +12,8 @@ type Req = { token: string; title: string; status: string; created_at: string; h
 
 const TOOLS: [EsignFieldType, string][] = [["signature", "✍️ Signature"], ["initials", "🅸 Initials"], ["date", "📅 Date"], ["name", "🅽 Name"], ["text", "📝 Text box"]];
 const COLORS = ["#0ea5e9", "#f59e0b", "#a855f7", "#ef4444", "#14b8a6"];
+// ~25s of independent attempts before the screen admits defeat and offers Try again.
+const MAX_TRIES = 10;
 
 export default function EsignPage() {
   const [title, setTitle] = useState("");
@@ -32,6 +34,7 @@ export default function EsignPage() {
   const [loaded, setLoaded] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
+  const [tries, setTries] = useState(0);
   const [viewing, setViewing] = useState<{ token: string; title: string; doc: "signed" | "cert" | "source" } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -46,25 +49,28 @@ export default function EsignPage() {
 
   useEffect(() => { const u = new URL(window.location.href); const f = u.searchParams.get("file"); if (f) setFileId(f); }, []);
 
-  // WHY THIS IS NOT `if (r.ok) { ... }` ANY MORE.
-  // On a HARD load of /esign (typed URL, bookmark, refresh) this request is routinely
-  // ABORTED while the shell is still bootstrapping. An aborted fetch does not throw —
-  // it RESOLVES with an opaque response: `status: 0`, `ok: false`. The old code checked
-  // `r.ok`, found it false, and did nothing at all: no state, no error, no retry. The
-  // list stayed `[]` and the page printed "Nothing sent yet." Reaching /esign by clicking
-  // through the app instead did a client-side navigation, the fetch completed, and all six
-  // envelopes appeared — which is why this looked intermittent rather than broken.
-  // So: treat every non-ok outcome as a failure, RETRY it, and never claim emptiness
-  // unless a load actually came back.
-  // A hung request is the OTHER half of the same bug. Measured on production after the
-  // first fix: on a cold hard load this request does not fail fast — it simply never
-  // settles, so a retry that waits on the promise waits forever and the page sat on
-  // "Loading your envelopes…" for eighteen seconds until a window focus rescued it.
-  // A timeout turns that hang into an ordinary failure the retry below can act on.
-  const load = useCallback(async (attempt = 0): Promise<void> => {
-    if (attempt === 0) setReloading(true);
+  // WHY THIS IS NOT `if (r.ok) { ... }`, AND WHY THE RETRY LIVES OUTSIDE THE LOADER.
+  //
+  // On a HARD load of /esign (typed URL, bookmark, refresh) this request loses its result
+  // while the shell is still bootstrapping, in two different ways. First it came back as an
+  // opaque response — `status: 0`, `ok: false` — which an aborted fetch RESOLVES with rather
+  // than throwing; the old `if (r.ok) { ... }` with no else then did nothing at all: no
+  // state, no error, no retry. The list stayed `[]` and the page printed "Nothing sent yet"
+  // while six envelopes, three of them completed and signed, sat in the database. Reaching
+  // the page by clicking through the app navigated client-side, the fetch completed, and all
+  // six appeared — which is why it read as flaky rather than broken.
+  //
+  // Then, with that fixed, it stopped failing and started HANGING: the promise never settled
+  // at all, so a self-recursing retry chain waited with it and the screen sat on "Loading
+  // your envelopes…" until a window focus rescued it. A deadline turns the hang into an
+  // ordinary failure, and the retry is driven from OUTSIDE this function by an effect that
+  // watches whether the list actually arrived — a loop that cannot itself be swallowed by
+  // whatever loses the result. Each attempt is independent: a lost one costs one interval,
+  // not the screen.
+  const load = useCallback(async (): Promise<void> => {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 5000);
+    setReloading(true);
     try {
       const r = await fetch("/api/esign/requests", { cache: "no-store", signal: ctl.signal });
       if (!r.ok) throw new Error(r.status ? `the server returned HTTP ${r.status}` : "the request was interrupted before it finished");
@@ -73,19 +79,23 @@ export default function EsignPage() {
       setLoadErr(null);
       setLoaded(true);
     } catch (e: any) {
-      // An interrupted or hung first load is transient — back off and try again before
-      // surfacing anything. Only a run of failures is worth telling Ramon about.
-      if (attempt < 3) {
-        await new Promise((res) => setTimeout(res, 400 * (attempt + 1)));
-        return load(attempt + 1);
-      }
       setLoadErr(e?.name === "AbortError" ? "it timed out" : (e?.message || "the request failed"));
     } finally {
       clearTimeout(timer);
-      if (attempt === 0) setReloading(false);
+      setReloading(false);
+      setTries((t) => t + 1);
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // KEEP ASKING UNTIL THE LIST IS ACTUALLY HERE. Every attempt is independent, so a lost
+  // result costs one interval instead of the whole screen. Gives up after MAX_TRIES and
+  // leaves the error on screen with a Try again button rather than a permanent spinner.
+  useEffect(() => {
+    if (loaded || tries === 0 || tries >= MAX_TRIES) return;
+    const id = setTimeout(() => { load(); }, 2500);
+    return () => clearTimeout(id);
+  }, [loaded, tries, load]);
 
   // Self-heal: if a load was lost while the tab was in the background (or the app was
   // asleep), pick it up the moment Ramon looks at the screen again.
@@ -96,6 +106,8 @@ export default function EsignPage() {
     return () => { window.removeEventListener("focus", again); document.removeEventListener("visibilitychange", again); };
   }, [load]);
 
+  // Only call it a failure once we have actually stopped trying.
+  const gaveUp = !loaded && tries >= MAX_TRIES;
   const docUrl = (v: { token: string; doc: string }) => `/api/esign/requests/${v.token}/pdf?doc=${v.doc}`;
 
   const colorOf = (id: string) => COLORS[Math.max(0, recipients.findIndex((r) => r.id === id)) % COLORS.length];
@@ -334,16 +346,16 @@ export default function EsignPage() {
             ))}
             {/* Three DISTINCT states. "Nothing sent yet" is only ever shown once a load
                 has actually succeeded — never as the default for a failure. */}
-            {!loaded && !loadErr && (
+            {!loaded && !gaveUp && (
               <div className="text-slate-500 text-sm flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading your envelopes…</div>
             )}
-            {loadErr && (
+            {gaveUp && (
               <div className="rounded-xl border border-amber-600/50 bg-amber-500/5 px-4 py-3 text-sm flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
                 <div>
                   <div className="text-amber-200">Couldn&apos;t load your envelopes — {loadErr}.</div>
                   <div className="text-slate-500 text-xs mt-0.5">Nothing has been lost; this screen just couldn&apos;t reach the list.</div>
-                  <button onClick={() => load()} className="mt-2 text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 inline-flex items-center gap-1"><RefreshCw className="w-3 h-3" /> Try again</button>
+                  <button onClick={() => { setTries(0); load(); }} className="mt-2 text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 inline-flex items-center gap-1"><RefreshCw className="w-3 h-3" /> Try again</button>
                 </div>
               </div>
             )}
