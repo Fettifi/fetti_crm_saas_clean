@@ -4,7 +4,7 @@
 // signing order, drop each signer's fields (color-coded) onto the live document,
 // and send. Tracks per-signer status; void anytime before completion.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, FileUp, Send, Link2, ExternalLink, FileSignature, Plus, Trash2, Ban, Download } from "lucide-react";
+import { Loader2, FileUp, Send, Link2, ExternalLink, FileSignature, Plus, Trash2, Ban, Download, Eye, X, RefreshCw, AlertTriangle } from "lucide-react";
 import PdfDoc, { EsignField, EsignFieldType } from "@/components/PdfDoc";
 
 type Recipient = { id: string; name: string; email: string; phone: string; order: number };
@@ -25,6 +25,14 @@ export default function EsignPage() {
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState<{ ok?: boolean; text: string } | null>(null);
   const [reqs, setReqs] = useState<Req[]>([]);
+  // `loaded` means a list fetch actually SUCCEEDED. Without it there is no way to tell
+  // "you have no envelopes" apart from "we never managed to ask", and the page told
+  // Ramon the first one while six envelopes — three of them completed and signed —
+  // sat in the database.
+  const [loaded, setLoaded] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [reloading, setReloading] = useState(false);
+  const [viewing, setViewing] = useState<{ token: string; title: string; doc: "signed" | "cert" | "source" } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const pdfRef = useRef<HTMLInputElement>(null);
@@ -37,8 +45,49 @@ export default function EsignPage() {
   }
 
   useEffect(() => { const u = new URL(window.location.href); const f = u.searchParams.get("file"); if (f) setFileId(f); }, []);
-  const load = useCallback(async () => { const r = await fetch("/api/esign/requests"); if (r.ok) { const j = await r.json(); setReqs(j.requests || []); } }, []);
+
+  // WHY THIS IS NOT `if (r.ok) { ... }` ANY MORE.
+  // On a HARD load of /esign (typed URL, bookmark, refresh) this request is routinely
+  // ABORTED while the shell is still bootstrapping. An aborted fetch does not throw —
+  // it RESOLVES with an opaque response: `status: 0`, `ok: false`. The old code checked
+  // `r.ok`, found it false, and did nothing at all: no state, no error, no retry. The
+  // list stayed `[]` and the page printed "Nothing sent yet." Reaching /esign by clicking
+  // through the app instead did a client-side navigation, the fetch completed, and all six
+  // envelopes appeared — which is why this looked intermittent rather than broken.
+  // So: treat every non-ok outcome as a failure, RETRY it, and never claim emptiness
+  // unless a load actually came back.
+  const load = useCallback(async (attempt = 0): Promise<void> => {
+    if (attempt === 0) setReloading(true);
+    try {
+      const r = await fetch("/api/esign/requests", { cache: "no-store" });
+      if (!r.ok) throw new Error(r.status ? `the server returned HTTP ${r.status}` : "the request was interrupted before it finished");
+      const j = await r.json();
+      setReqs(Array.isArray(j?.requests) ? j.requests : []);
+      setLoadErr(null);
+      setLoaded(true);
+    } catch (e: any) {
+      // An interrupted first load is transient — back off and try again before surfacing.
+      if (attempt < 3) {
+        await new Promise((res) => setTimeout(res, 400 * (attempt + 1)));
+        return load(attempt + 1);
+      }
+      setLoadErr(e?.message || "the request failed");
+    } finally {
+      if (attempt === 0) setReloading(false);
+    }
+  }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Self-heal: if a load was lost while the tab was in the background (or the app was
+  // asleep), pick it up the moment Ramon looks at the screen again.
+  useEffect(() => {
+    const again = () => { if (document.visibilityState === "visible") load(); };
+    window.addEventListener("focus", again);
+    document.addEventListener("visibilitychange", again);
+    return () => { window.removeEventListener("focus", again); document.removeEventListener("visibilitychange", again); };
+  }, [load]);
+
+  const docUrl = (v: { token: string; doc: string }) => `/api/esign/requests/${v.token}/pdf?doc=${v.doc}`;
 
   const colorOf = (id: string) => COLORS[Math.max(0, recipients.findIndex((r) => r.id === id)) % COLORS.length];
   const colors = Object.fromEntries(recipients.map((r) => [r.id, colorOf(r.id)]));
@@ -222,7 +271,35 @@ export default function EsignPage() {
 
         {/* Envelopes */}
         <div className="mt-6">
-          <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">Envelopes ({reqs.length})</div>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Envelopes ({loaded ? reqs.length : "…"})</div>
+            <button onClick={() => load()} disabled={reloading} className="text-slate-500 hover:text-slate-300 disabled:opacity-40" title="Refresh">
+              <RefreshCw className={`w-3.5 h-3.5 ${reloading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+
+          {/* Inline viewer — the signed copy and the Certificate of Completion open HERE,
+              on this page, instead of only downloading. */}
+          {viewing && (
+            <div className="mb-3 bg-slate-900/60 border border-slate-700 rounded-2xl overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-800 flex-wrap">
+                <FileSignature className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="font-medium text-sm truncate">{viewing.title}</span>
+                <div className="ml-auto flex items-center gap-1">
+                  {([["signed", "Signed"], ["cert", "Certificate"], ["source", "Original"]] as const).map(([d, lbl]) => (
+                    <button key={d} onClick={() => setViewing({ ...viewing, doc: d })}
+                      className={`text-[11px] px-2 py-1 rounded ${viewing.doc === d ? "bg-emerald-600 text-slate-950 font-semibold" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{lbl}</button>
+                  ))}
+                  <a href={docUrl(viewing)} download className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</a>
+                  <a href={docUrl(viewing)} target="_blank" rel="noreferrer" className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1"><ExternalLink className="w-3.5 h-3.5" /> New tab</a>
+                  <button onClick={() => setViewing(null)} className="text-slate-500 hover:text-red-400 p-1" title="Close"><X className="w-4 h-4" /></button>
+                </div>
+              </div>
+              {/* keyed so switching Signed/Certificate/Original actually reloads the frame */}
+              <iframe key={docUrl(viewing)} src={docUrl(viewing)} className="w-full h-[75vh] bg-white" title={`${viewing.title} — ${viewing.doc}`} />
+            </div>
+          )}
+
           <div className="space-y-2">
             {reqs.map((r) => (
               <div key={r.token} className="bg-slate-900/40 border border-slate-800 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
@@ -237,15 +314,31 @@ export default function EsignPage() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${badge(r.status)}`}>{r.status.replace("_", " ")}</span>
-                  {r.has_signed && <a href={`/api/esign/requests/${r.token}/pdf?doc=signed`} target="_blank" rel="noreferrer" className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center gap-1" title="Download the signed PDF"><Download className="w-3.5 h-3.5" /> Signed</a>}
-                  {r.has_cert && <a href={`/api/esign/requests/${r.token}/pdf?doc=cert`} target="_blank" rel="noreferrer" className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1" title="Download the Certificate of Completion"><Download className="w-3.5 h-3.5" /> Certificate</a>}
+                  {r.has_signed && <button onClick={() => setViewing({ token: r.token, title: r.title, doc: "signed" })} className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center gap-1" title="View the signed PDF on this page"><Eye className="w-3.5 h-3.5" /> Signed</button>}
+                  {r.has_cert && <button onClick={() => setViewing({ token: r.token, title: r.title, doc: "cert" })} className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1" title="View the Certificate of Completion on this page"><Eye className="w-3.5 h-3.5" /> Certificate</button>}
+                  {!r.has_signed && <button onClick={() => setViewing({ token: r.token, title: r.title, doc: "source" })} className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 flex items-center gap-1" title="View the document that was sent"><Eye className="w-3.5 h-3.5" /> Document</button>}
                   {(r.status !== "voided" && r.status !== "declined" && r.status !== "completed") && (
                     <button onClick={() => voidEnv(r.token)} className="text-slate-500 hover:text-red-400 flex items-center gap-1 text-xs" title="Void envelope"><Ban className="w-3.5 h-3.5" /> Void</button>
                   )}
                 </div>
               </div>
             ))}
-            {!reqs.length && <div className="text-slate-600 text-sm">Nothing sent yet.</div>}
+            {/* Three DISTINCT states. "Nothing sent yet" is only ever shown once a load
+                has actually succeeded — never as the default for a failure. */}
+            {!loaded && !loadErr && (
+              <div className="text-slate-500 text-sm flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading your envelopes…</div>
+            )}
+            {loadErr && (
+              <div className="rounded-xl border border-amber-600/50 bg-amber-500/5 px-4 py-3 text-sm flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                <div>
+                  <div className="text-amber-200">Couldn&apos;t load your envelopes — {loadErr}.</div>
+                  <div className="text-slate-500 text-xs mt-0.5">Nothing has been lost; this screen just couldn&apos;t reach the list.</div>
+                  <button onClick={() => load()} className="mt-2 text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 inline-flex items-center gap-1"><RefreshCw className="w-3 h-3" /> Try again</button>
+                </div>
+              </div>
+            )}
+            {loaded && !reqs.length && <div className="text-slate-600 text-sm">Nothing sent yet.</div>}
           </div>
         </div>
       </div>
