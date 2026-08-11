@@ -168,11 +168,15 @@
       <div class="head"><span>Polished draft</span><span id="resTone"></span></div>
       <div class="pad">
         <input type="text" id="subj" placeholder="Subject" />
+        <input type="text" id="toaddr" placeholder="To (only addresses you actually said)" />
+        <input type="text" id="ccaddr" placeholder="Cc (optional)" />
         <textarea id="draft"></textarea>
         <div class="actions">
           <button class="btn solid" id="insert">Insert into email</button>
           <button class="btn" id="replace">Replace draft</button>
           <button class="btn" id="setsubj">Set subject</button>
+          <button class="btn" id="setrcpt">Set recipients</button>
+          <button class="btn solid" id="sendit">Send email</button>
           <button class="btn" id="copy">Copy</button>
         </div>
         <div class="adjust">
@@ -502,6 +506,9 @@
         if(!res.ok){ toast(res.j.error || "Couldn’t write that", true); return; }
         subj.value = res.j.subject || "";
         draft.value = res.j.body || "";
+        // Only ever addresses the server vetted against what was actually dictated.
+        $("toaddr").value = (res.j.to || []).join("; ");
+        $("ccaddr").value = (res.j.cc || []).join("; ");
         resTone.textContent = (TONES.filter(function(t){return t[0]===payload.tone;})[0]||["",""])[1];
         result.style.display = "block";
         autoSize(draft);
@@ -584,6 +591,62 @@
         });
       }catch(e){ doCopy(); }
     };
+    // ---- ADDRESS AND SEND -------------------------------------------------------------
+    // Office.js can set the recipient lines and send the message outright, so the whole email
+    // can be produced by talking. Two deliberate constraints:
+    //   · addresses are only ever ones the server vetted against the dictated note, so an
+    //     invented address for a named person cannot reach a borrower under his licence
+    //   · sendAsync needs Mailbox 1.15; where the host is older we say so and leave the drafted
+    //     message ready rather than pretending it went
+    function parseAddrs(v){
+      return String(v||"").split(/[,;\s]+/).map(function(x){return x.trim();})
+        .filter(function(x){ return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x); });
+    }
+    function canSend(){
+      try { return !!(Office.context.requirements && Office.context.requirements.isSetSupported("Mailbox","1.15")); }
+      catch(e){ return false; }
+    }
+    function applyRecipients(cb){
+      if(!composeReady){ toast("Open this while composing to set recipients.", true); return; }
+      var to = parseAddrs($("toaddr").value), cc = parseAddrs($("ccaddr").value);
+      if(!to.length){ toast("Add at least one To address.", true); return; }
+      var item = Office.context.mailbox.item;
+      item.to.setAsync(to, function(r1){
+        if(r1.status !== "succeeded"){ toast((r1.error&&r1.error.message)||"Couldn’t set To", true); return; }
+        if(!cc.length){ toast("Recipients set ✓"); if(cb) cb(); return; }
+        item.cc.setAsync(cc, function(r2){
+          if(r2.status !== "succeeded"){ toast((r2.error&&r2.error.message)||"Couldn’t set Cc", true); return; }
+          toast("Recipients set ✓"); if(cb) cb();
+        });
+      });
+    }
+    $("setrcpt").onclick = function(){ applyRecipients(); };
+
+    $("sendit").onclick = function(){
+      if(!composeReady){ toast("Open this while composing to send.", true); return; }
+      var to = parseAddrs($("toaddr").value);
+      if(!to.length){ toast("Add at least one To address.", true); return; }
+      if(!draft.value.trim()){ toast("Nothing to send yet.", true); return; }
+      if(!confirm("Send this email to " + to.join(", ") + "?")) return;
+      // Put the drafted text and subject in first, then address it, then send — otherwise a
+      // send could go out with the body the user was still looking at rather than the one
+      // that is on screen.
+      Office.context.mailbox.item.body.setAsync(toHtml(draft.value), {coercionType:htmlType()}, function(rb){
+        if(rb.status !== "succeeded"){ toast((rb.error&&rb.error.message)||"Couldn’t write the body", true); return; }
+        Office.context.mailbox.item.subject.setAsync(subj.value.trim() || "(no subject)", function(){
+          applyRecipients(function(){
+            if(!canSend()){
+              toast("Everything is filled in — press Send in Outlook (this Outlook can’t send for me).", true);
+              return;
+            }
+            Office.context.mailbox.item.sendAsync(function(rs){
+              toast(rs.status === "succeeded" ? "Sent ✓" : ((rs.error&&rs.error.message)||"Send failed"), rs.status !== "succeeded");
+            });
+          });
+        });
+      });
+    };
+
     $("setsubj").onclick = function(){
       if(!composeReady){ toast("Open while composing to set the subject.", true); return; }
       if(!subj.value.trim()){ toast("No subject to set.", true); return; }

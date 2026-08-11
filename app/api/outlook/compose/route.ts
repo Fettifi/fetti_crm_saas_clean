@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { requireAddinAuth } from "@/lib/outlookAuth";
-import { buildEmailSystem, type ComposeOptions, type EmailTone, TONE_PRESETS } from "@/lib/outlookEmail";
+import { buildEmailSystem, type ComposeOptions, type EmailTone, TONE_PRESETS, vetSpokenAddresses } from "@/lib/outlookEmail";
 
 // Turns a rough (usually dictated) note into a polished professional email.
 // Returns { subject, body }. Bearer-gated + rate-limited.
@@ -75,11 +75,18 @@ export async function POST(req: NextRequest) {
     }
     const subject = String(parsed.subject || "").trim();
     const body = String(parsed.body || "").trim();
+
+    // Recipients the add-in may address the message to — see vetSpokenAddresses: only addresses
+    // literally present in the dictated note survive, so an invented address for a named person
+    // can never reach a borrower under Ramon's licence.
+    const to = vetSpokenAddresses(transcript, parsed.to);
+    const cc = vetSpokenAddresses(transcript, parsed.cc).filter((a) => !to.includes(a));
+
     if (!body) {
       console.error("[outlook/compose] empty/invalid body from model. keys:", Object.keys(parsed));
       return NextResponse.json({ error: "Couldn't compose that — try rephrasing your note." }, { status: 502 });
     }
-    return NextResponse.json({ subject, body });
+    return NextResponse.json({ subject, body, to, cc });
   } catch (e: any) {
     console.error("[outlook/compose] error:", e);
     return NextResponse.json({ error: "Internal error." }, { status: 500 });
