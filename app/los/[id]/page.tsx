@@ -402,6 +402,46 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
     e.dataTransfer.setData("text/plain", url);
   }
 
+  // BACK MUST CLOSE THE DOCUMENT, NOT LEAVE THE LOAN FILE.
+  //
+  // Ramon, 2026-08-10: "when I hit the back button after viewing a file in the LOS that a
+  // customer has uploaded, it takes me all the way out of the loan file."
+  //
+  // The viewer below is a full-screen overlay driven purely by React state, so as far as the
+  // browser was concerned nothing had happened when it opened — Back was still pointing at
+  // whatever came BEFORE the loan file. Pressing it dismissed nothing and navigated the whole
+  // page out, losing his place in the file.
+  //
+  // Opening the viewer now pushes a history entry, so Back pops that entry instead of the page
+  // and lands him exactly where he was, with the document closed. Closing by any other route
+  // (X, backdrop, Escape) goes through history.back() as well, so we never strand a spare entry
+  // that would make the NEXT Back press appear to do nothing.
+  const viewerPushedRef = useRef(false);
+
+  useEffect(() => {
+    if (!viewer) return;
+    if (!viewerPushedRef.current) {
+      viewerPushedRef.current = true;
+      try { window.history.pushState({ fettiDocViewer: true }, ""); } catch { /* non-fatal */ }
+    }
+    const onPop = () => { viewerPushedRef.current = false; setViewer(null); };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [viewer]);
+
+  const closeViewer = useCallback(() => {
+    if (viewerPushedRef.current) window.history.back();   // popstate clears the viewer
+    else setViewer(null);
+  }, []);
+
+  // Escape is the other thing a hand reaches for with a document up.
+  useEffect(() => {
+    if (!viewer) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeViewer(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [viewer, closeViewer]);
+
   function viewDoc(doc_id: string, name: string) {
     // Open each document in its OWN window so the LO can keep working in the CRM
     // while a document is up. The stream is same-origin + session-gated, so the new
@@ -1208,7 +1248,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
 
       {/* In-app document viewer — opens approved PDFs right here (no popup blockers). */}
       {viewer && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-sm" onClick={() => setViewer(null)}>
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-sm" onClick={closeViewer}>
           <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900" onClick={(e) => e.stopPropagation()}>
             <div className="min-w-0 text-sm font-medium text-slate-200 truncate">{viewer.name}</div>
             <div className="flex items-center gap-2 shrink-0">
@@ -1221,7 +1261,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                 </div>
               )}
               <a href={viewer.url} target="_blank" rel="noopener noreferrer" className="text-xs px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 flex items-center gap-1"><ExternalLink className="w-3.5 h-3.5" /> New tab</a>
-              <button onClick={() => setViewer(null)} className="text-xs px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 flex items-center gap-1"><X className="w-3.5 h-3.5" /> Close</button>
+              <button onClick={closeViewer} className="text-xs px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 flex items-center gap-1"><X className="w-3.5 h-3.5" /> Close</button>
             </div>
           </div>
           {viewer.isImage ? (

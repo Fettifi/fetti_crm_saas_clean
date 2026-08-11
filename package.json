@@ -71,6 +71,7 @@
     "verify:outlook-attach": "tsx scripts/verify-outlook-attach.ts",
     "verify:esign-load": "tsx scripts/verify-esign-load.ts",
     "verify:seo": "tsx scripts/verify-seo.ts",
+    "verify:los-back": "tsx scripts/verify-los-back.ts",
     "docs:sync": "tsx scripts/sync-loan-docs.ts",
     "docs:sizes": "tsx scripts/backfill-doc-sizes.ts"
   },
