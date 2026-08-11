@@ -5,7 +5,10 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import HeroCapture from "@/components/HeroCapture";
 import { SocialProofWall } from "@/components/SocialProofWall";
-import { STATES, NATIONWIDE_KEY, CONSUMER_STATES, PRODUCT_SCOPE, stateLabel, allowedStates, applyHrefForProduct } from "@/lib/lendingMatrix";
+import { stateLabel, allowedStates, applyHrefForProduct } from "@/lib/lendingMatrix";
+import { PRODUCTS } from "@/lib/lendingProducts";
+import { isIndexableLendingSlug } from "@/lib/seoIndexable";
+import { deepContentFor } from "@/lib/lendingDeepContent";
 
 // ISR so newly approved wins / fresh Google reviews appear without a redeploy.
 export const revalidate = 600;
@@ -18,198 +21,6 @@ export const dynamicParams = false;
 // organically for high-intent lending searches and owns those leads. Each page
 // carries substantive, unique content + on-page capture + FAQ schema so it can
 // actually rank and convert (thin templated pages don't).
-
-type Product = {
-  label: string; blurb: string; intro: string; bullets: string[];
-  requirements: string[]; faqs: { q: string; a: string }[]; scope: "consumer" | "all";
-};
-
-// Reg Z / TILA §1026.24(d) compliance: on the CONSUMER products below (scope: "consumer"),
-// a stated down-payment amount or percentage — including "$0 down" / "no down" — is a
-// "triggering term" that would require companion disclosures (representative APR + terms of
-// repayment) on the same page. We keep the down-payment language qualitative here instead
-// (we cannot state a representative APR without a real rate quote), so no triggering term is
-// advertised. Investment/business-purpose products (scope: "all", e.g. DSCR, fix & flip, SBA)
-// are exempt from Reg Z, so their leverage/down figures are left as-is.
-
-const PRODUCTS: Record<string, Product> = {
-  "home-purchase-loans": {
-    label: "Home Purchase Loans",
-    blurb: "Conventional, FHA, and VA financing to buy the home you'll live in.",
-    intro: "Buying a home in {state}? Fetti Financial Services is a nonbank lender — we fund conventional, FHA, and VA loans, get you pre-approved fast, and close with a specialist who actually picks up the phone. Told no by a bank? That's exactly who we're built for.",
-    bullets: ["Low-down-payment options", "First-time buyer programs", "Same-day pre-approval letters", "Competitive fixed rates"],
-    requirements: ["Government-issued ID", "Recent pay stubs / proof of income", "2 months of bank statements", "A property or price range in {state}"],
-    faqs: [
-      { q: "How much do I need to put down to buy a home in {state}?", a: "Many buyers qualify with a low down payment on conventional and FHA loans, and eligible VA borrowers may qualify for especially low upfront costs. The right answer depends on your credit, income, and goals — we'll map your exact number in a 2-minute conversation with no credit impact." },
-      { q: "How fast can I get pre-approved?", a: "Often the same day. Start your application online and a Fetti specialist follows up quickly with your numbers and a pre-approval letter so sellers take you seriously." },
-      { q: "Does Fetti lend on home purchases in {state}?", a: "Yes — Fetti Financial Services (NMLS #2267023) originates home purchase loans in {state}. Start online and we'll confirm your options." },
-    ],
-    scope: "consumer",
-  },
-  "first-time-homebuyer": {
-    label: "First-Time Homebuyer Loans",
-    blurb: "Low down payments, buyer programs, and assistance to get you into your first home.",
-    intro: "Buying your first home in {state}? Fetti Financial Services is a nonbank lender built to get first-time buyers to the closing table — with low-down-payment loans, first-time-buyer programs, and down payment assistance that can cover most or all of your upfront cost. Not sure where to start, or told no by a bank? That's exactly who we're here for.",
-    bullets: ["Low-down-payment options, including VA & USDA for eligible buyers", "Down payment assistance to cover your upfront cost", "First-time-buyer programs (HomeReady, Home Possible, FHA)", "Same-day pre-approval — a specialist who picks up the phone"],
-    requirements: ["Government-issued ID", "Recent pay stubs / proof of income", "2 months of bank statements", "A price range or property in {state}"],
-    faqs: [
-      // Reg Z §1026.24(d): removed ALL specific down-payment figures — including the
-      // "20%" myth reference, because a stated down-payment percentage is a triggering
-      // term on a consumer ad whether it's affirmed OR debunked. Kept fully qualitative.
-      { q: "Do I really need a big down payment to buy my first home in {state}?", a: "No — that's the biggest myth in home buying. Most first-time buyers put far less down than they expect on conventional and FHA loans, and down payment assistance can cover most or all of it. Eligible VA and USDA buyers may qualify with little to nothing upfront. We'll show you the real number in a 2-minute chat, with no credit impact." },
-      { q: "What is down payment assistance?", a: "It's help — usually from a state or county housing program — that covers part or all of your down payment and closing costs. It can be a grant you never repay, a loan that's forgiven over time, or one you repay later when you sell or refinance. We help you find the programs you qualify for and pair them with your loan. Eligibility and terms vary by program." },
-      { q: "Does getting started hurt my credit?", a: "No. Pre-qualifying takes about two minutes with no hard credit pull, and there's no obligation. We'll map your options — loan type, down payment, and any assistance you may qualify for." },
-    ],
-    scope: "consumer",
-  },
-  "down-payment-assistance": {
-    label: "Down Payment Assistance",
-    blurb: "State, county, and national programs that can cover most or all of your down payment and closing costs.",
-    intro: "The down payment is the #1 thing that stops people from buying — and it's often the easiest to solve. Fetti Financial Services helps buyers in {state} tap down payment assistance programs — from your state housing agency (like CalHFA, Florida Housing, or MSHDA), your county, and national programs — that can cover most or all of your down payment and closing costs, paired with an FHA or conventional loan. Needing help with the down payment isn't a weakness here; it's exactly what these programs are for.",
-    // Reg Z §1026.24(d): dropped "zero down payment" and the specific "3.5% / 3% down"
-    // figures — triggering terms on a consumer ad. Kept the benefit qualitative.
-    bullets: ["Cover most or all of your down payment + closing costs", "Grants, forgivable seconds, or deferred assistance", "Pairs with low-down-payment FHA and conventional loans", "We help you find the programs you actually qualify for"],
-    requirements: ["Government-issued ID", "Recent pay stubs / proof of income", "2 months of bank statements", "The area or price range you're buying in {state}"],
-    faqs: [
-      { q: "How much of my down payment can assistance cover in {state}?", a: "Depending on the program and your eligibility, assistance can cover most or all of your down payment plus a chunk of your closing costs. Programs, amounts, and terms vary by state and county — we'll show you the ones you actually qualify for." },
-      { q: "Do I have to pay down payment assistance back?", a: "It depends on the program. Some assistance is a grant you never repay; some is a second loan that's forgiven over a few years; and some is deferred — you repay it only when you sell or refinance. We'll explain exactly how each option you qualify for works before you commit." },
-      { q: "Is down payment assistance only for first-time buyers?", a: "Often, but not always. Some programs define a 'first-time buyer' as anyone who hasn't owned a home in the last three years, and others are open to repeat buyers or specific professions like teachers, first responders, and veterans. We'll check what fits you." },
-    ],
-    scope: "consumer",
-  },
-  "refinance-loans": {
-    label: "Refinance & Cash-Out Loans",
-    blurb: "Lower your rate or tap your home's equity.",
-    intro: "Refinancing in {state} can lower your monthly payment, shorten your term, or turn your home's equity into cash for renovations, debt payoff, or your next investment. Fetti is a nonbank lender that gets rate-and-term and cash-out refinances done — including the ones banks turn down.",
-    bullets: ["Rate-and-term refinance", "Cash-out for renovations or debt payoff", "Debt consolidation", "Streamline programs for FHA/VA"],
-    requirements: ["Recent mortgage statement", "Proof of income", "Homeowner's insurance declarations", "Estimated home value in {state}"],
-    faqs: [
-      { q: "How much equity do I need to refinance in {state}?", a: "Rate-and-term refinances can work with limited equity; cash-out typically needs you to keep ~20% equity after the new loan. We'll run your numbers and show what you'd net." },
-      { q: "Is now a good time to refinance?", a: "It depends on your current rate, how long you'll keep the home, and your goal (lower payment vs. cash out). We'll show the break-even in plain numbers — no pressure." },
-      { q: "Can I take cash out to buy an investment property?", a: "Yes. A cash-out refinance on your primary home is a common way to fund a down payment on a rental or flip. We do both sides under one roof." },
-    ],
-    scope: "consumer",
-  },
-  "dscr-loans": {
-    label: "DSCR Loans",
-    blurb: "Qualify on your rental property's cash flow. Not your personal income or tax returns.",
-    intro: "DSCR (Debt-Service-Coverage-Ratio) loans let real estate investors in {state} qualify based on a property's rental income instead of personal income, W-2s, or tax returns. If the rent covers the payment, you can qualify — and you can close in an LLC to keep deals off your personal credit. It's the workhorse loan for building a rental portfolio.",
-    bullets: ["No W-2, tax returns, or DTI required", "Close in an LLC", "30-year fixed and interest-only options", "Built for buy-and-hold investors"],
-    requirements: ["Subject property's rent or market-rent estimate (Form 1007)", "Credit score (typically 660+)", "Down payment / equity (often 20–25%)", "The property address in {state}"],
-    faqs: [
-      { q: "What DSCR do I need to qualify in {state}?", a: "Most programs want a ratio of 1.0–1.25 (rent covers the payment). Some allow sub-1.0 with a larger down payment. We'll quote your exact deal in minutes." },
-      { q: "Do DSCR loans check my personal income?", a: "No. DSCR loans qualify on the property's cash flow, not your personal income or tax returns — which is why investors and self-employed buyers love them." },
-      { q: "Can I close a DSCR loan in {state} in an LLC?", a: "Yes — closing in an LLC is standard for DSCR and keeps the financing off your personal credit. We set it up correctly so it doesn't slow your close." },
-    ],
-    scope: "all",
-  },
-  "fix-and-flip-loans": {
-    label: "Fix & Flip Loans",
-    blurb: "Up to 100% financing of the whole deal — purchase and rehab — under the right circumstances.",
-    intro: "Fetti's fix & flip program funds both the purchase and the rehab — and under the right circumstances can finance up to 100% of the entire deal — so you compete on speed in {state} without tying up your own cash. Interest-only payments during the project keep your carry low, and fast closings let you win competitive offers.",
-    bullets: ["Up to 100% of the entire deal (purchase + rehab) for the right project", "Fast closings for competitive offers", "Interest-only during the project", "First-time and experienced flippers"],
-    requirements: ["Purchase contract or target deal", "Rehab budget / scope of work", "Experience summary (helps pricing)", "Entity (LLC) for the deal in {state}"],
-    faqs: [
-      { q: "How much do I need for a fix and flip in {state}?", a: "Under the right circumstances, our program can finance up to 100% of the entire deal — both the purchase and the rehab — so little to none of your own cash goes in. The exact structure depends on the project, your experience, and the numbers (ARV and loan-to-cost); on many deals you'll bring some down payment plus closing costs and reserves. We'll size your exact deal fast." },
-      { q: "Do I need flipping experience?", a: "No — there are programs for first-time flippers, though experience improves your leverage and pricing. Tell us your background and we'll match the right lender." },
-      { q: "How fast can a flip loan close?", a: "Often in 1–2 weeks once your deal and docs are in. Speed is the point — we built the process to keep you competitive." },
-    ],
-    scope: "all",
-  },
-  "hard-money-loans": {
-    label: "Hard Money Loans",
-    blurb: "Asset-based financing that closes in days when banks are too slow.",
-    intro: "Hard money loans in {state} are asset-based: approvals hinge on the property and the deal, not stacks of paperwork. When a bank is too slow, hard money closes in days so you don't lose the opportunity — for purchases, refinances, or cash-out on investment property.",
-    bullets: ["Speed over paperwork", "Equity-driven approvals", "Short-term bridge to your exit", "Purchase, refi, or cash-out"],
-    requirements: ["The property / deal details", "Equity or down payment", "Exit plan (sale or refinance)", "Entity for the deal in {state}"],
-    faqs: [
-      { q: "How fast can a hard money loan close in {state}?", a: "Frequently within a few days to two weeks, because approvals are driven by the asset and your equity rather than income docs." },
-      { q: "What rates do hard money loans carry?", a: "They're higher than conventional because they're short-term and fast — you're paying for speed and certainty. We'll show the real cost vs. the opportunity so it's an informed call." },
-      { q: "What's a typical exit?", a: "Sell the property, or refinance into a longer-term loan (like a DSCR) once it's stabilized. We can line up the takeout financing too." },
-    ],
-    scope: "all",
-  },
-  "bridge-loans": {
-    label: "Bridge Loans",
-    blurb: "Short-term capital to bridge between deals or buy before you sell.",
-    intro: "Bridge loans give investors and buyers in {state} short-term capital to cover timing gaps — buy the next property before the current one sells, or hold a deal until permanent financing is ready. Close quickly with flexible terms.",
-    bullets: ["Close quickly", "Flexible short-term terms", "Cover timing gaps between deals", "Investor-friendly structures"],
-    requirements: ["Both properties / the timing gap", "Equity in the existing asset", "Exit or takeout plan", "Deal location in {state}"],
-    faqs: [
-      { q: "When does a bridge loan make sense in {state}?", a: "When you need to act before liquidity arrives — buying before you sell, or securing a deal while permanent financing finalizes. We'll confirm it's the cheapest path for your situation." },
-      { q: "How long are bridge terms?", a: "Usually a few months up to a year or two, interest-only, with the expectation you'll sell or refinance to exit." },
-      { q: "How fast can it fund?", a: "Often within days to a couple weeks, since it's equity-driven and short-term." },
-    ],
-    scope: "all",
-  },
-  "rental-property-loans": {
-    label: "Rental Property Loans",
-    blurb: "Long-term financing built for buy-and-hold real estate investors.",
-    intro: "Rental property loans give buy-and-hold investors in {state} long-term, fixed financing built around the property's cash flow. From a single rental to a small portfolio, we structure it to qualify on the asset and keep your rates competitive for the long run.",
-    bullets: ["Single-family to small multifamily", "DSCR-based qualifying", "Portfolio and blanket options", "Competitive 30-year terms"],
-    requirements: ["Property address and rent in {state}", "Credit score (typically 660+)", "Down payment / equity (often 20–25%)", "LLC if you're closing in an entity"],
-    faqs: [
-      { q: "Can I finance multiple rentals in {state}?", a: "Yes — from one property to a portfolio. We offer per-property and blanket/portfolio structures depending on your goals." },
-      { q: "Do rental loans use my personal income?", a: "Most qualify on the property's rent (DSCR), not your personal income — so they scale as you build your portfolio." },
-      { q: "What down payment do I need?", a: "Typically 20–25% for a purchase, depending on the property and your credit. We'll quote your exact deal quickly." },
-    ],
-    scope: "all",
-  },
-  "commercial-real-estate-loans": {
-    label: "Commercial Real Estate Loans",
-    blurb: "Financing for owner-user and investment commercial properties.",
-    intro: "Commercial real estate loans in {state} cover owner-occupied and investment properties — office, retail, industrial, and multifamily. Purchase or refinance with competitive commercial terms, and tap SBA options when they fit for owner-users.",
-    bullets: ["Office, retail, industrial, multifamily", "Purchase or refinance", "Competitive commercial terms", "SBA 7(a)/504 options for owner-users"],
-    requirements: ["Property type and use in {state}", "Rent roll / operating statements (investment)", "Business financials (owner-occupied)", "Down payment / equity"],
-    faqs: [
-      { q: "What property types do you finance in {state}?", a: "Office, retail, industrial, mixed-use, and multifamily — both owner-occupied and investment. Tell us the deal and we'll match the right program." },
-      { q: "How much down do commercial loans require?", a: "Often 20–30% for investment, less for SBA owner-occupied deals. We'll structure for the lowest cost of capital that fits." },
-      { q: "Can I use an SBA loan for commercial property?", a: "Yes — if you'll occupy 51%+ of the space, SBA 7(a)/504 can dramatically cut your down payment. We'll tell you if you qualify." },
-    ],
-    scope: "all",
-  },
-  "business-loans": {
-    label: "Business Loans",
-    blurb: "Working capital and term financing to start, run, and grow your business.",
-    intro: "Business loans in {state} give you working capital, equipment financing, and term loans to start, run, and grow — with fast funding when you need to move. We match your revenue and goals to the right structure instead of a one-size-fits-all product.",
-    bullets: ["Working capital lines", "Equipment financing", "Term loans", "Fast funding"],
-    requirements: ["Time in business and revenue", "Recent business bank statements", "Use of funds", "Business based in {state}"],
-    faqs: [
-      { q: "What do I need to qualify for a business loan in {state}?", a: "Generally time in business, revenue, and bank statements. Requirements vary by product — we'll match you to what you actually qualify for." },
-      { q: "How fast can business funding arrive?", a: "Some working-capital products fund in days. Term loans and SBA take longer but cost less. We'll lay out the trade-off." },
-      { q: "Do you fund startups?", a: "Some products work for newer businesses; others want 1–2 years of history. Tell us your situation and we'll point you to the right fit." },
-    ],
-    scope: "all",
-  },
-  "sba-loans": {
-    label: "SBA Loans",
-    blurb: "SBA 7(a) and 504 financing for small businesses.",
-    intro: "SBA 7(a) and 504 loans help small businesses in {state} buy owner-occupied commercial real estate, acquire a business, or fund growth — with low down payments and long repayment terms that protect your cash flow. We help you navigate the process so it doesn't stall.",
-    bullets: ["Low down payment (often 10%)", "Long repayment terms", "Owner-occupied commercial real estate", "Business acquisition financing"],
-    requirements: ["Business financials and tax returns", "Use of funds (RE, acquisition, growth)", "Owner-occupancy plan (51%+)", "Business / property in {state}"],
-    faqs: [
-      { q: "How much down payment does an SBA loan need in {state}?", a: "Often as little as 10% for owner-occupied real estate or acquisitions — far less than conventional commercial financing." },
-      { q: "What can I use an SBA loan for?", a: "Owner-occupied commercial real estate, business acquisition, equipment, and working capital. We'll confirm your use case qualifies." },
-      { q: "How long does SBA take?", a: "Longer than conventional — typically several weeks — but the low down payment and long terms are usually worth it. We keep it moving." },
-    ],
-    scope: "all",
-  },
-};
-
-// The product x state footprint now lives in lib/lendingMatrix.ts so the sitemap and the
-// lending hub build the SAME set of URLs this router will actually serve. PRODUCTS below
-// still owns each page's content; the matrix owns only which pages exist.
-// This assertion is the guard against the two drifting apart: a product added here without
-// a scope in the matrix would be absent from the sitemap and unlinked from the hub, i.e.
-// invisible to Google, and a scope with no product here would put a 404 in the sitemap.
-if (process.env.NODE_ENV !== "production") {
-  const a = Object.keys(PRODUCTS).sort().join(",");
-  const b = Object.keys(PRODUCT_SCOPE).sort().join(",");
-  if (a !== b) throw new Error(`lending matrix drift: PRODUCTS [${a}] != PRODUCT_SCOPE [${b}]`);
-  for (const k of Object.keys(PRODUCTS)) {
-    if (PRODUCTS[k].scope !== PRODUCT_SCOPE[k]) throw new Error(`lending scope drift on "${k}": ${PRODUCTS[k].scope} != ${PRODUCT_SCOPE[k]}`);
-  }
-}
 
 function parse(slug: string) {
   for (const p of Object.keys(PRODUCTS)) {
@@ -237,6 +48,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: `${prod} in ${state} | Fetti Financial Services`,
     description: `${prod} in ${state}. ${PRODUCTS[parsed.product].blurb} Get pre-qualified in minutes with no credit impact.`,
     alternates: { canonical: `https://fettifi.com/lending/${slug}` },
+    // THE DOORWAY FIX. 84 of these 92 URLs were the same twelve products multiplied across
+    // states — 535 words each, 97.5% identical to their siblings. Google crawled them and
+    // declined to index a single one ("Crawled - currently not indexed"), which is what its
+    // spam policy says happens to doorway pages. A page is now put forward for the index only
+    // once it has its own substantive copy (lib/lendingDeepContent.ts). The rest stay served,
+    // crawlable and internally linked — follow: true — so link equity still flows through
+    // them; they are simply no longer asking to be ranked on borrowed words.
+    robots: { index: isIndexableLendingSlug(slug), follow: true },
   };
 }
 
@@ -247,7 +66,11 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
   const prod = PRODUCTS[parsed.product];
   const state = stateLabel(parsed.state)!;
   const fill = (s: string) => s.replace(/\{state\}/g, state);
-  const faqs = prod.faqs.map((f) => ({ q: fill(f.q), a: fill(f.a) }));
+  // Substantive, state-specific copy for the pages we actually ask Google to rank. Where it
+  // exists it replaces the templated intro and adds real sections + FAQs; where it does not,
+  // the page renders exactly as before and is noindex,follow.
+  const deep = deepContentFor(slug);
+  const faqs = [...prod.faqs, ...(deep?.faqs ?? [])].map((f) => ({ q: fill(f.q), a: fill(f.a) }));
 
   const faqSchema = {
     "@context": "https://schema.org", "@type": "FAQPage",
@@ -262,7 +85,7 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
       <section className="max-w-3xl mx-auto px-6 pt-14 pb-6">
         <p className="text-emerald-600 font-mono text-sm">Lender &amp; broker · Fetti Financial Services LLC · NMLS #2267023</p>
         <h1 className="text-4xl font-extrabold mt-2 text-slate-900">{prod.label} in {state}</h1>
-        <p className="text-slate-700 text-lg mt-4 leading-relaxed">{fill(prod.intro)}</p>
+        <p className="text-slate-700 text-lg mt-4 leading-relaxed">{fill(deep?.lede || prod.intro)}</p>
         {/* Inline capture — convert organic visitors here instead of bouncing to /apply */}
         <div className="mt-7 bg-slate-50 border border-slate-200 rounded-2xl p-5">
           <p className="font-bold text-lg text-slate-900">See what you qualify for in {state}</p>
@@ -298,6 +121,15 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
           ))}
         </ul>
       </section>
+
+      {deep && deep.sections.map((sec) => (
+        <section key={sec.h} className="max-w-3xl mx-auto px-6 py-6">
+          <h2 className="text-2xl font-bold mb-3 text-slate-900">{fill(sec.h)}</h2>
+          {sec.body.map((para, i) => (
+            <p key={i} className="text-slate-700 leading-relaxed mt-3">{fill(para)}</p>
+          ))}
+        </section>
+      ))}
 
       <section className="max-w-3xl mx-auto px-6 py-8">
         <h2 className="text-2xl font-bold mb-3 text-slate-900">How it works</h2>

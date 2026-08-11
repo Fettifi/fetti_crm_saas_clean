@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { lendingSlugs, NATIONWIDE_KEY } from "@/lib/lendingMatrix";
+import { isIndexableLendingSlug } from "@/lib/seoIndexable";
 
 // Brand domain (apex) — consolidate organic ranking authority here, not the app subdomain.
 const BASE = "https://fettifi.com";
@@ -36,7 +37,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
   // Built from the SAME matrix the router serves (lib/lendingMatrix.ts), so the sitemap can
   // neither list a URL that 404s nor omit one that exists. Nationwide pages rank for the
   // broadest terms and parent their state variants, so they carry the higher priority.
-  const lending: MetadataRoute.Sitemap = lendingSlugs().map((slug) => ({
+  // A sitemap is a request to INDEX. Listing a page we serve with robots noindex is a
+  // contradiction Google resolves by trusting neither signal, so the 84 templated
+  // product x state pages are no longer listed here — they stay served, crawlable and
+  // linked from the hub, which is how their equity keeps flowing. Only pages carrying
+  // their own substantive copy are put forward.
+  const lending: MetadataRoute.Sitemap = lendingSlugs().filter(isIndexableLendingSlug).map((slug) => ({
     url: `${BASE}/lending/${slug}`,
     lastModified: CONTENT_UPDATED.lending,
     changeFrequency: "weekly" as const,
