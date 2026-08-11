@@ -14,6 +14,25 @@ const TOOLS: [EsignFieldType, string][] = [["signature", "✍️ Signature"], ["
 const COLORS = ["#0ea5e9", "#f59e0b", "#a855f7", "#ef4444", "#14b8a6"];
 // ~34s of independent attempts before the screen admits defeat and offers Try again.
 const MAX_TRIES = 10;
+const LIST_URL = "/api/esign/requests";
+
+// HEAD-START REQUEST — fired the instant this chunk is parsed, NOT when React gets round to
+// running an effect. That distinction is the whole bug: measured on production, a fetch issued
+// from the page at load resolves in ~707ms, while the page still took 15+ seconds to show the
+// list. The API was never slow. The request simply was not being SENT until the shell finished
+// hydrating, and no amount of retrying inside React can start earlier than React does.
+//
+// Guarded for SSR, and the rejection is swallowed here so a failed head start can never surface
+// as an unhandled rejection — load() re-issues it normally in that case.
+let bootReq: Promise<Response | null> | null =
+  typeof window === "undefined" ? null : fetch(LIST_URL, { cache: "no-store" }).catch(() => null);
+
+/** Consume the head start ONCE — a Response body can only be read a single time. */
+function takeBoot(): Promise<Response | null> | null {
+  const p = bootReq;
+  bootReq = null;
+  return p;
+}
 
 export default function EsignPage() {
   const [title, setTitle] = useState("");
@@ -69,10 +88,16 @@ export default function EsignPage() {
   // not the screen.
   const load = useCallback(async (): Promise<void> => {
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 2500);   // a healthy call answers in ~0.5s
+    // 8s, not 2.5s. A tight deadline was actively harmful: it kept killing a request that was
+    // going to succeed and starting another from scratch. The deadline is a backstop against a
+    // request that never settles, not a performance lever.
+    const timer = setTimeout(() => ctl.abort(), 8000);
     setReloading(true);
     try {
-      const r = await fetch("/api/esign/requests", { cache: "no-store", signal: ctl.signal });
+      // Use the head start if it is still unspent; otherwise issue a fresh request.
+      const early = takeBoot();
+      const r = early ? await early : await fetch(LIST_URL, { cache: "no-store", signal: ctl.signal });
+      if (!r) throw new Error("the request could not be sent");
       if (!r.ok) throw new Error(r.status ? `the server returned HTTP ${r.status}` : "the request was interrupted before it finished");
       const j = await r.json();
       setReqs(Array.isArray(j?.requests) ? j.requests : []);

@@ -81,6 +81,13 @@ chk(/const MAX_TRIES\s*=\s*\d+/.test(code) && /const gaveUp\s*=/.test(code),
 chk(/new AbortController\(\)/.test(code) && /signal:\s*ctl\.signal/.test(code) && /ctl\.abort\(\)/.test(code),
   "a hung request is aborted on a deadline so the retry can act on it");
 
+// 3c. THE ONE THAT ACTUALLY MADE IT FAST: the request must be fired when the chunk is parsed,
+//     not when React gets round to an effect. Measured on production, a fetch issued from the
+//     page at load answers in ~707ms while the page still took 15+ seconds to paint the list —
+//     the API was never slow, the request simply was not being SENT until hydration finished.
+chk(/let bootReq/.test(code) && /takeBoot\s*\(/.test(code) && /typeof window === "undefined" \? null : fetch\(/.test(code),
+  "the list request is fired at module scope, ahead of hydration, and consumed once");
+
 // 4. THE HEADLINE: the empty-state copy may only render once a load has succeeded.
 //    Located positionally in the STRIPPED code so this file's own commentary cannot
 //    satisfy it, and the index is proven found before anything is compared (an
