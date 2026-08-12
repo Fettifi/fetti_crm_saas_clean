@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { headers } from "next/headers";
 
 const BASE = "https://fettifi.com";
 
@@ -9,10 +10,15 @@ const BASE = "https://fettifi.com";
 // home, which is why nothing was actually duplicated in the index — but the app's own root
 // ("Fetti CRM", the login shell) carries no canonical and was crawlable. Nobody should ever find
 // the CRM login in a search result, so on the app host we disallow everything outright.
-export default function robots(): MetadataRoute.Robots {
-  const host = process.env.VERCEL_URL || "";
-  const isAppHost = process.env.NEXT_PUBLIC_SITE_HOST === "app" || /^app\./.test(host);
-  if (isAppHost) {
+export const dynamic = "force-dynamic";
+
+export default async function robots(): Promise<MetadataRoute.Robots> {
+  // Read the REQUESTING host, not the build environment. A first cut used VERCEL_URL and did
+  // nothing: robots.ts is evaluated once at build time, so one robots.txt was served to both
+  // hosts. force-dynamic + headers() makes it per-request, which is the only way one file can
+  // answer differently for fettifi.com and app.fettifi.com.
+  const host = ((await headers()).get("host") || "").toLowerCase();
+  if (host.startsWith("app.")) {
     return { rules: [{ userAgent: "*", disallow: ["/"] }], host: BASE };
   }
   return {
