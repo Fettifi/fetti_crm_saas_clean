@@ -75,7 +75,8 @@
     "verify:outlook-send": "tsx scripts/verify-outlook-send.ts",
     "verify:esign-mobile": "tsx scripts/verify-esign-mobile.ts",
     "docs:sync": "tsx scripts/sync-loan-docs.ts",
-    "docs:sizes": "tsx scripts/backfill-doc-sizes.ts"
+    "docs:sizes": "tsx scripts/backfill-doc-sizes.ts",
+    "verify:dns": "tsx scripts/verify-dns.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
