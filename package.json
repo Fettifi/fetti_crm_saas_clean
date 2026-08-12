@@ -73,6 +73,7 @@
     "verify:seo": "tsx scripts/verify-seo.ts",
     "verify:los-back": "tsx scripts/verify-los-back.ts",
     "verify:outlook-send": "tsx scripts/verify-outlook-send.ts",
+    "verify:esign-mobile": "tsx scripts/verify-esign-mobile.ts",
     "docs:sync": "tsx scripts/sync-loan-docs.ts",
     "docs:sizes": "tsx scripts/backfill-doc-sizes.ts"
   },

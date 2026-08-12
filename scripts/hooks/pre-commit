@@ -77,7 +77,7 @@ ANYTS=$(printf '%s\n' "$CHANGED" | grep -E '\.(ts|tsx)$')
 OUTL=$(printf '%s\n' "$CHANGED" | grep -F -e 'api/outlook' -e 'taskpane.html' -e 'outlookAuth' -e 'outlookEmail' -e 'api/outlook' -e 'verify-outlook-attach' -e 'verify-outlook-send')
 DRAG=$(printf '%s\n' "$CHANGED" | grep -F -e 'los/[id]/page.tsx' -e 'verify-doc-dragout')
 CARD=$(printf '%s\n' "$CHANGED" | grep -F -e 'cardAuth' -e 'card-auth' -e 'CardAuthPanel' -e 'verify-card-auth')
-ESGN=$(printf '%s\n' "$CHANGED" | grep -F -e 'app/esign' -e 'api/esign' -e 'lib/esign' -e 'verify-esign-load')
+ESGN=$(printf '%s\n' "$CHANGED" | grep -F -e 'app/esign' -e 'app/sign' -e 'api/esign' -e 'lib/esign' -e 'verify-esign-load')
 SEO=$(printf '%s\n' "$CHANGED" | grep -F -e 'app/lending' -e 'app/sitemap' -e 'lib/seoIndexable' -e 'lib/lendingDeepContent' -e 'lib/lendingProducts' -e 'lib/lendingMatrix' -e 'verify-seo')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
 [ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && [ -z "$NMLS" ] && [ -z "$GUARDMETA" ] && [ -z "$RENT" ] && [ -z "$LTV" ] && [ -z "$BIZ" ] && [ -z "$GOV" ] && [ -z "$ANYTS" ] && [ -z "$CARD" ] && [ -z "$DRAG" ] && [ -z "$OUTL" ] && exit 0
@@ -109,7 +109,7 @@ if [ -n "$GUARDMETA" ]; then
   fi
 fi
 
-for PAIR in "$OUTL:verify:outlook-attach" "$OUTL:verify:outlook-send" "$DRAG:verify:doc-dragout" "$DRAG:verify:los-back" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules" "$ESGN:verify:esign-load" "$SEO:verify:seo"; do
+for PAIR in "$OUTL:verify:outlook-attach" "$OUTL:verify:outlook-send" "$DRAG:verify:doc-dragout" "$DRAG:verify:los-back" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules" "$ESGN:verify:esign-load" "$ESGN:verify:esign-mobile" "$SEO:verify:seo"; do
   TRIG=${PAIR%%:*}; G=${PAIR#*:}
   [ -z "$TRIG" ] && continue
   printf "   %-24s " "$G"

@@ -57,11 +57,24 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
 
   useEffect(() => {
     const c = canvasRef.current; if (!c || mode !== "draw" || adopted) return;
-    const ctx = c.getContext("2d")!; ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.strokeStyle = "#0f172a";
+    // Size the backing store to the element itself. It used to be a fixed 600x160 while the
+    // element is w-full, so on a 390px phone every stroke was squeezed ~1.7x horizontally and
+    // the adopted signature came out distorted.
+    const rect0 = c.getBoundingClientRect();
+    const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+    c.width = Math.max(1, Math.round(rect0.width * dpr));
+    c.height = Math.max(1, Math.round(rect0.height * dpr));
+    const ctx = c.getContext("2d")!;
+    ctx.scale(dpr, dpr);
+    ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#0f172a";
     let drawing = false;
-    const pos = (e: PointerEvent) => { const r = c.getBoundingClientRect(); return { x: (e.clientX - r.left) * (c.width / r.width), y: (e.clientY - r.top) * (c.height / r.height) }; };
-    const down = (e: PointerEvent) => { drawing = true; drawn.current = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
-    const move = (e: PointerEvent) => { if (!drawing) return; const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+    const pos = (e: PointerEvent) => { const r = c.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    const down = (e: PointerEvent) => {
+      e.preventDefault();
+      try { c.setPointerCapture(e.pointerId); } catch { /* older engines */ }
+      drawing = true; drawn.current = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y);
+    };
+    const move = (e: PointerEvent) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
     const up = () => { drawing = false; };
     c.addEventListener("pointerdown", down); c.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     return () => { c.removeEventListener("pointerdown", down); c.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
@@ -125,7 +138,10 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
         <p className="text-sm text-slate-600">Review the full document before signing.</p>
         <a href={`/api/esign/sign/${token}/pdf`} target="_blank" rel="noreferrer" className="text-sm font-semibold text-emerald-700 underline whitespace-nowrap">Open / enlarge as PDF ↗</a>
       </div>
-      <div className="mt-2 rounded-xl overflow-hidden bg-slate-200 p-3 max-h-[65vh] overflow-y-auto">
+      {/* On a phone the document flows in the PAGE. A 65vh inner scroller swallows every
+          swipe, so the signer can never reach the signature pad below it — which reads
+          exactly like "I can't sign it on my phone". The inner scroll returns at sm+. */}
+      <div className="mt-2 rounded-xl overflow-hidden bg-slate-200 p-2 sm:p-3 sm:max-h-[65vh] sm:overflow-y-auto">
         <PdfDoc src={`/api/esign/sign/${token}/pdf`} mode="sign" fields={fields} onChange={(f) => setFields(f as any)} signatureImg={adopted} signerName={meta.signer_name} recipientLabels={{}} />
       </div>
       <div className="mt-5 bg-white border border-slate-300 rounded-2xl p-5">
@@ -143,7 +159,7 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
               <button onClick={() => setMode("type")} className={`text-xs px-3 py-1.5 rounded-lg ${mode === "type" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>Type</button>
             </div>
             {mode === "draw" ? (
-              <div className="mt-3"><canvas ref={canvasRef} width={600} height={160} className="w-full h-[160px] border border-dashed border-slate-300 rounded-lg bg-slate-50 touch-none" /><button onClick={clearPad} className="text-xs text-slate-500 hover:text-slate-800 mt-1">Clear</button></div>
+              <div className="mt-3"><canvas ref={canvasRef} className="w-full h-[180px] sm:h-[160px] border border-dashed border-slate-300 rounded-lg bg-slate-50 touch-none" /><button onClick={clearPad} className="text-xs text-slate-500 hover:text-slate-800 mt-1">Clear</button></div>
             ) : (
               <div className="mt-3"><input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Type your full legal name" className="w-full border border-slate-300 rounded-lg px-3 py-2" /><div className="mt-2 h-[70px] border border-slate-200 rounded-lg bg-slate-50 flex items-center px-4 text-3xl text-slate-900" style={{ fontFamily: "'Brush Script MT','Segoe Script','Snell Roundhand',cursive", fontStyle: "italic" }}>{typed || "Your signature"}</div></div>
             )}
