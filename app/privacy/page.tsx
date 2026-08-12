@@ -1,6 +1,7 @@
 import PrivacyChoices from "@/components/PrivacyChoices";
 
 export const metadata = {
+  alternates: { canonical: "https://fettifi.com/privacy" },
   title: "Privacy Policy | Fetti Financial Services",
   description: "Privacy Policy for Fetti Financial Services LLC — GLBA financial privacy notice, California (CCPA/CPRA) rights, cookies & tracking, CAN-SPAM, and SMS/mobile messaging terms.",
 };

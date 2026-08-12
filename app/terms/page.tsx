@@ -1,4 +1,5 @@
 export const metadata = {
+  alternates: { canonical: "https://fettifi.com/terms" },
   title: "Terms & Conditions | Fetti Financial Services",
   description: "Terms and Conditions for Fetti Financial Services LLC, including SMS messaging terms.",
 };

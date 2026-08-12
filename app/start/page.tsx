@@ -3,6 +3,7 @@ import { CheckCircle2, Zap, Building2, TrendingUp } from "lucide-react";
 import { LICENSING_NOTE } from "@/lib/legal";
 
 export const metadata = {
+  alternates: { canonical: "https://fettifi.com/start" },
   title: "Investment Property & Fix-and-Flip Financing | Fetti Financial Services",
   description:
     "Fast financing for real estate investors — DSCR rental loans, fix-and-flip, bridge, and hard money. Get pre-qualified in minutes.",
