@@ -76,7 +76,8 @@
     "verify:esign-mobile": "tsx scripts/verify-esign-mobile.ts",
     "docs:sync": "tsx scripts/sync-loan-docs.ts",
     "docs:sizes": "tsx scripts/backfill-doc-sizes.ts",
-    "verify:dns": "tsx scripts/verify-dns.ts"
+    "verify:dns": "tsx scripts/verify-dns.ts",
+    "verify:noindex": "tsx scripts/verify-noindex.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

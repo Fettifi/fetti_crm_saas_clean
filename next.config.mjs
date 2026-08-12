@@ -99,6 +99,26 @@ const nextConfig = {
         ],
       },
       {
+        // app.fettifi.com serves the SAME Next app as fettifi.com, so every URL on it is
+        // either a duplicate of a marketing page or a private CRM screen. Neither belongs
+        // in a search index.
+        //
+        // Page-level canonicals were NOT enough, and we have the data: on 2026-08-12 the
+        // Search Console domain property showed Google had indexed
+        //   app.fettifi.com/lending/dscr-loans-florida
+        //   app.fettifi.com/lending/commercial-real-estate-loans-florida
+        // both of which serve a correct canonical pointing at fettifi.com. A canonical is a
+        // hint Google may ignore; an X-Robots-Tag is a directive it may not. The first of
+        // those was competing directly against the fettifi.com page we want ranking for
+        // "dscr loans florida".
+        //
+        // Set at the config layer rather than in proxy.ts on purpose: the proxy matcher
+        // excludes /portal and the static paths, so a header set there would have holes.
+        source: "/:path*",
+        has: [{ type: "host", value: "app.fettifi.com" }],
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
         // The Outlook add-in pages are framed by Outlook — no X-Frame-Options,
         // no frame-ancestors, Office.js CDN allowed, microphone permitted.
         source: "/outlook/:path*",
