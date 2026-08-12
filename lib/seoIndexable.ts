@@ -23,6 +23,8 @@
 /** Slugs under /lending we ask Google to index. Everything else is noindex,follow. */
 export const INDEXABLE_LENDING_SLUGS: string[] = [
   "dscr-loans-california",
+  "dscr-loans-florida",
+  "bridge-loans-florida",
 ];
 
 /** Core marketing pages — always indexable; each is genuinely distinct. */
