@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { headers } from "next/headers";
+import { crawlDisallowList } from "@/lib/routeAccess";
 
 const BASE = "https://fettifi.com";
 
@@ -40,11 +41,9 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       {
         userAgent: "*",
         allow: ["/", "/about", "/start", "/quote", "/apply", "/lending/", "/privacy", "/terms"],
-        disallow: [
-          "/dashboard", "/leads", "/agents", "/partners", "/pipeline", "/settings",
-          "/team", "/requests", "/task-list", "/roadmap", "/training", "/automations",
-          "/portal", "/login", "/reset-password", "/update-password", "/api/",
-        ],
+        // Built from lib/routeAccess.ts, the SAME array proxy.ts gates on. Hand-maintaining a
+        // second copy here is what let 24 login-gated routes stay crawlable.
+        disallow: crawlDisallowList(),
       },
     ],
     sitemap: `${BASE}/sitemap.xml`,

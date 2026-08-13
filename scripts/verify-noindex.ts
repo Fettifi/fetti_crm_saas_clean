@@ -132,6 +132,23 @@ function isNoindex(tag: string | null): boolean {
   // to is to fetch it. On 2026-08-12 the homepage linked to seven /lending pages and every one
   // was noindex, while the indexable pages got none — the highest-authority URL on the domain
   // spending all of its lending equity on pages that cannot rank.
+  // The auth gate and the crawl rules must agree. They are now built from one array
+  // (lib/routeAccess.ts), and this asserts the SERVED robots.txt actually reflects it — the two
+  // hand-maintained lists had already drifted by 24 routes, every one of them crawlable and
+  // spending crawl budget on a 307 to a disallowed /login.
+  console.log("\nROBOTS.TXT — every login-gated route must be disallowed");
+  const { PROTECTED_ROUTES } = await import("../lib/routeAccess");
+  const missing = PROTECTED_ROUTES.filter((r) => !new RegExp(`^\\s*Disallow:\\s*${r}\\s*$`, "im").test(pubRobots));
+  if (missing.length) {
+    console.log(`  MISS ${missing.length} gated route(s) absent from robots.txt: ${missing.join(" ")}`);
+    problems.push(
+      `robots.txt does not disallow ${missing.length} login-gated route(s) (${missing.join(", ")}) — ` +
+        `Googlebot crawls each one and earns a 307 to /login, spending budget the money pages need`
+    );
+  } else {
+    console.log(`  ok   all ${PROTECTED_ROUTES.length} gated routes disallowed`);
+  }
+
   console.log("\nHOMEPAGE — must link every indexable lending page");
   const { INDEXABLE_LENDING_SLUGS } = await import("../lib/seoIndexable");
   const homeHtml = await (await fetch(PUBLIC_HOST + "/")).text();
