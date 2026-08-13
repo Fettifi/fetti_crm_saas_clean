@@ -527,6 +527,197 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
       },
     ],
   },
+  "commercial-real-estate-loans-florida": {
+    lede:
+      "A commercial real estate loan in Florida is underwritten against the building first: its leases " +
+      "and the income they produce set what a lender will advance and on what structure, and your " +
+      "balance sheet stands behind that rather than in place of it. Office, retail, industrial, " +
+      "mixed-use, multifamily — investment or owner-user, the business property is the file. Fetti " +
+      "Financial Services is a licensed mortgage lender and broker, which on a commercial deal means " +
+      "placing your file with the lender whose credit box it genuinely fits, then getting it funded.",
+    sections: [
+      {
+        h: "Which lender your deal belongs to",
+        body: [
+          "Commercial is not one market. The same Florida business property gets a different answer from " +
+          "each kind of desk.",
+          "Banks and portfolio lenders keep the loan, so they weight the relationship — deposits, " +
+          "liquidity, your record in that submarket — and are the most flexible on an odd building, the " +
+          "least forgiving of a thin guarantor. Credit unions are that desk at smaller scale, often patient " +
+          "with an owner-user. SBA lenders are owner-user only and underwrite the operating company as hard " +
+          "as the real estate. Agency small-balance multifamily programs begin at five units: the most " +
+          "standardized capital for a stabilized apartment property, the most rigid about anything that is " +
+          "not one. Life companies want well-located, well-leased assets and weight the real estate over " +
+          "the sponsor. Conduit lenders — CMBS — pool and sell their loans, so the note is standardized, " +
+          "commonly non-recourse, and every later request goes to a servicer with no discretion. Debt funds " +
+          "move fastest, underwrite a business plan rather than an operating history, and charge for that " +
+          "risk.",
+          "So ask which side your deal wins on. A property-strong file — stabilized, well leased, " +
+          "unremarkable — is what the conservative desks compete for; a debt fund would only sell it " +
+          "flexibility it will not use. A sponsor-strong file — a capable operator with a building in " +
+          "transition — belongs with a bank that already knows you, or a fund willing to underwrite the " +
+          "plan. The wrong desk does not simply decline; it declines slowly, after third-party reports you " +
+          "already paid for.",
+        ],
+      },
+      {
+        h: "Structure decides more than pricing does",
+        body: [
+          "The first difference between two files quoted alike is recourse. On a recourse loan the " +
+          "guarantors stand behind the debt personally; on a non-recourse loan the lender's remedy is the " +
+          "property — but non-recourse is never absolute. Every non-recourse note carries bad-boy " +
+          "carve-outs: fraud, misapplying rents or insurance proceeds, transferring or further encumbering " +
+          "the property without consent, environmental misstatement, often a voluntary bankruptcy. Trip one " +
+          "and the loss, sometimes the whole debt, becomes personally recourse. Read that schedule as " +
+          "closely as the pricing, and read who is named on it: carve-outs follow the signature, not the " +
+          "entity.",
+          "The second is maturity. A commercial note's amortization schedule commonly runs far longer than " +
+          "the note itself, so a balance comes due at maturity by design, not as a defect. Your hold plan " +
+          "and your maturity are one conversation: a plan running through a lease-up or a repositioning " +
+          "needs a maturity with room to reach the other side of it, because refinancing into whatever " +
+          "market exists on that date is the risk the structure hands you.",
+          "The third is what leaving early costs, and commercial notes penalize prepayment by structure " +
+          "rather than a flat fee. A step-down declines as the loan seasons. Yield maintenance makes the " +
+          "lender whole for the income it expected. Defeasance, standard on conduit paper, swaps securities " +
+          "in for the collateral so the payments continue without you — its own transaction, with its own " +
+          "cost and calendar. Some structures instead let a buyer assume the loan — on the right sale, " +
+          "worth more than any of it. Structure, not pricing, decides whether you can sell in year three of " +
+          "a hold, so ask for that language at term sheet, not at closing.",
+        ],
+      },
+      {
+        h: "What a lender does to your operating statement",
+        body: [
+          "Coverage measures annual net operating income — rent less vacancy and the real cost of running " +
+          "the building, before debt service and capital projects — against annual debt service. No lender " +
+          "takes your NOI as presented. Underwriting applies a vacancy factor to a fully leased building, " +
+          "charges a management fee where you self-manage and take none, deducts a replacement reserve " +
+          "whether or not you fund one, and pulls light expense lines toward market. The gap between your " +
+          "NOI and the lender's is the deal.",
+          "Which period gets normalized matters more here than in most states. A trailing twelve that " +
+          "catches a strong winter season and misses a soft summer flatters a Florida asset; one that " +
+          "straddles a storm and the tenants it displaced understates the same building. Expect a " +
+          "multi-year average, or a trailing three annualized where recent months are the real story.",
+          "The leases behind that income are read just as hard: the lender is buying the rent roll as much " +
+          "as the building. Triple net, modified gross and full service divide taxes, insurance and common " +
+          "area maintenance very differently, so two buildings with identical rent rolls are not the same " +
+          "asset when one passes those lines through and the other absorbs them. A lease expiring early in " +
+          "the loan's life is the risk it looks like, and one tenant paying most of the rent is a different " +
+          "credit from eight each paying a share.",
+        ],
+      },
+      {
+        h: "An owner-user file underwrites twice",
+        body: [
+          "Owner-occupied here means your company occupies the space. It is business-purpose credit, not a " +
+          "consumer mortgage, and it is underwritten twice: once as real estate, once as the business that " +
+          "pays the rent. Expect a global cash flow review — business returns and interim statements " +
+          "alongside the property file, the rent your company would pay itself eliminated so it is not " +
+          "counted twice, and whatever remains has to service the debt. A company with real earnings can " +
+          "support a building that market rent alone would not; one thin year can sink a clean property.",
+          "If your company will occupy at least 51% of the space, SBA 7(a) and 504 are available to " +
+          "owner-users. The trade is process: an SBA file asks for more documentation and a longer calendar " +
+          "than conventional commercial credit. If your closing date is tight, say so before the file is " +
+          "placed.",
+        ],
+      },
+      {
+        h: "Florida tax lines your projection has to carry",
+        body: [
+          "Property taxes are the line most commercial projections carry over from the seller unchanged, " +
+          "and it is the one least likely to survive the sale. Florida assessments reset toward market " +
+          "value when a property changes hands, and the year-over-year cap that limited the seller's " +
+          "increases resets with the transfer — so the assessment behind the operating statement you were " +
+          "handed is not the assessment behind your first bill. Underwrite the reset, and confirm the " +
+          "mechanics for your parcel with the county property appraiser rather than working from the " +
+          "current bill.",
+          "Then read the non-ad-valorem section of that bill separately from the millage. Drainage, fire, " +
+          "lighting and community development district assessments are billed there, and on a commercial " +
+          "deal the question is rarely how large they are — it is whose expense they become. A triple net " +
+          "lease passing through “real property taxes” does not automatically reach a district assessment " +
+          "or a special levy: some leases name them, some carve out anything capital in nature, and some " +
+          "are silent. Silence is how a landlord ends up absorbing a line he underwrote as a pass-through. " +
+          "Test each lease's clause against the actual bill before you close.",
+          "Where the pass-through does reach them, that cost lands on tenants who agreed their rent before " +
+          "the sale — which makes it a renewal risk, and your lender prices renewal risk. Florida also " +
+          "applies its own treatment to rent paid for commercial space, and the rules there have moved more " +
+          "than once in recent years; confirm the current position with your CPA or the Department of " +
+          "Revenue for the periods you are underwriting rather than carrying a figure across from an older " +
+          "deal.",
+        ],
+      },
+      {
+        h: "Insurance is an underwriting input, not a closing errand",
+        body: [
+          "A commercial property policy is written against total insured value, and the named-storm " +
+          "deductible is generally a share of that value rather than a flat sum, so it scales with the " +
+          "building. Lenders read the coinsurance clause closely — an agreed-value endorsement is the usual " +
+          "way that penalty comes off the table — and they require business income or loss-of-rents " +
+          "coverage with an indemnity period long enough to carry debt service through the months a damaged " +
+          "building earns nothing.",
+          "On the binder they want the named insured matching the entity taking title, the mortgagee " +
+          "clause, the deductible stated as its percentage, and the business income limit with its " +
+          "indemnity period. Work those with a licensed Florida commercial agent early: the premium you " +
+          "land on lands in operating expenses, operating expenses set NOI, and NOI is what the debt is " +
+          "measured against.",
+        ],
+      },
+      {
+        h: "The closing package, grouped by who has to produce it",
+        body: [
+          "Most delay on a commercial file is documentary, and these items do not arrive at the same speed. " +
+          "Start the slow ones the week you go under contract.",
+          "You produce: the entity taking title and its ownership breakdown, matching the name on the " +
+          "purchase contract; a personal financial statement and schedule of real estate owned for each " +
+          "guarantor; business returns and an interim profit and loss if the business will occupy the " +
+          "building; and the equity you are bringing.",
+          "The seller produces: operating statements for the recent full years plus a current-year interim; " +
+          "the rent roll (tenant, term dates, base rent, escalations, options); every executed lease and " +
+          "amendment; service contracts; and the complete tax bill including its non-ad-valorem section.",
+          "The tenants produce the slowest items — estoppel certificates confirming their terms are what " +
+          "you say they are, and, where the lender requires them, subordination, non-disturbance and " +
+          "attornment agreements. Both come through the seller, and the signers have no reason to hurry.",
+          "The association produces, on a condominium unit or inside an owners' association (common in " +
+          "office and retail parks): declaration, budget, reserve position, master insurance certificate, " +
+          "assessment history, and any reciprocal easement governing parking, access and signage.",
+          "The lender orders, at your expense: the appraisal, an income-approach second opinion on your own " +
+          "operating statement; a Phase I environmental site assessment; an ALTA survey; and on many assets " +
+          "a property condition assessment. Environmental most often moves the closing date — Florida's " +
+          "older commercial corridors carry the history of fueling, dry cleaning and automotive service, " +
+          "and a recognized condition escalates a Phase I into a Phase II, a new scope of work with its own " +
+          "vendor and calendar.",
+          "All financing is subject to the lender's underwriting and approval. Not all applicants or " +
+          "properties qualify.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: "My building has six units — is that a commercial loan or a rental property loan?",
+        a:
+          "It turns on how the lender classifies the collateral. By convention one to four units is " +
+          "residential collateral financed from a lease and a rent figure; anything larger is underwritten " +
+          "from the property's own operating statements. Six units generally lands on the commercial side, " +
+          "which changes the document package more than your eligibility.",
+      },
+      {
+        q: "The property is vacant or only partly leased. Can it still be financed?",
+        a:
+          "It underwrites differently. With little in-place income there is no operating statement to " +
+          "normalize, so the file moves onto the sponsor, the equity and a lease-up plan tested against " +
+          "real market rents and leasing costs — and the lenders who do that work are a narrower group. " +
+          "Bring signed letters of intent and a defensible leasing budget.",
+      },
+      {
+        q: "Does a commercial mortgage show up on my personal credit report?",
+        a:
+          "Usually not directly: title is typically held in an entity, and business-purpose credit is " +
+          "generally not furnished to the consumer bureaus. A personal guaranty is still a real obligation " +
+          "— you disclose it on your personal financial statement, and the next lender counts it in global " +
+          "cash flow.",
+      },
+    ],
+  },
 };
 
 export function deepContentFor(slug: string): DeepContent | null {

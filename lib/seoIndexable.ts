@@ -33,6 +33,9 @@ export const INDEXABLE_LENDING_SLUGS: string[] = [
   "dscr-loans-florida",
   "dscr-loans-california",
   "bridge-loans-florida",
+  // ~141 impressions/quarter across "business real estate/property loans fl" and
+  // "commercial real estate loans fl" — the largest cluster the site was not serving.
+  "commercial-real-estate-loans-florida",
 ];
 
 /** Core marketing pages — always indexable; each is genuinely distinct. */

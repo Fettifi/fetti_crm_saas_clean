@@ -151,7 +151,7 @@ export const PRODUCTS: Record<string, Product> = {
     faqs: [
       { q: "What property types do you finance in {state}?", a: "Office, retail, industrial, mixed-use, and multifamily — both owner-occupied and investment. Tell us the deal and we'll match the right program." },
       { q: "How much down do commercial loans require?", a: "Often 20–30% for investment, less for SBA owner-occupied deals. We'll structure for the lowest cost of capital that fits." },
-      { q: "Can I use an SBA loan for commercial property?", a: "Yes — if you'll occupy 51%+ of the space, SBA 7(a)/504 can dramatically cut your down payment. We'll tell you if you qualify." },
+      { q: "Can I use an SBA loan for commercial property?", a: "Yes — if you'll occupy 51%+ of the space, SBA 7(a)/504 are available to owner-users. Tell us the deal and we'll tell you whether it's a fit." },
     ],
     scope: "all",
   },
