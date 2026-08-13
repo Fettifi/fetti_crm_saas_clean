@@ -18,21 +18,50 @@
 // Every "Attach file" dialog on the machine — Outlook, a wholesale portal, anything — can then
 // reach them the normal way. He never saves a thing; the folder keeps itself filled.
 //
-// DELIBERATELY ONE-WAY. It downloads and never uploads, and it never deletes a local file even
-// when the document is removed in the CRM. A sync that can delete his files is a sync that will
-// eventually delete the wrong one; the cost of a stale leftover is a stray PDF.
+// NOW TWO-WAY, as of 2026-08-13. It downloads, and it pushes back anything Ramon drops in.
 //
-//   npx tsx scripts/sync-loan-docs.ts            # mirror new/changed documents
-//   npx tsx scripts/sync-loan-docs.ts --dry-run  # show what would be written, touch nothing
+// It used to download only, and that cost us. Ramon saved documents that had been emailed to him
+// straight into the borrower's folder — the obvious thing to do with a folder named after the
+// loan file — and they never reached the LOS: "I saved them in the Fetti loan files, but now that
+// I go into the LOS I don't see them. Where did they go?" Eleven documents across three files sat
+// like that, the oldest for a week, including a W-2 and four bank statements on a live file. A
+// drop folder that silently swallows documents is worse than no drop folder, because it looks
+// like it worked.
+//
+// It still NEVER DELETES, in either direction. A sync that can delete his files is a sync that
+// will eventually delete the wrong one; the cost of a stale leftover is a stray PDF.
+//
+// What the push will and will not send, because this runs unattended every 15 minutes:
+//   - only files the download did not put there (tracked in the manifest)
+//   - only types the borrower upload route accepts, or a file whose bytes say %PDF- regardless of
+//     its name (documents saved out of a mail client routinely arrive with no extension)
+//   - nothing under 25 MB, nothing hidden, nothing modified in the last 60s (still being written)
+//   - never a second copy: a file_name already on that loan file is left alone
+//
+//   npx tsx scripts/sync-loan-docs.ts            # pull, then push
+//   npx tsx scripts/sync-loan-docs.ts --dry-run  # show what would move, touch nothing
+//   npx tsx scripts/sync-loan-docs.ts --no-push  # download only, the old behaviour
 import "./_env";
 import { supabaseAdmin } from "../lib/supabaseAdminClient";
-import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync } from "fs";
+import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
 const ROOT = process.env.FETTI_DOCS_ROOT || join(homedir(), "Fetti Loan Files");
 const BUCKET = "loan-docs";
 const DRY = process.argv.includes("--dry-run");
+const NO_PUSH = process.argv.includes("--no-push");
+/** Mirrors app/api/file/[token]/upload/route.ts, plus tidying — Ramon reads these names in the
+ *  LOS, and files off a scanner arrive as "bank statement 2  .pdf". */
+const PUSH_ALLOWED = /\.(pdf|png|jpe?g|heic|webp|doc|docx|xls|xlsx|csv|txt)$/i;
+const PUSH_MAX_BYTES = 25 * 1024 * 1024;
+function pushSafeName(name: string): string {
+  const i = name.lastIndexOf(".");
+  const stem = (i > 0 ? name.slice(0, i) : name)
+    .replace(/[^a-zA-Z0-9._-]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  const ext = i > 0 ? name.slice(i).replace(/[^a-zA-Z0-9.]/g, "") : "";
+  return `${stem || "document"}${ext}`.slice(0, 120);
+}
 
 // Finder and every file dialog choke on "/" and ":" in a name; the rest is trimmed so a long
 // condition sentence used as a document label cannot produce a 300-character filename.
@@ -101,8 +130,14 @@ function safe(s: string, max = 70): string {
     //
     // Storage paths are immutable — every upload gets a fresh `<epoch>-<name>` — so an unchanged
     // path means unchanged bytes. Keyed that way, this needs no size from the database at all.
+    // Check the path the manifest RECORDS, not the name this run would choose. Once the sync
+    // became two-way those can differ: a file Ramon dropped in keeps his name ("bank statement
+    // 2  .pdf") while the copy the LOS now holds is sanitised ("bank_statement_2.pdf"). Testing
+    // only the sanitised name would re-download bytes already sitting in the folder and leave
+    // him two of everything he ever added.
     const prev = manifest[d.storage_path];
-    if (prev && existsSync(dest) && statSync(dest).size === prev.bytes) { skipped++; continue; }
+    const have = prev?.file || dest;
+    if (prev && existsSync(have) && statSync(have).size === prev.bytes) { skipped++; continue; }
 
     if (DRY) { console.log(`  would write  ${dest.replace(homedir(), "~")}`); wrote++; continue; }
 
@@ -118,6 +153,74 @@ function safe(s: string, max = 70): string {
 
   if (!DRY) { mkdirSync(ROOT, { recursive: true }); writeFileSync(MANIFEST, JSON.stringify(manifest, null, 1)); }
   console.log(`\n${DRY ? "DRY RUN — " : ""}${wrote} written · ${skipped} already current · ${failed} failed · ${orphaned} with no loan file`);
+
+  // ── PUSH ────────────────────────────────────────────────────────────────────────────────────
+  let pushed = 0, pushFailed = 0, pushSkipped = 0;
+  if (!NO_PUSH) {
+    // Everything the download wrote, so what remains is what Ramon added himself.
+    const mine = new Set(Object.values(manifest).map((v: any) => v?.file).filter(Boolean) as string[]);
+    const byNumber = new Map((files || []).map((f: any) => [String(f.file_number), f]));
+
+    for (const folder of readdirSync(ROOT)) {
+      const dir = join(ROOT, folder);
+      if (!existsSync(dir) || !statSync(dir).isDirectory()) continue;
+      // The folder name is written by this script as "<Borrower> — <FF-number>", so the number is
+      // authoritative. Never infer a loan file from a borrower name — two people share one.
+      const num = folder.split("—").pop()?.trim() || "";
+      const lf: any = byNumber.get(num);
+      if (!lf) continue;
+
+      for (const entry of readdirSync(dir)) {
+        const abs = join(dir, entry);
+        if (entry.startsWith(".") || !existsSync(abs) || !statSync(abs).isFile()) continue;
+        if (mine.has(abs)) continue;
+
+        const st = statSync(abs);
+        if (st.size > PUSH_MAX_BYTES) { console.log(`  push skip  ${entry} — over 25 MB`); pushSkipped++; continue; }
+        // Still landing: a mail client or scanner writes in chunks, and half a PDF is worse than
+        // no PDF because it looks filed.
+        if (Date.now() - st.mtimeMs < 60_000) { pushSkipped++; continue; }
+
+        let name = entry.trim();
+        if (!PUSH_ALLOWED.test(name)) {
+          if (readFileSync(abs).subarray(0, 5).toString("latin1") === "%PDF-") name = `${name}.pdf`;
+          else { pushSkipped++; continue; }
+        }
+        const storeName = pushSafeName(name);
+
+        const { data: dupe } = await supabaseAdmin.from("loan_documents")
+          .select("id").eq("loan_file_id", lf.id).eq("file_name", storeName).limit(1).maybeSingle();
+        if (dupe?.id) { mine.add(abs); pushSkipped++; continue; }
+
+        if (DRY) { console.log(`  would push   ${folder}/${storeName}`); pushed++; continue; }
+
+        const path = `${lf.id}/${Date.now()}-${storeName}`;
+        const { error: upErr } = await supabaseAdmin.storage.from(BUCKET)
+          .upload(path, readFileSync(abs), { contentType: "application/pdf", upsert: false });
+        if (upErr) { console.error(`  push FAIL  ${storeName}: ${upErr.message}`); pushFailed++; continue; }
+
+        const { error: rowErr } = await supabaseAdmin.from("loan_documents").insert([{
+          loan_file_id: lf.id, name: storeName, category: "Additional", required: false,
+          status: "received", storage_path: path, file_name: storeName, size_bytes: st.size,
+          uploaded_by: "lo",
+        }]);
+        if (rowErr) {
+          // Never strand an object in storage with no row pointing at it.
+          await supabaseAdmin.storage.from(BUCKET).remove([path]);
+          console.error(`  push FAIL  ${storeName}: ${rowErr.message} — storage rolled back`);
+          pushFailed++; continue;
+        }
+        // Record it so the next pull recognises the file as accounted for and does not
+        // re-download the same bytes under a second name.
+        manifest[path] = { file: abs, bytes: st.size };
+        console.log(`  pushed  ${folder}/${storeName}`);
+        pushed++;
+      }
+    }
+    if (!DRY && pushed) writeFileSync(MANIFEST, JSON.stringify(manifest, null, 1));
+    console.log(`${DRY ? "DRY RUN — " : ""}${pushed} pushed · ${pushSkipped} not eligible · ${pushFailed} failed`);
+  }
+
   console.log(`Folder: ${ROOT.replace(homedir(), "~")}`);
-  if (failed) process.exitCode = 1;
+  if (failed || pushFailed) process.exitCode = 1;
 })();
