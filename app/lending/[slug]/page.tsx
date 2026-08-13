@@ -9,6 +9,7 @@ import { stateLabel, allowedStates, applyHrefForProduct } from "@/lib/lendingMat
 import { PRODUCTS } from "@/lib/lendingProducts";
 import { isIndexableLendingSlug } from "@/lib/seoIndexable";
 import { deepContentFor } from "@/lib/lendingDeepContent";
+import { lendingBreadcrumb } from "@/lib/seo/schema";
 
 // ISR so newly approved wins / fresh Google reviews appear without a redeploy.
 export const revalidate = 600;
@@ -81,8 +82,22 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
     <div className="min-h-screen bg-white text-slate-900">
       <SiteHeader />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(lendingBreadcrumb(slug, `${prod.label} in ${state}`)) }}
+      />
 
       <section className="max-w-3xl mx-auto px-6 pt-14 pb-6">
+        {/* Visible breadcrumb, mirroring the BreadcrumbList above. Structured data with no on-page
+            counterpart is a Google violation, so these two must always ship together. It also gives
+            the deep pages their first real internal link back up to the hub. */}
+        <nav aria-label="Breadcrumb" className="text-xs text-slate-500 mb-3">
+          <Link href="/" className="hover:text-emerald-600">Home</Link>
+          <span className="mx-1.5">/</span>
+          <Link href="/lending" className="hover:text-emerald-600">Loan Programs</Link>
+          <span className="mx-1.5">/</span>
+          <span className="text-slate-700">{prod.label} in {state}</span>
+        </nav>
         <p className="text-emerald-600 font-mono text-sm">Lender &amp; broker · Fetti Financial Services LLC · NMLS #2267023</p>
         <h1 className="text-4xl font-extrabold mt-2 text-slate-900">{prod.label} in {state}</h1>
         <p className="text-slate-700 text-lg mt-4 leading-relaxed">{fill(deep?.lede || prod.intro)}</p>

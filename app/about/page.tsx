@@ -15,31 +15,9 @@ export const metadata: Metadata = {
   alternates: { canonical: "https://fettifi.com/about" },
 };
 
-const orgSchema = {
-  "@context": "https://schema.org", "@type": ["FinancialService", "Organization"],
-  name: "Fetti Financial Services LLC", url: "https://fettifi.com",
-  description: "Licensed mortgage lender & broker. Home loans in FL, MI & CA; investment and business-purpose loans (DSCR, fix & flip, bridge, hard money, business) in all 50 states.",
-  identifier: "NMLS #2267023",
-  founder: { "@type": "Person", name: "Ramon Dent", jobTitle: "Founder & Mortgage Solutions Specialist", identifier: "NMLS #2235992", image: "https://fettifi.com/ramon-dent.jpg" },
-  areaServed: "United States",
-  sameAs: [
-    "https://www.nmlsconsumeraccess.org/EntityDetails.aspx/COMPANY/2267023",
-    "https://www.linkedin.com/company/projectfetti",
-  ],
-};
-const personSchema = {
-  "@context": "https://schema.org", "@type": "Person",
-  name: "Ramon Dent", jobTitle: "Founder & Mortgage Solutions Specialist",
-  worksFor: { "@type": "Organization", name: "Fetti Financial Services LLC", identifier: "NMLS #2267023" },
-  identifier: "NMLS #2235992", url: "https://fettifi.com/about",
-  image: "https://fettifi.com/ramon-dent.jpg",
-  sameAs: [
-    "https://www.nmlsconsumeraccess.org/EntityDetails.aspx/INDIVIDUAL/2235992",
-    "https://www.linkedin.com/in/ramon-dent-3bb587239/",
-    "https://www.experience.com/reviews/ramon-dent-300719",
-    "https://www.instagram.com/fettifounder/",
-  ],
-};
+// Was two divergent inline nodes with free-text licences and no @id, referenced by nothing.
+// Now the SAME Organization the homepage emits, so the graph has one entity, not three.
+import { ORGANIZATION as orgSchema, RAMON_DENT as personSchema } from "@/lib/seo/schema";
 
 export default function AboutPage() {
   const H2 = "text-2xl font-bold text-slate-900 mt-10 mb-3";

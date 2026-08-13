@@ -8,6 +8,7 @@ import { LICENSING_NOTE } from "@/lib/legal";
 import { indexableGuides } from "@/lib/seoIndexable";
 import { PRODUCTS } from "@/lib/lendingProducts";
 import { stateLabel } from "@/lib/lendingMatrix";
+import { ORGANIZATION, WEBSITE } from "@/lib/seo/schema";
 import { CediBubble } from "@/components/CediBubble";
 import { CediVoice } from "@/components/CediVoice";
 import HeroCapture from "@/components/HeroCapture";
@@ -130,6 +131,10 @@ const FAQ = [
 export default async function MarketingHome() {
   return (
     <div className="min-h-screen bg-white text-slate-900 antialiased selection:bg-emerald-200">
+      {/* The canonical homepage emitted no structured data at all until 2026-08-12, so Google had
+          no root entity node for the brand. One Organization, referenced by @id everywhere. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE) }} />
       {/* ---------- Sticky header ---------- */}
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
