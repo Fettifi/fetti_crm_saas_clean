@@ -195,6 +195,13 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
   },
 
   "dscr-loans-florida": {
+    // 51 chars. Carries the head query verbatim ("dscr loans florida", 33 impressions, and
+    // "dscr loan florida" at 53) and then says something only an operator would say.
+    title: "DSCR Loans in Florida: Insurance Decides Your Ratio",
+    // 153 chars. Names the three Florida-specific levers the page actually explains.
+    description:
+      "Qualify a Florida rental on its rent, not your W-2 or tax returns. What insurance, CDD fees " +
+      "and the tax reset do to your ratio, and how we get it funded.",
     lede:
       "A DSCR loan qualifies your Florida rental on the property\u2019s own cash flow rather than your " +
       "personal income, W-2s or tax returns. In Florida the rent side is usually the easy part \u2014 it is " +
@@ -209,9 +216,10 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "largest line after principal and interest. Carriers withdrew from the state in waves, and " +
           "what is left prices wind exposure aggressively \u2014 a policy that would cost $1,400 in Ohio can " +
           "run several times that on a coastal Florida rental.",
-          "Three things move that premium more than anything else. Roof age: most carriers will not " +
+          "Three things move that premium more than anything else. Roof age: many carriers will not " +
           "write a roof over about fifteen years, and a roof approaching that age can make a property " +
-          "effectively uninsurable until it is replaced. A wind mitigation inspection: shutters, a " +
+          "effectively uninsurable until it is replaced — which is why buyers in that spot often acquire " +
+          "on a [bridge loan](/lending/bridge-loans-florida), replace the roof, then refinance onto DSCR. A wind mitigation inspection: shutters, a " +
           "hip roof, roof-to-wall straps and a secondary water barrier earn credits that routinely " +
           "cut a premium by a third or more \u2014 order one before you order anything else. And the " +
           "hurricane deductible, which in Florida is a PERCENTAGE of dwelling coverage, typically 2% " +
@@ -219,7 +227,7 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "If the admitted market declines the risk you land on surplus lines or Citizens Property " +
           "Insurance, the state-backed insurer of last resort. Citizens is writable for DSCR, but " +
           "expect the carrier to be scrutinised and expect depopulation offers later. Get a real bound " +
-          "quote early. A premium estimated from another state is the fastest way to have a Florida " +
+          "quote early. Bind a real Florida policy before you are relying on the ratio it produces; a " +
           "file re-priced a week before closing.",
         ],
       },
@@ -336,6 +344,29 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
         ],
       },
       {
+        h: "The prepayment penalty is the question nobody asks until closing",
+        body: [
+          "Almost every DSCR program carries a prepayment penalty, and it is not a trap — it is part of " +
+          "how the loan is priced. Accepting one generally buys you better terms; refusing one generally " +
+          "costs you them. What matters is that you know which structure you have before you sign, " +
+          "because the structure decides what your exit costs.",
+          "The common shapes are a step-down, where the charge declines each year the loan seasons; a " +
+          "flat charge that applies for a fixed opening period and then disappears; and, less often on " +
+          "residential-style DSCR paper, yield maintenance, which makes the lender whole for the income " +
+          "it expected. Many programs will also shorten or remove the penalty in exchange for different " +
+          "pricing. That trade is worth asking about explicitly rather than accepting the default.",
+          "Match it to your actual plan. If you intend to hold the rental for years, a longer penalty " +
+          "period is close to free money. If you are buying to season and refinance, or you expect to " +
+          "sell into a strong Florida spring, a penalty that outlives your hold is a cost you have " +
+          "already agreed to pay. The same logic applies to a bridge-to-DSCR sequence: if you are " +
+          "refinancing out of a [bridge loan](/lending/bridge-loans-florida), check that the DSCR " +
+          "penalty window does not collide with your next move.",
+          "Ask for the prepayment structure on the term sheet, in writing, alongside the ratio. It is " +
+          "the single most common thing an investor discovers late, and it is the easiest to settle " +
+          "early.",
+        ],
+      },
+      {
         h: "What we need to quote a Florida DSCR accurately",
         body: [
           "The property address and either the executed lease, your rent expectation, or STR operating " +
@@ -387,6 +418,13 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
   },
 
   "bridge-loans-florida": {
+    // 52 chars. "bridge loan florida" is the query (36 impressions); the promise after the colon
+    // is the page's real subject — the deals a bank cannot approve YET.
+    title: "Florida Bridge Loans: Buy Before You Sell, Fast",
+    // 154 chars. The three scenarios the page covers, then the exit — which is the actual worry.
+    description:
+      "Short-term funding for Florida deals a bank cannot approve yet: aged roofs, non-warrantable " +
+      "condos, buying before you sell. We place it and plan your exit.",
     lede:
       "A bridge loan buys you time in Florida \u2014 to close before your sale funds, to take a property " +
       "that will not survive a lender\u2019s condition list today, or to hold a deal while permanent " +
@@ -427,7 +465,7 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "Bridge lenders underwrite the asset and the exit, so a property can be acquired on bridge " +
           "financing, the roof replaced or the condition cured, insurance bound properly, and the loan " +
           "refinanced into permanent financing on a clean file. That sequence \u2014 buy, cure, refinance \u2014 " +
-          "is the single most common legitimate use of bridge money in Florida.",
+          "is the classic legitimate use of bridge money in Florida.",
           "Carry builder\u2019s risk or a vacant-property policy while the work is underway. A standard " +
           "landlord policy generally will not cover a vacant home under renovation, and a gap there is " +
           "an uninsured hurricane exposure.",
@@ -492,7 +530,8 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "refinance into conventional financing once a condition is cured or an association is " +
           "compliant again.",
           "We underwrite the takeout at the same time as the bridge, so the exit is not a hope. If the " +
-          "plan is a DSCR refinance, the ratio has to work on the reset tax basis and a real insurance " +
+          "plan is a [DSCR refinance](/lending/dscr-loans-florida), the ratio has to work on the reset tax " +
+          "basis and a real insurance " +
           "premium \u2014 not on today\u2019s numbers. A bridge that exits into a ratio that will not clear is a " +
           "problem you have scheduled rather than solved.",
           "If the exit is a commercial takeout — five or more units, or a mixed-use or retail building — " +
