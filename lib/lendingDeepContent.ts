@@ -15,6 +15,21 @@ export type DeepContent = {
   sections: DeepSection[];
   /** Extra FAQs appended to the product's generic set. */
   faqs: { q: string; a: string }[];
+  /**
+   * Overrides for the templated `<title>` and meta description.
+   *
+   * The template builds `${product} in ${state} | Fetti Financial Services`, which spends 30 of
+   * roughly 60 usable characters on the brand and makes no promise. Worse, it can only ever say
+   * the product's own name — so the commercial page went live titled "Commercial Real Estate
+   * Loans in Florida" while four of the five queries it targets say **business** ("business real
+   * estate loans fl", "business property loans florida"). The word was absent from the one place
+   * it matters most, and the 66-character title was going to truncate in results anyway.
+   *
+   * A page that has earned its own copy has earned its own title. Keep titles under ~60 chars and
+   * descriptions under ~155, and never put a Reg Z triggering term in either.
+   */
+  title?: string;
+  description?: string;
 };
 
 export const DEEP_CONTENT: Record<string, DeepContent> = {
@@ -300,6 +315,10 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "hurricane deductible, private flood instead of NFIP, or a roof replacement credited by the " +
           "carrier can each move the premium enough to change the answer. Structural levers work too \u2014 " +
           "a larger down payment, an interest-only period, or buying the rate down.",
+          "One structural answer sits outside DSCR entirely: at five or more units the property stops " +
+          "being residential investment and is financed as " +
+          "[commercial real estate](/lending/commercial-real-estate-loans-florida), where the rent roll " +
+          "and the leases behind it carry the file rather than a single ratio.",
         ],
       },
       {
@@ -476,6 +495,9 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "plan is a DSCR refinance, the ratio has to work on the reset tax basis and a real insurance " +
           "premium \u2014 not on today\u2019s numbers. A bridge that exits into a ratio that will not clear is a " +
           "problem you have scheduled rather than solved.",
+          "If the exit is a commercial takeout — five or more units, or a mixed-use or retail building — " +
+          "it is underwritten on coverage against the lease income rather than on a residential ratio. " +
+          "See [commercial real estate loans in Florida](/lending/commercial-real-estate-loans-florida).",
         ],
       },
       {
@@ -528,6 +550,13 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
     ],
   },
   "commercial-real-estate-loans-florida": {
+    // 57 chars. Leads on "Business Property Loans", the phrasing of 4 of the 5 queries in this
+    // cluster, and still carries "Commercial Real Estate" for the fifth.
+    title: "Florida Business Property & Commercial Real Estate Loans",
+    // 151 chars. One claim a searcher would click, not a keyword list.
+    description:
+      "No lender takes your operating statement as presented. See what Florida commercial " +
+      "underwriting changes before your business property deal is sized.",
     lede:
       "A commercial real estate loan in Florida is underwritten against the building first: its leases " +
       "and the income they produce set what a lender will advance and on what structure, and your " +
@@ -545,18 +574,22 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "liquidity, your record in that submarket — and are the most flexible on an odd building, the " +
           "least forgiving of a thin guarantor. Credit unions are that desk at smaller scale, often patient " +
           "with an owner-user. SBA lenders are owner-user only and underwrite the operating company as hard " +
-          "as the real estate. Agency small-balance multifamily programs begin at five units: the most " +
+          "as the real estate. Agency small-balance multifamily programs begin at five units — below that a " +
+          "rental is financed as residential investment, usually on a " +
+          "[DSCR loan](/lending/dscr-loans-florida). Agency paper is the most " +
           "standardized capital for a stabilized apartment property, the most rigid about anything that is " +
           "not one. Life companies want well-located, well-leased assets and weight the real estate over " +
           "the sponsor. Conduit lenders — CMBS — pool and sell their loans, so the note is standardized, " +
           "commonly non-recourse, and every later request goes to a servicer with no discretion. Debt funds " +
-          "move fastest, underwrite a business plan rather than an operating history, and charge for that " +
-          "risk.",
+          "are built for speed, underwrite a business plan rather than an operating history, and price " +
+          "for that risk.",
           "So ask which side your deal wins on. A property-strong file — stabilized, well leased, " +
           "unremarkable — is what the conservative desks compete for; a debt fund would only sell it " +
           "flexibility it will not use. A sponsor-strong file — a capable operator with a building in " +
-          "transition — belongs with a bank that already knows you, or a fund willing to underwrite the " +
-          "plan. The wrong desk does not simply decline; it declines slowly, after third-party reports you " +
+          "transition — often needs interim money to get there, which is a " +
+          "[bridge loan](/lending/bridge-loans-florida); past that it belongs with a bank that already " +
+          "knows you, or a fund willing to underwrite the plan. The wrong desk does not simply " +
+          "decline; it declines slowly, after third-party reports you " +
           "already paid for.",
         ],
       },
@@ -594,9 +627,9 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "charges a management fee where you self-manage and take none, deducts a replacement reserve " +
           "whether or not you fund one, and pulls light expense lines toward market. The gap between your " +
           "NOI and the lender's is the deal.",
-          "Which period gets normalized matters more here than in most states. A trailing twelve that " +
-          "catches a strong winter season and misses a soft summer flatters a Florida asset; one that " +
-          "straddles a storm and the tenants it displaced understates the same building. Expect a " +
+          "Which period gets normalized is worth arguing about on a Florida asset. A trailing twelve that " +
+          "catches a strong season and misses a soft one flatters a seasonal asset; one that " +
+          "straddles a storm that interrupted its tenants understates the same building. Expect a " +
           "multi-year average, or a trailing three annualized where recent months are the real story.",
           "The leases behind that income are read just as hard: the lender is buying the rent roll as much " +
           "as the building. Triple net, modified gross and full service divide taxes, insurance and common " +
@@ -683,7 +716,7 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "The lender orders, at your expense: the appraisal, an income-approach second opinion on your own " +
           "operating statement; a Phase I environmental site assessment; an ALTA survey; and on many assets " +
           "a property condition assessment. Environmental most often moves the closing date — Florida's " +
-          "older commercial corridors carry the history of fueling, dry cleaning and automotive service, " +
+          "commercial sites often carry a prior-use history — fueling, dry cleaning, automotive service — " +
           "and a recognized condition escalates a Phase I into a Phase II, a new scope of work with its own " +
           "vendor and calendar.",
           "All financing is subject to the lender's underwriting and approval. Not all applicants or " +

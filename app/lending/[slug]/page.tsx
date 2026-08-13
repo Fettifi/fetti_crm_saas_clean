@@ -39,15 +39,50 @@ export function generateStaticParams() {
   return params;
 }
 
+/**
+ * Turn `[label](/path)` inside a body paragraph into a real <Link>.
+ *
+ * The deep pages had ZERO contextual links to each other — a reader sent from the commercial page
+ * to "five or more units" had nowhere to go, and no equity moved between the four pages we
+ * actually want ranked. Body copy is plain strings, so this is the smallest thing that makes an
+ * in-prose link possible.
+ *
+ * Builds React nodes rather than using dangerouslySetInnerHTML: this content is ours, but a
+ * renderer that injects raw HTML into every paragraph is a standing invitation, and the whole
+ * point of these pages is that anyone can add copy to lendingDeepContent.ts. Internal paths only.
+ */
+function withLinks(text: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  const re = /\[([^\]]+)\]\((\/[^)\s]*)\)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(
+      <Link key={`${m.index}`} href={m[2]} className="text-emerald-700 underline underline-offset-2 hover:text-emerald-600">
+        {m[1]}
+      </Link>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const parsed = parse(slug);
   if (!parsed) return { title: "Fetti Financial Services" };
   const prod = PRODUCTS[parsed.product].label;
   const state = stateLabel(parsed.state)!;
+  // A page with its own substantive copy may carry its own title and description; the templated
+  // pair below is the fallback for the 80 pages that do not. See lib/lendingDeepContent.ts.
+  const own = deepContentFor(slug);
   return {
-    title: `${prod} in ${state} | Fetti Financial Services`,
-    description: `${prod} in ${state}. ${PRODUCTS[parsed.product].blurb} Get pre-qualified in minutes with no credit impact.`,
+    title: own?.title || `${prod} in ${state} | Fetti Financial Services`,
+    description:
+      own?.description ||
+      `${prod} in ${state}. ${PRODUCTS[parsed.product].blurb} Get pre-qualified in minutes with no credit impact.`,
     alternates: { canonical: `https://fettifi.com/lending/${slug}` },
     // THE DOORWAY FIX. 84 of these 92 URLs were the same twelve products multiplied across
     // states — 535 words each, 97.5% identical to their siblings. Google crawled them and
@@ -141,7 +176,7 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
         <section key={sec.h} className="max-w-3xl mx-auto px-6 py-6">
           <h2 className="text-2xl font-bold mb-3 text-slate-900">{fill(sec.h)}</h2>
           {sec.body.map((para, i) => (
-            <p key={i} className="text-slate-700 leading-relaxed mt-3">{fill(para)}</p>
+            <p key={i} className="text-slate-700 leading-relaxed mt-3">{withLinks(fill(para))}</p>
           ))}
         </section>
       ))}

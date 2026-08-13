@@ -124,5 +124,66 @@ const noindexed = lendingSlugs().filter((s) => !INDEXABLE_LENDING_SLUGS.includes
 chk(listed.length === INDEXABLE_LENDING_SLUGS.length && noindexed.length > 0,
   `${listed.length} page(s) submitted for indexing, ${noindexed.length} served as noindex,follow`);
 
+// 6. In-prose internal links. Body copy may carry [label](/path); app/lending/[slug]/page.tsx
+//    renders those as real <Link>s. A typo'd slug there is a 404 shipped inside the copy of the
+//    only pages we ask Google to rank, and nothing else would catch it — the string compiles, the
+//    page renders, and the link just dies. Every /lending/ target must be a slug that exists.
+const allSlugs = new Set(lendingSlugs());
+const linkRe = /\[[^\]]+\]\((\/[^)\s]*)\)/g;
+let links = 0;
+let badLinks: string[] = [];
+for (const slug of INDEXABLE_LENDING_SLUGS) {
+  const deep = deepContentFor(slug);
+  if (!deep) continue;
+  const prose = [deep.lede, ...deep.sections.flatMap((s) => s.body), ...deep.faqs.map((f) => f.a)].join(" ");
+  let m: RegExpExecArray | null;
+  while ((m = linkRe.exec(prose))) {
+    links++;
+    const target = m[1];
+    if (!target.startsWith("/lending/")) continue;
+    const t = target.slice("/lending/".length);
+    if (!allSlugs.has(t)) badLinks.push(`${slug} → ${target}`);
+  }
+}
+chk(badLinks.length === 0,
+  badLinks.length ? `in-prose link(s) point at a slug that does not exist: ${badLinks.join(", ")}`
+                  : `all ${links} in-prose internal link(s) resolve to a real page`);
+
+// 7. The money pages must link to each other WHERE A REAL HANDOFF EXISTS. They shipped with zero
+//    contextual links between them, so no equity moved among the only pages that can rank.
+//
+//    Scoped to same-state siblings on purpose. The honest handoffs are same-state ones — a Florida
+//    investor reading about DSCR hits the five-unit line and needs the Florida commercial page.
+//    Requiring a link from dscr-loans-california to a Florida page would be link-building for its
+//    own sake: bad for the reader, and exactly the manipulation this file exists to prevent. A page
+//    with no same-state sibling is reported, not failed; it stops being exempt the moment one ships.
+const stateOf = (slug: string) => slug.slice(slug.lastIndexOf("-") + 1);
+const proseOf = (slug: string) => {
+  const d = deepContentFor(slug);
+  return d ? [d.lede, ...d.sections.flatMap((s) => s.body), ...d.faqs.map((f) => f.a)].join(" ") : "";
+};
+const withSiblings = INDEXABLE_LENDING_SLUGS.filter((s) =>
+  INDEXABLE_LENDING_SLUGS.some((o) => o !== s && stateOf(o) === stateOf(s))
+);
+const isolated = INDEXABLE_LENDING_SLUGS.filter((s) => !withSiblings.includes(s));
+const unlinked = withSiblings.filter(
+  (s) => !INDEXABLE_LENDING_SLUGS.some((o) => o !== s && stateOf(o) === stateOf(s) && proseOf(s).includes(`/lending/${o}`))
+);
+chk(unlinked.length === 0,
+  unlinked.length ? `page(s) with a same-state sibling that link to none of them: ${unlinked.join(", ")}`
+                  : `all ${withSiblings.length} page(s) with a same-state sibling link to one`);
+if (isolated.length) console.log(`        note: ${isolated.join(", ")} has no same-state sibling yet — exempt until one ships`);
+
+// 8. Custom titles/descriptions must fit what Google shows, or they truncate mid-promise.
+const tooLong = INDEXABLE_LENDING_SLUGS.flatMap((slug) => {
+  const d = deepContentFor(slug);
+  const out: string[] = [];
+  if (d?.title && d.title.length > 60) out.push(`${slug} title ${d.title.length} chars`);
+  if (d?.description && d.description.length > 155) out.push(`${slug} description ${d.description.length} chars`);
+  return out;
+});
+chk(tooLong.length === 0,
+  tooLong.length ? `over-long metadata: ${tooLong.join(", ")}` : "custom titles ≤60 chars, descriptions ≤155");
+
 console.log(failed ? `\n${failed} check(s) FAILED\n` : "\nAll checks passed.\n");
 process.exit(failed ? 1 : 0);
