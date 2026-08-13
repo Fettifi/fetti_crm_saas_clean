@@ -34,11 +34,17 @@ export type DeepContent = {
 
 export const DEEP_CONTENT: Record<string, DeepContent> = {
   "dscr-loans-california": {
+    // 45 chars. Names the page's flagship insight rather than reusing the Florida title shape.
+    title: "California DSCR Loans: The Prop 13 Reset Trap",
+    // 151 chars. Leads on the reset, which is the thing that actually collapses a CA ratio.
+    description:
+      "Prop 13 resets the assessment when you buy, and that reset is what collapses a California " +
+      "DSCR. What really moves the ratio, before you write the offer.",
     lede:
       "A DSCR loan qualifies your California rental on the property's own cash flow instead of your " +
       "personal income, W-2s or tax returns. The arithmetic is simple — the rent has to cover the " +
-      "payment — but in California the payment side of that ratio behaves differently than it does " +
-      "anywhere else, and that is where most deals are won or lost. Below is what actually moves a " +
+      "payment — but in California the payment side of that ratio carries costs that do not exist in " +
+      "most states, and that is where deals are won or lost. Below is what actually moves a " +
       "California DSCR number, written by the people who underwrite them.",
     sections: [
       {
@@ -135,6 +141,12 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "ratio directly; an interest-only period reduces the denominator during the term; buying " +
           "down the rate trades cash at closing for a permanently better ratio. Which of those is " +
           "cheapest depends on how long you intend to hold, and it is worth modelling before you pick.",
+          "There is one more lever the levers above do not cover: buy where the ratio clears. DSCR is " +
+          "a business-purpose product and we place it in all 50 states, so a California investor whose " +
+          "coastal numbers will not work is not stuck — a great many of them buy in markets with a " +
+          "friendlier price-to-rent relationship, and Florida is the one we are asked about most. If " +
+          "that is the direction you are leaning, the same arithmetic runs on very different inputs " +
+          "there: see [DSCR loans in Florida](/lending/dscr-loans-florida).",
         ],
       },
       {
@@ -150,6 +162,26 @@ export const DEEP_CONTENT: Record<string, DeepContent> = {
           "consumer mortgages — a distinction that governs which disclosures apply and lets us lend on " +
           "investment property in all fifty states, not only the three where we originate owner-occupied " +
           "financing.",
+        ],
+      },
+      {
+        h: "Your exit plan probably collides with the prepayment penalty",
+        body: [
+          "A DSCR loan is business-purpose credit, not a consumer mortgage. That distinction is easy " +
+          "to miss and it matters here: the prepayment protections a borrower is used to from " +
+          "refinancing their own home are consumer-mortgage rules, and they do not carry over to an " +
+          "investment loan closed in an LLC. Assume a prepayment charge exists until you have read " +
+          "otherwise on the term sheet.",
+          "In California that lands harder than elsewhere, because the thesis is usually not cash flow. " +
+          "When a coastal property underwrites near 1.00 at purchase, the plan is generally to hold " +
+          "through appreciation and then refinance or sell — which is precisely the event a prepayment " +
+          "charge is designed to price. An investor who intends to refinance as soon as the rents " +
+          "support it can sign a penalty window that outlasts the plan and never notice until the " +
+          "payoff demand arrives.",
+          "So work backwards from the exit. Decide when you realistically expect to refinance or sell, " +
+          "then ask what the charge looks like in that year specifically — not in general terms. Many " +
+          "programs will trade a shorter window for different pricing, and on a California file that " +
+          "trade is usually worth pricing out rather than accepting whatever the default is.",
         ],
       },
       {

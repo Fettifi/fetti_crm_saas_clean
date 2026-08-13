@@ -19,7 +19,7 @@ import { readFileSync } from "fs";
 import { INDEXABLE_LENDING_SLUGS, MIN_INDEXABLE_WORDS, MAX_PAIRWISE_SIMILARITY } from "../lib/seoIndexable";
 import { PRODUCTS } from "../lib/lendingProducts";
 import { deepContentFor } from "../lib/lendingDeepContent";
-import { stateLabel, allowedStates, lendingSlugs } from "../lib/lendingMatrix";
+import { stateLabel, allowedStates, lendingSlugs, STATES } from "../lib/lendingMatrix";
 
 let failed = 0;
 const chk = (ok: boolean, msg: string) => { console.log(`${ok ? "  ok  " : "  FAIL"}  ${msg}`); if (!ok) failed++; };
@@ -174,7 +174,18 @@ chk(unlinked.length === 0,
                   : `all ${withSiblings.length} page(s) with a same-state sibling link to one`);
 if (isolated.length) console.log(`        note: ${isolated.join(", ")} has no same-state sibling yet — exempt until one ships`);
 
-// 8. Custom titles/descriptions must fit what Google shows, or they truncate mid-promise.
+// 8. Every indexable page must carry its OWN title and description, and they must fit what Google
+//    shows. All four shipped on the template at first: 30 of ~60 characters spent on the brand,
+//    no promise, and — on the commercial page — no way to say "business", the word in four of the
+//    five queries it targets. A page we ask Google to rank is a page worth writing a title for.
+const noOwnMeta = INDEXABLE_LENDING_SLUGS.filter((slug) => {
+  const d = deepContentFor(slug);
+  return !d?.title || !d?.description;
+});
+chk(noOwnMeta.length === 0,
+  noOwnMeta.length ? `indexable page(s) still on the templated title/description: ${noOwnMeta.join(", ")}`
+                   : `all ${INDEXABLE_LENDING_SLUGS.length} indexable pages carry their own title and description`);
+
 const tooLong = INDEXABLE_LENDING_SLUGS.flatMap((slug) => {
   const d = deepContentFor(slug);
   const out: string[] = [];
@@ -184,6 +195,31 @@ const tooLong = INDEXABLE_LENDING_SLUGS.flatMap((slug) => {
 });
 chk(tooLong.length === 0,
   tooLong.length ? `over-long metadata: ${tooLong.join(", ")}` : "custom titles ≤60 chars, descriptions ≤155");
+
+// 9. Two indexable pages may not open their description with the same construction. A shared
+//    opener across state pages is the state-swap tell in the one snippet a searcher actually reads.
+//
+//    The state name MUST be stripped before comparing. A first cut compared the raw opening words
+//    and proved useless the moment it was attacked: "Qualify a Florida rental on its rent…" and
+//    "Qualify a California rental on its rent…" diverge at the third word, so the check passed on
+//    the exact duplication it exists to catch. Normalising away the state is the whole point —
+//    what is being detected is one sentence wearing two state names.
+const STATE_WORDS = new Set(Object.values(STATES).map((v) => v.toLowerCase()).concat(["usa", "u.s.", "the"]));
+const normalize = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w && !STATE_WORDS.has(w));
+const openers = new Map<string, string>();
+const dupeOpeners: string[] = [];
+for (const slug of INDEXABLE_LENDING_SLUGS) {
+  const d = deepContentFor(slug);
+  if (!d?.description) continue;
+  const key = normalize(d.description).slice(0, 6).join(" ");
+  const prior = openers.get(key);
+  if (prior) dupeOpeners.push(`${prior} / ${slug}`);
+  else openers.set(key, slug);
+}
+chk(dupeOpeners.length === 0,
+  dupeOpeners.length ? `description(s) share their opening six words (state name ignored): ${dupeOpeners.join(", ")}`
+                     : "no two descriptions open the same way");
 
 console.log(failed ? `\n${failed} check(s) FAILED\n` : "\nAll checks passed.\n");
 process.exit(failed ? 1 : 0);
