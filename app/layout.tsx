@@ -5,12 +5,18 @@ import { Inter } from "next/font/google";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
+// `title` is only the FALLBACK — every public marketing page sets its own, so this shows up on
+// CRM screens, where "Fetti CRM" is the right name. `applicationName` and `appleWebApp.title` are
+// different: Next renders them into <meta name="application-name"> and
+// <meta name="apple-mobile-web-app-title"> on EVERY page, public ones included. They read
+// "Fetti CRM", so a borrower who added fettifi.com to their home screen got an icon labelled with
+// our internal tooling. Public-facing strings name the company. See also app/manifest.ts.
 export const metadata: Metadata = {
   title: "Fetti CRM",
   description: "Fetti - We Do Money.",
-  applicationName: "Fetti CRM",
+  applicationName: "Fetti Financial Services",
   // Installed (standalone) app behavior on iOS/iPadOS.
-  appleWebApp: { capable: true, title: "Fetti CRM", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "Fetti Financial Services", statusBarStyle: "black-translucent" },
   icons: { icon: "/icon-192.png", apple: "/apple-touch-icon.png" },
 };
 
