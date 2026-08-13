@@ -27,6 +27,21 @@ const APP_PATHS = ["/", "/lending/dscr-loans-florida", "/lending/commercial-real
 // Public pages that MUST stay indexable. Losing these is the catastrophic case.
 const PUBLIC_PATHS = ["/", "/lending/dscr-loans-florida", "/lending/bridge-loans-florida", "/apply", "/quote"];
 
+// Borrower-private token surfaces. Every one of these returned 200 with NO robots meta on
+// 2026-08-12 — e-sign pages, document portals and card-authorization forms, all silently
+// indexable if a link ever escaped. One representative token per route family; the token does not
+// need to resolve to a real record, because the noindex comes from the route's layout and is
+// therefore emitted whether or not the token is valid. That is exactly the property to assert.
+const PRIVATE_PATHS = [
+  "/file/verify-noindex-probe",
+  "/sign/verify-noindex-probe",
+  "/letter/verify-noindex-probe",
+  "/optin/verify-noindex-probe",
+  "/card-auth/verify-noindex-probe",
+  "/connect/verify-noindex-probe",
+  "/portal/verify-noindex-probe",
+];
+
 const problems: string[] = [];
 
 async function robotsHeader(url: string): Promise<{ status: number; tag: string | null }> {
@@ -64,6 +79,28 @@ function isNoindex(tag: string | null): boolean {
     }
   }
 
+  // A meta tag counts here as well as a header: these routes carry it via each family's
+  // layout.tsx (`robots: { index: false }`), which Next renders into <meta name="robots">.
+  console.log("\nPRIVATE BORROWER ROUTES — every one must be noindex");
+  for (const p of PRIVATE_PATHS) {
+    const r = await fetch(PUBLIC_HOST + p, { redirect: "manual" });
+    const header = r.headers.get("x-robots-tag");
+    const html = r.status === 200 ? await r.text() : "";
+    const meta = /<meta[^>]+name=["']robots["'][^>]+content=["']([^"']*)["']/i.exec(html);
+    const directive = isNoindex(header) ? `header: ${header}` : meta && /noindex/i.test(meta[1]) ? `meta: ${meta[1]}` : null;
+    // A redirect or a 404 is also a safe outcome — there is no indexable body to worry about.
+    const safeStatus = r.status !== 200;
+    if (directive || safeStatus) {
+      console.log(`  ok   ${p} -> ${r.status}${directive ? `, ${directive}` : " (no indexable body)"}`);
+    } else {
+      console.log(`  MISS ${p} -> 200 with NO noindex`);
+      problems.push(
+        `${PUBLIC_HOST}${p} returns 200 with no noindex — a borrower e-sign/document/card-auth page ` +
+          `is indexable if its link ever escapes into a crawlable surface`
+      );
+    }
+  }
+
   console.log("\nROBOTS.TXT — Googlebot must still be able to FETCH the app /lending/ pages");
   const appRobots = await (await fetch(`${APP_HOST}/robots.txt`)).text();
   const pubRobots = await (await fetch(`${PUBLIC_HOST}/robots.txt`)).text();
@@ -88,6 +125,26 @@ function isNoindex(tag: string | null): boolean {
     problems.push(`CATASTROPHIC: ${PUBLIC_HOST}/robots.txt contains "Disallow: /" — the public site is blocked from crawling`);
   } else {
     console.log("  ok   public robots.txt does not block the site");
+  }
+
+  // Not strictly a noindex property, but it belongs with the other LIVE-SITE invariants rather
+  // than in the static verify:seo, because the only way to know what the homepage actually links
+  // to is to fetch it. On 2026-08-12 the homepage linked to seven /lending pages and every one
+  // was noindex, while the indexable pages got none — the highest-authority URL on the domain
+  // spending all of its lending equity on pages that cannot rank.
+  console.log("\nHOMEPAGE — must link every indexable lending page");
+  const { INDEXABLE_LENDING_SLUGS } = await import("../lib/seoIndexable");
+  const homeHtml = await (await fetch(PUBLIC_HOST + "/")).text();
+  for (const slug of INDEXABLE_LENDING_SLUGS) {
+    if (homeHtml.includes(`/lending/${slug}`)) {
+      console.log(`  ok   links /lending/${slug}`);
+    } else {
+      console.log(`  MISS no homepage link to /lending/${slug}`);
+      problems.push(
+        `the homepage does not link /lending/${slug} — an indexable page getting no link from the ` +
+          `domain's strongest URL, while the noindex program pages get several`
+      );
+    }
   }
 
   if (problems.length) {

@@ -5,6 +5,9 @@ import {
   Scale, Rocket, Award, HeartHandshake, X,
 } from "lucide-react";
 import { LICENSING_NOTE } from "@/lib/legal";
+import { indexableGuides } from "@/lib/seoIndexable";
+import { PRODUCTS } from "@/lib/lendingProducts";
+import { stateLabel } from "@/lib/lendingMatrix";
 import { CediBubble } from "@/components/CediBubble";
 import { CediVoice } from "@/components/CediVoice";
 import HeroCapture from "@/components/HeroCapture";
@@ -56,6 +59,28 @@ const CATEGORIES = [
     ],
   },
 ];
+
+// The in-depth program guides, resolved from the SAME array the sitemap and robots.txt read
+// (lib/seoIndexable.ts), so a slug added there lights up here automatically and this can never
+// drift back out of sync.
+//
+// Why this section exists: every one of the seven /lending links in CATEGORIES above resolves to
+// a `noindex, follow` page, so before this the homepage — the highest-authority URL on the domain
+// — passed 100% of its lending link equity to pages that cannot rank, and the pages that CAN rank
+// received no homepage link at all. The category cards are deliberately left pointing where they
+// were: a card tagged "All 50 states" must not send a Texas investor to a Florida page merely to
+// move equity around. So the guides get their own row, with anchors that say what the page is.
+const GUIDES = indexableGuides().map((slug) => {
+  const i = slug.lastIndexOf("-");
+  const product = slug.slice(0, i);
+  const label = stateLabel(slug.slice(i + 1));
+  return {
+    slug,
+    // Anchor text carries the query wording ("DSCR Loans in Florida"), not a bare state name.
+    title: `${PRODUCTS[product]?.label ?? product} in ${label}`,
+    blurb: PRODUCTS[product]?.blurb ?? "",
+  };
+});
 
 const STATS = [
   { value: "Low/$0 down", label: "FHA, VA & USDA + down payment help" },
@@ -240,6 +265,25 @@ export default async function MarketingHome() {
               </div>
             </div>
           ))}
+
+          {/* ---------- In-depth guides — the pages that carry real, indexable copy ---------- */}
+          <div className="mt-16 pt-12 border-t border-slate-200">
+            <div className="flex flex-wrap items-baseline gap-3 mb-1">
+              <h3 className="text-2xl font-bold text-slate-900">Program guides</h3>
+              <span className="text-xs text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-full px-2.5 py-0.5">Written by the people who underwrite them</span>
+            </div>
+            <p className="text-slate-500 text-sm mb-5">How these loans actually get underwritten — what moves the numbers, and what to have ready.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {GUIDES.map((g) => (
+                <Link key={g.slug} href={`/lending/${g.slug}`}
+                  className="group block rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-600/5 hover:-translate-y-0.5">
+                  <h4 className="font-bold text-slate-900 flex items-center justify-between gap-2">{g.title}<ArrowRight className="w-4 h-4 shrink-0 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" /></h4>
+                  <p className="text-slate-500 mt-1.5 text-sm leading-relaxed">{g.blurb}</p>
+                  <span className="mt-4 inline-block text-emerald-600 text-xs font-semibold opacity-0 group-hover:opacity-100 transition">Read the guide →</span>
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
