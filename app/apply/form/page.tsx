@@ -985,7 +985,6 @@ export default function ApplyWizard() {
             By submitting, you agree Fetti Financial Services LLC (NMLS #2267023) may contact you by phone &amp; email about your inquiry and application.
             Consent isn&apos;t required to buy. Texts are optional (checkbox above). See our <a href="/privacy" className="underline hover:text-slate-300">Privacy Policy</a> &amp; <a href="/terms" className="underline hover:text-slate-300">Terms</a>.
           </p>
-          <p className="text-[10px] text-slate-400 text-center">{LICENSING_SHORT}</p>
         </form>
       </Shell>
     );
@@ -1152,6 +1151,12 @@ function Shell({ children, pct, onBack }: { children: React.ReactNode; pct: numb
           </div>
           {children}
         </div>
+        {/* Shell wraps EVERY step, which is why the disclosure belongs here. It used to live only in
+            the final submit block, so a borrower on the first screen — choosing a goal, entering a
+            property and an income — saw no NMLS block and no Equal Housing at all. Verified in a
+            browser, not by grepping the served HTML: this is a client component, so curl returns a
+            loading shell whether this is wired or not. */}
+        <p className="max-w-xl mx-auto mt-6 text-[10px] text-slate-400 text-center">{LICENSING_SHORT}</p>
       </div>
     </div>
   );
