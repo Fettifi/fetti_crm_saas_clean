@@ -67,7 +67,10 @@ function syncedPaths(): Set<string> {
   const { data: files, error } = await supabaseAdmin
     .from("loan_files").select("id, file_number, borrower_name");
   if (error) throw new Error(`could not read loan_files: ${error.message}`);
-  const byNumber = new Map((files || []).map((f) => [String(f.file_number), f]));
+  type LoanFile = { id: string; file_number: string | null; borrower_name: string | null };
+  const byNumber = new Map<string, LoanFile>(
+    ((files || []) as LoanFile[]).map((f) => [String(f.file_number), f])
+  );
 
   type Job = { abs: string; folder: string; fileId: string; fileNumber: string; storeName: string; bytes: number };
   const jobs: Job[] = [];
@@ -79,7 +82,7 @@ function syncedPaths(): Set<string> {
     // Folder names are "<Borrower> — <FF-number>", written by the download sync, so the file
     // number is authoritative here — never guess a loan file from the borrower name.
     const num = folder.split("—").pop()?.trim() || "";
-    const lf = byNumber.get(num);
+    const lf: LoanFile | undefined = byNumber.get(num);
     if (!lf) { skipped.push(`${folder}: no loan file matches "${num}"`); continue; }
 
     for (const entry of readdirSync(dir)) {
