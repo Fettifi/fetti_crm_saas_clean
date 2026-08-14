@@ -147,10 +147,6 @@ export default function QuotePage() {
                 Consent isn&apos;t required to buy. Msg &amp; data rates may apply; message frequency varies. Reply STOP to opt out, HELP for help.
                 See our <a href="/privacy" className="underline hover:text-slate-300">Privacy Policy</a> &amp; <a href="/terms" className="underline hover:text-slate-300">Terms</a>.
               </p>
-              {/* This page shows a borrower loan figures and collects their contact details, and it
-                  carried no licensing disclosure at all — no NMLS block, no Equal Housing. Every
-                  other public page had one. */}
-              <p className="text-[10px] text-slate-400 text-center mt-3">{LICENSING_SHORT}</p>
             </form>
           </div>
         )}
@@ -166,6 +162,12 @@ export default function QuotePage() {
           </div>
         )}
       </div>
+
+      {/* PAGE LEVEL, deliberately. This first shipped inside the contact-capture step, which only
+          renders once the borrower advances — so the screen that shows them a loan estimate still
+          carried no disclosure at all. Verified in a real browser, not from the served HTML: this
+          is a client component, so curl shows the loading shell either way and proves nothing. */}
+      <p className="max-w-3xl mx-auto px-6 pb-10 text-[10px] text-slate-400 text-center">{LICENSING_SHORT}</p>
     </div>
   );
 }
