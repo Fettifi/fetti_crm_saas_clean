@@ -67,9 +67,19 @@ export const ORGANIZATION = {
   ],
   areaServed: { "@type": "Country", name: "United States" },
   founder: { "@id": PERSON_ID },
+  // sameAs is an IDENTITY claim: "these URLs are this same organisation." It is not a link list.
+  //
+  // linkedin.com/company/projectfetti was in here and is NOT us. Checked the live page on
+  // 2026-08-14: it is a USC collegiate party app — Entertainment Providers, Los Angeles, founded
+  // 2019, 32 followers, "Connecting the youth one party at a time." We were telling Google that a
+  // licensed mortgage lender and a college party app are the same entity, on the homepage and on
+  // /about, which is the exact opposite of what this property is for and actively muddies the
+  // brand entity we are trying to establish.
+  //
+  // Removed rather than replaced: Fetti Financial Services has no company page yet. Add the real
+  // URL here the day one exists — and verify it resolves to US before you do.
   sameAs: [
     `https://www.nmlsconsumeraccess.org/EntityDetails.aspx/COMPANY/${COMPANY_NMLS}`,
-    "https://www.linkedin.com/company/projectfetti",
   ],
 };
 
