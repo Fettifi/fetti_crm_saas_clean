@@ -24,12 +24,26 @@ export function canSpamFooterHtml(optOut = 'Reply "unsubscribe" and I won\'t con
     `This is an advertisement. ${optOut}</div>`;
 }
 
+// The compact disclosure. It feeds SIX borrower-facing surfaces — the application form, the
+// document-upload and e-sign pages, the card-authorization page, the link-in-bio page and the
+// email signature — so a word missing here is missing in six places at once.
+//
+// It omitted "Equal Housing Opportunity", which both sibling constants carry. The tell that this
+// was already known: lib/notify/emailSignature.ts appended "· Equal Housing Opportunity 🏠" by
+// hand after interpolating this string. One surface was patched; the other five were not, and a
+// borrower entering their information on /apply/form saw no EHO at all. Fixed at the source, and
+// the hand-patch removed so the two cannot drift apart again.
 export const LICENSING_SHORT =
-  "Mortgage lender & broker · NMLS #2267023 · CA #60DBO-153798 · FL #MBR7286 · MI #FL0024463. Owner-occupied: FL, MI & CA. Investment & business: all 50 states.";
+  "Mortgage lender & broker · NMLS #2267023 · CA #60DBO-153798 · FL #MBR7286 · MI #FL0024463. Owner-occupied: FL, MI & CA. Investment & business: all 50 states. Equal Housing Opportunity 🏠";
 
 // Mandatory advertising disclosure appended to EVERY social post / caption so
 // each one is compliant: licensee name, NMLS ID, Equal Housing, advertisement
 // notice, and the standard "not a commitment to lend / subject to credit
 // approval" disclaimer. Required on mortgage advertising (NMLS / Reg Z / Reg N).
 export const SOCIAL_DISCLOSURE =
-  "Fetti Financial Services LLC | NMLS #2267023 · CA #60DBO-153798 · FL #MBR7286 · MI #FL0024463 | Equal Housing Opportunity 🏠\nThis is an advertisement, not a commitment to lend. All loans subject to credit approval & program guidelines; rates/terms may change.";
+  "Fetti Financial Services LLC | NMLS #2267023 · CA #60DBO-153798 · FL #MBR7286 · MI #FL0024463 | Equal Housing Opportunity 🏠\n" +
+  // Social reaches everywhere. Listing three state licences IMPLIES the consumer footprint but
+  // never states it, so a reader in Texas could take a home-loan post as an offer to them.
+  // Same sentence LICENSING_SHORT already carries — no new claim, just said out loud.
+  "Owner-occupied: FL, MI & CA. Investment & business: all 50 states.\n" +
+  "This is an advertisement, not a commitment to lend. All loans subject to credit approval & program guidelines; rates/terms may change.";

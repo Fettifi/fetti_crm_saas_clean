@@ -10,6 +10,7 @@ import { armFormShield, shieldFields, shouldTrack } from "@/lib/formShield";
 import AddressInput from "@/components/AddressInput";
 import { CediBubble } from "@/components/CediBubble";
 import CurrencyInput from "@/components/ui/CurrencyInput";
+import { LICENSING_SHORT } from "@/lib/legal";
 
 const PRODUCTS = [
   { key: "Home Purchase", ltv: 0.95 },
@@ -146,6 +147,10 @@ export default function QuotePage() {
                 Consent isn&apos;t required to buy. Msg &amp; data rates may apply; message frequency varies. Reply STOP to opt out, HELP for help.
                 See our <a href="/privacy" className="underline hover:text-slate-300">Privacy Policy</a> &amp; <a href="/terms" className="underline hover:text-slate-300">Terms</a>.
               </p>
+              {/* This page shows a borrower loan figures and collects their contact details, and it
+                  carried no licensing disclosure at all — no NMLS block, no Equal Housing. Every
+                  other public page had one. */}
+              <p className="text-[10px] text-slate-400 text-center mt-3">{LICENSING_SHORT}</p>
             </form>
           </div>
         )}

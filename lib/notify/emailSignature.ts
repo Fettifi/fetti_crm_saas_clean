@@ -41,7 +41,7 @@ export async function markSignatureHtml(): Promise<string> {
           ${phonePart}<span style="white-space:nowrap">&#9993; <a href="mailto:${contactEmail}" style="color:${body};text-decoration:none">${contactEmail}</a></span>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<span style="white-space:nowrap">&#127760; <a href="${SITE}" style="color:${body};text-decoration:none">fettifi.com</a></span>
         </div>
         ${addressLine}
-        <div style="margin-top:9px;font-size:10px;color:${faint};line-height:1.5">${LICENSING_SHORT} &middot; Equal Housing Opportunity &#127968;</div>
+        <div style="margin-top:9px;font-size:10px;color:${faint};line-height:1.5">${LICENSING_SHORT}</div>
       </td>
     </tr>
   </table>
