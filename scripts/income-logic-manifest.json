@@ -1,0 +1,18 @@
+{
+  "logicVersion": "2026-08-01-override-exemplars",
+  "pinnedAt": "2026-08-17T18:07:24.218Z",
+  "files": {
+    "app/api/los/files/[id]/verify-income/route.ts": "45961e92ab8d0346",
+    "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
+    "lib/income/bankStatement.ts": "4302f2fdd78e85c9",
+    "lib/income/combineBankStatement.ts": "43f917108941029d",
+    "lib/income/contested.ts": "4bef5f41ecf107eb",
+    "lib/income/docFacts.ts": "00160ff199272fb4",
+    "lib/income/overrideExemplars.ts": "d33ed7c3fa074035",
+    "lib/income/programs.ts": "3ef831cba44f1919",
+    "lib/income/readDocument.ts": "dd5d00518ee62a4e",
+    "lib/income/rentalIncome.ts": "81f8c58a6ef5051b",
+    "lib/income/verifyWorksheet.ts": "25a83dafe34daa81"
+  },
+  "noRerollClaims": []
+}

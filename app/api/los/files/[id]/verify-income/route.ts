@@ -45,6 +45,41 @@ const STUB_PRIORITY_WINDOW = 8;
 // Bump whenever the income COMPUTATION (this SYSTEM prompt / the math) changes, so the
 // doc-set stability cache re-reads a file ONCE under the new logic and then re-freezes —
 // otherwise a logic improvement would be masked by every file's stale cached number.
+//
+// A BUMP IS NOT FREE, AND ON 2026-08-16 ONE WAS ALMOST SHIPPED ON A FALSE PREMISE.
+//
+// The 08-04 commits that rewrote lib/income/docFacts.ts (3c513ba, 20032df, 2afc558, 5f85bb3 —
+// the Magali/Milton corrections) did not touch this line. An uncommitted change proposed to bump
+// it to "2026-08-04-docfacts-corrections", on the stated grounds that the corrections had never
+// reached existing files and that this was why Asia Dearman (FF-202607-9927) moved $5,102 ->
+// $8,645 on 08-05 with nobody touching a document.
+//
+// MEASURED, not assumed — every one of the 5 live files that carries stored `factsUsed` was
+// replayed through all 7 engine revisions from 08-01 to now (scripts/verify-income-engine-diff.ts):
+//
+//   • The corrections change exactly ONE real number: Magali/Milton $19,834 -> $19,753. That
+//     file already ships $19,753, so it has the corrected math today.
+//   • Asia Dearman computes $8,645 under EVERY revision, 08-01 included. The corrections are
+//     not what moved her file. Her documents were re-read, and the AI extraction returned
+//     different facts — same docs, same prompt (readDocument.ts unchanged since 08-01), same
+//     math. The move is an extraction re-roll, not a logic change.
+//   • Of the files said to be stranded on the pre-correction engine, four (Bachiller, Glover,
+//     Lucas, Aubrey) were cached BEFORE 08-02 under an older version already — their
+//     fingerprints are stale with or without a bump, so they re-read on the next click anyway.
+//
+// So the bump would have delivered corrected math to no measurable file, while invalidating
+// every frozen number and forcing a fresh non-deterministic re-read on the five that are
+// currently stable — and Asia's file is the measurement of what that costs: $3,543/mo, +69%,
+// on a live borrower. This line therefore stays where the deployed system already has it.
+//
+// The real fix is to let a math correction reach a file WITHOUT re-rolling the extraction:
+// `factsUsed` is already stored, so a LOGIC_VERSION-only cache miss could recompute from the
+// saved facts deterministically and never call the model. That rewrites this route's cache
+// semantics and is Ramon's call, not an autopilot commit. Until then, bumping this constant
+// means accepting a re-roll on every open file, and that trade has to be made deliberately.
+//
+// `npm run verify:income-logic` fails when these files change and this line does not, so the
+// choice gets forced at the moment the engine actually moves.
 const LOGIC_VERSION = "2026-08-01-override-exemplars";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" is deliberately GENERIC — a Chase/Wells file is rarely named

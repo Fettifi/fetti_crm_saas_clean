@@ -14,6 +14,7 @@
     "verify:1003": "npx tsx scripts/verify-1003.ts",
     "verify:leadscore": "npx tsx scripts/verify-leadscore.ts",
     "verify:income": "npx tsx scripts/verify-income-stability.ts",
+    "verify:income-logic": "npx tsx scripts/verify-income-logic.ts",
     "verify:employer": "npx tsx scripts/verify-employer-merge.ts",
     "verify:benefits": "npx tsx scripts/verify-benefit-deposits.ts",
     "verify:patterns": "npx tsx scripts/verify-patterns.ts",
@@ -79,7 +80,8 @@
     "verify:dns": "tsx scripts/verify-dns.ts",
     "verify:noindex": "tsx scripts/verify-noindex.ts",
     "verify:income-contested": "tsx scripts/verify-income-contested.ts",
-    "verify:disclosure": "tsx scripts/verify-disclosure.ts"
+    "verify:disclosure": "tsx scripts/verify-disclosure.ts",
+    "verify:income-engine-diff": "npx tsx scripts/verify-income-engine-diff.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

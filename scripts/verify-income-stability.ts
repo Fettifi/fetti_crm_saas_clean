@@ -106,20 +106,57 @@ async function snapshot(): Promise<Snapshot> {
 
 const money = (n: number | null) => (n == null ? "—" : "$" + n.toLocaleString());
 
+/**
+ * `--save` MUST NOT BE ABLE TO ERASE A MOVED NUMBER.
+ *
+ * This guard reports two things that look alike in the output and are not alike at all:
+ *
+ *   DOCSET  the borrower uploaded a document. Routine, happens every week, and re-baselining is
+ *           the correct and only response.
+ *   MOVED   the qualifying income changed while the document set stayed byte-identical. That is
+ *           the 2026-07-22 "different this week on the same file" complaint — the engine
+ *           disagreeing with itself about a borrower — and it is never routine.
+ *
+ * Until 2026-08-14 the single remediation printed at the bottom was `--save`, which rewrote the
+ * whole baseline and blessed both classes at once. So the ordinary act of clearing four benign
+ * document uploads would silently adopt a $3,543/mo move on Asia Dearman (FF-202607-9927,
+ * $5,102 -> $8,645) as the new truth — no record, no decision, nothing to review afterwards.
+ * The guard's own remediation path deleted its most important signal. Same shape as the QC that
+ * named the +$4,091 error while the number shipped anyway: the finding existed and did nothing.
+ *
+ * Now `--save` clears DOCSET freely and REFUSES a MOVED file unless it is named outright:
+ *
+ *   npm run verify:income -- --save --accept-move=FF-202607-9927 --reason="underwriter confirmed base+OT"
+ *
+ * An unnamed moved file keeps its OLD baseline entry, so it stays red until a human decides.
+ * An accepted one is written into the baseline's `acceptedMoves` with the from/to and the reason,
+ * because a decision nobody can find later is the same as no decision.
+ */
+type AcceptedMove = { file: string; borrower: string; from: number | null; to: number | null; acceptedAt: string; reason: string };
+
+function argValue(flag: string): string | null {
+  const hit = process.argv.find((a) => a.startsWith(`${flag}=`));
+  return hit ? hit.slice(flag.length + 1) : null;
+}
+
 async function main() {
   const save = process.argv.includes("--save");
+  const acceptMove = (argValue("--accept-move") || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const reason = (argValue("--reason") || "").trim();
   const now = await snapshot();
 
-  if (save || !existsSync(BASELINE)) {
+  if (!existsSync(BASELINE)) {
     writeFileSync(BASELINE, JSON.stringify(now, null, 2));
-    console.log(`${existsSync(BASELINE) && !save ? "No baseline existed — created" : "Baseline saved"}: ${Object.keys(now.files).length} files, LOGIC_VERSION=${now.logicVersion}`);
-    if (!save) console.log("Re-run without --save to check against it.");
+    console.log(`No baseline existed — created: ${Object.keys(now.files).length} files, LOGIC_VERSION=${now.logicVersion}`);
+    console.log("Re-run without --save to check against it.");
     return;
   }
 
   const base: Snapshot = JSON.parse(readFileSync(BASELINE, "utf8"));
   const problems: string[] = [];
   const notes: string[] = [];
+  // Files whose number moved on an UNCHANGED document set, keyed by id.
+  const moved = new Map<string, { file: string; borrower: string; from: number | null; to: number | null }>();
 
   if (base.logicVersion !== now.logicVersion) {
     problems.push(
@@ -147,10 +184,13 @@ async function main() {
         removed.map((r) => `\n      - ${r.split("|")[1]}`).join("")
       );
     } else if (b.cachedIncome != null && n.cachedIncome != null && b.cachedIncome !== n.cachedIncome) {
+      moved.set(id, { file: b.file, borrower: b.borrower, from: b.cachedIncome, to: n.cachedIncome });
       problems.push(
         `${b.borrower} (${b.file}): qualifying income moved ${money(b.cachedIncome)} -> ${money(n.cachedIncome)} ` +
         `with NO change to the documents. That is the 2026-07-22 complaint ("different this week on the ` +
-        `same file") and it should never happen on its own.`
+        `same file") and it should never happen on its own.` +
+        `\n      This one CANNOT be cleared by --save alone. Resolve it, or accept it on the record with:` +
+        `\n        npm run verify:income -- --save --accept-move=${b.file} --reason="…"`
       );
     }
   }
@@ -159,13 +199,55 @@ async function main() {
   }
 
   for (const n of notes) console.log(`note: ${n}`);
+
+  if (save) {
+    // A move may only be adopted if it was NAMED, and naming it requires saying why.
+    const unnamed = [...moved.values()].filter((m) => !acceptMove.includes(m.file));
+    const bogus = acceptMove.filter((f) => ![...moved.values()].some((m) => m.file === f));
+    if (bogus.length) {
+      console.error(`\n--accept-move names ${bogus.join(", ")}, which did not move on an unchanged document set this run.`);
+      console.error("Refusing: an acceptance aimed at the wrong file would clear the real one by accident.");
+      process.exit(1);
+    }
+    if (acceptMove.length && !reason) {
+      console.error("\n--accept-move requires --reason=\"…\". An adopted number with no stated basis is indistinguishable from a mistake.");
+      process.exit(1);
+    }
+    const next: Snapshot & { acceptedMoves?: AcceptedMove[] } = { ...now, acceptedMoves: (base as any).acceptedMoves || [] };
+    for (const m of unnamed) {
+      // Carry the OLD entry forward verbatim, so the discrepancy survives the re-baseline and this
+      // guard keeps failing on exactly this file until somebody decides.
+      const id = [...moved.entries()].find(([, v]) => v.file === m.file)![0];
+      next.files[id] = base.files[id];
+    }
+    for (const f of acceptMove) {
+      const m = [...moved.values()].find((x) => x.file === f)!;
+      next.acceptedMoves!.push({ file: m.file, borrower: m.borrower, from: m.from, to: m.to, acceptedAt: new Date().toISOString(), reason });
+    }
+    writeFileSync(BASELINE, JSON.stringify(next, null, 2));
+    console.log(`\nBaseline saved: ${Object.keys(next.files).length} files, LOGIC_VERSION=${next.logicVersion}`);
+    if (acceptMove.length) for (const f of acceptMove) console.log(`  ACCEPTED MOVE ${f} — "${reason}" (recorded in the baseline)`);
+    if (unnamed.length) {
+      console.error(`\nHELD BACK — ${unnamed.length} file(s) whose income moved on UNCHANGED documents were NOT adopted:`);
+      for (const m of unnamed) console.error(`  • ${m.borrower} (${m.file}) ${money(m.from)} -> ${money(m.to)}`);
+      console.error("Document-set changes were re-baselined; these stay red until resolved or explicitly accepted.");
+      process.exit(1);
+    }
+    return;
+  }
+
   if (!problems.length) {
     console.log(`PASS — ${Object.keys(now.files).length} files, no income document set or settled number moved.`);
     return;
   }
   console.error(`\nFAIL — ${problems.length} file(s) would change:\n`);
   for (const p of problems) console.error(`  • ${p}\n`);
-  console.error("If every one of these is intended, re-baseline with:  npm run verify:income -- --save");
+  console.error(
+    moved.size
+      ? `Re-baseline the document-set changes with:  npm run verify:income -- --save\n` +
+        `That will NOT clear the ${moved.size} moved number(s) above — each needs --accept-move + --reason.`
+      : "If every one of these is intended, re-baseline with:  npm run verify:income -- --save",
+  );
   process.exit(1);
 }
 
