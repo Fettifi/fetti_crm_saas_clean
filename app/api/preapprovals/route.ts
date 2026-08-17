@@ -8,6 +8,7 @@ import { sendPreapprovalEmails } from "@/lib/notify/sendPreapproval";
 import { setSetting } from "@/lib/settings";
 import { PA_LETTER_KEYS, PA_INTERNAL_KEYS } from "@/lib/preapprovalFields";
 import { assertIndividualNmls, CompanyNmlsInOfficerFieldError } from "@/lib/officerIdentity";
+import { incomeContestedState, contestedRefusal } from "@/lib/income/contested";
 
 // Term-sheet fields the preapprovals table has no column for, persisted in app_settings keyed by
 // letter id. TWO keys, deliberately:
@@ -60,6 +61,41 @@ export async function POST(req: NextRequest) {
     catch (e) {
       if (e instanceof CompanyNmlsInOfficerFieldError) return NextResponse.json({ error: e.message }, { status: 400 });
       throw e;
+    }
+
+    // A NUMBER THE ENGINE ITSELF DISPUTES DOES NOT GET TO BECOME A LETTER.
+    //
+    // The letter's loan amount and purchase price are derived from the qualifying income the
+    // income screen settled on. When that income is `qcContested`, the QC reviewer has said on
+    // the record that the worksheet does not reconcile to the borrower's own documents. Until
+    // 2026-08-13 that objection was a red banner and nothing else: on FF-202607-9927 the LO
+    // review settled at exactly the contested figure, and this endpoint would have issued
+    // against it without a word. Checked BEFORE the row, the PDF and the emails, because all
+    // three are irreversible from the borrower's side once sent.
+    //
+    // `contested_ack` is the deliberate way through — the LO says they have reviewed the
+    // dispute and stands behind the figure — and it is recorded, not just accepted.
+    if (b.loan_file_id) {
+      const state = await incomeContestedState(String(b.loan_file_id));
+      const ackReason = typeof b.contested_ack === "string" ? b.contested_ack.trim() : "";
+      if (state.contested && !state.acknowledged && !ackReason) {
+        return NextResponse.json(
+          { error: contestedRefusal(state), code: "income_contested", findings: state.findings },
+          { status: 409 },
+        );
+      }
+      if (state.contested) {
+        await logActivity({
+          entity_type: "loan_file", entity_id: String(b.loan_file_id), loan_file_id: String(b.loan_file_id),
+          actor: "loan_officer", action: "income.contested_override",
+          detail: {
+            borrower: String(b.borrower_name).trim(),
+            monthlyIncome: state.monthlyIncome,
+            findings: state.findings,
+            reason: ackReason || state.acknowledgedReason || "(acknowledged on the income screen)",
+          },
+        }).catch(() => {});
+      }
     }
 
     const num = (v: any) => (v === "" || v == null ? null : Number(String(v).replace(/[^0-9.]/g, "")));

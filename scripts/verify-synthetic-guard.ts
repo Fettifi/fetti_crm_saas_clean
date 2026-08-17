@@ -18,6 +18,7 @@
 //      this codebase keeps re-learning — MAX_DOCS, the heartbeat, DONE_STAGES.
 //
 // Usage: npm run verify:synthetic     (step 1 needs SUPABASE creds; skipped without them)
+import "./_env";   // FIRST — without it the over-match check below silently skipped itself
 import { readFileSync } from "fs";
 import path from "path";
 import { isSyntheticLead } from "../lib/synthetic";
@@ -134,7 +135,11 @@ async function liveOverMatchCheck() {
   const URL_ = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!URL_ || !KEY) {
-    console.log("SKIP  live over-match check (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set)");
+    // This used to `return` with a SKIP line and still print "All synthetic-guard checks
+    // passed." The check being skipped is the only one that can catch a predicate wide enough
+    // to silence a REAL borrower — there is a live lead sourced `owner-test`. A guard that
+    // cannot run its own most important assertion has not passed it.
+    ck("live over-match check ran", false, "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — did this script `import \"./_env\"` first?");
     return;
   }
   const res = await fetch(`${URL_}/rest/v1/leads?select=id,email,source,raw,created_at&limit=5000`, {

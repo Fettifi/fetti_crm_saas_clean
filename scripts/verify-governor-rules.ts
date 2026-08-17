@@ -43,11 +43,26 @@ ck("after 4 days, allowed",
    allow("proactive", [out("2026-07-11T16:00:00Z")], "2026-07-15T17:00:00Z"), true);
 
 console.log("\n── the 90-day drip: a hard lifetime cap ──");
-const three = [out("2026-06-01T16:00:00Z"), out("2026-06-10T16:00:00Z"), out("2026-06-20T16:00:00Z")];
-ck(`a 4th proactive touch is blocked (cap ${PROACTIVE_LIFETIME_CAP})`,
-   allow("proactive", three, "2026-07-30T16:00:00Z"), false);
+// BUILD THE THREAD FROM THE CONSTANT, never from a literal count.
+// This block used to hardcode three prior touches and assert the next one was blocked. That was
+// true while the cap was 3; on 2026-08-02 Ramon raised it to 7 so the full 7-step cadence could
+// actually be delivered, and the test went red and STAYED red for eleven days — reading, all the
+// while, "a 4th proactive touch is blocked (cap 7)", a label that interpolated the new constant
+// onto the old assumption and so described a rule nobody had. Derived from the cap, this checks
+// the boundary wherever the boundary is.
+// n prior proactive touches, 7 days apart, the last one well clear of the 96h cooldown before
+// `now` — so the ONLY rule that can decide these cases is the lifetime cap itself.
+const touchesAt = (n: number) =>
+  Array.from({ length: n }, (_, i) =>
+    out(new Date(Date.UTC(2026, 2, 1, 16) + (i * 7 + 1) * 86400000).toISOString()));
+const atCap = touchesAt(PROACTIVE_LIFETIME_CAP);
+const belowCap = touchesAt(PROACTIVE_LIFETIME_CAP - 1);
+ck(`touch #${PROACTIVE_LIFETIME_CAP + 1} is blocked — the cap is ${PROACTIVE_LIFETIME_CAP}`,
+   allow("proactive", atCap, "2026-07-30T16:00:00Z"), false);
+ck(`touch #${PROACTIVE_LIFETIME_CAP} is still allowed — the cap must not bite one early`,
+   allow("proactive", belowCap, "2026-07-30T16:00:00Z"), true);
 ck("but an operational note about their file is not capped",
-   allow("operational", three, "2026-07-30T16:00:00Z"), true);
+   allow("operational", atCap, "2026-07-30T16:00:00Z"), true);
 
 console.log("\n── silence must not swallow a real conversation ──");
 ck("first ever contact is allowed", allow("proactive", [], "2026-07-30T16:00:00Z"), true);

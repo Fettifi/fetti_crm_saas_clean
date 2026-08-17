@@ -2,6 +2,8 @@
 // what it would have stopped. Claiming "this fixes the harassment" is only honest if the
 // rules are tested against the real threads that caused the complaint.
 //   npx tsx scripts/verify-governor.ts
+import "./_env";
+import { rows } from "./_liveDb";
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "fs";
 import { evaluateThreadRules, bodyFingerprint, type SendKind } from "@/lib/conversation/governor";
@@ -21,12 +23,16 @@ function classify(type: string | null): SendKind {
 }
 
 async function main() {
-  const { data: rows } = await sb.from("activity_log")
+  // `error` MUST be destructured here. On 2026-08-13 a transient `fetch failed` came back as
+  // data:null, this replay reported "0 MESSAGES THAT ACTUALLY WENT OUT", and the run EXITED 0 —
+  // the 82%-blocked claim measured over an empty set. minRows makes "we sent nothing, ever"
+  // an explicit failure rather than the quietest possible pass.
+  const sent = await rows<any>("verify:governor", sb.from("activity_log")
     .select("lead_id, created_at, detail").eq("action", "comms.message")
-    .order("created_at", { ascending: true }).limit(5000);
+    .order("created_at", { ascending: true }).limit(5000), { minRows: 1 });
 
   const byLead = new Map<string, any[]>();
-  for (const r of (rows || []) as any[]) {
+  for (const r of sent) {
     if (!r.lead_id) continue;
     if (!byLead.has(r.lead_id)) byLead.set(r.lead_id, []);
     byLead.get(r.lead_id)!.push(r);
@@ -38,7 +44,7 @@ async function main() {
   let total = 0, blocked = 0, allowed = 0;
 
   // Replay in true chronological order across all leads.
-  const all = ((rows || []) as any[]).filter((r) => r.lead_id).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const all = sent.filter((r) => r.lead_id).sort((a, b) => a.created_at.localeCompare(b.created_at));
   const threads = new Map<string, any[]>();
 
   for (const r of all) {

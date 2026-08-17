@@ -10,8 +10,14 @@
  *   5. NOTHING is written — loan_files.updated_at must be byte-identical after a run,
  *      because a write would corrupt the staleness signal this whole feature reads.
  *
- * Run: npx tsx --env-file=.env.local scripts/verify-stale-files.ts
+ * Run: npm run verify:stale-files
+ *
+ * `import "./_env"` MUST stay the first import. Without it this script ran against the mock
+ * admin client — the doc comment above said `--env-file=.env.local` while package.json wired
+ * plain `tsx`, so from 2026-08-12 it crashed on `.limit is not a function` and asserted nothing.
  */
+import "./_env";
+import { requireLiveDb } from "./_liveDb";
 import { findStalledFiles, selectForAlert, runStalledFileDigest, nextAction, isTerminal, severityOf } from "../lib/stalledFiles";
 import { supabaseAdmin } from "../lib/supabaseAdminClient";
 
@@ -23,6 +29,7 @@ function check(name: string, cond: boolean, detail = "") {
 
 async function main() {
   console.log("🔍 Stalled-file watchdog verification\n");
+  await requireLiveDb("verify:stale-files");
 
   // ---- 5 (pre): snapshot every updated_at so we can prove we never wrote ----
   const { data: before } = await supabaseAdmin.from("loan_files").select("id, updated_at").limit(2000);
