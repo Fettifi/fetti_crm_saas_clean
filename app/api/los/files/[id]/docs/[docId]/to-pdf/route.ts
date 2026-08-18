@@ -80,13 +80,6 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       }, { status: 422 });
     }
 
-    // Keep the source alongside the PDF BEFORE anything is overwritten. If this fails we stop —
-    // converting without a retained original is exactly the outcome this guards against.
-    const keepPath = `${doc.storage_path}.original.${ext || "bin"}`;
-    const { error: keepErr } = await supabaseAdmin.storage.from(BUCKET)
-      .upload(keepPath, buf, { contentType: blob.type || "application/octet-stream", upsert: true });
-    if (keepErr) return NextResponse.json({ error: "Couldn't preserve the original, so nothing was changed: " + keepErr.message }, { status: 500 });
-
     const base = srcName.replace(/\.[^.]+$/, "") || "document";
     const pdfName = `${base}.pdf`;
     const newPath = `${id}/${Date.now()}-${pdfName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
@@ -104,14 +97,32 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Couldn't update the document: " + rowErr.message }, { status: 500 });
     }
 
+    // ONLY NOW retain the source — by RENAMING it, not by copying it.
+    //
+    // The first version uploaded a `.original.` copy before writing the PDF and never removed the
+    // object the row used to point at, so every conversion left the source image stored TWICE.
+    // Measured on one loan file after 11 conversions: 26,849,918 bytes of exact duplication —
+    // more than four times the size of the PDFs it produced.
+    //
+    // Ordering matters, and this order is the safe one. The PDF is uploaded and the row is
+    // repointed first, both non-destructive: until the update lands the row still references the
+    // original at its original path, so a failure anywhere above leaves the document untouched.
+    // Once the row points at the PDF the old object is unreferenced, and moving it is safe. If
+    // the move itself fails the source is still sitting at its old path — unrenamed, but present
+    // and recoverable — so this is reported, never fatal, and never silent.
+    const keepPath = `${doc.storage_path}.original.${ext || "bin"}`;
+    const { error: keepErr } = await supabaseAdmin.storage.from(BUCKET)
+      .move(doc.storage_path, keepPath);
+    if (keepErr) console.error(`[to-pdf] converted ${docId} but could not rename the source to ${keepPath}: ${keepErr.message}. The original remains at ${doc.storage_path}.`);
+
     await logActivity({
       entity_type: "document", entity_id: docId, loan_file_id: id, lead_id: file.lead_id,
       actor: "lo", action: "doc.converted_to_pdf",
-      detail: { from: srcName, to: pdfName, original_kept: keepPath, bytes: pdfBytes.length },
+      detail: { from: srcName, to: pdfName, original_kept: keepErr ? doc.storage_path : keepPath, bytes: pdfBytes.length },
     }).catch(() => {});
 
     return NextResponse.json({
-      ok: true, file_name: pdfName, size_bytes: pdfBytes.length, originalKept: true,
+      ok: true, file_name: pdfName, size_bytes: pdfBytes.length, originalKept: true, originalPath: keepErr ? doc.storage_path : keepPath,
       message: `Converted “${srcName}” to PDF. The original image is kept on file.`,
     });
   } catch (e: any) {

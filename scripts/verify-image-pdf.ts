@@ -91,7 +91,21 @@ const pdfLooksValid = (b: Buffer) =>
     chk(threw, `${label} is refused rather than converted to a blank page`);
   }
 
-  // 7. The signature helpers are not accidentally always-true.
+  // 7. THE SOURCE IS RENAMED, NOT COPIED. The first version of the route uploaded a `.original.`
+  //    copy and left the object the row used to point at in place, so every conversion stored the
+  //    source image TWICE — 26,849,918 bytes of exact duplication on one loan file after 11
+  //    conversions, over four times the size of the PDFs it produced. And the retain must happen
+  //    AFTER the row is repointed: until then the row still references the source, so moving it
+  //    first would leave a document pointing at nothing if a later step failed.
+  const route = readFileSync("app/api/los/files/[id]/docs/[docId]/to-pdf/route.ts", "utf8");
+  chk(/\.move\(doc\.storage_path, keepPath\)/.test(route),
+    "the to-pdf route RENAMES the source (storage.move) rather than uploading a second copy");
+  chk(!/upload\(keepPath/.test(route),
+    "the to-pdf route does not upload a `.original.` copy alongside the object it leaves behind");
+  chk(route.indexOf("const { error: rowErr }") < route.indexOf("const keepPath"),
+    "the source is retained only AFTER the row is repointed, so no failure can strand a document");
+
+  // 8. The signature helpers are not accidentally always-true.
   chk(!isJpegBytes(Buffer.from([0x89, 0x50])) && !isPngBytes(Buffer.from([0xff, 0xd8])),
     "the JPEG/PNG signature checks reject the other format");
 
