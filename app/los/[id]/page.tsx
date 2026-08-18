@@ -57,6 +57,9 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   const [combineName, setCombineName] = useState("");
   const [combineRemove, setCombineRemove] = useState(false);
   const [combineMsg, setCombineMsg] = useState<string | null>(null);
+  // Result of a single-document action (convert to PDF). Carries its own tone: reusing
+  // combineMsg would have printed failures in success green.
+  const [docMsg, setDocMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const uploadTargetRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -262,6 +265,22 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   async function patchDoc(doc_id: string, status: string, notes?: string) {
     await fetch(`/api/los/files/${id}/docs`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ doc_id, status, ...(notes !== undefined ? { notes } : {}) }) });
     await load();
+  }
+  // A document is convertible when it is stored and its name does NOT already end .pdf. The
+  // button is driven by the FILENAME, but the route re-checks the actual bytes — a file called
+  // "scan.jpg" that is really a PDF comes back "already a PDF" instead of being re-wrapped.
+  const needsPdf = (d: Doc) =>
+    !!d.storage_path && !/\.pdf$/i.test(d.file_name || d.storage_path || "");
+  async function convertToPdf(docId: string, label: string) {
+    setDocBusy(docId); setDocMsg(null);
+    try {
+      const r = await fetch(`/api/los/files/${id}/docs/${docId}/to-pdf`, { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setDocMsg({ ok: false, text: j.error || `Couldn’t convert “${label}”.` });
+      else { await load(); setDocMsg({ ok: true, text: j.message || `✓ Converted “${label}” to PDF.` }); }
+    } catch (e: any) {
+      setDocMsg({ ok: false, text: e?.message || `Couldn’t convert “${label}”.` });
+    } finally { setDocBusy(null); }
   }
   // Combine helpers — only uploaded PDF/JPG/PNG can be merged; click order = page order.
   const isCombinable = (d: Doc) => (d.status === "received" || d.status === "accepted") && !!d.storage_path && /\.(pdf|jpe?g|png)$/i.test(d.file_name || d.storage_path || "");
@@ -697,6 +716,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
             </div>
             {combineMode && <div className="text-[11px] text-amber-300/90 bg-amber-950/20 border border-amber-800/40 rounded-lg px-3 py-2 mb-2">Tick the files to merge (a bond that came in as separate scans, etc.) — they combine into one PDF in the order you tick them.</div>}
             {combineMsg && !combineMode && <div className="text-[11px] text-emerald-300 bg-emerald-950/20 border border-emerald-800/40 rounded-lg px-3 py-2 mb-2">{combineMsg}</div>}
+            {docMsg && <div className={`text-[11px] rounded-lg px-3 py-2 mb-2 border ${docMsg.ok ? "text-emerald-300 bg-emerald-950/20 border-emerald-800/40" : "text-red-300 bg-red-950/20 border-red-900/40"}`}>{docMsg.text}</div>}
             {borrowers.length > 1 && (
               <div className="flex items-center gap-1.5 flex-wrap mb-3">
                 <span className="text-[11px] text-slate-500">Outstanding for:</span>
@@ -737,6 +757,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => renameDoc(d.id, d.name)} disabled={docBusy === d.id} title="Rename this document" className="text-xs px-1.5 py-1 rounded text-slate-500 hover:text-sky-300 hover:bg-slate-800">✎</button>
                       {d.storage_path && <button onClick={() => viewDoc(d.id, d.name)} title={rejected ? "View the rejected copy" : "View"} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">View</button>}
+                      {needsPdf(d) && <button onClick={() => convertToPdf(d.id, d.name)} disabled={docBusy === d.id} title="Convert this image to a PDF — the original is kept on file" className="text-xs px-2 py-1 rounded bg-violet-700/70 hover:bg-violet-600 disabled:opacity-50">{docBusy === d.id ? "…" : "→ PDF"}</button>}
                       <button onClick={() => pickUpload(d.id)} disabled={docBusy === d.id} title="Upload a file for this item (e.g. one the borrower emailed you)" className="text-xs px-2 py-1 rounded bg-sky-700/70 hover:bg-sky-600 disabled:opacity-50">{docBusy === d.id ? "…" : (provided ? "Replace" : "Upload")}</button>
                       {d.status === "received" && <button onClick={() => patchDoc(d.id, "accepted")} className="text-xs px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500">Accept</button>}
                       {(d.status === "received" || d.status === "accepted") && <button onClick={() => { setRejectTarget({ id: d.id, name: d.name }); setRejectNote(""); }} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-red-900/60">Reject</button>}
