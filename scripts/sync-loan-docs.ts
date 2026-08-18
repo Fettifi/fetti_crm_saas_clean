@@ -42,6 +42,7 @@
 //   npx tsx scripts/sync-loan-docs.ts --dry-run  # show what would move, touch nothing
 //   npx tsx scripts/sync-loan-docs.ts --no-push  # download only, the old behaviour
 import "./_env";
+import { createHash } from "crypto";
 import { supabaseAdmin } from "../lib/supabaseAdminClient";
 import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
@@ -108,10 +109,29 @@ function safe(s: string, max = 70): string {
     if (!f) { orphaned++; continue; }       // a document whose loan file is gone
 
     const folder = join(ROOT, safe(`${f.borrower_name || "Borrower"} — ${f.file_number || d.loan_file_id.slice(0, 8)}`, 90));
-    // Prefer the name it was uploaded under — that is what he recognises. The checklist label is
-    // the fallback, and it can be an entire underwriting condition, so it gets truncated.
-    const base = d.file_name || `${safe(d.name, 60)}.${String(d.storage_path).split(".").pop() || "pdf"}`;
-    let name = safe(base, 90);
+    // NAME BY THE CHECKLIST ITEM, not by the name the file arrived under.
+    //
+    // The first version preferred the uploaded filename "because that is what he recognises".
+    // That assumption dies on a phone: iOS names every share `image.jpg`, so ONE borrower's
+    // folder held sixteen documents — a driver's licence, W-2s, four tax-return pages, pay stubs
+    // and an insurance quote — as `image.jpg` through `image (16).jpg`. Nothing on disk said
+    // which was which. Ramon converted his ID to PDF, went looking for it, and could not find it
+    // in his own loan folder; it was sitting there as `image.pdf`.
+    //
+    // `d.name` is the checklist label ("Government-issued photo ID"), which is exactly what a
+    // lender portal needs to see. For documents added directly rather than against a checklist
+    // item the label IS the filename, so those keep the name he gave them.
+    // A camera name carries nothing; a human name usually does. Strip only the meaningless ones
+    // (`image.jpg`, `IMG_1752.jpeg`, `scan`, `unnamed`) and keep the rest as a suffix, so
+    // `W-2_2025.pdf` becomes "W-2s — last 2 years — W-2_2025.pdf" and does not lose its YEAR.
+    // Replacing an informative name with the checklist label is how two different tax returns
+    // collapse into "Tax returns" and "Tax returns — additional".
+    const GENERIC = /^(image|img|photo|pic|scan|document|doc|untitled|unnamed|file|attachment)[\s_\-.()0-9]*$/i;
+    const ext = String(d.file_name || d.storage_path).split(".").pop()?.toLowerCase() || "pdf";
+    const stem = String(d.file_name || "").replace(/\.[^.]+$/, "");
+    const label = safe(String(d.name || d.file_name || "document").replace(new RegExp(`\\.${ext}$`, "i"), ""), 70);
+    const keepStem = stem && !GENERIC.test(stem) && stem.toLowerCase() !== label.toLowerCase();
+    let name = `${safe(keepStem ? `${label} — ${stem}` : label, 110)}.${ext}`;
     const key = `${folder}/${name.toLowerCase()}`;
     const seen = used.get(key) || 0;
     used.set(key, seen + 1);
@@ -155,7 +175,7 @@ function safe(s: string, max = 70): string {
   console.log(`\n${DRY ? "DRY RUN — " : ""}${wrote} written · ${skipped} already current · ${failed} failed · ${orphaned} with no loan file`);
 
   // ── PUSH ────────────────────────────────────────────────────────────────────────────────────
-  let pushed = 0, pushFailed = 0, pushSkipped = 0;
+  let pushed = 0, pushFailed = 0, pushSkipped = 0, conflicts = 0;
   if (!NO_PUSH) {
     // Everything the download wrote, so what remains is what Ramon added himself.
     const mine = new Set(Object.values(manifest).map((v: any) => v?.file).filter(Boolean) as string[]);
@@ -188,9 +208,28 @@ function safe(s: string, max = 70): string {
         }
         const storeName = pushSafeName(name);
 
+        // A NAME MATCH IS NOT A CONTENT MATCH. The first version skipped on file_name alone, so a
+        // file Ramon revised locally — signed, flattened, re-scanned — kept the same name, looked
+        // like a duplicate, and NEVER reached the LOS. Found in the wild: Kelly Dorsey's
+        // "NONI Doc Order" was 89,752 bytes on disk against 173,309 in the LOS, different sha256,
+        // silently skipped on every run. Compare the BYTES and say so when they disagree; which
+        // version is authoritative is Ramon's call, not this script's, so it reports and moves on
+        // rather than overwriting a live loan document.
         const { data: dupe } = await supabaseAdmin.from("loan_documents")
-          .select("id").eq("loan_file_id", lf.id).eq("file_name", storeName).limit(1).maybeSingle();
-        if (dupe?.id) { mine.add(abs); pushSkipped++; continue; }
+          .select("id,storage_path,size_bytes").eq("loan_file_id", lf.id).eq("file_name", storeName).limit(1).maybeSingle();
+        if (dupe?.id) {
+          let differs = false;
+          if (dupe.storage_path) {
+            const { data: remote } = await supabaseAdmin.storage.from(BUCKET).download(dupe.storage_path);
+            if (remote) {
+              const rb = Buffer.from(await remote.arrayBuffer());
+              differs = createHash("sha256").update(rb).digest("hex") !== createHash("sha256").update(readFileSync(abs)).digest("hex");
+              if (differs) console.warn(`  DIFFERS  ${folder}/${entry} — the LOS holds a different file under this name ` +
+                `(${st.size}b on disk vs ${rb.length}b in the LOS). Not pushed: rename the local copy to file it as a new document.`);
+            }
+          }
+          mine.add(abs); pushSkipped++; conflicts += differs ? 1 : 0; continue;
+        }
 
         if (DRY) { console.log(`  would push   ${folder}/${storeName}`); pushed++; continue; }
 
@@ -218,7 +257,8 @@ function safe(s: string, max = 70): string {
       }
     }
     if (!DRY && pushed) writeFileSync(MANIFEST, JSON.stringify(manifest, null, 1));
-    console.log(`${DRY ? "DRY RUN — " : ""}${pushed} pushed · ${pushSkipped} not eligible · ${pushFailed} failed`);
+    console.log(`${DRY ? "DRY RUN — " : ""}${pushed} pushed · ${pushSkipped} not eligible · ${pushFailed} failed` +
+      (conflicts ? ` · ${conflicts} NAME-MATCH CONTENT CONFLICT(S) — see DIFFERS above` : ""));
   }
 
   console.log(`Folder: ${ROOT.replace(homedir(), "~")}`);
