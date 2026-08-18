@@ -110,8 +110,18 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         throw new Error(`encoder returned ${out.data.subarray(0, 4).toString("hex")}, not JPEG or PNG`);
       }
 
+      // COPY INTO A STANDALONE ARRAY BEFORE HANDING IT TO pdf-lib. This is the actual cause of
+      // the "SOI not found in JPEG" failure that only ever appeared on the deployed runtime:
+      // pdf-lib reads the signature with `new DataView(imageData.buffer).getUint16(0)`, which
+      // addresses the underlying ArrayBuffer and IGNORES byteOffset. A Node Buffer is routinely
+      // a window into the shared 8KB pool, so sharp's output arrived at byteOffset 8 and pdf-lib
+      // read the two bytes before the image (2f00) instead of its FFD8. Reproduced exactly:
+      // pooled -> throws, `new Uint8Array(pooled)` (byteOffset 0) -> embeds. Locally sharp
+      // happened to return an unpooled buffer, which is why every local run passed.
+      // combine-docs never hit this because it already feeds pdf-lib a fresh Uint8Array.
+      const embedBytes = new Uint8Array(out.data);
       const pdf = await PDFDocument.create();
-      const embedded = isJpegBytes(out.data) ? await pdf.embedJpg(out.data) : await pdf.embedPng(out.data);
+      const embedded = isJpegBytes(out.data) ? await pdf.embedJpg(embedBytes) : await pdf.embedPng(embedBytes);
       outW = out.info.width; outH = out.info.height;
       const page = pdf.addPage([outW, outH]);
       page.drawImage(embedded, { x: 0, y: 0, width: outW, height: outH });
