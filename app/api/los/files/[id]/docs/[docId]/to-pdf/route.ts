@@ -72,31 +72,58 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     //
     // ENCODE AS JPEG, not PNG. These documents are photographed pay stubs and bank statements,
     // and they get emailed to lenders whose portals cap attachment size. Measured on the real
-    // bucket: a 3171x2045 photo re-encoded lossless came out a 7.2MB PDF. PNG is kept only for
-    // images with an alpha channel, where JPEG would flatten transparency onto black.
-    let img: Buffer, w: number, h: number, isPng = false;
+    // bucket: a 3171x2045 photo re-encoded lossless came out a 7.2MB PDF, 348KB as JPEG. PNG is
+    // kept only for images with an alpha channel, where JPEG would flatten transparency to black.
+    //
+    // BASELINE JPEG, not progressive. mozjpeg's defaults turn on optimiseScans, which emits a
+    // progressive JPEG; a PDF's DCTDecode filter is specified for baseline, and progressive
+    // scans are the kind of thing individual viewers render inconsistently or not at all. A
+    // document that opens everywhere matters more here than the last few percent of size.
+    //
+    // AND THE EMBED IS CHOSEN BY THE BYTES, NOT BY THE FLAG WE PASSED. Asking sharp for JPEG and
+    // assuming JPEG came back is the same mistake as trusting a .pdf extension: on the live
+    // runtime a .jpeg() pipeline returned something pdf-lib rejected with "SOI not found in
+    // JPEG", and because the embed sat outside the guard that raw library string went to the
+    // user as a 500. Detect the signature, embed accordingly, and keep it all inside the guard.
+    const isJpegBytes = (b: Buffer) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8;
+    const isPngBytes = (b: Buffer) =>
+      b.length > 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+    let pdfBytes: Buffer;
+    let outW = 0, outH = 0;
     try {
       const src = sharp(buf, { failOn: "none" }).rotate();
       const meta = await src.metadata();
       if (!meta.width || !meta.height) throw new Error("no dimensions");
-      isPng = !!meta.hasAlpha;
-      const resized = (meta.width > MAX_EDGE || meta.height > MAX_EDGE)
+      const fit = (meta.width > MAX_EDGE || meta.height > MAX_EDGE)
         ? src.resize({ width: MAX_EDGE, height: MAX_EDGE, fit: "inside", withoutEnlargement: true })
         : src;
-      const out = await (isPng ? resized.png() : resized.jpeg({ quality: 82, mozjpeg: true }))
+
+      let out = await (meta.hasAlpha ? fit.png() : fit.jpeg({ quality: 82, progressive: false }))
         .toBuffer({ resolveWithObject: true });
-      img = out.data; w = out.info.width; h = out.info.height;
-    } catch {
+      // If what came back is neither signature, re-encode losslessly rather than hand pdf-lib
+      // bytes it will reject.
+      if (!isJpegBytes(out.data) && !isPngBytes(out.data)) {
+        out = await fit.png().toBuffer({ resolveWithObject: true });
+      }
+      if (!isJpegBytes(out.data) && !isPngBytes(out.data)) {
+        throw new Error(`encoder returned ${out.data.subarray(0, 4).toString("hex")}, not JPEG or PNG`);
+      }
+
+      const pdf = await PDFDocument.create();
+      const embedded = isJpegBytes(out.data) ? await pdf.embedJpg(out.data) : await pdf.embedPng(out.data);
+      outW = out.info.width; outH = out.info.height;
+      const page = pdf.addPage([outW, outH]);
+      page.drawImage(embedded, { x: 0, y: 0, width: outW, height: outH });
+      pdfBytes = Buffer.from(await pdf.save());
+    } catch (e: any) {
+      // Name what actually went wrong. A conversion that fails silently, or fails with a raw
+      // library string, is a conversion nobody can act on.
       return NextResponse.json({
-        error: `Couldn't read "${srcName}" as an image or a PDF, so there's nothing to convert.`,
+        error: `Couldn't turn "${srcName}" into a PDF — ${e?.message || "it isn't a readable image"}.`,
       }, { status: 422 });
     }
 
-    const pdf = await PDFDocument.create();
-    const embedded = isPng ? await pdf.embedPng(img) : await pdf.embedJpg(img);
-    const page = pdf.addPage([w, h]);
-    page.drawImage(embedded, { x: 0, y: 0, width: w, height: h });
-    const pdfBytes = Buffer.from(await pdf.save());
 
     // Keep the source alongside the PDF BEFORE anything is overwritten. If this fails we stop —
     // converting without a retained original is exactly the outcome this guards against.
