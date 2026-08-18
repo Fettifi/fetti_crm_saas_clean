@@ -75,6 +75,7 @@ GOV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/governor' -e 'lib/conversationG
 # "Module not found" and three fixes reached nobody for hours. 0.6s, so it runs on any TS commit.
 ANYTS=$(printf '%s\n' "$CHANGED" | grep -E '\.(ts|tsx)$')
 OUTL=$(printf '%s\n' "$CHANGED" | grep -F -e 'api/outlook' -e 'taskpane.html' -e 'outlookAuth' -e 'outlookEmail' -e 'api/outlook' -e 'verify-outlook-attach' -e 'verify-outlook-send')
+IMGPDF=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/imageToPdf' -e 'to-pdf/route' -e 'combine-docs' -e 'verify-image-pdf')
 DRAG=$(printf '%s\n' "$CHANGED" | grep -F -e 'los/[id]/page.tsx' -e 'verify-doc-dragout')
 CARD=$(printf '%s\n' "$CHANGED" | grep -F -e 'cardAuth' -e 'card-auth' -e 'CardAuthPanel' -e 'verify-card-auth')
 ESGN=$(printf '%s\n' "$CHANGED" | grep -F -e 'app/esign' -e 'app/sign' -e 'api/esign' -e 'lib/esign' -e 'verify-esign-load')
@@ -109,7 +110,7 @@ if [ -n "$GUARDMETA" ]; then
   fi
 fi
 
-for PAIR in "$OUTL:verify:outlook-attach" "$OUTL:verify:outlook-send" "$DRAG:verify:doc-dragout" "$DRAG:verify:los-back" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules" "$ESGN:verify:esign-load" "$ESGN:verify:esign-mobile" "$SEO:verify:seo"; do
+for PAIR in "$OUTL:verify:outlook-attach" "$OUTL:verify:outlook-send" "$DRAG:verify:doc-dragout" "$DRAG:verify:los-back" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules" "$ESGN:verify:esign-load" "$ESGN:verify:esign-mobile" "$SEO:verify:seo" "$IMGPDF:verify:image-pdf"; do
   TRIG=${PAIR%%:*}; G=${PAIR#*:}
   [ -z "$TRIG" ] && continue
   printf "   %-24s " "$G"
