@@ -1,6 +1,6 @@
 {
   "logicVersion": "2026-08-01-override-exemplars",
-  "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
+  "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re)lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
   "files": {
     "6cd60248-6525-4fe6-a36b-e82541585271": {
       "file": "FF-202606-5978",
@@ -9,7 +9,6 @@
         "02909be0-176d-49d3-98dc-3de4fc466df6|June Bank Statement for accounts x9140 and 5222",
         "227fcda4-2214-433e-807e-8b8e146af1f0|Bank statements — last 2 months",
         "8d1228da-a1d9-499c-bc1a-59163b5bc015|June Bank Statement for accounts x9140 and 5222 — additional",
-        "92c5666a-e6e6-4893-bb42-8dc37636125d|Mortgage statement",
         "ebc6339e-6169-4e46-8a98-106006d025fe|Social Security Card",
         "ed9e5845-04a1-477e-beb1-b9dd76ed0836|Bank statements — last 2 months"
       ],
@@ -116,28 +115,6 @@
       ],
       "cachedIncome": null
     },
-    "b0f692ab-e276-4e6c-aaa8-7bcf6648ea6c": {
-      "file": "FF-202608-1913",
-      "borrower": "Charletha Osborne",
-      "candidates": [
-        "36e732e6-cb86-4959-a189-86ad50b9581e|Pay stubs — last 30 days — additional",
-        "7248910f-759d-46d2-bce0-1cc787c06dc2|Mortgage statement",
-        "7ad42455-f816-4c76-8acc-3f55a47c2150|Bank statements — last 2 months",
-        "7be22bc2-0d61-4277-aa9e-c34dbe4ce8b1|W-2s — last 2 years — additional",
-        "7cef0e2b-8cfe-462e-be28-59775ff96706|Bank statements — last 2 months — additional",
-        "80c81502-91a8-43fa-a1a6-20b534ff51ca|Pay stubs — last 30 days — additional",
-        "9d94b9ad-972c-4182-af38-51a2d3e0c9a7|W-2s — last 2 years",
-        "9ddf7244-40cc-45e3-a69c-fe0b99e7b360|Bank statements — last 2 months — additional",
-        "b35ed8e0-3bd2-4835-9010-e007886194ad|Income (FHA): Pension income is being used to qualify. Provide documentation to show a three-year continuance for the pension income received by Charletha Osbor",
-        "bff8e07b-36e4-4d5c-899b-7a1ddac28041|Bank statements — last 2 months — additional",
-        "c5677a5a-d9fc-427c-840b-057886c194d4|Pay stubs — last 30 days",
-        "c5d0a3e6-a5e9-4ab0-b56d-1af8bc368d86|Bank statements — last 2 months — additional",
-        "c6df7a60-51bb-4281-b9e6-8eeb540ef935|2025 tax return",
-        "f61c66ca-e0ab-4442-895c-1a0cc6cd3974|Bank statements — last 2 months — additional",
-        "f75fbd44-d044-4d42-8cbe-6fa57dcf2622|2024 Tax return"
-      ],
-      "cachedIncome": 22547
-    },
     "7eeeffb6-a0ee-4723-8758-0244c211c4ee": {
       "file": "FF-202606-9231",
       "borrower": "David Stidhum",
@@ -150,9 +127,6 @@
       "file": "FF-202607-6819",
       "borrower": "Helena Kyser Livingston",
       "candidates": [
-        "00cdec2d-6f67-48c2-afd0-18a0a8629c26|Mortgage statement (if refinance) — additional",
-        "12bfc7f6-9f3a-4b20-9bed-73c3f61fa998|Mortgage statement (if refinance) — additional",
-        "171eb56e-084d-4e84-b997-618ed6c48c28|Mortgage statement (if refinance) — additional",
         "1a2c6de7-4aad-425e-9ad7-21af8fe72edf|Mortgage statement (if refinance)",
         "20a2ddf7-4a94-4c1a-8f10-9866acc53f97|Bank statements — last 2 months — additional",
         "25ecbb7a-4df5-4330-a504-2abf80bca88d|Bank statements — last 2 months",
@@ -161,8 +135,7 @@
         "49a85360-b72c-4832-93f7-142e66faf83a|Bank statements — last 2 months — additional",
         "7106e043-f290-4fd8-bd0b-5444a22fd370|Mortgage statement (if refinance) — additional",
         "81f9d10a-d960-49c4-a70d-a5828383a2f0|Mortgage statement (if refinance) — additional",
-        "df7cff7a-2d47-421c-a927-1cfc189748d3|Bank statements — last 2 months — additional",
-        "fa3bef9b-3e1e-45ba-80f5-253b169e9428|Mortgage statement (if refinance) — additional"
+        "df7cff7a-2d47-421c-a927-1cfc189748d3|Bank statements — last 2 months — additional"
       ],
       "cachedIncome": null
     },
@@ -171,10 +144,13 @@
       "borrower": "Michelle Jackson Metoyer",
       "candidates": [
         "002a783e-76ff-4540-ac99-57a484d25cdc|Lease agreement or market rent estimate (Form 1007) — additional",
+        "00491793-6d06-432e-9535-11ddcb0a18e3|Bank statements — last 2 months — additional",
         "0dc7e292-1408-4cd9-90d3-6f3a0ec91f49|Lease agreement or market rent estimate (Form 1007) — additional",
         "45a9dc69-f13b-46d9-9b4c-3cd600180ea0|Lease agreement or market rent estimate (Form 1007) — additional",
         "5f566fda-de10-499c-83a5-c4bac608fc54|Lease agreement or market rent estimate (Form 1007) — additional",
-        "a1d8916b-195a-4d15-80e1-aafaf7ae8c0a|Lease agreement or market rent estimate (Form 1007)"
+        "a1d8916b-195a-4d15-80e1-aafaf7ae8c0a|Lease agreement or market rent estimate (Form 1007)",
+        "acb80280-5647-4d2b-826c-ff40a4cb288b|Bank statements — last 2 months",
+        "eb120c5d-e232-46bf-8446-7c485cdff46a|Bank statements — last 2 months — additional"
       ],
       "cachedIncome": null
     },
@@ -201,8 +177,6 @@
       "file": "FF-202606-2956",
       "borrower": "Stephen Friedlander",
       "candidates": [
-        "1bbb5070-d34b-496b-a08b-f1db084a81e2|Mortgage statement",
-        "564b6b25-4ffe-46aa-8400-2898104737ed|Mortgage statement — additional",
         "95642614-e2ba-43ca-9051-8dec2542c0ed|Bank statements — last 2 months",
         "d834f80a-349d-4b5f-ad68-2f469bae8fee|Bank statements — last 2 months — additional"
       ],
@@ -212,12 +186,32 @@
       "file": "FF-202607-6368",
       "borrower": "Joseph Boykan",
       "candidates": [
-        "31b1a215-65ca-4dc7-95b5-a3b774115fcb|Mortgage statement (if refinance)",
         "327949d0-9abf-4f2a-b920-08a5d3f9bc8c|Bank statements — last 2 months",
         "6c72b79e-faef-417b-9686-2c8e0c8da331|Lease agreement or market rent estimate (Form 1007)",
         "8a3fac37-08a7-4307-9af4-cc096dd89859|Bank statements — last 2 months — additional"
       ],
       "cachedIncome": null
+    },
+    "b0f692ab-e276-4e6c-aaa8-7bcf6648ea6c": {
+      "file": "FF-202608-1913",
+      "borrower": "Charletha Osborne",
+      "candidates": [
+        "36e732e6-cb86-4959-a189-86ad50b9581e|Pay stubs — last 30 days — additional",
+        "7ad42455-f816-4c76-8acc-3f55a47c2150|Bank statements — last 2 months",
+        "7be22bc2-0d61-4277-aa9e-c34dbe4ce8b1|W-2s — last 2 years — additional",
+        "7cef0e2b-8cfe-462e-be28-59775ff96706|Bank statements — last 2 months — additional",
+        "80c81502-91a8-43fa-a1a6-20b534ff51ca|Pay stubs — last 30 days — additional",
+        "9d94b9ad-972c-4182-af38-51a2d3e0c9a7|W-2s — last 2 years",
+        "9ddf7244-40cc-45e3-a69c-fe0b99e7b360|Bank statements — last 2 months — additional",
+        "b35ed8e0-3bd2-4835-9010-e007886194ad|Income (FHA): Pension income is being used to qualify. Provide documentation to show a three-year continuance for the pension income received by Charletha Osbor",
+        "bff8e07b-36e4-4d5c-899b-7a1ddac28041|Bank statements — last 2 months — additional",
+        "c5677a5a-d9fc-427c-840b-057886c194d4|Pay stubs — last 30 days",
+        "c5d0a3e6-a5e9-4ab0-b56d-1af8bc368d86|Bank statements — last 2 months — additional",
+        "c6df7a60-51bb-4281-b9e6-8eeb540ef935|2025 tax return",
+        "f61c66ca-e0ab-4442-895c-1a0cc6cd3974|Bank statements — last 2 months — additional",
+        "f75fbd44-d044-4d42-8cbe-6fa57dcf2622|2024 Tax return"
+      ],
+      "cachedIncome": 22547
     },
     "45a69da4-6162-408d-b2eb-0aff5a471890": {
       "file": "FF-202607-6280",
@@ -264,7 +258,6 @@
       "candidates": [
         "02e0179a-c170-40f3-ac14-cdd2f0120192|Bank statements — last 2 months — additional",
         "1b69073d-e0f6-4468-b139-de53853a347a|2023 tax return",
-        "23bf354d-3d64-41a2-b647-064ba77d4a69|Mortgage statement",
         "59ca9dee-96b0-4504-9e65-2407e85e41e4|2024 Tax return",
         "a8b41d00-0d3d-409d-95a7-a478755a70e4|Bank statements — last 2 months"
       ],
@@ -281,12 +274,10 @@
       "borrower": "Corine Lucas",
       "candidates": [
         "0464eccf-c305-47ac-b83f-dc98aa96ae9f|Bank statements — last 2 months — additional — additional",
-        "10e17fda-29f6-447d-a4c1-28a32e4a845d|Mortgage statement — additional — additional — additional",
         "1321e8d6-7591-4a81-a435-ed01d4e247a5|Bank statements — last 2 months — additional — additional",
         "18a848bc-f2cb-41f0-bd9e-a56436b62556|Bank statements — last 2 months — additional — additional",
         "1a965d45-c5f9-43cc-958d-dc03a8c816fa|Pay stubs — last 30 days",
         "2b1a4710-09ca-4c15-9713-ddfbd133f0d0|Bank statements — last 2 months — additional — additional",
-        "313243bc-7060-49fb-a1a6-feec644642fc|Mortgage statement — additional — additional",
         "3dc58e8c-5be5-4c66-8ecd-4508cf60077e|Bank statements — last 2 months — additional — additional",
         "3f0e1c49-cd90-44ad-9742-7ae30c8656fb|Bank statements — last 2 months — additional — additional",
         "4dfc1a59-27af-40c0-9a28-319d5ad359c6|Bank statements — last 2 months — additional — additional",
@@ -299,8 +290,6 @@
         "8e21aca6-ebe9-450b-9926-c7cd23726eef|Bank statements — last 2 months — additional — additional",
         "9ac263b3-52b8-401a-a03f-c84fc2f63f47|Bank statements — last 2 months — additional — additional",
         "a803fc52-4687-431f-bb4d-36e4c84ab9b2|Bank statements — last 2 months — additional — additional",
-        "aac5ea67-fb9b-47a3-97f0-be3910d18f64|Mortgage statement",
-        "b144df5d-f6ab-4b00-94dd-f41282db85c4|Mortgage statement — additional",
         "b6815af1-99c0-4b2f-bddf-0362479172a9|Bank statements — last 2 months — additional — additional",
         "b861cd79-8e75-4882-bd48-49f04a51d655|Bank statements — last 2 months — additional — additional",
         "bb9f8bc3-2901-426a-8669-1430d8565b34|Bank statements — last 2 months — additional — additional",
@@ -340,8 +329,9 @@
       "file": "FF-202607-6681",
       "borrower": "Kelly Dorsey",
       "candidates": [
-        "32bef164-1ac5-456d-a372-c2f47a4553a5|Release_Letter_-_Matacorp_Holdings_LLC-_3545_Winthrop.pdf",
-        "3be962fe-ef9a-4c09-9b9a-a0ff38fbb85f|3545_Winthrop_lease.pdf"
+        "28d11c1c-abaf-4eb7-9d9f-a539a31ca686|Signed-Indiana-Residential-Lease-Agreement.pdf",
+        "3be962fe-ef9a-4c09-9b9a-a0ff38fbb85f|3545_Winthrop_lease.pdf",
+        "bd6fe8c8-706f-473a-abe3-f6516202ee0a|Signed-3545-Winthrop-lease.pdf"
       ],
       "cachedIncome": null
     },
@@ -393,6 +383,26 @@
         "ec010216-529b-4d77-a7d4-b4501be71296|Pay stubs — last 30 days — additional"
       ],
       "cachedIncome": 4874
+    },
+    "b9375ee9-7ee8-41d8-8245-673a541e446e": {
+      "file": "FF-202608-7447",
+      "borrower": "Lashone Duncan ",
+      "candidates": [],
+      "cachedIncome": null
+    },
+    "7ba557c8-03c3-41f7-ba52-d379a817b31b": {
+      "file": "FF-202608-2047",
+      "borrower": "Lucki Long",
+      "candidates": [
+        "1c3e3fbf-d03b-4db0-9e16-1a6fd87fe790|W-2s — last 2 years — additional",
+        "3df02580-4c25-4fc9-b3d0-e3dc0572a5a7|Bank statements — last 2 months",
+        "72c9a77a-dc46-4745-b6dc-45b738e9c084|Bank statements — last 2 months — additional",
+        "8a66cd10-a598-410a-8dbd-61e0bde6102a|Bank statements — last 2 months — additional",
+        "9a45fa11-829d-4863-ba01-e732ed67bb1c|Bank statements — last 2 months — additional",
+        "b081a83e-db56-48ef-a47d-239729ae7895|W-2s — last 2 years",
+        "ea701fce-672c-47c8-bf2b-f93fa887ffa8|Pay stubs — last 30 days"
+      ],
+      "cachedIncome": null
     }
   },
   "acceptedMoves": [

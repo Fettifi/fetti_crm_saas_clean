@@ -125,6 +125,90 @@ const TAXRET = `Form 1040 U.S. Individual Income Tax Return  Schedule C  Schedul
   chk(/if \(looksLikeCreditReport\(t\)\.ok\) return \{ ok: false/.test(dc0),
     "because looksLikeIncomeDoc rejects anything that reads as a credit report first");
 
+  // ── THE FAST PATH CAN ONLY ADD, SO ITS FALSE POSITIVES ARE UNCATCHABLE ─────────────────
+  //
+  // Found 2026-08-18 on Kelly Dorsey (FF-202607-6681, Approved), by reading the file's real
+  // candidate set rather than trusting that the selection was right:
+  //
+  //     Release_Letter_-_Matacorp_Holdings_LLC-_3545_Winthrop.pdf   [income candidate]
+  //
+  // A lien release letter, handed to the income reader as a lease. `/lease/i` matches the
+  // "lease" inside "Re-lease". `tenanc` has the identical defect: it matches "main-tenanc-e".
+  //
+  // Why this one cannot be caught downstream: content detection (`looksLikeIncomeDoc`) runs
+  // ONLY over the documents the filename pass did NOT pick up, and it ADDS. Nothing re-reads
+  // a name-matched document to ask whether it belongs. So a filename false positive goes to
+  // the vision read as an income document with no check able to remove it — the exact inverse
+  // of the dhqPDF miss, and on a DSCR/investment file the reader is being asked to find rent
+  // in a document about a lien payoff.
+  console.log("\nthe filename fast path does not drag in documents that merely CONTAIN a keyword:");
+  const incomeRe = eval(
+    readFileSync("app/api/los/files/[id]/verify-income/route.ts", "utf8")
+      .match(/const INCOME_RE = (\/.*\/i);/)![1]) as RegExp;
+  for (const n of [
+    "Release_Letter_-_Matacorp_Holdings_LLC-_3545_Winthrop.pdf",  // the real one, off a live file
+    "Lien Release.pdf", "Release of Liability.pdf", "Released_Deed_of_Trust.pdf",
+    "Maintenance Agreement.pdf", "HVAC_maintenance_records.pdf",
+  ]) chk(!incomeRe.test(n), `"${n}" is not an income document`);
+
+  // AND THE EXCLUSION MUST NOT COST A REAL ONE. A word-boundary fix (\blease) looks right and
+  // silently drops "3545_Winthrop_lease.pdf", because `_` is a word character — that would
+  // understate rent on a DSCR file, which is worse than what it fixed.
+  console.log("\nwhile every genuine lease and tenancy document still matches:");
+  for (const n of [
+    "3545_Winthrop_lease.pdf", "Signed-3545-Winthrop-lease.pdf",       // real, off Kelly Dorsey
+    "Signed-Indiana-Residential-Lease-Agreement.pdf",                   // real, off Kelly Dorsey
+    "LEASE.pdf", "Sublease agreement.pdf", "lease_agreement_signed.PDF",
+    "Tenancy Agreement.pdf", "month-to-month tenancy.pdf",
+    "Lease agreement or market rent estimate (Form 1007)",
+  ]) chk(incomeRe.test(n), `"${n}" still reads as an income document`);
+
+  // ── AND THE SAME DEFECT ON `statement`, FOUND BY verify:income GOING RED 2026-08-19 ──────
+  //
+  // The pattern carried a BARE `statement` under a comment asserting that "a non-income
+  // statement is harmless". It is not. Two closing statements landed on Kelly Dorsey
+  // (FF-202607-6681) and took her income doc-set 3 -> 5, invalidating a settled file's cache
+  // and queuing a non-deterministic re-read off documents that contain no income — the same
+  // way Asia Dearman went $5,102 -> $8,645 with nobody touching a document. And Lashone Duncan
+  // (FF-202608-7447) had THREE "Mortgage statement" photos as his ONLY income candidates.
+  console.log("\nthe filename fast path does not read title/servicing paperwork as income:");
+  for (const n of [
+    "ClosingStatementBuyer_8-18-2026_12-59.pdf",        // real, off Kelly Dorsey
+    "ClosingStatementBuyer_8-18-2026_12-59_46.pdf",     // real, off Kelly Dorsey
+    "Mortgage statement", "Mortgage statement — additional",  // real, off Lashone Duncan
+    "Mortage_Statement.pdf",                            // real, off Charletha Osborne — misspelt
+    "Final Settlement Statement.pdf", "Escrow Statement.pdf",
+    "Billing Statement.pdf", "HOA statement.pdf", "Visa credit card statement.pdf",
+  ]) chk(!incomeRe.test(n), `"${n}" is not an income document`);
+
+  // The narrowing must not cost a real one: understating income is the worse direction.
+  console.log("\nwhile every statement that IS income still matches:");
+  for (const n of [
+    "Bank statements — last 2 months", "Bank statements — last 2 months — additional",
+    "Chase_Statement.pdf", "Bank_Statement_Jan.pdf", "Chase bank statement 03-2026.pdf",
+    "Earnings Statement.pdf", "Statement of Earnings.pdf", "Statement of Income.pdf",
+    "Wage and Tax Statement.pdf", "SSA statement.pdf",
+  ]) chk(incomeRe.test(n), `"${n}" still reads as an income document`);
+
+  // Charletha Osborne is the case that makes the misspelling load-bearing: the route matches
+  // `name + file_name + category`, so a doc whose checklist NAME is "Mortgage statement" would
+  // still be admitted through its FILE name "Mortage_Statement.pdf" if only one spelling were
+  // excluded. Test the string the route actually builds, not the filename alone.
+  chk(!incomeRe.test("Mortgage statement Mortage_Statement.pdf Other"),
+    "Charletha Osborne's mortgage statement stays out through BOTH its name and its misspelt file name");
+  // ...and a doc that is genuinely both still gets in on the half that is income.
+  chk(incomeRe.test("Bank statements — last 2 months Mortage_Statement.pdf Other"),
+    "a real bank statement is still admitted even alongside a mortgage-statement filename");
+
+  // The route tests `name + file_name + category`, not the filename alone. Metoyer's leases carry
+  // no lease word in the FILE name — they enter on their checklist name, and asserting on the
+  // filename alone reported a failure the code had not made. Test the string the route builds.
+  for (const [nm, fn] of [
+    ["Lease agreement or market rent estimate (Form 1007)", "Rental_Anthony_2021_.pdf"],
+    ["Lease agreement or market rent estimate (Form 1007) — additional", "Rental_Increase_4235_Anthony_.pdf"],
+  ] as [string, string][])
+    chk(incomeRe.test(`${nm} ${fn} Property`), `"${fn}" still qualifies via its checklist name`);
+
   console.log("\nhe can also rename a document:");
   const docs = code("app/api/los/files/[id]/docs/route.ts");
   chk(/patch\.name = nm/.test(docs), "PATCH accepts a new name");

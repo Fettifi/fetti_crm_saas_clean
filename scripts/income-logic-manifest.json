@@ -1,8 +1,8 @@
 {
   "logicVersion": "2026-08-01-override-exemplars",
-  "pinnedAt": "2026-08-17T18:07:24.218Z",
+  "pinnedAt": "2026-08-19T16:20:15.242Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "45961e92ab8d0346",
+    "app/api/los/files/[id]/verify-income/route.ts": "dfd67801eb1a68d7",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankStatement.ts": "4302f2fdd78e85c9",
     "lib/income/combineBankStatement.ts": "43f917108941029d",
@@ -14,5 +14,14 @@
     "lib/income/rentalIncome.ts": "81f8c58a6ef5051b",
     "lib/income/verifyWorksheet.ts": "25a83dafe34daa81"
   },
-  "noRerollClaims": []
+  "noRerollClaims": [
+    {
+      "at": "2026-08-19T16:20:15.242Z",
+      "logicVersion": "2026-08-01-override-exemplars",
+      "reason": "Document SELECTION changed, not the income COMPUTATION: INCOME_RE stops admitting closing/settlement/escrow/mortgage/billing/HOA/card statements, while the system prompt and the math are byte-identical. Every file whose selection actually changed re-fingerprints on its own, because the candidate list is already hashed into the stability fingerprint — verify:income names all 8 (Edson Cruz, Helena Kyser Livingston, Stephen Friedlander, Joseph Boykan, Charletha Osborne, Harold Samuel Wrobel, Corine Lucas, Lashone Duncan) and they re-read with no help from LOGIC_VERSION. Every other file keeps the same documents, the same prompt and the same math, so its number cannot move. Bumping would therefore deliver nothing to any file while forcing a fresh non-deterministic re-read on every currently-stable one, including Magali/Milton $19,753 and Asia Dearman's contested $8,645 — the exact trade the 2026-08-16 comment in the route refused.",
+      "files": [
+        "app/api/los/files/[id]/verify-income/route.ts"
+      ]
+    }
+  ]
 }

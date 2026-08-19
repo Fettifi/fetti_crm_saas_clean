@@ -82,12 +82,46 @@ const STUB_PRIORITY_WINDOW = 8;
 // choice gets forced at the moment the engine actually moves.
 const LOGIC_VERSION = "2026-08-01-override-exemplars";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
-// "Chase_Statement"). "statement" is deliberately GENERIC — a Chase/Wells file is rarely named
-// "bank statement"; the per-doc reader classifies, and a non-income statement is harmless.
+// "Chase_Statement"). "statement" stays GENERIC — a Chase/Wells file is rarely named "bank
+// statement" — but it is no longer BARE, because "a non-income statement is harmless" (what this
+// comment used to claim) is false, and verify:income went red on 2026-08-19 proving it:
+//
+//   Kelly Dorsey (FF-202607-6681)   + ClosingStatementBuyer_8-18-2026_12-59.pdf
+//                                   + ClosingStatementBuyer_8-18-2026_12-59_46.pdf
+//
+// Two closing statements landed and the income doc-set went 3 -> 5, so a settled file's income
+// cache was invalidated and queued for a fresh non-deterministic re-read — by documents that
+// carry no income at all. That is the Asia Dearman failure mode ($5,102 -> $8,645 on a re-roll
+// nobody asked for), triggered here by title paperwork. Worse, Lashone Duncan (FF-202608-7447)
+// has THREE "Mortgage statement" photos and nothing else: every one of his income candidates was
+// a mortgage statement, so the reader would have been handed a mortgage bill and asked to find
+// income in it, instead of the honest 422 "no income documents are uploaded on this file yet".
+//
+// Same chokepoint argument as the lease/tenanc lookbehinds below: content detection only runs
+// over what the names MISSED and only ADDS, so a filename false positive is unremovable. Proven
+// against the real PDFs, not fixtures — looksLikeIncomeDoc scores all six of the above 0, so
+// dropping them here really does drop them.
+//
+// The exclusions are narrow on purpose. Wrongly EXCLUDING an income document understates a
+// borrower's income (the dhqPDF lesson) and is the more expensive direction, so this lists only
+// document types that are never income, and every genuine statement still matches: "Bank
+// statements — last 2 months", "Chase_Statement.pdf", "Earnings Statement", "Wage and Tax
+// Statement". `mortg?age` is not a typo — Charletha Osborne's real upload is "Mortage_Statement.pdf"
+// and the route matches against name + file_name + category, so the misspelt FILE name would
+// otherwise re-admit a document its own checklist name excludes.
 // Rental documents are income documents: on a DSCR deal the rent IS the qualifying income.
 // Leaving lease/rent-roll/1007 out of this pattern is why an investment file's leases were
 // never even SELECTED for reading, so DSCR files verified at $0 with no rental income type.
-const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|lease|rent[\s_.-]*roll|rental[\s_.-]*agreement|tenanc|1007|1025|market[\s_.-]*rent|dd.?214|certificate[\s_.-]*of[\s_.-]*eligibility|\bcoe\b/i;
+// The two lookbehinds are load-bearing, not defensive: `lease` matches the "lease" inside
+// "Re-lease" and `tenanc` matches "main-tenanc-e", so a lien release letter and an HVAC
+// maintenance record were being SELECTED as rental-income documents. Found 2026-08-18 on
+// Kelly Dorsey (FF-202607-6681, Approved), whose real candidate set contained
+// "Release_Letter_-_Matacorp_Holdings_LLC-_3545_Winthrop.pdf". A name-matched document can
+// never be removed downstream — content detection only runs over what the names MISSED and
+// only ADDS — so this pattern is the single chokepoint. `\blease` is NOT the fix: `_` is a
+// word character, so it would drop the real "3545_Winthrop_lease.pdf". verify:doc-detection
+// asserts both directions.
+const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re)lease|rent[\s_.-]*roll|rental[\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\s_.-]*rent|dd.?214|certificate[\s_.-]*of[\s_.-]*eligibility|\bcoe\b/i;
 
 // ── VETERAN DETECTION, FROM METADATA ONLY ────────────────────────────────────────────────
 // Ramon, 2026-08-01: read the DD-214 and the certificate of eligibility on veteran files.
