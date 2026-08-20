@@ -29,7 +29,7 @@ export const PROTECTED_ROUTES: string[] = [
   "/command", "/los", "/agents", "/partners", "/requests", "/automations", "/task-list",
   "/roadmap", "/dashboard", "/growth", "/content", "/doctor", "/preapprovals", "/rupee",
   "/pricing", "/funnel", "/ads", "/security", "/studio", "/esign", "/pricer", "/income",
-  "/messages", "/scenarios", "/conversations", "/compare", "/show", "/competitors",
+  "/rsvp", "/messages", "/scenarios", "/conversations", "/compare", "/show", "/competitors",
   "/realtors", "/tiktok-today", "/underwrite", "/underwriter", "/deal-analyzer", "/scout",
   "/lookup",
 ];
