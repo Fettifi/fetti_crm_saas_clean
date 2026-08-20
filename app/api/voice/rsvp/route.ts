@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
     if (rsvp.phone && status !== "no") {
       const label = await eventLabel();
       const first = rsvp.name.split(" ")[0];
-      const heads = rsvp.party > 1 ? `all ${rsvp.party} of you` : "you";
+      // "all 2 of you" reads wrong; English wants "both".
+      const heads = rsvp.party === 2 ? "both of you" : rsvp.party > 2 ? `all ${rsvp.party} of you` : "you";
       const body = status === "yes"
         ? `Hi ${first} — you're on the list for ${label} on ${EVENT_DATE}. We have ${heads} down. Can't wait to see you! — Ramon`
         : `Hi ${first} — got it, we have you as a maybe for ${label} on ${EVENT_DATE}. Just let us know either way when you can. — Ramon`;
