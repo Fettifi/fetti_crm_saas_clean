@@ -17,7 +17,7 @@ import { isBusinessCreditDeal } from "@/lib/bizApp";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
 
-type Doc = { id: string; name: string; category: string; required: boolean; status: string; file_name?: string; storage_path?: string; notes?: string; borrowerName?: string | null };
+type Doc = { id: string; name: string; category: string; required: boolean; status: string; file_name?: string; storage_path?: string; size_bytes?: number | null; notes?: string; borrowerName?: string | null };
 type Comp = { key: string; label: string; done: boolean };
 type FileT = { id: string; file_number: string; borrower_name: string; email?: string; phone?: string; product: string; occupancy?: string; property_address?: string; property_value?: number; loan_amount?: number; state?: string; stage: string; status: string; share_token: string; compliance: Comp[]; lead_id?: string };
 type Act = { id: string; actor: string; action: string; detail: any; created_at: string };
@@ -271,6 +271,22 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   // "scan.jpg" that is really a PDF comes back "already a PDF" instead of being re-wrapped.
   const needsPdf = (d: Doc) =>
     !!d.storage_path && !/\.pdf$/i.test(d.file_name || d.storage_path || "");
+  // Portals commonly cap attachments at 5–10 MB, so anything over 4 MB is worth offering to
+  // shrink. Only PDFs: an image gets the "→ PDF" button instead, which downsizes on the way.
+  const OVERSIZE = 4 * 1024 * 1024;
+  const isOversizedPdf = (d: Doc) =>
+    !!d.storage_path && /\.pdf$/i.test(d.file_name || d.storage_path || "") && (d.size_bytes || 0) > OVERSIZE;
+  async function compressDoc(docId: string, label: string) {
+    setDocBusy(docId); setDocMsg(null);
+    try {
+      const r = await fetch(`/api/los/files/${id}/docs/${docId}/compress`, { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setDocMsg({ ok: false, text: j.error || `Couldn't compress “${label}”.` });
+      else { await load(); setDocMsg({ ok: true, text: j.message || `Compressed “${label}”.` }); }
+    } catch (e: any) {
+      setDocMsg({ ok: false, text: e?.message || `Couldn't compress “${label}”.` });
+    } finally { setDocBusy(null); }
+  }
   async function convertToPdf(docId: string, label: string) {
     setDocBusy(docId); setDocMsg(null);
     try {
@@ -757,6 +773,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => renameDoc(d.id, d.name)} disabled={docBusy === d.id} title="Rename this document" className="text-xs px-1.5 py-1 rounded text-slate-500 hover:text-sky-300 hover:bg-slate-800">✎</button>
                       {d.storage_path && <button onClick={() => viewDoc(d.id, d.name)} title={rejected ? "View the rejected copy" : "View"} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">View</button>}
+                      {isOversizedPdf(d) && <button onClick={() => compressDoc(d.id, d.name)} disabled={docBusy === d.id} title={`${((d.size_bytes || 0) / 1048576).toFixed(1)} MB — too big for most lender portals. Shrink it, keeping the original.`} className="text-xs px-2 py-1 rounded bg-amber-700/70 hover:bg-amber-600 disabled:opacity-50">{docBusy === d.id ? "…" : `Shrink ${((d.size_bytes || 0) / 1048576).toFixed(0)}MB`}</button>}
                       {needsPdf(d) && <button onClick={() => convertToPdf(d.id, d.name)} disabled={docBusy === d.id} title="Convert this image to a PDF — the original is kept on file" className="text-xs px-2 py-1 rounded bg-violet-700/70 hover:bg-violet-600 disabled:opacity-50">{docBusy === d.id ? "…" : "→ PDF"}</button>}
                       <button onClick={() => pickUpload(d.id)} disabled={docBusy === d.id} title="Upload a file for this item (e.g. one the borrower emailed you)" className="text-xs px-2 py-1 rounded bg-sky-700/70 hover:bg-sky-600 disabled:opacity-50">{docBusy === d.id ? "…" : (provided ? "Replace" : "Upload")}</button>
                       {d.status === "received" && <button onClick={() => patchDoc(d.id, "accepted")} className="text-xs px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500">Accept</button>}
