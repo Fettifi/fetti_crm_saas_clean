@@ -61,12 +61,19 @@ export async function POST(req: NextRequest) {
     }
     if (buf.length > MAX_BYTES) return NextResponse.json({ error: "PDF too large (max 40 MB) — split it and send in parts." }, { status: 413 });
     if (buf.subarray(0, 5).toString("latin1").indexOf("%PDF") !== 0) return NextResponse.json({ error: "That file isn't a PDF." }, { status: 422 });
-    // AUTO-COMPRESS oversized PDFs (page-faithful 180/150-DPI re-render; smaller
-    // files pass through untouched) so a heavy scan never fails on size again.
+    // AUTO-COMPRESS oversized PDFs (page-faithful 180/150-DPI re-render; smaller files pass
+    // through untouched) so a heavy scan never fails on size again.
+    //
+    // The threshold is 4 MB, not 8. Signing barely changes a file — measured across every
+    // envelope on the system, growth is 0.86x to 1.02x — so whatever size a document is when
+    // it goes IN is the size it comes back OUT. An 8 MB gate therefore let a 7 MB document
+    // through untouched and handed back a 7 MB signed copy that a lender portal, which
+    // typically caps at 5 MB, would refuse. Matching the LOS Shrink threshold means anything
+    // that passes through e-sign comes out portal-ready.
     let compressNote: string | null = null;
-    if (buf.length > 8 * 1024 * 1024) {
+    if (buf.length > 4 * 1024 * 1024) {
       try {
-        const c = await compressPdfIfNeeded(buf, { targetBytes: 8 * 1024 * 1024, hardMaxBytes: 15 * 1024 * 1024 });
+        const c = await compressPdfIfNeeded(buf, { targetBytes: 4 * 1024 * 1024, hardMaxBytes: 15 * 1024 * 1024 });
         if (c.compressed) { buf = c.buf; compressNote = c.note || null; }
       } catch (e: any) {
         return NextResponse.json({ error: e?.message || "Couldn't compress that PDF — try splitting it." }, { status: 422 });
