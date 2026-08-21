@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { standaloneBytes } from "@/lib/imageToPdf";
+import { optimizeSignaturePng } from "@/lib/signatureImage";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { maybeAdvanceStage } from "@/lib/los";
@@ -78,7 +79,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     // standaloneBytes: a signature PNG is small, and `Buffer.from(str, "base64")` under ~4KB
     // comes from Node's shared pool at a NON-ZERO byteOffset — which pdf-lib reads past,
     // rejecting a perfectly good signature. See lib/imageToPdf.ts.
-    const sigImg = await pdf.embedPng(standaloneBytes(Buffer.from(sigData.split(",")[1], "base64")));
+    // A browser canvas exports the WHOLE pad at full resolution in RGBA, so a few strokes arrive
+    // as a large true-colour image that nearly doubles the finished document — 23 KB of source
+    // PDF came back 44 KB, too big for the system Ramon uploads to. Trim it to the ink, cap it
+    // at print resolution, and store it as a small palette PNG before it goes in.
+    const sigPng = await optimizeSignaturePng(Buffer.from(sigData.split(",")[1], "base64"));
+    const sigImg = await pdf.embedPng(standaloneBytes(sigPng));
     const helv = await pdf.embedFont(StandardFonts.Helvetica);
     const pages = pdf.getPages();
     const mine = (env.fields || []).filter((f: EsignField) => (f.recipientId || env.recipients[0]?.id) === recipient.id);
