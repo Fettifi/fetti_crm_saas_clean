@@ -47,7 +47,16 @@ export async function compressPdfIfNeeded(
           const page = doc.getPage(i);
           const os = page.getOriginalSize();
           const wPt = os.originalWidth, hPt = os.originalHeight; // points (1/72in)
-          const scale = pass.dpi / 72;
+          // CLAMP THE RASTER. `scale = dpi/72` assumes a page measured in real paper units.
+          // A page built from a phone photo by passing PIXELS as POINTS is 3024x4032pt — 42
+          // inches by 56 — and at 150 DPI that is a 6300x8400 RGBA bitmap, ~212 MB for ONE
+          // page, which kills the function outright. Two real loan documents did exactly that
+          // (Bond_documents__combined_ and Added_by_LO___Combined__3_docs_). Cap the long edge
+          // in PIXELS so the cost of a page depends on how much detail we keep, never on what
+          // the page claims its size is.
+          const MAX_EDGE_PX = 2600;
+          const longestPt = Math.max(wPt || 612, hPt || 792);
+          const scale = Math.min(pass.dpi / 72, MAX_EDGE_PX / longestPt);
           const rendered = await page.render({ scale, render: "bitmap" });
           const jpg = await sharp(Buffer.from(rendered.data), {
             raw: { width: rendered.width, height: rendered.height, channels: 4 },

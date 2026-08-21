@@ -61,7 +61,35 @@ export function standaloneBytes(b: Uint8Array | ArrayBuffer): Uint8Array {
   return b.byteOffset === 0 && b.byteLength === b.buffer.byteLength ? b : new Uint8Array(b);
 }
 
-export type ImagePdf = { pdf: Buffer; width: number; height: number; encodedAs: "jpeg" | "png" };
+/** US Letter in points (1/72in). A loan document is a piece of paper, so the page is one. */
+export const LETTER = { w: 612, h: 792 };
+
+/**
+ * The page an image belongs on, in POINTS — never the image's pixel count.
+ *
+ * Passing pixels straight to addPage() is the bug this exists to prevent: a 3024x4032 phone
+ * photo became a 3024x4032 POINT page, which is 42 inches by 56. It looks right on screen
+ * because the image fills it, but it prints wrong, portals mis-render it, and rasterising one
+ * page costs ~212 MB of RGBA — which killed compression on two real loan documents outright.
+ * Letter, in the image's own orientation, keeps every converted document a normal page.
+ */
+export function pageSizeFor(pxW: number, pxH: number): { w: number; h: number } {
+  return pxW > pxH ? { w: LETTER.h, h: LETTER.w } : { w: LETTER.w, h: LETTER.h };
+}
+
+/** Fit pxW x pxH inside the page, preserving aspect ratio, centred. */
+export function fitInside(pxW: number, pxH: number, page: { w: number; h: number }) {
+  const scale = Math.min(page.w / pxW, page.h / pxH);
+  const w = pxW * scale, h = pxH * scale;
+  return { w, h, x: (page.w - w) / 2, y: (page.h - h) / 2 };
+}
+
+export type ImagePdf = {
+  pdf: Buffer;
+  width: number; height: number;              // the PAGE, in points
+  pixels: { width: number; height: number };  // the embedded raster
+  encodedAs: "jpeg" | "png";
+};
 
 /** Turn one image into a one-page PDF sized to the image. Throws if the bytes are not an image. */
 export async function imageBytesToPdf(input: Buffer, maxEdge = MAX_EDGE): Promise<ImagePdf> {
@@ -89,8 +117,10 @@ export async function imageBytesToPdf(input: Buffer, maxEdge = MAX_EDGE): Promis
 
   const pdf = await PDFDocument.create();
   const embedded = encodedAs === "jpeg" ? await pdf.embedJpg(embedBytes) : await pdf.embedPng(embedBytes);
-  const width = out.info.width, height = out.info.height;
-  const page = pdf.addPage([width, height]);
-  page.drawImage(embedded, { x: 0, y: 0, width, height });
-  return { pdf: Buffer.from(await pdf.save()), width, height, encodedAs };
+  const pxW = out.info.width, pxH = out.info.height;
+  const size = pageSizeFor(pxW, pxH);
+  const place = fitInside(pxW, pxH, size);
+  const page = pdf.addPage([size.w, size.h]);
+  page.drawImage(embedded, { x: place.x, y: place.y, width: place.w, height: place.h });
+  return { pdf: Buffer.from(await pdf.save()), width: size.w, height: size.h, pixels: { width: pxW, height: pxH }, encodedAs };
 }

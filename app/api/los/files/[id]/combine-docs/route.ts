@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { PDFDocument } from "pdf-lib";
-import { standaloneBytes } from "@/lib/imageToPdf";
+import { standaloneBytes, pageSizeFor, fitInside } from "@/lib/imageToPdf";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -56,13 +56,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           merged.push(label);
         } else if (["png"].includes(ext)) {
           const img = await out.embedPng(standaloneBytes(bytes));
-          const page = out.addPage([img.width, img.height]);
-          page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+          // Letter, in the image's orientation — NOT the pixel count. Passing pixels as points
+          // made a phone photo a 42x56 INCH page: it prints wrong and rasterising one costs
+          // ~212 MB, which killed compression on two real combined loan documents.
+          const size = pageSizeFor(img.width, img.height);
+          const place = fitInside(img.width, img.height, size);
+          const page = out.addPage([size.w, size.h]);
+          page.drawImage(img, { x: place.x, y: place.y, width: place.w, height: place.h });
           merged.push(label);
         } else if (["jpg", "jpeg"].includes(ext)) {
           const img = await out.embedJpg(standaloneBytes(bytes));
-          const page = out.addPage([img.width, img.height]);
-          page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+          // Letter, in the image's orientation — NOT the pixel count. Passing pixels as points
+          // made a phone photo a 42x56 INCH page: it prints wrong and rasterising one costs
+          // ~212 MB, which killed compression on two real combined loan documents.
+          const size = pageSizeFor(img.width, img.height);
+          const place = fitInside(img.width, img.height, size);
+          const page = out.addPage([size.w, size.h]);
+          page.drawImage(img, { x: place.x, y: place.y, width: place.w, height: place.h });
           merged.push(label);
         } else {
           skipped.push(`${label} (${ext || "unknown"} — only PDF/JPG/PNG can be combined)`);

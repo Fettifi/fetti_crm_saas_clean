@@ -66,7 +66,7 @@ const pdfLooksValid = (b: Buffer) =>
   const rotated = await sharp({ create: { width: 1000, height: 500, channels: 3, background: "#eee" } })
     .withMetadata({ orientation: 6 }).jpeg().toBuffer();
   const rot = await imageBytesToPdf(rotated);
-  chk(rot.height > rot.width, `orientation 6 (1000x500 landscape) produces a PORTRAIT page — got ${rot.width}x${rot.height}`);
+  chk(rot.height > rot.width, `orientation 6 (1000x500 landscape) produces a PORTRAIT page — got ${rot.width}x${rot.height} pts`);
 
   // 3. Encoding: opaque -> JPEG (size), alpha -> PNG (transparency would go black).
   const opaque = await imageBytesToPdf(await sharp({ create: { width: 900, height: 900, channels: 3, background: "#888" } }).jpeg().toBuffer());
@@ -77,7 +77,19 @@ const pdfLooksValid = (b: Buffer) =>
   // 4. Baseline, not progressive: PDF DCTDecode is specified for baseline scans.
   const big = await sharp({ create: { width: 3600, height: 2400, channels: 3, background: "#ccc" } }).jpeg().toBuffer();
   const scaled = await imageBytesToPdf(big);
-  chk(Math.max(scaled.width, scaled.height) === 2400, `a 3600px source is capped at 2400px — got ${scaled.width}x${scaled.height}`);
+  chk(Math.max(scaled.pixels.width, scaled.pixels.height) === 2400,
+    `a 3600px source is capped at 2400px of raster — got ${scaled.pixels.width}x${scaled.pixels.height}`);
+
+  // THE PAGE IS PAPER, NOT A PIXEL COUNT. Passing pixels to addPage() made a 3024x4032 phone
+  // photo a 3024x4032 POINT page — 42 inches by 56. It looks right on screen because the image
+  // fills it, so nothing downstream complains until something has to RASTERISE it: one such
+  // page costs ~212 MB of RGBA and killed compression on two real loan documents. Every page
+  // this produces must be US Letter, in the image's own orientation.
+  for (const [label, r] of [["portrait", opaque], ["landscape", scaled], ["alpha", alpha], ["rotated", rot]] as const) {
+    const isLetter = (r.width === 612 && r.height === 792) || (r.width === 792 && r.height === 612);
+    chk(isLetter, `${label} image lands on a US Letter page — got ${r.width}x${r.height} pts`);
+  }
+  chk(scaled.width > scaled.height, `a landscape source gets a landscape page — got ${scaled.width}x${scaled.height}`);
   chk(scaled.pdf.length < big.length * 4, "the PDF is not wildly larger than the source (lossless-PNG regression)");
 
   // 5. The page really carries the image, and the PDF re-opens.
