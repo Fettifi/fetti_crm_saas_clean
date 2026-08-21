@@ -75,19 +75,57 @@ export const last4 = (pan?: string) => digits(pan).slice(-4);
 export const encryptPan = (pan?: string) => encryptField(digits(pan)) || "";
 export const decryptPan = (enc?: string) => decryptField(enc);
 
-// CVV — transient only. Held encrypted for CVV_TTL_HOURS, then auto-purged.
-export const CVV_TTL_HOURS = 48;
-// A code the borrower re-supplies BECAUSE the LO is about to key the charge needs minutes,
-// not days. PCI forbids retaining CVV after authorization at all; the honest way to charge a
-// card days later is to ask the cardholder for the three digits again, not to keep them.
-export const CVV_REFRESH_TTL_HOURS = 2;
+// CVV RETENTION — RAMON'S CALL, MADE 2026-08-20, AND THE REASONING IS RECORDED HERE.
+//
+// The security code is RETAINED with the card, because CoreLogic's credit-report ordering
+// requires it at transaction time and a credit pull frequently happens days after the
+// borrower signs the authorization. A 48-hour clock meant the code was gone exactly when the
+// file was ready to move, and re-asking the borrower every time is friction on a card they
+// already provided for this purpose.
+//
+// What that accepts, stated plainly so nobody has to rediscover it: PCI DSS 3.2.2 prohibits
+// retaining the card verification code after authorization, encrypted or not. This is a
+// deliberate, informed business decision by the owner of the merchant account, not an
+// oversight. If Fetti ever takes payments under a merchant agreement that is audited, or
+// integrates a processor that tokenizes (which removes the need entirely — a stored
+// credential is charged without a CVV), this should be revisited first.
+//
+// Because it IS retained, the compensating controls matter more, not less. All of these are
+// live and must stay: AES-256-GCM at rest via the same engine as SSNs, per-borrower HMAC
+// binding on the public link (no IDOR across borrowers on a file), session-gated staff
+// routes, and an activity_log entry on every reveal. `clear_cvv` remains so the LO can drop a
+// code the moment a file is done with it, and setting CARD_CVV_TTL_HOURS to a positive number
+// restores automatic expiry without a code change.
+export const CVV_RETAIN_BY_DEFAULT = true;
+// 0 (or unset) = retain until explicitly cleared. A positive value re-enables auto-expiry.
+export const CVV_TTL_HOURS = Number(process.env.CARD_CVV_TTL_HOURS || 0);
+// A code the borrower re-supplies through the ?cvv=1 link is held the same way; the LO may
+// still clear it immediately after keying the charge.
+export const CVV_REFRESH_TTL_HOURS = Number(process.env.CARD_CVV_TTL_HOURS || 0);
+/**
+ * The expiry stamp to store with a code, or undefined to retain it.
+ *
+ * Every write must go through this. Stamping `Date.now() + 0` when the TTL is 0 would mark a
+ * code expired the instant it was saved, and the next read would delete it — retention that
+ * silently erases is worse than no retention at all.
+ */
+export function cvvExpiryStamp(hours = CVV_TTL_HOURS): string | undefined {
+  return hours > 0 ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : undefined;
+}
 export const encryptCvv = (cvv?: string) => encryptField(digits(cvv).slice(0, 4)) || "";
 export const decryptCvv = (enc?: string) => decryptField(enc);
+/** A code is usable when it exists and either carries no expiry (retained) or hasn't passed it. */
 export const cvvLive = (a?: CardAuth): boolean =>
-  !!(a?.cvvEnc && a?.cvvExpiresAt && new Date(a.cvvExpiresAt).getTime() > Date.now());
-// Drop an expired CVV from an auth record (mutates + returns it). Call on every read.
+  !!(a?.cvvEnc && (!a.cvvExpiresAt || new Date(a.cvvExpiresAt).getTime() > Date.now()));
+/**
+ * Drop a CVV only when it carries an expiry that has actually passed.
+ *
+ * The previous version treated a MISSING cvvExpiresAt as "expired" and deleted the code, so
+ * retention could never work by simply omitting the timestamp — the next read would erase it.
+ * A record with no expiry is retained on purpose.
+ */
 export function purgeExpiredCvv(a?: CardAuth): CardAuth | undefined {
-  if (a?.cvvEnc && (!a.cvvExpiresAt || new Date(a.cvvExpiresAt).getTime() <= Date.now())) {
+  if (a?.cvvEnc && a.cvvExpiresAt && new Date(a.cvvExpiresAt).getTime() <= Date.now()) {
     delete a.cvvEnc; delete a.cvvExpiresAt;
   }
   return a;

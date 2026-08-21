@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { BRAND } from "@/lib/brand";
-import { blanketAuthText, cardBrand, luhnValid, last4, encryptPan, encryptCvv, CVV_TTL_HOURS, CVV_REFRESH_TTL_HOURS, cardAuthSigValid, type CardAuth } from "@/lib/cardAuth";
+import { blanketAuthText, cardBrand, luhnValid, last4, encryptPan, encryptCvv, CVV_TTL_HOURS, CVV_REFRESH_TTL_HOURS, cvvExpiryStamp, cardAuthSigValid, type CardAuth } from "@/lib/cardAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       const refreshed: CardAuth = {
         ...r.auth,
         cvvEnc: encryptCvv(code),
-        cvvExpiresAt: new Date(Date.now() + CVV_REFRESH_TTL_HOURS * 3600 * 1000).toISOString(),
+        cvvExpiresAt: cvvExpiryStamp(CVV_REFRESH_TTL_HOURS),
       };
       // Check the write. A borrower told "done" while nothing saved leaves the LO keying a
       // charge with no code — the existing signed-authorization path checks this too.
@@ -135,8 +135,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       status: "authorized",
       cardholder, brand: cardBrand(pan), last4: last4(pan), expMonth, expYear, billingZip,
       panEnc: encryptPan(pan), // PAN encrypted at rest, retained
-      cvvEnc: encryptCvv(cvv), // CVV encrypted + TRANSIENT — auto-purges after the TTL below
-      cvvExpiresAt: new Date(Date.now() + CVV_TTL_HOURS * 3600 * 1000).toISOString(),
+      cvvEnc: encryptCvv(cvv), // encrypted at rest; retained per CARD_CVV_TTL_HOURS (0 = keep)
+      cvvExpiresAt: cvvExpiryStamp(CVV_TTL_HOURS),
       consentText: blanketAuthText(r.file.file_number, r.auth.amount),
       signature, signedAt: new Date().toISOString(), signerIp: ip,
     };
