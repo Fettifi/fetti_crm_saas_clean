@@ -139,21 +139,6 @@
       ],
       "cachedIncome": null
     },
-    "599ab8ca-4f43-440c-9fe3-6699b1e14c28": {
-      "file": "FF-202607-3633",
-      "borrower": "Michelle Jackson Metoyer",
-      "candidates": [
-        "002a783e-76ff-4540-ac99-57a484d25cdc|Lease agreement or market rent estimate (Form 1007) — additional",
-        "00491793-6d06-432e-9535-11ddcb0a18e3|Bank statements — last 2 months — additional",
-        "0dc7e292-1408-4cd9-90d3-6f3a0ec91f49|Lease agreement or market rent estimate (Form 1007) — additional",
-        "45a9dc69-f13b-46d9-9b4c-3cd600180ea0|Lease agreement or market rent estimate (Form 1007) — additional",
-        "5f566fda-de10-499c-83a5-c4bac608fc54|Lease agreement or market rent estimate (Form 1007) — additional",
-        "a1d8916b-195a-4d15-80e1-aafaf7ae8c0a|Lease agreement or market rent estimate (Form 1007)",
-        "acb80280-5647-4d2b-826c-ff40a4cb288b|Bank statements — last 2 months",
-        "eb120c5d-e232-46bf-8446-7c485cdff46a|Bank statements — last 2 months — additional"
-      ],
-      "cachedIncome": null
-    },
     "dd0579fe-bc96-4d62-a4a9-b06ee2acec9a": {
       "file": "FF-202607-2769",
       "borrower": "Issac O'Dell",
@@ -182,13 +167,18 @@
       ],
       "cachedIncome": null
     },
-    "21d5ada1-2c88-489d-b928-b38908089e62": {
-      "file": "FF-202607-6368",
-      "borrower": "Joseph Boykan",
+    "599ab8ca-4f43-440c-9fe3-6699b1e14c28": {
+      "file": "FF-202607-3633",
+      "borrower": "Michelle Jackson Metoyer",
       "candidates": [
-        "327949d0-9abf-4f2a-b920-08a5d3f9bc8c|Bank statements — last 2 months",
-        "6c72b79e-faef-417b-9686-2c8e0c8da331|Lease agreement or market rent estimate (Form 1007)",
-        "8a3fac37-08a7-4307-9af4-cc096dd89859|Bank statements — last 2 months — additional"
+        "002a783e-76ff-4540-ac99-57a484d25cdc|Lease agreement or market rent estimate (Form 1007) — additional",
+        "00491793-6d06-432e-9535-11ddcb0a18e3|Bank statements — last 2 months — additional",
+        "0dc7e292-1408-4cd9-90d3-6f3a0ec91f49|Lease agreement or market rent estimate (Form 1007) — additional",
+        "45a9dc69-f13b-46d9-9b4c-3cd600180ea0|Lease agreement or market rent estimate (Form 1007) — additional",
+        "5f566fda-de10-499c-83a5-c4bac608fc54|Lease agreement or market rent estimate (Form 1007) — additional",
+        "a1d8916b-195a-4d15-80e1-aafaf7ae8c0a|Lease agreement or market rent estimate (Form 1007)",
+        "acb80280-5647-4d2b-826c-ff40a4cb288b|Bank statements — last 2 months",
+        "eb120c5d-e232-46bf-8446-7c485cdff46a|Bank statements — last 2 months — additional"
       ],
       "cachedIncome": null
     },
@@ -212,6 +202,16 @@
         "f75fbd44-d044-4d42-8cbe-6fa57dcf2622|2024 Tax return"
       ],
       "cachedIncome": 22547
+    },
+    "21d5ada1-2c88-489d-b928-b38908089e62": {
+      "file": "FF-202607-6368",
+      "borrower": "Joseph Boykan",
+      "candidates": [
+        "327949d0-9abf-4f2a-b920-08a5d3f9bc8c|Bank statements — last 2 months",
+        "6c72b79e-faef-417b-9686-2c8e0c8da331|Lease agreement or market rent estimate (Form 1007)",
+        "8a3fac37-08a7-4307-9af4-cc096dd89859|Bank statements — last 2 months — additional"
+      ],
+      "cachedIncome": null
     },
     "45a69da4-6162-408d-b2eb-0aff5a471890": {
       "file": "FF-202607-6280",
@@ -361,6 +361,21 @@
       ],
       "cachedIncome": null
     },
+    "7ba557c8-03c3-41f7-ba52-d379a817b31b": {
+      "file": "FF-202608-2047",
+      "borrower": "Lucki Long",
+      "candidates": [
+        "1c3e3fbf-d03b-4db0-9e16-1a6fd87fe790|W-2s — last 2 years — additional",
+        "3df02580-4c25-4fc9-b3d0-e3dc0572a5a7|Bank statements — last 2 months",
+        "72c9a77a-dc46-4745-b6dc-45b738e9c084|Bank statements — last 2 months — additional",
+        "8a66cd10-a598-410a-8dbd-61e0bde6102a|Bank statements — last 2 months — additional",
+        "929e217c-a680-4ab8-8b08-e2b6bbf067a6|RLMM_Residential_Lease_or_Month-to-Month_Rental_Agreement.pdf",
+        "9a45fa11-829d-4863-ba01-e732ed67bb1c|Bank statements — last 2 months — additional",
+        "b081a83e-db56-48ef-a47d-239729ae7895|W-2s — last 2 years",
+        "ea701fce-672c-47c8-bf2b-f93fa887ffa8|Pay stubs — last 30 days"
+      ],
+      "cachedIncome": null
+    },
     "96c78542-4745-46d2-bd37-604f4a92dad1": {
       "file": "FF-202608-2136",
       "borrower": "Canisha Connelly-Laviengvong",
@@ -390,17 +405,19 @@
       "candidates": [],
       "cachedIncome": null
     },
-    "7ba557c8-03c3-41f7-ba52-d379a817b31b": {
-      "file": "FF-202608-2047",
-      "borrower": "Lucki Long",
+    "a41557b2-58c8-40e4-b51e-7848cea0a70c": {
+      "file": "FF-202608-2600",
+      "borrower": "Mario Washington",
       "candidates": [
-        "1c3e3fbf-d03b-4db0-9e16-1a6fd87fe790|W-2s — last 2 years — additional",
-        "3df02580-4c25-4fc9-b3d0-e3dc0572a5a7|Bank statements — last 2 months",
-        "72c9a77a-dc46-4745-b6dc-45b738e9c084|Bank statements — last 2 months — additional",
-        "8a66cd10-a598-410a-8dbd-61e0bde6102a|Bank statements — last 2 months — additional",
-        "9a45fa11-829d-4863-ba01-e732ed67bb1c|Bank statements — last 2 months — additional",
-        "b081a83e-db56-48ef-a47d-239729ae7895|W-2s — last 2 years",
-        "ea701fce-672c-47c8-bf2b-f93fa887ffa8|Pay stubs — last 30 days"
+        "01cae766-a0ff-4f8d-b6fc-1e56ebc5ce66|Pay stubs — last 30 days — additional",
+        "0e92c2ff-3003-40da-b3ff-1ed7b357b37c|Bank statements — last 2 months — additional",
+        "1ed794d9-d64c-4e47-bbb0-9c7c5dc78654|Tax returns — last 2 years (ONLY if qualifying full-doc — ask your loan officer first)",
+        "35a81fd5-7df5-47e9-bc42-f377a5e35981|Bank statements — last 2 months",
+        "36d2a61e-975a-4bd1-9685-fc3467dce9e6|W-2s — last 2 years",
+        "6f40ad11-15f8-47e4-8e53-c6aff4f14eb7|Pay stubs — last 30 days — additional",
+        "9a7c8c84-c314-44ee-b53b-53732b0265ec|Pay stubs — last 30 days — additional",
+        "ac490141-9132-4547-acdf-1e7a10123c89|Pay stubs — last 30 days",
+        "e390ccd8-1929-4a88-9243-eecd37bba11b|Bank statements — last 2 months — additional"
       ],
       "cachedIncome": null
     }

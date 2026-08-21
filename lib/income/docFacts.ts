@@ -79,6 +79,7 @@ export type DocFact = {
   leaseEndDate?: string | null;        // YYYY-MM-DD
   isMonthToMonth?: boolean;
   tenantName?: string | null;
+  landlordName?: string | null;        // landlord / lessor / property owner named on the lease
   marketRent?: number | null;          // appraiser's opinion of market rent (1007/1025 only)
   isShortTermRental?: boolean;         // STR/Airbnb — trailing-12 method, not a fixed lease
   trailing12GrossRent?: number | null; // STR trailing-12-month gross
@@ -140,6 +141,20 @@ function rosterScore(name: string, names: string[]): number {
   let best = 0;
   for (const rn of names) { let s = 0; for (const x of nameTokens(rn)) if (t.has(x)) s++; if (s > best) best = s; }
   return best;
+}
+
+// IS THIS THE SAME HUMAN? Deliberately stricter than rosterScore, which only has to pick the
+// BETTER of two roster slots and so is happy with one shared token. This answers a yes/no
+// question that removes income, so one shared token is not enough: "Jane Long" and "Lucki Long"
+// share a surname and are two different people, and treating them as one would drop a real
+// $2,000/mo lease off a file. Requires TWO shared tokens (given name + surname), which is what
+// distinguishes a spouse from the borrower.
+export function isSamePerson(a?: string | null, b?: string | null): boolean {
+  const ta = new Set(nameTokens(a)), tb = nameTokens(b);
+  if (ta.size < 2 || tb.length < 2) return false;
+  let shared = 0;
+  for (const t of new Set(tb)) if (ta.has(t)) shared++;
+  return shared >= 2;
 }
 
 // A standalone name→borrower resolver over the same roster logic — used by the bank-statement

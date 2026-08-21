@@ -7,6 +7,7 @@
 import { computeRentalIncome, normalizeAddressKey, monthlyRent } from "@/lib/income/rentalIncome";
 import { isInvestmentDeal, normalizeOccupancy } from "@/lib/urla";
 import type { DocFact } from "@/lib/income/docFacts";
+import { readFileSync } from "fs";
 
 let pass = 0, fail = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -158,6 +159,103 @@ console.log("\n── which lease governs when a unit has several (the real Jack
   const r = computeRentalIncome([lease(same), lease({ ...same, file: "copy.pdf" })], { mode: "dscr", today: "2026-07-27" });
   check("identical duplicate upload → no conflict flag", r.flags.some((f) => /second lease document/i.test(f.text)), false);
   check("identical duplicate upload → single rent", r.monthlyGrossRent, 2100);
+}
+
+console.log("\n── lease DIRECTION: rent counts only when the borrower RECEIVES it ──");
+// THE FACT BELOW IS THE REAL RECORD, NOT A FIXTURE. It is the DocFact the live reader returned
+// for the executed C.A.R. RLMM on Lucki Long's file FF-202608-2047 (loan file
+// 7ba557c8-03c3-41f7-ba52-d379a817b31b), read on 2026-08-21: she is the Housing Provider, Javed
+// Woodley is the tenant, $2,000/mo month-to-month at 20305 Hartland St. The gate must leave this
+// file's income exactly where it is — the whole risk of adding a gate is that it eats real money.
+const LUCKI_REAL: DocFact = lease({
+  file: "RLMM_Residential_Lease_or_Month-to-Month_Rental_Agreement.pdf",
+  personName: "Lucki Long",
+  propertyAddress: "20305 Hartland St, Los Angeles, CA 91306",
+  leaseMonthlyRent: 2000,
+  leaseRentFrequency: "monthly",
+  isMonthToMonth: true,
+  tenantName: "Javed Woodley",
+  landlordName: "Lucki Long",
+});
+{
+  const r = computeRentalIncome([LUCKI_REAL], { mode: "dscr", today: "2026-08-21", applicants: ["Lucki Long"] });
+  check("REAL FF-202608-2047: borrower is the landlord → $2,000 still counts", r.monthlyGrossRent, 2000);
+  check("REAL FF-202608-2047: not gated as a tenant lease", r.flags.some((f) => /named as the TENANT/i.test(f.text)), false);
+}
+{
+  // The same record with the two parties TRANSPOSED — the borrower renting rather than renting
+  // out. This is the shape an LO produces every week by uploading the borrower's own residential
+  // lease as proof of housing history; before the gate it added the borrower's rent PAYMENT to
+  // the qualifying income.
+  const r = computeRentalIncome(
+    [lease({ ...LUCKI_REAL, tenantName: "Lucki Long", landlordName: "Javed Woodley" })],
+    { mode: "dscr", today: "2026-08-21", applicants: ["Lucki Long"] },
+  );
+  check("borrower is the TENANT → rent excluded, not income", r.monthlyGrossRent, 0);
+  check("borrower is the TENANT → no income line emitted", r.lines.length, 0);
+  check("exclusion announces itself", r.flags.some((f) => /named as the TENANT/i.test(f.text)), true);
+  check("excluded rent is Omit-to-add reversible", r.flags.some((f) => f.addBackMonthly === 2000), true);
+}
+{
+  // A co-borrower's own lease is the identical mistake, so the gate reads BOTH roster slots.
+  const r = computeRentalIncome(
+    [lease({ ...LUCKI_REAL, tenantName: "Javed Woodley", landlordName: "Someone Else" })],
+    { mode: "dscr", today: "2026-08-21", applicants: ["Lucki Long", "Javed Woodley"] },
+  );
+  check("co-applicant as tenant is gated too", r.monthlyGrossRent, 0);
+}
+{
+  // A shared surname is NOT the same person. If one token were enough, a spouse named on the
+  // lease would delete a real lease off the file — the gate erring the expensive way.
+  const r = computeRentalIncome(
+    [lease({ ...LUCKI_REAL, tenantName: "Marcus Long", landlordName: "Lucki Long" })],
+    { mode: "dscr", today: "2026-08-21", applicants: ["Lucki Long"] },
+  );
+  check("shared surname alone does not gate a real lease", r.monthlyGrossRent, 2000);
+}
+{
+  // Named on both sides: the document does not say who receives the rent, so it cannot be counted.
+  const r = computeRentalIncome(
+    [lease({ ...LUCKI_REAL, tenantName: "Lucki Long", landlordName: "Lucki Long" })],
+    { mode: "dscr", today: "2026-08-21", applicants: ["Lucki Long"] },
+  );
+  check("applicant on both sides → not counted", r.monthlyGrossRent, 0);
+  check("applicant on both sides → says the document is ambiguous", r.flags.some((f) => /BOTH sides/i.test(f.text)), true);
+}
+{
+  // No roster = no evidence about direction. A missing fact is not a fact about the borrower,
+  // so nothing is gated and the pre-existing behaviour is preserved.
+  const r = computeRentalIncome([lease({ ...LUCKI_REAL, tenantName: "Lucki Long", landlordName: "Javed Woodley" })], { mode: "dscr", today: "2026-08-21" });
+  check("no applicant roster → nothing gated", r.monthlyGrossRent, 2000);
+}
+{
+  // A 1007 names no parties. Gating it on a tenant name it does not carry would silently delete
+  // the appraiser's market rent from every file.
+  const r = computeRentalIncome(
+    [f1007({ propertyAddress: "20305 Hartland St", marketRent: 2400, tenantName: "Lucki Long" } as Partial<DocFact>)],
+    { mode: "dscr", today: "2026-08-21", applicants: ["Lucki Long"] },
+  );
+  check("1007 market rent is never gated on party names", r.monthlyGrossRent, 2400);
+}
+
+console.log("\n── the gate is actually WIRED (a library gate the route never feeds is decoration) ──");
+{
+  // computeRentalIncome gates nothing when `applicants` is absent — that is deliberate (no roster
+  // = no evidence about direction), and it is exactly why this check exists. Every one of the
+  // library checks above would still pass with the route silently passing no roster at all, and
+  // production would count the borrower's own lease as income while the guard printed ALL PASS.
+  // So: read the real route SOURCE and require each call site to hand over the applicants.
+  // Deliberately scanning the CALL EXPRESSION, never the import line — assertion failure #1 on
+  // 2026-08-04 was a check that matched `import { computeRentalIncome }` and proved nothing.
+  const CALLERS = ["app/api/los/files/[id]/verify-income/route.ts"];
+  for (const p of CALLERS) {
+    const src = readFileSync(p, "utf8");
+    const calls = [...src.matchAll(/computeRentalIncome\s*\(([\s\S]*?)\)\s*;/g)]
+      .map((m) => m[1])
+      .filter((a) => !/^\s*$/.test(a));
+    check(`${p}: has a computeRentalIncome call site`, calls.length > 0, true);
+    check(`${p}: every call site passes applicants`, calls.every((a) => /\bapplicants\s*:/.test(a)), true);
+  }
 }
 
 console.log("\n── agency 75% rule is HELD, never auto-counted ──");

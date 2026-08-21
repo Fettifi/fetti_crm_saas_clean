@@ -1,17 +1,17 @@
 {
   "logicVersion": "2026-08-01-override-exemplars",
-  "pinnedAt": "2026-08-19T16:20:15.242Z",
+  "pinnedAt": "2026-08-21T16:21:46.513Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "dfd67801eb1a68d7",
+    "app/api/los/files/[id]/verify-income/route.ts": "969cf3eb5e2c69dd",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankStatement.ts": "4302f2fdd78e85c9",
     "lib/income/combineBankStatement.ts": "43f917108941029d",
     "lib/income/contested.ts": "4bef5f41ecf107eb",
-    "lib/income/docFacts.ts": "00160ff199272fb4",
+    "lib/income/docFacts.ts": "ad3ad08eba915cac",
     "lib/income/overrideExemplars.ts": "d33ed7c3fa074035",
     "lib/income/programs.ts": "3ef831cba44f1919",
-    "lib/income/readDocument.ts": "dd5d00518ee62a4e",
-    "lib/income/rentalIncome.ts": "81f8c58a6ef5051b",
+    "lib/income/readDocument.ts": "95f2015fbd2334b9",
+    "lib/income/rentalIncome.ts": "134ed0667752a05a",
     "lib/income/verifyWorksheet.ts": "25a83dafe34daa81"
   },
   "noRerollClaims": [
@@ -21,6 +21,17 @@
       "reason": "Document SELECTION changed, not the income COMPUTATION: INCOME_RE stops admitting closing/settlement/escrow/mortgage/billing/HOA/card statements, while the system prompt and the math are byte-identical. Every file whose selection actually changed re-fingerprints on its own, because the candidate list is already hashed into the stability fingerprint — verify:income names all 8 (Edson Cruz, Helena Kyser Livingston, Stephen Friedlander, Joseph Boykan, Charletha Osborne, Harold Samuel Wrobel, Corine Lucas, Lashone Duncan) and they re-read with no help from LOGIC_VERSION. Every other file keeps the same documents, the same prompt and the same math, so its number cannot move. Bumping would therefore deliver nothing to any file while forcing a fresh non-deterministic re-read on every currently-stable one, including Magali/Milton $19,753 and Asia Dearman's contested $8,645 — the exact trade the 2026-08-16 comment in the route refused.",
       "files": [
         "app/api/los/files/[id]/verify-income/route.ts"
+      ]
+    },
+    {
+      "at": "2026-08-21T16:21:46.513Z",
+      "logicVersion": "2026-08-01-override-exemplars",
+      "reason": "Adds a landlord/tenant DIRECTION gate to the lease path only (lib/income/rentalIncome.ts), reachable solely through the DSCR branch and solely for lease/rent_roll facts. Measured on the live data 2026-08-21: 55 stored DocFacts across the 10 cached income rows contain ZERO lease/rent_roll/1007 facts, so no cached number has a rental component the gate could change. The readDocument prompt edit sits inside the lease bullet and only reaches a document on a re-read. NOT bumping is the safer half of the choice here: 4 of the 10 cached rows predate factsUsed and cannot be inspected, and bumping would invalidate and re-roll those four on a non-deterministic AI re-read for no benefit.",
+      "files": [
+        "app/api/los/files/[id]/verify-income/route.ts",
+        "lib/income/docFacts.ts",
+        "lib/income/readDocument.ts",
+        "lib/income/rentalIncome.ts"
       ]
     }
   ]

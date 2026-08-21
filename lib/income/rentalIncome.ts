@@ -27,7 +27,19 @@
 // rental income is 75% of gross MINUS that property's full PITIA, and we do not know a
 // non-subject property's PITIA from a lease. So agency mode holds the 75% figure behind an
 // Omit-to-add flag rather than inventing a number. See lib/income/programs.ts RENTAL_LEASE_75.
-import type { DocFact, IncomeFlag, IncomeLine } from "@/lib/income/docFacts";
+//
+// DIRECTION (added 2026-08-21). A lease has two sides and the engine had no idea which one the
+// borrower was on. `tenantName` had been extracted off every lease since the rental path shipped
+// and was read by NOTHING — the field existed, travelled all the way into the stored DocFact, and
+// changed no outcome. So any document the reader called a "lease" contributed its rent as INCOME,
+// including the borrower's OWN residential lease — a document LOs upload routinely as proof of
+// housing history. On an investment file that lease lands in the DSCR gross rent and inflates the
+// qualifying income by the borrower's own housing PAYMENT, which is the opposite sign.
+// Found on the Lucki Long file (FF-202608-2047), where the executed C.A.R. RLMM happens to run
+// the right way — she is the Housing Provider, Javed Woodley the tenant, $2,000/mo — so the
+// $2,000 is real income. Nothing in the code checked that; it would have counted the same either
+// way. The rule now: rent counts only when the borrower RECEIVES it.
+import { isSamePerson, type DocFact, type IncomeFlag, type IncomeLine } from "@/lib/income/docFacts";
 
 export type RentUnit = {
   key: string;                 // normalized address + unit — the grouping key
@@ -98,15 +110,52 @@ function ymd(s?: string | null): string | null {
 
 export function computeRentalIncome(
   facts: DocFact[],
-  opts: { mode: "dscr" | "agency"; today?: string; borrower?: 1 | 2 } = { mode: "dscr" },
+  opts: { mode: "dscr" | "agency"; today?: string; borrower?: 1 | 2; applicants?: string[] } = { mode: "dscr" },
 ): RentalResult {
   const mode = opts.mode || "dscr";
   const borrower: 1 | 2 = opts.borrower || 1;
   const today = ymd(opts.today) || new Date().toISOString().slice(0, 10);
-  const rentals = (facts || []).filter(Boolean).filter(isRentalDoc);
+  const applicants = (opts.applicants || []).filter(Boolean);
+  const allRentals = (facts || []).filter(Boolean).filter(isRentalDoc);
+
+  // ── DIRECTION GATE ────────────────────────────────────────────────────────────────────────
+  // Only rent the borrower RECEIVES is income. A 1007/1025 states an appraiser's market-rent
+  // opinion and names no parties, so it is never gated — only executed leases and rent rolls are.
+  //
+  // This EXCLUDES rather than merely warns, because the engine's own QC naming an error while the
+  // wrong number ships is the failure this codebase keeps paying for. But every excluded unit
+  // carries its rent in `addBackMonthly`, so an LO who knows the read is wrong Omits the flag and
+  // the rent comes back — the gate is visible and reversible, not silent.
+  //
+  // With no roster supplied nothing is gated: absent the applicant names there is no evidence
+  // about direction either way, and a missing document is not a fact about the borrower.
+  const rentals: DocFact[] = [];
+  const flags: IncomeFlag[] = [];
+  for (const f of allRentals) {
+    const rent = monthlyRent(f.leaseMonthlyRent, f.leaseRentFrequency);
+    const label = [f.propertyAddress || "A rental property", f.unit ? `Unit ${f.unit}` : ""].filter(Boolean).join(" ");
+    const tenantIsBorrower = applicants.some((a) => isSamePerson(a, f.tenantName));
+    const landlordIsBorrower = applicants.some((a) => isSamePerson(a, f.landlordName));
+    if (f.docType !== "appraisal_1007" && tenantIsBorrower && !landlordIsBorrower) {
+      flags.push({
+        text: `${label}: the applicant is named as the TENANT on this lease${f.landlordName ? ` (landlord: ${f.landlordName})` : ""} — this rent is money the borrower PAYS, not receives, so it is NOT counted as rental income. If the applicant is in fact the landlord here, Omit this flag to count it.`,
+        addBackMonthly: rent && rent > 0 ? Math.round(rent) : 0,
+        borrower,
+      });
+      continue;
+    }
+    if (f.docType !== "appraisal_1007" && tenantIsBorrower && landlordIsBorrower) {
+      flags.push({
+        text: `${label}: the applicant is named on BOTH sides of this lease (tenant "${f.tenantName}" and landlord "${f.landlordName}"), so the document does not establish who receives the rent — NOT counted. Confirm which party the applicant is, then Omit this flag to count it.`,
+        addBackMonthly: rent && rent > 0 ? Math.round(rent) : 0,
+        borrower,
+      });
+      continue;
+    }
+    rentals.push(f);
+  }
   type Acc = RentUnit & { expired?: boolean; m2m?: boolean; str?: boolean; hasLease?: boolean; superseded?: number; leaseCandidates?: { rent: number; start: string | null; end: string | null; m2m: boolean }[] };
   const units = new Map<string, Acc>();
-  const flags: IncomeFlag[] = [];
 
   for (const f of rentals) {
     const key = normalizeAddressKey(f.propertyAddress, f.unit);

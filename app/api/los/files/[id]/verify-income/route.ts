@@ -531,7 +531,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     let bankCoverage: any[] = [];   // per-account month-by-month PROOF of coverage (12/24-mo programs)
     let rental: RentalResult | null = null;
     if (effectiveMethod === "dscr") {
-      rental = computeRentalIncome(rentalFacts, { mode: "dscr" });
+      // The roster goes in so the direction gate can tell whether an applicant is the LANDLORD on
+      // a lease (rent received = income) or the TENANT (rent paid = a housing expense the engine
+      // must not count). Both slots, because a co-borrower's own lease is the same mistake.
+      rental = computeRentalIncome(rentalFacts, { mode: "dscr", applicants: [...roster.primary, ...roster.co] });
       if (rental.monthlyGrossRent > 0) {
         // The rent REPLACES personal income — it does not add to it. A DSCR lender qualifies
         // the property and never counts the borrower's wages, so summing both would invent
