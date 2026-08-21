@@ -271,9 +271,10 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   // "scan.jpg" that is really a PDF comes back "already a PDF" instead of being re-wrapped.
   const needsPdf = (d: Doc) =>
     !!d.storage_path && !/\.pdf$/i.test(d.file_name || d.storage_path || "");
-  // Portals commonly cap attachments at 5–10 MB, so anything over 4 MB is worth offering to
-  // shrink. Only PDFs: an image gets the "→ PDF" button instead, which downsizes on the way.
-  const OVERSIZE = 4 * 1024 * 1024;
+  // Anything over 2 MB is worth offering to shrink — portal caps vary and some sit well under
+  // 5 MB, so the button should be there before a document is obviously huge. Only PDFs: an
+  // image gets the "→ PDF" button instead, which downsizes on the way.
+  const OVERSIZE = 2 * 1024 * 1024;
   const isOversizedPdf = (d: Doc) =>
     !!d.storage_path && /\.pdf$/i.test(d.file_name || d.storage_path || "") && (d.size_bytes || 0) > OVERSIZE;
   async function compressDoc(docId: string, label: string) {

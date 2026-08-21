@@ -28,9 +28,11 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const BUCKET = "loan-docs";
-// Lender portals commonly cap attachments between 5 and 10 MB. 4 MB leaves margin for the
-// portal's own re-wrapping without a second round trip.
-const TARGET_BYTES = 4 * 1024 * 1024;
+// 2 MB, not 4. Portal caps vary and some are well under 5 MB, so aim low: a document that is
+// smaller than it needs to be still uploads, one that is 3.5 MB against a 3 MB cap does not.
+// The compressor returns the smallest it can reach and says so when the target is out of
+// range, so aiming low costs nothing on documents that cannot get there.
+const TARGET_BYTES = 2 * 1024 * 1024;
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string; docId: string }> }) {
   const { id, docId } = await params;
