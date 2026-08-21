@@ -10,6 +10,7 @@ import { BRAND } from "@/lib/brand";
 import { LICENSING_NOTE } from "@/lib/legal";
 import { bizAppGaps, type BizApp, type BizOwner } from "@/lib/bizApp";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { standaloneBytes } from "./imageToPdf";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 const money = (n?: number | null) => (n == null ? "" : "$" + Math.round(n).toLocaleString());
@@ -83,7 +84,7 @@ export async function buildBizAppPdf(a: BizApp): Promise<Uint8Array> {
   // ── Letterhead
   try {
     const bytes = await fetch(`${APP_URL}/fetti-emblem.png`, { signal: AbortSignal.timeout(6000) }).then((r) => r.arrayBuffer());
-    page.drawImage(await doc.embedPng(bytes), { x: M, y: H - M - 46, width: 46, height: 46 });
+    page.drawImage(await doc.embedPng(standaloneBytes(bytes)), { x: M, y: H - M - 46, width: 46, height: 46 });
   } catch { /* logo optional */ }
   page.drawText(BRAND.company, { x: M + 54, y: H - M - 20, size: 14, font: bold, color: EMERALD });
   page.drawText(`NMLS #${BRAND.nmls} · CA DFPI Financing Law License #60DBO-153798`, { x: M + 54, y: H - M - 32, size: 7, font, color: GREY });

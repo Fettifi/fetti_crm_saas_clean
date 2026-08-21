@@ -5,6 +5,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { LICENSING_NOTE } from "@/lib/legal";
 import type { ScoutDeal, ScoutLoi } from "@/lib/scoutStore";
+import { standaloneBytes } from "./imageToPdf";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 const money = (n?: number | null) => (n == null || !Number(n) ? "—" : "$" + Math.round(Number(n)).toLocaleString());
@@ -45,7 +46,7 @@ export async function buildScoutLoiPdf(d: ScoutDeal, loi: ScoutLoi): Promise<Uin
 
   try {
     const bytes = await fetch(`${APP_URL}/fetti-emblem.png`, { signal: AbortSignal.timeout(6000) }).then((r) => r.arrayBuffer());
-    const png = await doc.embedPng(bytes);
+    const png = await doc.embedPng(standaloneBytes(bytes));
     page.drawImage(png, { x: M, y: H - M - 50, width: 50, height: 50 });
   } catch { /* logo optional */ }
 

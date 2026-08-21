@@ -54,7 +54,10 @@ export const looksPdf = (b: Uint8Array) =>
  *
  * Returning `b` unchanged from here is the regression; scripts/verify-image-pdf.ts fails on it.
  */
-export function standaloneBytes(b: Uint8Array): Uint8Array {
+export function standaloneBytes(b: Uint8Array | ArrayBuffer): Uint8Array {
+  // An ArrayBuffer has no view offset, so pdf-lib's `.buffer` read is already correct;
+  // wrapping it keeps every call site in the repo written the same way.
+  if (b instanceof ArrayBuffer) return new Uint8Array(b);
   return b.byteOffset === 0 && b.byteLength === b.buffer.byteLength ? b : new Uint8Array(b);
 }
 

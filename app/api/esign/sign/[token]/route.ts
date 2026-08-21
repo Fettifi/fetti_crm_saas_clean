@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { standaloneBytes } from "@/lib/imageToPdf";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { maybeAdvanceStage } from "@/lib/los";
@@ -74,7 +75,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     const { data: blob, error: dlErr } = await supabaseAdmin.storage.from(ESIGN_BUCKET).download(workingPath);
     if (dlErr || !blob) throw new Error("Could not load the document.");
     const pdf = await PDFDocument.load(await blob.arrayBuffer());
-    const sigImg = await pdf.embedPng(Buffer.from(sigData.split(",")[1], "base64"));
+    // standaloneBytes: a signature PNG is small, and `Buffer.from(str, "base64")` under ~4KB
+    // comes from Node's shared pool at a NON-ZERO byteOffset — which pdf-lib reads past,
+    // rejecting a perfectly good signature. See lib/imageToPdf.ts.
+    const sigImg = await pdf.embedPng(standaloneBytes(Buffer.from(sigData.split(",")[1], "base64")));
     const helv = await pdf.embedFont(StandardFonts.Helvetica);
     const pages = pdf.getPages();
     const mine = (env.fields || []).filter((f: EsignField) => (f.recipientId || env.recipients[0]?.id) === recipient.id);

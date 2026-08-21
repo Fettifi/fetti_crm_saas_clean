@@ -4,6 +4,7 @@
 import "server-only";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { LICENSING_NOTE } from "@/lib/legal";
+import { standaloneBytes } from "./imageToPdf";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 const money = (n?: number | null) => (n == null || !isFinite(Number(n)) || Number(n) <= 0 ? "TBD" : "$" + Math.round(Number(n)).toLocaleString());
@@ -41,7 +42,7 @@ export async function buildTitleOrderPdf(d: TitleOrderData): Promise<Uint8Array>
 
   try {
     const bytes = await fetch(`${APP_URL}/fetti-emblem.png`, { signal: AbortSignal.timeout(6000) }).then((r) => r.arrayBuffer());
-    page.drawImage(await doc.embedPng(bytes), { x: M, y: H - M - 50, width: 50, height: 50 });
+    page.drawImage(await doc.embedPng(standaloneBytes(bytes)), { x: M, y: H - M - 50, width: 50, height: 50 });
   } catch { /* logo optional */ }
   page.drawText("Fetti Financial Services LLC", { x: M + 58, y: H - M - 21, size: 15, font: bold, color: EMERALD });
   page.drawText("NMLS #2267023 · CA DFPI #60DBO-153798 · 5777 W Century Blvd Ste 1435, Los Angeles CA 90045", { x: M + 58, y: H - M - 34, size: 7.5, font, color: GREY });

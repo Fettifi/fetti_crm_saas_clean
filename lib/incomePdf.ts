@@ -4,6 +4,7 @@
 // and the qualification (DTI/DSCR + max PITIA / loan / price). Auto-paginates.
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { LICENSING_NOTE } from "@/lib/legal";
+import { standaloneBytes } from "./imageToPdf";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 const money = (v: any) => "$" + Math.round(Number(v) || 0).toLocaleString();
@@ -62,7 +63,7 @@ export async function buildIncomeWorksheetPdf(d: WorksheetData): Promise<Uint8Ar
     // SERVICES LLC / ANNUIT COEPTIS" into a tiny square that's illegible small AND redundant
     // with the company-name text drawn beside it.
     const bytes = await fetch(`${APP_URL}/fetti-emblem.png`, { signal: AbortSignal.timeout(6000) }).then((r) => r.arrayBuffer());
-    const png = await doc.embedPng(bytes);
+    const png = await doc.embedPng(standaloneBytes(bytes));
     page.drawImage(png, { x: M, y: y - 50, width: 50, height: 50 });
   } catch { /* logo optional */ }
   dt("Fetti Financial Services LLC", { x: M + 58, y: y - 21, size: 14, font: bold, color: EMERALD });

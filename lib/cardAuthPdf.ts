@@ -3,6 +3,7 @@
 // Generated ON DEMAND from the encrypted data (never persisted as a PAN-bearing file).
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { BRAND } from "@/lib/brand";
+import { standaloneBytes } from "./imageToPdf";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
@@ -45,7 +46,7 @@ export async function buildCardAuthPdf(d: CardAuthPdfData): Promise<Uint8Array> 
   // Letterhead — clean emblem mark + company name (matches the other Fetti PDFs).
   try {
     const bytes = await fetch(`${APP_URL}/fetti-emblem.png`, { signal: AbortSignal.timeout(6000) }).then((r) => r.arrayBuffer());
-    const png = await doc.embedPng(bytes);
+    const png = await doc.embedPng(standaloneBytes(bytes));
     page.drawImage(png, { x: M, y: y - 50, width: 50, height: 50 });
   } catch { /* logo optional */ }
   page.drawText(BRAND.company, { x: M + 58, y: y - 21, size: 14, font: bold, color: EMERALD });

@@ -15,7 +15,7 @@
 //   npx tsx scripts/verify-image-pdf.ts
 import sharp from "sharp";
 import { imageBytesToPdf, isJpegBytes, isPngBytes, standaloneBytes } from "../lib/imageToPdf";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { PDFDocument } from "pdf-lib";
 
 let failed = 0;
@@ -104,6 +104,37 @@ const pdfLooksValid = (b: Buffer) =>
     "the to-pdf route does not upload a `.original.` copy alongside the object it leaves behind");
   chk(route.indexOf("const { error: rowErr }") < route.indexOf("const keepPath"),
     "the source is retained only AFTER the row is repointed, so no failure can strand a document");
+
+  // 8. EVERY pdf-lib embed IN THE REPO is normalised, not just the one I was looking at.
+  //    The byteOffset defect was fixed in lib/imageToPdf.ts and left in place at THIRTEEN
+  //    other call sites — including the e-sign signature itself, where the PNG comes from
+  //    `Buffer.from(dataUrl, "base64")` and anything under ~4KB is drawn from Node's shared
+  //    pool at a non-zero offset. That is the same shape as the LICENSING_SHORT gap: fix the
+  //    surface in front of you, leave the rest. So the guard checks all of them.
+  const { execSync } = require("child_process") as typeof import("child_process");
+  const hits = execSync(
+    `grep -rnaE "embedJpg\\(|embedPng\\(" --include=*.ts lib app || true`, { encoding: "utf8" }
+  ).trim().split("\n").filter(Boolean);
+  // `grep -a`, never plain grep: lib/preapprovalPdf.ts is real TypeScript that grep calls
+  // "binary" because of a long run of box-drawing characters in a comment, and a silently
+  // SKIPPED file is an audit that reports clean while missing a live call site. It did.
+  const unguarded = hits.filter((line) => {
+    const call = line.slice(line.indexOf("embed"));
+    if (/embed(Jpg|Png)\(\s*standaloneBytes\(/.test(call)) return false;
+    // Also fine: a variable that was itself assigned from standaloneBytes() in the same file.
+    const file = line.split(":")[0];
+    const arg = call.match(/embed(?:Jpg|Png)\(\s*([A-Za-z0-9_$.]+)\s*\)/)?.[1];
+    if (arg && existsSync(file)) {
+      const src = readFileSync(file, "utf8");
+      if (new RegExp(`(const|let|var)\\s+${arg.replace(/[.$]/g, "\\$&")}\\s*=\\s*standaloneBytes\\(`).test(src)) return false;
+    }
+    return true;
+  });
+  chk(unguarded.length === 0,
+    unguarded.length
+      ? `${unguarded.length} pdf-lib embed call(s) do not wrap their bytes in standaloneBytes():\n         ` +
+        unguarded.map((l) => l.split(":").slice(0, 2).join(":")).join("\n         ")
+      : `all ${hits.length} pdf-lib embed calls in the repo pass standaloneBytes()`);
 
   // 8. The signature helpers are not accidentally always-true.
   chk(!isJpegBytes(Buffer.from([0x89, 0x50])) && !isPngBytes(Buffer.from([0xff, 0xd8])),

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { PDFDocument } from "pdf-lib";
+import { standaloneBytes } from "@/lib/imageToPdf";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -54,12 +55,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           pages.forEach((p) => out.addPage(p));
           merged.push(label);
         } else if (["png"].includes(ext)) {
-          const img = await out.embedPng(bytes);
+          const img = await out.embedPng(standaloneBytes(bytes));
           const page = out.addPage([img.width, img.height]);
           page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
           merged.push(label);
         } else if (["jpg", "jpeg"].includes(ext)) {
-          const img = await out.embedJpg(bytes);
+          const img = await out.embedJpg(standaloneBytes(bytes));
           const page = out.addPage([img.width, img.height]);
           page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
           merged.push(label);

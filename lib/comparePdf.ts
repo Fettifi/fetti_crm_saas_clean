@@ -6,6 +6,7 @@ import { BRAND } from "@/lib/brand";
 import { LICENSING_NOTE } from "@/lib/legal";
 import { COMPARE_ROWS, cellValue, type Comparison } from "@/lib/compareTypes";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { standaloneBytes } from "./imageToPdf";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 const fdate = (s?: string) => (s ? new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "—");
@@ -97,7 +98,7 @@ export async function buildComparisonPdf(c: Comparison): Promise<Uint8Array> {
   // ---- Letterhead ----
   try {
     const bytes = await fetch(`${APP_URL}/fetti-emblem.png`, { signal: AbortSignal.timeout(6000) }).then((r) => r.arrayBuffer());
-    const png = await doc.embedPng(bytes);
+    const png = await doc.embedPng(standaloneBytes(bytes));
     page.drawImage(png, { x: M, y: H - M - 50, width: 50, height: 50 });
   } catch { /* logo optional */ }
   page.drawText(BRAND.company, { x: M + 58, y: H - M - 21, size: 15, font: bold, color: EMERALD });

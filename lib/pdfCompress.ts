@@ -8,6 +8,7 @@
 // Pure WASM + sharp — no native Ghostscript, works on Vercel.
 import "server-only";
 import { PDFDocument } from "pdf-lib";
+import { standaloneBytes } from "./imageToPdf";
 
 export type CompressResult = {
   buf: Buffer;
@@ -51,7 +52,7 @@ export async function compressPdfIfNeeded(
           const jpg = await sharp(Buffer.from(rendered.data), {
             raw: { width: rendered.width, height: rendered.height, channels: 4 },
           }).flatten({ background: "#ffffff" }).jpeg({ quality: pass.q, mozjpeg: true }).toBuffer();
-          const img = await out.embedJpg(jpg);
+          const img = await out.embedJpg(standaloneBytes(jpg));
           const p = out.addPage([wPt, hPt]);
           p.drawImage(img, { x: 0, y: 0, width: wPt, height: hPt });
         }
