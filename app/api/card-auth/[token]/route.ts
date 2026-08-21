@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { BRAND } from "@/lib/brand";
-import { blanketAuthText, cardBrand, luhnValid, last4, encryptPan, encryptCvv, CVV_TTL_HOURS, cardAuthSigValid, type CardAuth } from "@/lib/cardAuth";
+import { blanketAuthText, cardBrand, luhnValid, last4, encryptPan, encryptCvv, CVV_TTL_HOURS, CVV_REFRESH_TTL_HOURS, cardAuthSigValid, type CardAuth } from "@/lib/cardAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +79,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       }, { status: 409 });
     }
     const body = await req.json();
+
+    // ── CVV REFRESH ──────────────────────────────────────────────────────────────────────
+    // The card is already on file and signed for; the LO is ready to key the charge and the
+    // security code has expired. Rather than RETAIN the code — which PCI prohibits outright,
+    // encrypted or not — we ask the cardholder for it again. Ten seconds for them, and the
+    // authorization they already signed still governs the charge.
+    if (body?.mode === "cvv_refresh") {
+      if (r.auth.status !== "authorized" || !r.auth.panEnc) {
+        return NextResponse.json({ error: "There's no signed card on file for this link yet." }, { status: 409 });
+      }
+      const code = String(body?.cvv || "").replace(/\D/g, "");
+      if (!/^\d{3,4}$/.test(code)) return NextResponse.json({ error: "Enter the 3 or 4-digit security code from your card." }, { status: 400 });
+      const refreshed: CardAuth = {
+        ...r.auth,
+        cvvEnc: encryptCvv(code),
+        cvvExpiresAt: new Date(Date.now() + CVV_REFRESH_TTL_HOURS * 3600 * 1000).toISOString(),
+      };
+      // Check the write. A borrower told "done" while nothing saved leaves the LO keying a
+      // charge with no code — the existing signed-authorization path checks this too.
+      const { error: saveErr } = await persistCardAuthEntry(r.lead.id, r.i, refreshed);
+      if (saveErr) return NextResponse.json({ error: "Could not save that code. Please try again." }, { status: 500 });
+      await logActivity({
+        entity_type: "loan_file", entity_id: r.file.id, loan_file_id: r.file.id, lead_id: r.lead.id,
+        actor: "borrower", action: "card_auth.cvv_refreshed",
+        detail: { borrowerIndex: r.i, last4: r.auth.last4, expiresInHours: CVV_REFRESH_TTL_HOURS },
+      }).catch(() => {});
+      return NextResponse.json({ ok: true, mode: "cvv_refresh", last4: r.auth.last4 });
+    }
+
 
     const cardholder = String(body?.cardholder || "").trim().slice(0, 80);
     const pan = String(body?.cardNumber || "").replace(/\D/g, "");

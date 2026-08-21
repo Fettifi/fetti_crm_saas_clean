@@ -114,6 +114,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // SEND the secure authorization link to the borrower over email + SMS. Ensures the
     // request (with its amount) exists first, then actually delivers it.
+    // ── ASK THE BORROWER FOR THE SECURITY CODE AGAIN ────────────────────────────────────
+    // The compliant answer to "we didn't charge it within the window". PCI 3.2.2 forbids
+    // retaining CVV after authorization — encrypted, short-TTL, or otherwise — so when the
+    // code has aged out and the LO is ready to key the charge, we ask the cardholder for the
+    // three digits instead of having kept them. The signed blanket authorization still
+    // governs WHAT may be charged; this only re-supplies the code needed to key it.
+    if (body.action === "request_cvv") {
+      const a = auths[key];
+      if (!a?.panEnc || a.status !== "authorized") {
+        return NextResponse.json({ error: "There's no signed card on file for this borrower yet — send the authorization first." }, { status: 409 });
+      }
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+      const link = `${appUrl}/card-auth/${loanFile.share_token}?b=${i}&s=${cardAuthSig(loanFile.share_token, i)}&cvv=1`;
+      const { email, phone } = borrowerContact(lead, loanFile, i);
+      if (!email && !phone) return NextResponse.json({ error: "No email or mobile on file for this borrower." }, { status: 422 });
+      const who = a.borrowerName?.split(" ")[0] || "there";
+      const sent = await sendSignRequest({
+        email, phone,
+        subject: `Quick confirmation for your card ending ${a.last4 || ""}`,
+        body: `Hi ${who} — we're processing the payment you already authorized on your Fetti loan file. For your security we don't keep the 3-digit code from the back of your card, so we need you to confirm it one more time. It takes a few seconds: ${link}`,
+        link,
+      } as any).catch((e: any) => ({ sent: [], error: e?.message }));
+      await logActivity({
+        entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: lead.id, actor: "lo",
+        action: "card_auth.cvv_requested", detail: { borrowerIndex: i, last4: a.last4, to: (sent as any)?.sent || [] },
+      }).catch(() => {});
+      const to = (sent as any)?.sent || [];
+      if (!to.length) return NextResponse.json({ error: "Couldn't reach the borrower to ask for the code." }, { status: 502 });
+      return NextResponse.json({ ok: true, sentTo: to, link });
+    }
+
     if (body.action === "send") {
       const names = borrowerNames(lead, loanFile);
       const amt = Math.max(0, Math.round(Number(body?.amount) || auths[key]?.amount || 0));

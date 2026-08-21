@@ -2,8 +2,14 @@
 
 // Borrower-facing CREDIT CARD AUTHORIZATION (/card-auth/<fileShareToken>?b=<index>).
 // The borrower reviews a BLANKET authorization for this loan transaction (set amount),
-// provides their card, and e-signs. The card is retained encrypted server-side; the CVV
-// is never collected or stored (a signed card-on-file authorization is the basis to charge).
+// provides their card, and e-signs. The card number is retained ENCRYPTED server-side; the
+// security code is collected but NEVER RETAINED past its short TTL — PCI 3.2.2 prohibits
+// storing it after authorization, encrypted or not, and the signed card-on-file
+// authorization is what permits the charge.
+//
+// When the code has since expired and the LO is ready to key a charge, `?cvv=1` reopens this
+// page in a CVV-ONLY mode: the borrower re-supplies three digits against the card already on
+// file. That is the compliant answer to "we did not use it immediately" — ask again, never keep.
 import { use, useEffect, useState } from "react";
 import { Loader2, ShieldCheck, CheckCircle2, CreditCard } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
@@ -19,6 +25,26 @@ export default function CardAuthPage({ params }: { params: Promise<{ token: stri
   const [notFound, setNotFound] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   const [done, setDone] = useState<{ brand: string; last4: string } | null>(null);
+  // ?cvv=1 — the card is already on file; we only need the security code again.
+  const cvvOnly = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("cvv") === "1";
+  const [code, setCode] = useState("");
+  const [codeDone, setCodeDone] = useState(false);
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeErr, setCodeErr] = useState<string | null>(null);
+  async function submitCode(e: React.FormEvent) {
+    e.preventDefault();
+    setCodeBusy(true); setCodeErr(null);
+    try {
+      const r = await fetch(`/api/card-auth/${token}?b=${encodeURIComponent(b)}&s=${encodeURIComponent(sig)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "cvv_refresh", cvv: code }),
+      });
+      const j = await r.json();
+      if (!r.ok) setCodeErr(j.error || "Could not save that code.");
+      else setCodeDone(true);
+    } catch (err: any) { setCodeErr(err?.message || "Could not save that code."); }
+    finally { setCodeBusy(false); }
+  }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [f, setF] = useState({ cardholder: "", cardNumber: "", expMonth: "", expYear: "", cvv: "", billingZip: "", signature: "", consent: false });
@@ -66,11 +92,34 @@ export default function CardAuthPage({ params }: { params: Promise<{ token: stri
           <div className="text-emerald-600 font-extrabold text-lg">Fetti<span className="text-slate-900"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
         </div>
 
-        {done ? (
+        {done && cvvOnly && !codeDone ? (
+          <div className="mt-8">
+            <ShieldCheck className="w-10 h-10 text-emerald-500 mx-auto" />
+            <h1 className="text-xl font-bold mt-3 text-center">Confirm your security code</h1>
+            <p className="text-slate-500 mt-2 text-center text-sm">
+              We have your card{done.last4 ? ` ending ${done.last4}` : ""} on file and your signed authorization.
+              For your security we don't keep the 3-digit code on the back, so please enter it once more
+              and we'll process the charge you already approved.
+            </p>
+            <form onSubmit={submitCode} className="mt-6 max-w-[220px] mx-auto">
+              <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                inputMode="numeric" autoComplete="cc-csc" autoFocus placeholder="•••"
+                className="w-full text-center tracking-[0.5em] text-2xl border rounded-xl px-4 py-3" />
+              <button disabled={codeBusy || code.length < 3}
+                className="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl">
+                {codeBusy ? "Sending…" : "Confirm"}
+              </button>
+            </form>
+            {codeErr && <p className="text-red-600 text-sm mt-3 text-center">{codeErr}</p>}
+            <p className="text-[11px] text-slate-400 mt-6 text-center">{LICENSING_SHORT}</p>
+          </div>
+        ) : done ? (
           <div className="mt-8 text-center">
             <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
-            <h1 className="text-xl font-bold mt-3">Authorization received</h1>
-            <p className="text-slate-500 mt-1">Thank you{info.borrowerName ? `, ${info.borrowerName.split(" ")[0]}` : ""}. Your card{done.last4 ? ` ending ${done.last4}` : ""} is on file for your loan, and your authorization has been recorded. You can close this page.</p>
+            <h1 className="text-xl font-bold mt-3">{codeDone ? "Thank you" : "Authorization received"}</h1>
+            <p className="text-slate-500 mt-1">{codeDone
+              ? `We've got it${info.borrowerName ? `, ${info.borrowerName.split(" ")[0]}` : ""} — your card${done.last4 ? ` ending ${done.last4}` : ""} will be charged as authorized. You can close this page.`
+              : `Thank you${info.borrowerName ? `, ${info.borrowerName.split(" ")[0]}` : ""}. Your card${done.last4 ? ` ending ${done.last4}` : ""} is on file for your loan, and your authorization has been recorded. You can close this page.`}</p>
             <p className="text-[11px] text-slate-400 mt-6">{LICENSING_SHORT}</p>
           </div>
         ) : (

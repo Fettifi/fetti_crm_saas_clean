@@ -77,6 +77,10 @@ export const decryptPan = (enc?: string) => decryptField(enc);
 
 // CVV — transient only. Held encrypted for CVV_TTL_HOURS, then auto-purged.
 export const CVV_TTL_HOURS = 48;
+// A code the borrower re-supplies BECAUSE the LO is about to key the charge needs minutes,
+// not days. PCI forbids retaining CVV after authorization at all; the honest way to charge a
+// card days later is to ask the cardholder for the three digits again, not to keep them.
+export const CVV_REFRESH_TTL_HOURS = 2;
 export const encryptCvv = (cvv?: string) => encryptField(digits(cvv).slice(0, 4)) || "";
 export const decryptCvv = (enc?: string) => decryptField(enc);
 export const cvvLive = (a?: CardAuth): boolean =>
