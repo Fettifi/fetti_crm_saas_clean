@@ -18,7 +18,7 @@
 // scanned in bad light, and H is the level that still reads when a corner is compromised.
 import "./_env";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import QRCode from "qrcode";
@@ -61,10 +61,13 @@ function css(pageSize: string): string {
     display: flex; align-items: center; justify-content: center;
   }
   .card { width: 100%; height: 100%; padding: var(--pad); display: flex; flex-direction: column;
-          align-items: center; justify-content: center; text-align: center; }
+          align-items: center; justify-content: center; text-align: center; overflow: hidden; }
+  /* Nothing may be wider than the paper. The insert's date line ran off the right edge of a
+     3.5in card because letter-spacing is not counted by any max-width the children inherit. */
+  .card > * { max-width: 100%; overflow-wrap: break-word; }
   .artwork { display: block; margin: 0 auto var(--gap) auto; object-fit: contain; }
   .eyebrow { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
-             letter-spacing: 0.32em; text-transform: uppercase; color: ${GREEN};
+             letter-spacing: var(--track, 0.32em); text-transform: uppercase; color: ${GREEN};
              font-size: var(--eyebrow); font-weight: 500; }
   h1 { font-size: var(--h1); font-weight: 400; color: ${GREEN}; line-height: 1.06; margin-top: var(--gap); }
   .rule { width: var(--rule); height: 1px; background: ${GOLD}; margin: var(--gap) auto; }
@@ -83,6 +86,7 @@ function css(pageSize: string): string {
 
 type Piece = {
   file: string;
+  dateText?: string;      // overrides the full weekday form where the card is too narrow
   pageSize: string;      // CSS @page size
   wIn: number; hIn: number;
   vars: string;
@@ -97,7 +101,7 @@ function html(p: Piece, qrDataUri: string, label: string): string {
   body { ${p.vars} }
   </style></head><body><div class="card">
     ${artworkTag(p.artworkMm)}
-    <div class="eyebrow">${EVENT_DATE}</div>
+    <div class="eyebrow">${p.dateText || EVENT_DATE}</div>
     <h1>${p.headline}</h1>
     <div class="rule"></div>
     <div class="lede">${p.lede}</div>
@@ -112,8 +116,9 @@ const PIECES: Piece[] = [
   {
     file: "Invitation-Insert-3.5x5",
     pageSize: "3.5in 5in", wIn: 3.5, hIn: 5,
-    vars: `--pad: 9mm; --gap: 4mm; --eyebrow: 6.5pt; --h1: 21pt; --rule: 16mm; --lede: 9.5pt;
-           --measure: 62mm; --qr: 34mm; --qrpad: 4mm; --radius: 3mm; --url: 9pt; --fine: 6.5pt; --names: 8pt;`,
+    dateText: "September 19, 2026",
+    vars: `--pad: 9mm; --gap: 4mm; --eyebrow: 6pt; --h1: 21pt; --rule: 16mm; --lede: 9.5pt;
+           --measure: 62mm; --track: 0.2em; --qr: 34mm; --qrpad: 4mm; --radius: 3mm; --url: 9pt; --fine: 6.5pt; --names: 8pt;`,
     artworkMm: 14,
     headline: "Share your<br/>photos",
     lede: "On the day, scan this code and send us the pictures you take. They come straight to us — nothing is posted anywhere.",
@@ -169,17 +174,18 @@ async function main() {
       "--headless", "--disable-gpu", "--no-pdf-header-footer",
       `--print-to-pdf=${pdfPath}`, `file://${htmlPath}`,
     ], { stdio: "ignore" });
-    // A 300dpi raster of the same layout, for texting to a print shop or dropping into Canva.
+    // The 300dpi raster is made FROM THE PDF, not from a second browser render. Chrome's
+    // headless window has a minimum width of about 500px, so a 3.5in card (336px) was laid out
+    // at 500 and screenshotted at 336 — the printed piece was fine while its preview showed
+    // the body copy sliced off at the right edge. A preview that disagrees with the artifact is
+    // worse than no preview: it invites a fix to something that was never broken.
     const pngPath = join(OUT, `${piece.file}-300dpi.png`);
-    // `--headless=new` for this one: the old headless mode ignores the device scale factor and
-    // silently writes nothing, so the 300dpi rasters were simply absent from the kit.
-    execFileSync(CHROME, [
-      "--headless=new", "--disable-gpu", "--hide-scrollbars",
-      `--screenshot=${pngPath}`,
-      `--window-size=${Math.round(piece.wIn * 96)},${Math.round(piece.hIn * 96)}`,
-      "--force-device-scale-factor=3.125",
-      `file://${htmlPath}`,
-    ], { stdio: "ignore" });
+    const qlDir = join(OUT, ".ql");
+    mkdirSync(qlDir, { recursive: true });
+    execFileSync("qlmanage", ["-t", "-s", String(Math.round(Math.max(piece.wIn, piece.hIn) * 300)),
+      "-o", qlDir, pdfPath], { stdio: "ignore" });
+    renameSync(join(qlDir, `${piece.file}.pdf.png`), pngPath);
+    rmSync(qlDir, { recursive: true, force: true });
     console.log(`  ${piece.file}.pdf · ${piece.file}-300dpi.png`);
   }
 
