@@ -108,6 +108,21 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
     process.exit(0);
   }
 
+  // DRIFT IS CHECKED BEFORE THE SNAPSHOT IS EVER WRITTEN.
+  //
+  // This check used to live at the BOTTOM, after the --save branch had already exited 0. So the
+  // comment above ("the snapshot below would otherwise enshrine the drift") described a hazard
+  // the code then walked straight into: the one moment a file ships a number its own facts no
+  // longer reproduce is the exact moment an operator reaches for --save to make the guard quiet,
+  // and --save wrote the drifted figure in as the new truth and exited clean. A guard whose
+  // escape hatch silently blesses the defect it exists to catch is worse than no guard.
+  if (drift.length) {
+    console.error(`\nFAIL — ${drift.length} file(s) SHIP a number their own facts no longer reproduce. The stored\n` +
+      `figure and the current logic disagree; re-verify the file or fix the logic before snapshotting.\n` +
+      (save ? `--save REFUSED: snapshotting now would enshrine the drift as the expected value.\n` : ""));
+    process.exit(1);
+  }
+
   if (save || !existsSync(SNAP)) {
     const lean = Object.fromEntries(Object.entries(now).map(([k, v]) => [k, { file: v.file, loanType: v.loanType, qualifying: v.qualifying, shipped: v.shipped, perBorrower: v.perBorrower, factCount: v.facts.length }]));
     writeFileSync(SNAP, JSON.stringify({ savedAt: null, files: lean }, null, 1) + "\n");
@@ -117,9 +132,17 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
 
   const prev = JSON.parse(readFileSync(SNAP, "utf8")).files || {};
   let bad = 0, checked = 0;
+  const unsnapshotted: string[] = [];
   for (const [fileNo, cur] of Object.entries(now)) {
     const before = prev[fileNo];
-    if (!before) { console.log(`  new    ${fileNo}: ${money(cur.qualifying)} — snapshot it with --save`); continue; }
+    // AN UNMEASURED FILE IS NOT A PASSING FILE.
+    //
+    // This printed "new ... snapshot it with --save" and then CONTINUED, so the run still ended
+    // in PASS. On 2026-08-20 three of the six replayable files sat in that branch — half the
+    // corpus contributed nothing, while the guard reported green. That is the same shape as the
+    // +$4,091 defect this corpus was built for: the check named the problem in prose and shipped
+    // anyway. Coverage is part of the verdict, so a gap in it is a failure, not a note.
+    if (!before) { unsnapshotted.push(`${fileNo}: ${money(cur.qualifying)} (${cur.facts.length} facts, ${cur.loanType || "?"})`); continue; }
     checked++;
     if (before.qualifying !== cur.qualifying) {
       bad++;
@@ -132,9 +155,17 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
   }
 
   console.log("");
-  if (drift.length) {
-    console.error(`FAIL — ${drift.length} file(s) SHIP a number their own facts no longer reproduce. The stored\n` +
-      `figure and the current logic disagree; re-verify the file or fix the logic before snapshotting.\n`);
+  if (unsnapshotted.length) {
+    console.error(`FAIL — ${unsnapshotted.length} replayable file(s) are NOT in the corpus, so nothing was checked\n` +
+      `for them and this run measured only ${checked} of ${checked + unsnapshotted.length}:\n` +
+      unsnapshotted.map((u) => `    ${u}`).join("\n") +
+      `\n\nA file the engine can replay but the snapshot does not cover is unguarded: its number can\n` +
+      `move by any amount and no build will say so. Read each figure above, satisfy yourself it is\n` +
+      `the number that file should ship TODAY, then baseline it:\n` +
+      `    npx tsx scripts/verify-income-replay.ts --save\n\n` +
+      `A snapshot records what a file currently produces so a CHANGE is visible. It is not a\n` +
+      `finding that the figure is correct — a file whose QC is contested belongs in the corpus\n` +
+      `too, and the contested gate (verify:income-contested) is what keeps it off a letter.\n`);
     process.exit(1);
   }
   if (bad) {

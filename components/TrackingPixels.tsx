@@ -7,6 +7,8 @@
 import Script from "next/script";
 import { useEffect, useState } from "react";
 import { getConsent } from "@/lib/consent";
+import { usePathname } from "next/navigation";
+import { isPersonalPath } from "@/lib/personalRoutes";
 
 // Build-time ids. These stay the source of truth for anything already live — see the
 // precedence note in app/api/tracking/ids/route.ts.
@@ -15,6 +17,9 @@ const ENV_TIKTOK = process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID;
 const ENV_GADS = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID; // e.g. AW-XXXXXXXXX
 
 export default function TrackingPixels() {
+  // Not on the personal surfaces. A guest sending wedding photographs has no relationship
+  // with our ad accounts, and there is no conversion here to attribute. See lib/personalRoutes.
+  const pathname = usePathname() || "/";
   // Advertising/analytics pixels load ONLY after the visitor consents to "all"
   // (CCPA/CPRA + GDPR + GPC). Reacts live the moment consent is granted in the banner.
   const [allowed, setAllowed] = useState(false);
@@ -44,7 +49,7 @@ export default function TrackingPixels() {
   const TIKTOK = ENV_TIKTOK || ids.tiktok || undefined;
   const GADS = ENV_GADS || ids.gads || undefined;
 
-  if (!allowed) return null;
+  if (isPersonalPath(pathname) || !allowed) return null;
   return (
     <>
       {META && (

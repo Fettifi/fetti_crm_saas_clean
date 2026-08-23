@@ -89,7 +89,10 @@ export default function RsvpPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8">
       <div className="max-w-3xl mx-auto">
-        <h1 className="text-2xl font-bold">Guest list</h1>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="text-2xl font-bold">Guest list</h1>
+          <a href="/rsvp/photos" className="text-sm text-emerald-400 hover:text-emerald-300">photos from the day →</a>
+        </div>
         <p className="text-slate-400 text-sm mt-1">
           {event?.label || "Vow renewal"} · {event?.date || "September 19, 2026"}
         </p>

@@ -6,15 +6,22 @@
 // pixels in TrackingPixels.tsx.
 import { useEffect, useState } from "react";
 import { getConsent, setConsent, gpcOptedOut } from "@/lib/consent";
+import { usePathname } from "next/navigation";
+import { isPersonalPath } from "@/lib/personalRoutes";
 
 export default function ConsentBanner() {
   const [show, setShow] = useState(false);
 
-  useEffect(() => {
-    if (!gpcOptedOut() && getConsent() === null) setShow(true);
-  }, []);
+  // No banner on the personal surfaces — TrackingPixels does not load there, so there is no
+  // advertising cookie to ask about, and a cookie prompt on a wedding page is just noise.
+  const pathname = usePathname() || "/";
+  const personal = isPersonalPath(pathname);
 
-  if (!show) return null;
+  useEffect(() => {
+    if (!personal && !gpcOptedOut() && getConsent() === null) setShow(true);
+  }, [personal]);
+
+  if (personal || !show) return null;
   const choose = (v: "all" | "essential") => { setConsent(v); setShow(false); };
 
   return (

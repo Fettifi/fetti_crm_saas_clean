@@ -6,6 +6,7 @@ import { ArrowLeft, Menu, X } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import MarkChat from "@/components/MarkChat";
 import TrackBeacon from "@/components/TrackBeacon";
+import { isPersonalPath } from "@/lib/personalRoutes";
 
 // Internal CRM route prefixes that get the app shell (sidebar + top bar with a
 // Back button + a mobile menu drawer). Everything else — marketing pages, the
@@ -38,6 +39,10 @@ export default function AppChrome({ children }: { children: ReactNode }) {
   // Public pages render bare — plus the floating "Chat with Mark" widget and the
   // cookieless first-party pageview beacon (never on the CRM — internal traffic
   // would pollute the content-ROI funnel data).
+  //
+  // Personal surfaces (/photos, the vow-renewal guest upload) render barer still: a wedding
+  // guest is not a lead, so no loan chat bubble and no funnel beacon. See lib/personalRoutes.
+  if (isPersonalPath(pathname)) return <>{children}</>;
   if (!isCrm) return <>{children}<MarkChat /><TrackBeacon /></>;
 
   const goBack = () => {

@@ -1,10 +1,22 @@
 {
  "savedAt": null,
  "files": {
+  "FF-202606-4509": {
+   "file": "FF-202606-4509",
+   "loanType": "conventional",
+   "qualifying": 13580,
+   "shipped": 13580,
+   "perBorrower": {
+    "1": 12830,
+    "2": 750
+   },
+   "factCount": 12
+  },
   "FF-202607-1321": {
    "file": "FF-202607-1321",
    "loanType": "conventional",
    "qualifying": 0,
+   "shipped": 0,
    "perBorrower": {},
    "factCount": 3
   },
@@ -12,20 +24,42 @@
    "file": "FF-202608-1913",
    "loanType": "fha",
    "qualifying": 22547,
+   "shipped": 22547,
    "perBorrower": {
     "1": 22547
    },
    "factCount": 14
   },
+  "FF-202607-9927": {
+   "file": "FF-202607-9927",
+   "loanType": "conventional",
+   "qualifying": 8645,
+   "shipped": 8645,
+   "perBorrower": {
+    "1": 8645
+   },
+   "factCount": 6
+  },
   "FF-202607-8421": {
    "file": "FF-202607-8421",
    "loanType": "fha",
    "qualifying": 19753,
+   "shipped": 19753,
    "perBorrower": {
     "1": 10208,
     "2": 9545
    },
    "factCount": 13
+  },
+  "FF-202608-6901": {
+   "file": "FF-202608-6901",
+   "loanType": "conventional",
+   "qualifying": 4874,
+   "shipped": 4874,
+   "perBorrower": {
+    "1": 4874
+   },
+   "factCount": 7
   }
  }
 }
