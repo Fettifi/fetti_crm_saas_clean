@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { isHeic, heicToJpeg, heicNameToJpg } from "@/lib/heic";
 import sharp from "sharp";
+import { unpooled } from "@/lib/storageBytes";
 import {
   PHOTO_BUCKET, PHOTO_PREFIX, addPhoto, hashIp, kindOf, listPhotos, uploadsOpen, budgetState,
   keepOriginals, SHRINK_OVER_BYTES, SHRINK_MAX_EDGE, SHRINK_QUALITY,
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
         if (c.ok) {
           const jpgPath = path.replace(/\.(heic|heif)$/i, "") + ".jpg";
           const { error: upErr } = await supabaseAdmin.storage.from(PHOTO_BUCKET)
-            .upload(jpgPath, c.jpeg, { contentType: "image/jpeg", upsert: true });
+            .upload(jpgPath, unpooled(c.jpeg), { contentType: "image/jpeg", upsert: true });
           if (!upErr) {
             await supabaseAdmin.storage.from(PHOTO_BUCKET).remove([path]);
             path = jpgPath; fileName = heicNameToJpg(fileName);
@@ -117,7 +118,7 @@ export async function POST(req: NextRequest) {
           } else {
             const jpgPath = path.replace(/\.[a-z0-9]+$/i, "") + ".jpg";
             const { error: upErr } = await supabaseAdmin.storage.from(PHOTO_BUCKET)
-              .upload(jpgPath, small, { contentType: "image/jpeg", upsert: true });
+              .upload(jpgPath, unpooled(small), { contentType: "image/jpeg", upsert: true });
             if (upErr) {
               shrink = `skipped: could not store the smaller copy (${upErr.message})`;
             } else {

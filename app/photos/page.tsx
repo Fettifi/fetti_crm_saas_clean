@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { eventLabel, EVENT_DATE } from "@/lib/rsvp";
+import { eventHasHappened } from "@/lib/eventPhotos";
 import Uploader from "./Uploader";
 
 // The page a guest lands on from the QR code on the invitation, the poster, and the cards
@@ -15,5 +16,5 @@ export const metadata: Metadata = {
 
 export default async function PhotosPage() {
   const label = await eventLabel();
-  return <Uploader eventLabel={label} eventDate={EVENT_DATE} />;
+  return <Uploader eventLabel={label} eventDate={EVENT_DATE} afterTheDay={eventHasHappened()} />;
 }

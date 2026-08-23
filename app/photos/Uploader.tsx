@@ -29,7 +29,10 @@ const MAX_IMAGE_MB = 40;
 const MAX_VIDEO_MB = 50;
 const isVideo = (f: File) => /^video\//i.test(f.type) || /\.(mp4|mov|m4v|webm|3gp)$/i.test(f.name);
 
-export default function Uploader({ eventLabel, eventDate }: { eventLabel: string; eventDate: string }) {
+export default function Uploader(
+  { eventLabel, eventDate, afterTheDay }:
+  { eventLabel: string; eventDate: string; afterTheDay: boolean },
+) {
   const [items, setItems] = useState<Item[]>([]);
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
@@ -171,9 +174,16 @@ export default function Uploader({ eventLabel, eventDate }: { eventLabel: string
           Share your photos
         </h1>
         <div className="mx-auto mt-4 h-px w-16 bg-[#C9A227]" />
+        {/* The invitation carries this code weeks ahead of the day, so the page cannot open with
+            "you were there" — half the people who scan it will not have been anywhere yet. */}
         <p className="mt-4 text-center text-[15px] leading-relaxed text-[#4A5347]">
-          You were there for {eventLabel.replace(/^our\b/i, "our")} — send us what you saw. Pick as many
-          photos and videos as you like; they go straight to us.
+          {afterTheDay ? (
+            <>You were there for {eventLabel} — send us what you saw. Pick as many photos and
+              videos as you like; they go straight to us.</>
+          ) : (
+            <>This is where the pictures from {eventLabel} go. Keep the link — on the day, send us
+              whatever you take, and add more whenever you like.</>
+          )}
         </p>
 
         {closed ? (
@@ -252,7 +262,7 @@ export default function Uploader({ eventLabel, eventDate }: { eventLabel: string
 
             {done > 0 && !working && failed.length === 0 && (
               <p className="mt-4 text-center font-serif text-[17px] text-[#1F5D3A]">
-                Thank you — {done === 1 ? "it's" : "they're"} with us. 💚
+                Thank you — {done === 1 ? "it's" : "they're"} with us.
               </p>
             )}
             {failed.length > 0 && !working && (

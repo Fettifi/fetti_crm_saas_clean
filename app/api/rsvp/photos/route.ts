@@ -27,17 +27,25 @@ export async function GET(req: NextRequest) {
     const page = Math.max(0, Number(req.nextUrl.searchParams.get("page")) || 0);
     const perPage = Math.min(120, Math.max(12, Number(req.nextUrl.searchParams.get("per")) || 60));
 
-    const { data: objects, error } = await supabaseAdmin.storage
-      .from(PHOTO_BUCKET)
-      .list(PHOTO_PREFIX, { limit: 10000, sortBy: { column: "created_at", order: "desc" } });
-    // An error here must never read as "no photos" — that is the shape that makes an empty
-    // gallery look like a quiet answer instead of a broken one.
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    // Paged, because a storage listing has a server-side page cap: one call asking for 10,000
+    // does not fail, it just returns the first page — and an album that stops at some invisible
+    // number, showing a confident total, is the worst possible way to lose a photograph.
+    const objects: any[] = [];
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabaseAdmin.storage
+        .from(PHOTO_BUCKET)
+        .list(PHOTO_PREFIX, { limit: 1000, offset, sortBy: { column: "created_at", order: "desc" } });
+      // An error here must never read as "no photos" — that is the shape that makes an empty
+      // gallery look like a quiet answer instead of a broken one.
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      objects.push(...(data || []));
+      if ((data || []).length < 1000) break;
+    }
 
     const index = await listPhotos().catch(() => []);
     const byPath = new Map(index.map((p) => [p.path, p]));
 
-    const all = (objects || [])
+    const all = objects
       // Supabase returns a placeholder row for an empty folder; it has no metadata/id.
       .filter((o: any) => o?.name && o.name !== ".emptyFolderPlaceholder")
       .map((o: any): Row => {

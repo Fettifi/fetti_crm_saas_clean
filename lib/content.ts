@@ -11,6 +11,7 @@ import { BRAND_BRIEF, CONTENT_PERSONALITY, CEDI_PERSONA } from "@/lib/brand";
 import { SHOW, RAY, MARK } from "@/lib/show/showBible";
 import { getSetting } from "@/lib/settings";
 import { SOCIAL_DISCLOSURE } from "@/lib/legal";
+import { unpooled } from "./storageBytes";
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
@@ -125,7 +126,7 @@ export async function composeBrandCard(): Promise<string | null> {
     const buf = await sharp(raw).extract({ left: 0, top, width: W, height: targetH })
       .resize(1080, 1350).jpeg({ quality: 90 }).toBuffer();
     const path = `auto/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
-    const { error } = await supabaseAdmin.storage.from("content").upload(path, buf, { contentType: "image/jpeg", upsert: false });
+    const { error } = await supabaseAdmin.storage.from("content").upload(path, unpooled(buf), { contentType: "image/jpeg", upsert: false });
     if (error) { console.warn("[content] card upload:", error.message); return null; }
     return supabaseAdmin.storage.from("content").getPublicUrl(path).data.publicUrl;
   } catch (e) { console.warn("[content] brand card error:", e); return null; }
@@ -209,7 +210,7 @@ export async function composeTikTokCard(hook: string): Promise<string | null> {
     </svg>`;
     const buf = await sharp(base).composite([{ input: Buffer.from(overlay), top: 0, left: 0 }]).jpeg({ quality: 90 }).toBuffer();
     const outPath = `tiktok/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
-    const { error } = await supabaseAdmin.storage.from("content").upload(outPath, buf, { contentType: "image/jpeg", upsert: false });
+    const { error } = await supabaseAdmin.storage.from("content").upload(outPath, unpooled(buf), { contentType: "image/jpeg", upsert: false });
     if (error) { console.warn("[content] tiktok card upload:", error.message); return null; }
     return supabaseAdmin.storage.from("content").getPublicUrl(outPath).data.publicUrl;
   } catch (e) { console.warn("[content] tiktok card error:", e); return null; }

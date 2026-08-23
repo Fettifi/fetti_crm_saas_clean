@@ -37,6 +37,13 @@ export const PHOTOS_BUDGET_KEY = `${RSVP_KEY}:photos:budget_mb`;
 /** Set to "1" to stop downscaling big photos once storage is no longer tight. */
 export const PHOTOS_KEEP_ORIGINALS_KEY = `${RSVP_KEY}:photos:keep_originals`;
 
+// The day itself, as an instant rather than the printed sentence in lib/rsvp. The QR is on an
+// invitation that lands in a mailbox WEEKS before the party, so the page has to know whether
+// it is being scanned in advance or on the night — "send us what you saw" is the wrong
+// sentence to show someone holding an invitation to an event that has not happened.
+export const EVENT_INSTANT = Date.parse("2026-09-19T16:00:00-07:00");
+export const eventHasHappened = () => Date.now() > EVENT_INSTANT;
+
 // The upload window. Open now so the invitation QR works the day it lands in a mailbox,
 // and it shuts by itself six weeks after the party — an upload endpoint that stays open to
 // the whole internet forever is a bucket somebody else eventually fills.

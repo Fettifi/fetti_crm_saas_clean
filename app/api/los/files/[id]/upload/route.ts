@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { maybeAdvanceStage } from "@/lib/los";
 import { isHeic, heicToJpeg, heicNameToJpg } from "@/lib/heic";
+import { unpooled } from "@/lib/storageBytes";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           if (c.ok) {
             const jpgPath = sp.replace(/\.(heic|heif)$/i, "") + ".jpg";
             const { error: e2 } = await supabaseAdmin.storage.from(BUCKET)
-              .upload(jpgPath, c.jpeg, { contentType: "image/jpeg", upsert: true });
+              .upload(jpgPath, unpooled(c.jpeg), { contentType: "image/jpeg", upsert: true });
             if (!e2) { sp2 = jpgPath; fname = heicNameToJpg(fname); size = c.jpeg.length; }
           } else console.warn(`[upload] HEIC convert failed for ${fname}: ${c.reason}`);
         }
