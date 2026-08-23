@@ -90,12 +90,21 @@ export async function POST(req: NextRequest) {
 
     // Downscale the big stills. A modern phone JPEG is 3-5MB and the album shares its quota
     // with the loan documents, so an untouched camera roll would eat the budget in ~60 pictures.
-    // 3200px at q88 still prints cleanly at 8x10 and is typically a third of the size. Set
+    // 3200px at q88 still prints cleanly at 8x10 and is typically half the size. Set
     // `...:photos:keep_originals` to "1" once storage is upgraded and this stops happening.
+    //
+    // EVERY EXIT FROM THIS BLOCK NAMES ITSELF. The first version returned a bare 200 whichever
+    // way it went — download null, no size gain, upload error, sharp throwing — so a resize
+    // that never ran was indistinguishable from one that did, and the first end-to-end run
+    // against production recorded a 4.84MB photo as 4.84MB with nothing anywhere saying why.
+    // A step that can silently do nothing must report, or the budget it protects is fiction.
+    let shrink = "not needed";
     if (kind === "image" && sizeBytes > SHRINK_OVER_BYTES && !(await keepOriginals())) {
       try {
-        const { data: dl } = await supabaseAdmin.storage.from(PHOTO_BUCKET).download(path);
-        if (dl) {
+        const { data: dl, error: dlErr } = await supabaseAdmin.storage.from(PHOTO_BUCKET).download(path);
+        if (!dl) {
+          shrink = `skipped: could not read it back (${dlErr?.message || "no data"})`;
+        } else {
           const orig = Buffer.from(await dl.arrayBuffer());
           const small = await sharp(orig)
             .rotate() // honour EXIF orientation before the metadata is dropped
@@ -103,22 +112,28 @@ export async function POST(req: NextRequest) {
             .jpeg({ quality: SHRINK_QUALITY, mozjpeg: true })
             .toBuffer();
           // Only keep the new one if it is actually smaller — re-encoding can grow a file.
-          if (small.length < orig.length) {
+          if (small.length >= orig.length) {
+            shrink = `skipped: no gain (${orig.length} -> ${small.length})`;
+          } else {
             const jpgPath = path.replace(/\.[a-z0-9]+$/i, "") + ".jpg";
             const { error: upErr } = await supabaseAdmin.storage.from(PHOTO_BUCKET)
               .upload(jpgPath, small, { contentType: "image/jpeg", upsert: true });
-            if (!upErr) {
+            if (upErr) {
+              shrink = `skipped: could not store the smaller copy (${upErr.message})`;
+            } else {
               if (jpgPath !== path) await supabaseAdmin.storage.from(PHOTO_BUCKET).remove([path]);
               path = jpgPath;
               fileName = fileName.replace(/\.[a-z0-9]+$/i, "") + ".jpg";
+              shrink = `applied: ${sizeBytes} -> ${small.length}`;
               sizeBytes = small.length; contentType = "image/jpeg";
             }
           }
         }
       } catch (e) {
         // A failed resize must leave the original photograph exactly where it is.
-        console.warn(`[event-photos] resize failed for ${fileName}:`, e instanceof Error ? e.message : e);
+        shrink = `failed: ${e instanceof Error ? e.message : String(e)}`;
       }
+      if (!shrink.startsWith("applied")) console.warn(`[event-photos] shrink ${shrink} for ${fileName}`);
     }
 
     const uploader = String(b?.uploader || "").trim().slice(0, 60) || null;
@@ -129,7 +144,13 @@ export async function POST(req: NextRequest) {
       uploader, note, ip: hashIp(req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip")),
     });
 
-    return NextResponse.json({ ok: true, photo: { id: photo.id, file_name: photo.file_name, kind: photo.kind } });
+    return NextResponse.json({
+      ok: true,
+      photo: { id: photo.id, file_name: photo.file_name, kind: photo.kind },
+      // What actually happened to the bytes. The guest's page ignores this; the verification
+      // asserts on it, which is the only reason a silent no-op can ever be caught.
+      processing: { shrink, bytes: photo.size_bytes },
+    });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }
