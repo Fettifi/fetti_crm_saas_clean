@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addMessage, alertOwnerSms } from "@/lib/phoneMessages";
 import { cfg } from "@/lib/settings";
+import { upsertRsvp, findByPhone, markConfirmationSent, eventLabel, EVENT_DATE, last10 } from "@/lib/rsvp";
+import { detectRsvp, partyQuestion, firstNameOf } from "@/lib/rsvpFromCall";
+import { sendSms } from "@/lib/comms";
 import crypto from "crypto";
 
 // Machine-to-machine receiver for the realtime "Penny" voice agent (the OpenAI
@@ -107,7 +110,49 @@ export async function POST(req: NextRequest) {
         (transcriptText ? `\n\n—— What was said ——\n${transcriptText}` : "\n\n(No speech was captured on this call.)")
       );
     }
-    return NextResponse.json({ ok: true, id: msg.id, deduped: !inserted });
+    // ——— THE CALL WAS AN RSVP ———
+    // Penny cannot write the guest list (no tool on the external bridge), so it happens here.
+    // Only on a genuinely new message: a retry for the same call_sid must not text twice.
+    let rsvp_recorded: string | null = null;
+    if (inserted) {
+      try {
+        const sig = detectRsvp(transcriptText, reason);
+        const phone = String(b.callback_number || "");
+        if (sig.isRsvp && last10(phone)) {
+          const existing = await findByPhone(phone);
+          if (existing && !existing.party_pending) {
+            // They already told us how many. A second call must never reset that number.
+            rsvp_recorded = "already on the list";
+          } else if (existing) {
+            rsvp_recorded = "already asked for the head count";
+          } else {
+            const { rsvp } = await upsertRsvp({
+              name: callerName || "Guest",
+              phone,
+              status: "yes",
+              party: 1,               // a placeholder, NOT a count — party_pending is what matters
+              party_pending: true,
+              source: "voice",
+              note: `phoned in — ${sig.why}` +
+                (sig.spokenPartyHint ? `; said ${sig.spokenPartyHint} on the call (unconfirmed)` : ""),
+            });
+            const label = await eventLabel();
+            // allowQuietHours: they called US seconds ago and are waiting to hear it registered
+            // — the one case lib/comms reserves the flag for. STOP suppression still applies.
+            const r = await sendSms(rsvp.phone!, partyQuestion(firstNameOf(rsvp.name), label, EVENT_DATE), { allowQuietHours: true });
+            if (r.ok) await markConfirmationSent(rsvp.id);
+            rsvp_recorded = r.ok ? "added, asked how many" : `added, text not sent: ${r.detail}`;
+          }
+        }
+      } catch (e) {
+        // A guest list problem must never fail the phone message itself — the message is the
+        // record that survives, and it still reaches Ramon.
+        console.error("[voice/ingest] RSVP capture failed:", e instanceof Error ? e.message : e);
+        rsvp_recorded = "failed — see logs";
+      }
+    }
+
+    return NextResponse.json({ ok: true, id: msg.id, deduped: !inserted, rsvp: rsvp_recorded });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "ingest failed" }, { status: 500 });
   }

@@ -12,6 +12,8 @@ import { phoneMatchForms } from "@/lib/phone";
 import { magicApplyLink } from "@/lib/magicLink";
 import { automationPaused } from "@/lib/automationGate";
 import { isRevocation } from "@/lib/smsConsent";
+import { findPendingPartyByPhone, parsePartyReply, resolveParty, eventLabel, EVENT_DATE } from "@/lib/rsvp";
+import { partyConfirmation, firstNameOf } from "@/lib/rsvpFromCall";
 
 export const dynamic = "force-dynamic";
 // inbound-reply auto-promote may replay the full pipeline (after Twilio ACK)
@@ -78,6 +80,37 @@ export async function POST(req: NextRequest) {
       const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       const xml = `<Response><Message>✅ ${label} added: "${esc(title.slice(0, 80))}"</Message></Response>`;
       return new NextResponse(xml, { status: 200, headers: { "Content-Type": "text/xml" } });
+    }
+
+    // ——— A WEDDING GUEST ANSWERING "HOW MANY OF YOU?" ———
+    //
+    // They phoned in an RSVP, we texted back asking for a head count, and this is the answer.
+    // It runs before the lead paths deliberately: a guest is not a lead, and "2" must never be
+    // read as a keyword, an opt-in, or a reply to a mortgage nurture sequence. Only numbers
+    // FROM A GUEST WE ARE ALREADY WAITING ON can reach this branch, so nothing else changes.
+    if (digits) {
+      const pending = await findPendingPartyByPhone(digits);
+      if (pending) {
+        const n = parsePartyReply(body);
+        const label = await eventLabel();
+        const first = firstNameOf(pending.name);
+        if (n === null) {
+          // Ask once more, then stop — a loop of "sorry, a number please" is worse than a
+          // guest list entry Ramon fixes by hand. The re-ask is rate-limited per number.
+          const askAgain = await rateLimit(`rsvpparty:${digits}`, 1, 86400);
+          const reply = askAgain
+            ? "Sorry — just a number is perfect (like 2), and I'll get you on the list. — Ramon"
+            : "Thanks! Ramon will follow up to confirm your headcount.";
+          try { await logActivity({ entity_type: "rsvp", entity_id: pending.id, actor: "consumer", action: "rsvp.party_unparsed", detail: { from, text: body.slice(0, 200) } }); } catch { /* */ }
+          return new NextResponse(`<Response><Message>${reply.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</Message></Response>`, { status: 200, headers: { "Content-Type": "text/xml" } });
+        }
+        const updated = await resolveParty(pending.id, n);
+        const reply = partyConfirmation(first, updated?.party ?? n, label, EVENT_DATE);
+        try {
+          await logActivity({ entity_type: "rsvp", entity_id: pending.id, actor: "consumer", action: "rsvp.party_set", detail: { from, party: updated?.party ?? n, text: body.slice(0, 200) } });
+        } catch { /* */ }
+        return new NextResponse(`<Response><Message>${reply.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</Message></Response>`, { status: 200, headers: { "Content-Type": "text/xml" } });
+      }
     }
 
     // Keyword opt-in (e.g. "Text DEAL to ..." from The Lot). Because the viewer

@@ -15,6 +15,9 @@
 // Matching is by PHONE, normalized to last-10. A guest who calls twice must not appear
 // twice, and "Mike" on Tuesday and "Michael" on Friday from the same number are one guest.
 import { getSettingRow, casSetting, getSetting } from "./settings";
+// The head-count parser is a pure function and lives in lib/rsvpFromCall so its guard can run
+// without a database — a check that quietly reads a mock client is a check that proves nothing.
+export { parsePartyReply } from "./rsvpFromCall";
 
 export const EVENT_KEY = "rsvp:vow-renewal-2026";
 // NOT hard-coded with a name I was never told. The first draft of this file invented a
@@ -39,6 +42,13 @@ export type Rsvp = {
   note: string | null;
   source: "voice" | "sms" | "manual" | "link";
   confirmed_sent: boolean;   // did we text them a confirmation
+  // WE ASKED THEM HOW MANY ARE COMING AND ARE WAITING FOR THE ANSWER.
+  //
+  // A phone RSVP arrives without a reliable head count. On the first test call Penny answered
+  // "Boom." and told the caller "Perfect. You're confirming for two people" — a number nobody
+  // said, which would have gone to the caterer as fact. So a call never sets party size: it
+  // sets this flag, we text the guest the question, and their reply sets the number.
+  party_pending?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -84,6 +94,7 @@ export type UpsertInput = {
   status?: RsvpStatus;
   note?: string | null;
   source?: Rsvp["source"];
+  party_pending?: boolean;
 };
 
 /** Record or update one RSVP. Returns the row and whether this replaced an earlier answer. */
@@ -113,6 +124,7 @@ export async function upsertRsvp(input: UpsertInput): Promise<{ rsvp: Rsvp; chan
       source: input.source || prev?.source || "manual",
       // A changed answer deserves a fresh confirmation, so clear the flag when it moves.
       confirmed_sent: prev && prev.status === status && prev.party === party ? prev.confirmed_sent : false,
+      party_pending: input.party_pending ?? prev?.party_pending ?? false,
       created_at: prev?.created_at || now,
       updated_at: now,
     };
@@ -136,6 +148,35 @@ export async function markConfirmationSent(id: string): Promise<void> {
     next[idx] = { ...next[idx], confirmed_sent: true };
     if (await casSetting(EVENT_KEY, stamp, JSON.stringify(next))) return;
   }
+}
+
+/** Anyone already on the list with this number, pending or not. */
+export async function findByPhone(phone: string): Promise<Rsvp | null> {
+  const d = last10(phone);
+  if (!d) return null;
+  return (await listRsvps()).find((r) => last10(r.phone) === d) || null;
+}
+
+/** The guest waiting to tell us their head count, matched the way everything here is: last 10. */
+export async function findPendingPartyByPhone(phone: string): Promise<Rsvp | null> {
+  const d = last10(phone);
+  if (!d) return null;
+  const list = await listRsvps();
+  return list.find((r) => last10(r.phone) === d && r.party_pending) || null;
+}
+
+/** Their reply arrived. Record the number they gave and stop waiting. */
+export async function resolveParty(id: string, party: number): Promise<Rsvp | null> {
+  const n = Math.min(Math.max(Math.round(party) || 1, 1), 20);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { list, stamp } = await read();
+    const idx = list.findIndex((r) => r.id === id);
+    if (idx < 0) return null;
+    const next = [...list];
+    next[idx] = { ...next[idx], party: n, party_pending: false, updated_at: new Date().toISOString() };
+    if (await casSetting(EVENT_KEY, stamp, JSON.stringify(next))) return next[idx];
+  }
+  return null;
 }
 
 export async function removeRsvp(id: string): Promise<boolean> {
