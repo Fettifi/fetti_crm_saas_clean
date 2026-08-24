@@ -13,6 +13,7 @@ import crypto from "crypto";
 // external voice server can call it without a login session. Fails closed.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 
 function tokenOk(provided: string, expected: string): boolean {
   const a = Buffer.from(provided), b = Buffer.from(expected);
@@ -118,7 +119,13 @@ export async function POST(req: NextRequest) {
       try {
         const sig = detectRsvp(transcriptText, reason);
         const phone = String(b.callback_number || "");
-        if (sig.isRsvp && last10(phone)) {
+        if (sig.isRsvp && sig.needsReview) {
+          // Real case (Kelly, 2026-08-23): a refinance client whose audio garbled into
+          // "refinancing the RSVP for the weather renewal vials". Adding her would have texted
+          // a borrower about a wedding head count. Ramon decides these by hand.
+          rsvp_recorded = `possible RSVP — NOT added (${sig.why})`;
+          await alertOwnerSms(`❓ Possible RSVP needs your call\n${callerName || "Unknown"} (${b.callback_number || "?"})\n${sig.why}\nAdd them at ${APP_URL}/rsvp if it's real.`);
+        } else if (sig.isRsvp && last10(phone)) {
           const existing = await findByPhone(phone);
           if (existing && !existing.party_pending) {
             // They already told us how many. A second call must never reset that number.

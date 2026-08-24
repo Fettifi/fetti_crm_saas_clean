@@ -38,8 +38,18 @@ const RSVP_WORD = /\b(r\.?\s?s\.?\s?v\.?\s?p\.?|are\s?ess\s?vee\s?pee)\b/i;
 const EVENT_WORDS = /\b(vow(el)?[\s-]*renewal|bio[\s-]*renewal|renewal (party|ceremony)|the renewal)\b/i;
 const COMING_WORDS = /\b(i(?:'| a)?m coming|we(?:'| a)?re coming|count me in|i'?ll be there|we'?ll be there|save (me|us) a seat|put me down|add me to the list)\b/i;
 
+// Words that mean this call is ALSO (or really) about a loan. Kelly's call, 2026-08-23: an
+// existing refinance client whose audio transcribed as "It's now refinancing the RSVP for the
+// weather renewal vials… Au revoir… I'm about to take a bath." The RSVP word was in there, so
+// the first version of this file would have added her to the wedding list and texted her asking
+// how many were coming to a party she may never have mentioned. A call that is about a loan AND
+// says RSVP is not a guest list entry — it is a call Ramon needs to return.
+const LOAN_WORDS = /\b(refinanc\w*|refi|mortgage|loan|rate|escrow|closing|appraisal|pre-?approv\w*|credit score|down ?payment)\b/i;
+
 export type CallRsvpSignal = {
   isRsvp: boolean;
+  /** Say-so is not enough to write a record. True when a human should look before we text. */
+  needsReview: boolean;
   why: string;
   /** Their own stated head count, if they actually said one. Recorded for the transcript only —
    *  it is NEVER written to the list, because a mis-heard number becomes a catering order. */
@@ -48,26 +58,31 @@ export type CallRsvpSignal = {
 
 /** Did this caller ask to be put on the guest list? Reads only what they said. */
 export function detectRsvp(transcript?: string | null, reason?: string | null): CallRsvpSignal {
+  // ONLY what the caller said. `reason` is Penny's own summary of the call — she writes it
+  // confidently even when she has misheard, and the first version of this function fed it in
+  // here, which contradicted the rule at the top of the file.
   const said = callerLines(transcript);
-  const hay = `${said} ${String(reason || "")}`;
 
-  const rsvpWord = RSVP_WORD.test(hay);
-  const eventWord = EVENT_WORDS.test(hay);
-  const comingWord = COMING_WORDS.test(hay);
+  const rsvpWord = RSVP_WORD.test(said);
+  const eventWord = EVENT_WORDS.test(said);
+  const comingWord = COMING_WORDS.test(said);
+  const loanWord = LOAN_WORDS.test(said);
 
-  // "RSVP" alone is enough — nobody says it to a mortgage company by accident. Otherwise we
-  // want both an attendance phrase AND the event, so "I'll be there" about a closing does not
-  // put a borrower on a wedding guest list.
   const isRsvp = rsvpWord || (comingWord && eventWord);
+  // A loan call that also says RSVP goes to Ramon, not to the guest list. So does an RSVP word
+  // with nothing else recognisable around it — that is the shape a garbled transcript takes.
+  const needsReview = isRsvp && (loanWord || (rsvpWord && !eventWord && !comingWord));
   const why = !isRsvp ? "no RSVP language in the caller's own words"
-    : rsvpWord ? "caller said RSVP"
+    : loanWord ? "says RSVP but the caller is also talking about a loan — needs a human"
+    : needsReview ? "says RSVP but nothing else in the call confirms it — needs a human"
+    : rsvpWord ? "caller said RSVP, and named the renewal"
     : "caller said they are coming, and named the renewal";
 
   const m = said.match(/\b(\d{1,2})\s+(?:of us|people|guests|adults)\b/i)
     || said.match(/\b(?:party of|group of|there(?:'| i)?s|bringing)\s+(\d{1,2})\b/i);
   const n = m ? Number(m[1]) : NaN;
 
-  return { isRsvp, why, spokenPartyHint: Number.isFinite(n) && n >= 1 && n <= 20 ? n : null };
+  return { isRsvp, needsReview, why, spokenPartyHint: Number.isFinite(n) && n >= 1 && n <= 20 ? n : null };
 }
 
 /** The question we text them. Their answer is the only thing that sets the head count. */

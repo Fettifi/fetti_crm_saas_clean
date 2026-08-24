@@ -38,7 +38,7 @@ Penny: Perfect. You're confirming for two people. I've got all the details down.
 console.log("\nRSVP FROM A PHONE CALL\n");
 
 const real = detectRsvp(REAL_CALL, "⚠️ CALL ENDED EARLY (AI connection dropped)");
-ok(real.isRsvp, "the call that started all this IS recognised as an RSVP", real.why);
+ok(real.isRsvp && !real.needsReview, "the call that started all this IS recognised as an RSVP", real.why);
 ok(real.spokenPartyHint === null,
   "and NO head count is taken from it — the caller only said \"Boom.\"",
   `hint=${JSON.stringify(real.spokenPartyHint)}`);
@@ -46,6 +46,26 @@ ok(real.spokenPartyHint === null,
 // Penny's confident narration is not evidence. If her lines counted, this would read "two".
 ok(!/two people/i.test(callerLines(REAL_CALL)),
   "Penny's own words are excluded from what the caller said");
+
+// KELLY, 2026-08-23 — a real refinance client whose audio transcribed as nonsense. The RSVP word
+// is in there, so the first version of this file flagged her, and the ingest path would have put
+// a borrower on a wedding guest list and texted her about a head count.
+const KELLY = `Penny: Hey Kelly — and it looks like you're working on a refinance.
+Caller: That's a cheap thing.
+Caller: 3, 2, 3.
+Caller: It's now refinancing the RSVP for the weather renewal vials.
+Caller: Au revoir. Au revoir.
+Caller: I'm about to take a bath.
+Penny: So, you're refinancing and it's related to an RSVP for a renewal event with Ramon.`;
+const kelly = detectRsvp(KELLY, "Refinance and RSVP for renewal event with Ramon");
+ok(kelly.needsReview, "a loan call that says RSVP is NOT written to the guest list", kelly.why);
+
+// Penny's summary is confident even when she misheard — it must not be the trigger.
+const summaryOnly = detectRsvp("Caller: I need my rate locked before Friday.", "Caller wants to RSVP for the vow renewal");
+ok(!summaryOnly.isRsvp, "Penny's written summary alone never triggers an RSVP", summaryOnly.why);
+
+const clean = detectRsvp("Caller: Hi, I'd like to RSVP for the vow renewal on the 19th.");
+ok(clean.isRsvp && !clean.needsReview, "a clean RSVP still goes straight on the list", clean.why);
 
 const pennyOnly = detectRsvp(`Penny: Are you calling to RSVP for the vow renewal?\nCaller: No, I need a rate quote.`);
 ok(!pennyOnly.isRsvp, "Penny SAYING \"RSVP\" is not a caller RSVPing", pennyOnly.why);
