@@ -28,6 +28,11 @@ export const EVENT_LABEL_KEY = "rsvp:vow-renewal-2026:label";
 export const EVENT_LABEL_FALLBACK = "our vow renewal";
 export const EVENT_DATE = "Saturday, September 19, 2026";
 
+// The phone line offers the guest list only while it matters. After the party it is noise on a
+// business number, and it takes itself away without anyone remembering to remove it.
+export const RSVP_LINE_OPEN_UNTIL = Date.parse("2026-09-20T12:00:00-07:00");
+export const rsvpLineOpen = () => Date.now() < RSVP_LINE_OPEN_UNTIL;
+
 export async function eventLabel(): Promise<string> {
   return (await getSetting(EVENT_LABEL_KEY)) || EVENT_LABEL_FALLBACK;
 }

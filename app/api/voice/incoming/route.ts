@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { voiceVerb } from "@/lib/voice/say";
 import { cfg } from "@/lib/settings";
 import { twilioGate, webhookCandidateUrls } from "@/lib/twilioVerify";
+import { rsvpLineOpen } from "@/lib/rsvp";
+import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 
 // Twilio inbound-voice webhook. Point your Twilio number's "A call comes in" to
 // POST https://app.fettifi.com/api/voice/incoming. Penny greets with the required
@@ -14,6 +16,19 @@ function twiml(body: string) {
   return new NextResponse(`<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`, {
     status: 200, headers: { "Content-Type": "text/xml" },
   });
+}
+
+// Is this a borrower we already know? They get the line exactly as it was — no wedding
+// question in front of a mortgage call. A guest is almost never in the leads table, which is
+// what makes this a clean split; a guest who IS a client still reaches the list through Penny's
+// transcript (see lib/rsvpFromCall), so nobody is lost either way.
+async function isKnownLead(caller: string | null): Promise<boolean> {
+  const d = String(caller || "").replace(/\D/g, "").slice(-10);
+  if (d.length !== 10) return false;
+  try {
+    const { data } = await supabaseAdmin.from("leads").select("id").ilike("phone", `%${d}%`).limit(1).maybeSingle();
+    return !!data;
+  } catch { return false; }
 }
 
 async function buildTwiml(caller: string | null) {
@@ -32,7 +47,27 @@ async function buildTwiml(caller: string | null) {
     // shortened, or altered by the LLM. The realtime bridge then opens warmly (no
     // longer responsible for the legal line).
     const disclosure = "Thanks for calling Fetti Financial Services. Quick heads-up — you're speaking with Penny, an automated A.I. assistant, and this call is recorded and transcribed for quality and record-keeping.";
-    return twiml(`<Say voice="Polly.Joanna-Neural">${disclosure}</Say><Connect><Stream url="${url}">${param}</Stream></Connect>`);
+    const connect = `<Connect><Stream url="${url}">${param}</Stream></Connect>`;
+
+    // ——— THE GUEST LIST, BEFORE THE HAND-OFF ———
+    //
+    // Penny cannot write it: her bridge is rev 2026-07-13, five weeks older than the guest
+    // list, with no tool that reaches it and no source in this repo. Ramon phoned in an RSVP
+    // and it became a voicemail. So the offer is made HERE, in TwiML we own, where a keypress
+    // is a keypress and nothing has to be transcribed correctly to work.
+    //
+    // One sentence, a three second wait, and only for callers who are not already leads —
+    // a borrower's call is unchanged. It expires by itself the day after the party.
+    if (rsvpLineOpen() && !(await isKnownLead(caller))) {
+      const offer = "If you're calling to R S V P for the vow renewal on September nineteenth, press 1. Otherwise, stay on the line.";
+      return twiml(
+        `<Say voice="Polly.Joanna-Neural">${disclosure}</Say>` +
+        `<Gather numDigits="1" timeout="3" action="/api/voice/rsvp-line?step=choose" method="POST">` +
+        `<Say voice="Polly.Joanna-Neural">${offer}</Say></Gather>` +
+        connect,   // no keypress → the call carries on to Penny exactly as before
+      );
+    }
+    return twiml(`<Say voice="Polly.Joanna-Neural">${disclosure}</Say>${connect}`);
   }
 
   const greeting = "Thanks for calling Fetti Financial Services — this is Penny, an automated A.I. assistant, and this call is recorded and transcribed for quality and record-keeping. Now — who am I speaking with, and what can I help you out with today?";
