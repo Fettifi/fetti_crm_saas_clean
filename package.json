@@ -87,7 +87,9 @@
     "photos:setup": "tsx scripts/setup-event-photos.ts",
     "photos:kit": "tsx scripts/make-photo-qr-kit.ts",
     "verify:caller-name": "tsx scripts/verify-caller-name.ts",
-    "verify:rsvp-call": "tsx scripts/verify-rsvp-from-call.ts"
+    "verify:rsvp-call": "tsx scripts/verify-rsvp-from-call.ts",
+    "verify:rsvp-line": "tsx scripts/verify-rsvp-line.ts",
+    "verify:twilio-sig": "tsx scripts/verify-twilio-signature.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

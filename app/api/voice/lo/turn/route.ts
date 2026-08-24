@@ -71,11 +71,11 @@ export async function POST(req: NextRequest) {
     const form = await req.formData();
     const params: Record<string, string> = {}; form.forEach((v, k) => { params[k] = String(v); });
     {
-      // Twilio signs the FULL url INCLUDING ?n=&t=; webhookCandidateUrls drops the
-      // query, so build query-aware candidates here. (There is also a per-call token
-      // in n/t; this signature check is defense-in-depth.) Fail-closed via twilioGate.
-      const qs = `?n=${n}&t=${t}`;
-      const cands = webhookCandidateUrls(req, "/api/voice/lo/turn").map((u) => u + qs);
+      // Twilio signs the FULL url INCLUDING ?n=&t=. webhookCandidateUrls now takes the query
+      // from the request itself — which is more faithful than rebuilding it here, because it is
+      // the exact bytes Twilio signed. (There is also a per-call token in n/t; this signature
+      // check is defense-in-depth.) Fail-closed via twilioGate.
+      const cands = webhookCandidateUrls(req, "/api/voice/lo/turn");
       const gate = twilioGate(req, cands, params);
       if (gate) return new NextResponse(gate.status === 503 ? "Service Unavailable" : "Forbidden", { status: gate.status });
     }

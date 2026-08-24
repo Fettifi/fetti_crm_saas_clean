@@ -39,7 +39,21 @@ export function twilioGate(req: Request, candidateUrls: string[], params: Record
   return twilioSignatureValid(token, sig, candidateUrls, params) ? null : { status: 403 };
 }
 
+// TWILIO SIGNS THE FULL URL, QUERY STRING INCLUDED.
+//
+// This helper used to rebuild the URL from a bare path, so any webhook carrying a query string
+// failed its own signature check and returned 403 — to Twilio, in production. Two routes had
+// already worked around it by hand (/api/voice/turn passing pathname+search, /api/voice/lo/turn
+// re-appending "?n=&t=" to every candidate) and the comment there says exactly what was wrong:
+// "webhookCandidateUrls drops the query". The third caller to arrive — the RSVP line, whose
+// steps are ?step=name and ?step=party — walked straight into it and 403'd every caller.
+//
+// Fixing the helper instead of adding a third workaround. Callers may still pass a path that
+// already carries its own query; that one is left exactly as given.
 export function webhookCandidateUrls(req: Request, path: string): string[] {
+  if (!path.includes("?")) {
+    try { path += new URL(req.url).search || ""; } catch { /* keep the bare path */ }
+  }
   const out: string[] = [];
   const base = (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com").replace(/\/$/, "");
   out.push(base + path);
