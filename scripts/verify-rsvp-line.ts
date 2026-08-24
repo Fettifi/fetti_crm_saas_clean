@@ -72,7 +72,20 @@ async function main() {
   const id = afterName?.id || "";
   const party = await post(`/api/voice/rsvp-line?step=party&id=${encodeURIComponent(id)}`, { From: FROM, Digits: "3", CallSid: "CAverify5" });
   ok(/<Hangup\/>/.test(party), "the call ends after the confirmation");
-  ok(/3 of you|three of you/i.test(party) || /Perfect/i.test(party), "the caller hears the number read back");
+  // Penny speaks through ElevenLabs when it is up (a <Play> of generated audio) and falls back
+  // to a neural <Say> when it is not. Both are correct; a guard that only knew one of them
+  // failed this run for the wrong reason. What must be true is that SOMETHING is spoken, and
+  // that when it is audio, the audio is really there — a <Play> pointing at a dead URL is
+  // silence on the call, which is the failure this is here to catch.
+  const playUrl = party.match(/<Play>([^<]+)<\/Play>/)?.[1];
+  const said = /<Say[^>]*>([^<]*)<\/Say>/.exec(party)?.[1] || "";
+  ok(!!playUrl || /of you|Perfect/i.test(said), "the caller hears the confirmation", playUrl ? "spoken audio" : said.slice(0, 60));
+  if (playUrl) {
+    const audio = await fetch(playUrl);
+    const bytes = Buffer.from(await audio.arrayBuffer());
+    ok(audio.ok && bytes.length > 2000, "and that audio is real, not a dead link",
+      `HTTP ${audio.status}, ${(bytes.length / 1024).toFixed(0)}KB`);
+  }
   const done = await findByPhone(FROM);
   ok(done?.party === 3, "the keypad set the head count", `party=${done?.party}`);
   ok(done?.party_pending === false, "and it is no longer pending");
