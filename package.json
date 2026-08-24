@@ -85,7 +85,8 @@
     "verify:income-engine-diff": "npx tsx scripts/verify-income-engine-diff.ts",
     "verify:photos": "tsx scripts/verify-event-photos.ts",
     "photos:setup": "tsx scripts/setup-event-photos.ts",
-    "photos:kit": "tsx scripts/make-photo-qr-kit.ts"
+    "photos:kit": "tsx scripts/make-photo-qr-kit.ts",
+    "verify:caller-name": "tsx scripts/verify-caller-name.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

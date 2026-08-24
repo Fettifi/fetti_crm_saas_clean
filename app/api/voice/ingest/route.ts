@@ -19,7 +19,7 @@ function tokenOk(provided: string, expected: string): boolean {
 // Pull the caller's name out of what THEY said, when the agent didn't capture it
 // (e.g. a call that dropped before Penny ran save_message). Only reads "Caller:"
 // lines so Penny's own words can't be misread as the caller's name.
-function extractCallerName(transcript?: string): string | undefined {
+export function extractCallerName(transcript?: string): string | undefined {
   if (!transcript) return undefined;
   const callerText = transcript.split("\n").filter((l) => /^\s*caller:/i.test(l)).map((l) => l.replace(/^\s*caller:\s*/i, "")).join(" ");
   if (!callerText) return undefined;
@@ -30,6 +30,13 @@ function extractCallerName(transcript?: string): string | undefined {
   if (!m) return undefined;
   // Drop trailing filler the pattern may have grabbed ("Dana from…", "John and…").
   let name = m[1].replace(/\s+(?:and|from|calling|here|with|at|the|but|so|because|about|regarding|on|for|to)\b.*$/i, "").trim();
+  // A FULL STOP ENDS THE NAME. Periods are allowed inside the capture so initials survive
+  // ("J. R. Smith"), but that also let a sentence boundary in: Ramon's RSVP call transcribed as
+  // "This is Ray. I was calling to make sure that..." and was filed under the caller name
+  // "Ray. I Was" — a person who does not exist, on every message from that number. A word of two
+  // or more letters followed by a period and another word is the end of a sentence, not a name;
+  // a single letter followed by a period is an initial and keeps going.
+  name = name.replace(/([A-Za-z]{2,})\.\s+\S.*$/, "$1").trim();
   // Reject non-names that can follow "it's"/"this is" ("it's about a refinance").
   if (!name || /^(?:a|an|the|me|him|her|us|about|regarding|good|great|okay|ok|fine|urgent|important|calling|really|just|going|trying|looking)\b/i.test(name)) return undefined;
   return name.split(/\s+/).map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ");
