@@ -1,6 +1,6 @@
 "use client";
 
-// THE ALBUM — everything guests sent, for Ramon and Piaget.
+// THE ALBUM — everything guests sent, for Piaget and Ramon.
 //
 // Login-gated by the "/rsvp" prefix in lib/routeAccess.ts, which is the same door as the guest
 // list. Images are served through short-lived SIGNED urls: the bucket is private, and it stays
