@@ -44,8 +44,8 @@
 import "./_env";
 import { createHash } from "crypto";
 import { supabaseAdmin } from "../lib/supabaseAdminClient";
-import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync } from "fs";
-import { join } from "path";
+import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync, renameSync } from "fs";
+import { join, dirname, basename, extname } from "path";
 import { homedir } from "os";
 
 const ROOT = process.env.FETTI_DOCS_ROOT || join(homedir(), "Fetti Loan Files");
@@ -171,8 +171,39 @@ function safe(s: string, max = 70): string {
     wrote++;
   }
 
+  // ── LABEL WHAT THE CRM HAS REPLACED ─────────────────────────────────────────────────────
+  // Converting or shrinking a document gives it a NEW storage_path, so the sync pulls the new
+  // file and the OLD local copy stays (this sync never deletes). The folder then holds
+  // "Government-issued photo ID — 20260722_110053.jpg" at 2.87 MB beside the .pdf at 0.58 MB,
+  // and the wrong one gets uploaded. Rename the superseded copy rather than delete it.
+  //
+  // "This storage_path is no longer live" is NOT enough on its own: a dead entry's `file` is
+  // usually the very path the download above just overwrote with the NEW version (same
+  // checklist-derived name, new bytes). Selecting on the dead key alone would rename the
+  // CURRENT file as superseded — it tried to, on a live Wells Fargo statement and a live tax
+  // return. A file is superseded only when NO live document maps onto it.
+  const liveFiles = new Set(
+    (docs || []).map((d: any) => manifest[d.storage_path]?.file).filter(Boolean) as string[],
+  );
+  const livePaths = new Set((docs || []).map((d: any) => d.storage_path));
+  let labelled = 0;
+  for (const [key, v] of Object.entries(manifest) as [string, any][]) {
+    if (livePaths.has(key) || !v?.file || !existsSync(v.file) || liveFiles.has(v.file)) continue;
+    const ext = extname(v.file), stem = basename(v.file, ext);
+    if (/ — original( \(\d+\))?$/.test(stem)) continue;      // already labelled
+    let dest = join(dirname(v.file), `${stem} — original${ext}`);
+    for (let i = 2; existsSync(dest); i++) dest = join(dirname(v.file), `${stem} — original (${i})${ext}`);
+    if (DRY) { console.log(`  would label  ${basename(v.file)} -> ${basename(dest)}`); labelled++; continue; }
+    try {
+      renameSync(v.file, dest);
+      manifest[key] = { file: dest, bytes: v.bytes };   // lockstep, or the push side re-uploads it
+      labelled++;
+      console.log(`  labelled  ${basename(dest)}`);
+    } catch { /* a file we cannot rename is left exactly as it is */ }
+  }
+
   if (!DRY) { mkdirSync(ROOT, { recursive: true }); writeFileSync(MANIFEST, JSON.stringify(manifest, null, 1)); }
-  console.log(`\n${DRY ? "DRY RUN — " : ""}${wrote} written · ${skipped} already current · ${failed} failed · ${orphaned} with no loan file`);
+  console.log(`\n${DRY ? "DRY RUN — " : ""}${wrote} written · ${skipped} already current · ${failed} failed · ${orphaned} with no loan file${labelled ? ` · ${labelled} superseded copy(ies) labelled` : ""}`);
 
   // ── PUSH ────────────────────────────────────────────────────────────────────────────────────
   let pushed = 0, pushFailed = 0, pushSkipped = 0, conflicts = 0;
