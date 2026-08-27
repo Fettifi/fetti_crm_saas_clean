@@ -137,3 +137,40 @@ export function recipientView(env: EsignRequest, recipient: Recipient) {
     fields: (env.fields || []).map((f) => ({ ...f, mine: !f.recipientId || f.recipientId === recipient.id })),
   };
 }
+
+// VOIDING AN ENVELOPE — ONE IMPLEMENTATION, TWO CALLERS.
+//
+// The sender route and any operational script that has to kill a stale link must agree on what
+// voiding MEANS, because the sign route enforces exactly one thing: `env.status === "voided"`.
+// A second copy of this that set a different field, or logged nothing, would leave a link that
+// still signs while the screen says it is dead.
+//
+// Already-voided is a SUCCESS, not an error, and does not add a second event — voiding twice is a
+// normal thing to do to a list and should not litter the audit trail.
+export type VoidOutcome =
+  | { ok: true; env: EsignRequest; alreadyVoided: boolean }
+  | { ok: false; reason: "not_found" | "completed" };
+
+export async function voidEnvelope(token: string, reason?: string): Promise<VoidOutcome> {
+  const env = await getRequest(token);
+  if (!env) return { ok: false, reason: "not_found" };
+  // A completed envelope is a signed document. Voiding it would contradict a Certificate of
+  // Completion that has already been issued, so it is refused here and not just in the UI.
+  if (env.status === "completed") return { ok: false, reason: "completed" };
+  if (env.status === "voided") return { ok: true, env, alreadyVoided: true };
+
+  const detail = String(reason || "").slice(0, 300) || "Voided by sender";
+  env.status = "voided";
+  env.events = [...(env.events || []), { type: "voided", at: new Date().toISOString(), detail }];
+  await saveRequest(env);
+
+  if (env.loan_file_id) {
+    const { logActivity } = await import("@/lib/activity");
+    await logActivity({
+      entity_type: "loan_file", entity_id: env.loan_file_id, loan_file_id: env.loan_file_id,
+      lead_id: env.lead_id || undefined, actor: "lo", action: "esign.voided",
+      detail: { title: env.title, reason: detail },
+    }).catch(() => {});
+  }
+  return { ok: true, env, alreadyVoided: false };
+}
