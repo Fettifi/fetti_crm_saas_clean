@@ -29,6 +29,7 @@ import AttributionCapture from '@/components/AttributionCapture';
 import ConsentBanner from '@/components/ConsentBanner';
 import ClickTracker from '@/components/ClickTracker';
 import AppChrome from '@/components/AppChrome';
+import VersionWatcher from "@/components/VersionWatcher";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
@@ -39,6 +40,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ClickTracker />
         <Analytics />
         <AppChrome>{children}</AppChrome>
+        {/* Notices when the running bundle is older than what is deployed. */}
+        <VersionWatcher />
         <ConsentBanner />
         <Toaster position="top-center" richColors />
       </body>
