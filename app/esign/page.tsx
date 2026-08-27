@@ -61,6 +61,8 @@ export default function EsignPage() {
   }
   const [fileId, setFileId] = useState("");
   const [fields, setFields] = useState<EsignField[]>([]);
+  // A signature actually DROPPED on the page — not merely a tool armed.
+  const hasSignature = fields.some((f) => f.type === "signature");
   const [tool, setTool] = useState<EsignFieldType | null>(null);
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState<{ ok?: boolean; text: string } | null>(null);
@@ -247,6 +249,9 @@ export default function EsignPage() {
       if (r.ok && j?.signNow) {
         // Straight to the signing page. Same page a borrower would see.
         window.location.href = j.signNow;
+        // If the navigation is blocked or slow, do not leave the button reading "Opening…"
+        // forever with no way back — a stuck button is indistinguishable from a broken one.
+        setTimeout(() => setSending(false), 6000);
         return;
       }
       setMsg({ text: (j && j.error) || `Couldn't open it for signing (HTTP ${r.status}).` });
@@ -351,15 +356,22 @@ export default function EsignPage() {
               <>
                 {onlyMe ? (
                   <>
-                    <button onClick={signItMyself} disabled={sending || !pdf}
-                      title="Creates the envelope with you as the only signer and opens it for signature right now. No email."
+                    {/* NO SILENT DEFAULT. With nothing placed this used to create the envelope
+                        anyway and drop the signature at a fixed 0.58/0.85 — which reads exactly
+                        as "it puts the signature where IT wants", the complaint this whole mode
+                        exists to answer. One click on the document is the difference; ask for it
+                        rather than guessing on his behalf. */}
+                    <button onClick={signItMyself} disabled={sending || !pdf || !hasSignature}
+                      title={hasSignature
+                        ? "Creates the envelope with you as the only signer and opens it for signature right now. No email."
+                        : "Click the document where you want your signature first."}
                       className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
                       <PenLine className="w-4 h-4" /> {sending ? "Opening…" : "Sign it now"}
                     </button>
-                    <p className="text-[11px] text-slate-500 mt-1.5 text-center">
-                      {fields.length
-                        ? `${fields.length} field${fields.length === 1 ? "" : "s"} placed — no email sent.`
-                        : "Drop a Signature field on the page first, or it lands bottom-right by default."}
+                    <p className={`text-[11px] mt-1.5 text-center ${hasSignature ? "text-slate-500" : "text-emerald-400 font-medium"}`}>
+                      {hasSignature
+                        ? `Signature placed — no email sent.`
+                        : "Click the document where you want your signature."}
                     </p>
                   </>
                 ) : (
