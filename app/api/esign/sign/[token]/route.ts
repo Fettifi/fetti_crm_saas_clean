@@ -87,7 +87,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     const sigImg = await pdf.embedPng(standaloneBytes(sigPng));
     const helv = await pdf.embedFont(StandardFonts.Helvetica);
     const pages = pdf.getPages();
-    const mine = (env.fields || []).filter((f: EsignField) => (f.recipientId || env.recipients[0]?.id) === recipient.id);
+    let mine = (env.fields || []).filter((f: EsignField) => (f.recipientId || env.recipients[0]?.id) === recipient.id);
+
+    // SIGNATURES THE SIGNER PLACED THEMSELVES.
+    //
+    // A signer can put their own signature where they want it on the page; those placements
+    // arrive here and REPLACE the sender's signature boxes for this recipient. Anything else
+    // the sender laid out — dates, name, text — is untouched, and a signer can never place a
+    // field for anybody else: everything below is stamped as this recipient, this signature.
+    const placed = Array.isArray(body?.placedFields) ? body.placedFields : [];
+    if (placed.length) {
+      const clean: EsignField[] = placed.slice(0, 5).map((f: any, i: number) => ({
+        id: `self-${recipient.id}-${i}`,
+        type: "signature" as const,
+        page: Math.max(1, Math.min(Number(f.page) || 1, pdf.getPageCount())),
+        xPct: Math.max(0, Math.min(0.98, Number(f.xPct) || 0)),
+        yPct: Math.max(0, Math.min(0.98, Number(f.yPct) || 0)),
+        wPct: Math.max(0.05, Math.min(0.6, Number(f.wPct) || 0.24)),
+        hPct: Math.max(0.02, Math.min(0.2, Number(f.hPct) || 0.06)),
+        recipientId: recipient.id,
+      }));
+      mine = [...mine.filter((f) => f.type !== "signature"), ...clean];
+      // Persist so the audit trail and any later re-render show where it actually went.
+      env.fields = [
+        ...(env.fields || []).filter((f: EsignField) => !((f.recipientId || env.recipients[0]?.id) === recipient.id && f.type === "signature")),
+        ...clean,
+      ];
+    }
     for (const f of mine) {
       const pg = pages[Math.min(Math.max((f.page || 1) - 1, 0), pages.length - 1)];
       const { width: pw, height: ph } = pg.getSize();

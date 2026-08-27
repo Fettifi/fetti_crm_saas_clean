@@ -99,7 +99,12 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
     try {
       const fieldValues: Record<string, string> = {};
       for (const f of fields) if (f.type === "text" && f.mine !== false && (f.value || "").trim()) fieldValues[f.id] = String(f.value).trim().slice(0, 300);
-      const r = await fetch(`/api/esign/sign/${token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ signatureDataUrl: adopted, typedName: typed.trim(), consent: true, fieldValues }) });
+      // Signatures the SIGNER dropped themselves. The envelope's own fields are already on the
+      // server; these are the ones placed just now, in front of them.
+      const placedFields = fields
+        .filter((f: any) => f.type === "signature" && f.mine === true)
+        .map((f: any) => ({ type: "signature", page: f.page, xPct: f.xPct, yPct: f.yPct, wPct: f.wPct, hPct: f.hPct }));
+      const r = await fetch(`/api/esign/sign/${token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ signatureDataUrl: adopted, typedName: typed.trim(), consent: true, fieldValues, placedFields }) });
       const j = await r.json();
       if (r.ok) { setDone(true); setCompleted(!!j.completed); } else setErr(j.error || "Signing failed.");
     } catch { setErr("Connection error."); }
@@ -142,13 +147,17 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
           swipe, so the signer can never reach the signature pad below it — which reads
           exactly like "I can't sign it on my phone". The inner scroll returns at sm+. */}
       <div className="mt-2 rounded-xl overflow-hidden bg-slate-200 p-2 sm:p-3 sm:max-h-[65vh] sm:overflow-y-auto">
-        <PdfDoc src={`/api/esign/sign/${token}/pdf`} mode="sign" fields={fields} onChange={(f) => setFields(f as any)} signatureImg={adopted} signerName={meta.signer_name} recipientLabels={{}} />
+        <PdfDoc src={`/api/esign/sign/${token}/pdf`} mode="sign" fields={fields} onChange={(f) => setFields(f as any)} signatureImg={adopted} signerName={meta.signer_name} recipientLabels={{}}
+          /* Once a signature is adopted, clicking the page puts it there. Before that there is
+             nothing to place, so the document stays a document. */
+          allowSignerPlace={!!adopted && !done} />
       </div>
       <div className="mt-5 bg-white border border-slate-300 rounded-2xl p-5">
         <div className="flex items-center gap-2 text-sm font-semibold"><PenLine className="w-4 h-4 text-emerald-600" /> Adopt your signature</div>
         {adopted ? (
           <div className="mt-3 flex items-center gap-3">
             <img src={adopted} alt="Your signature" className="h-14 border border-slate-200 rounded bg-slate-50 px-2" />
+            <span className="text-xs text-emerald-700 font-medium">Click the document to place it where you want — drag to adjust.</span>
             <button onClick={() => { setAdopted(null); clearPad(); }} className="text-xs text-slate-500 hover:text-slate-800 underline">Redo</button>
             <span className="text-xs text-emerald-600">✓ Placed on the document</span>
           </div>

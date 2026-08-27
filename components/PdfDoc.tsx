@@ -23,13 +23,15 @@ const LABEL: Record<EsignFieldType, string> = { signature: "Signature", initials
 type PageInfo = { num: number; w: number; h: number };
 
 export default function PdfDoc({
-  src, data, mode, fields, onChange, tool, onToolUsed, signatureImg, signerName, activeRecipientId, recipientColors, recipientLabels,
+  src, data, mode, fields, onChange, tool, onToolUsed, signatureImg, signerName, activeRecipientId, recipientColors, recipientLabels, allowSignerPlace,
 }: {
   src?: string;
   data?: Uint8Array;
   mode: "place" | "sign";
   fields: EsignField[];
   onChange?: (f: EsignField[]) => void;
+  /** mode "sign": let the SIGNER drop their own signature wherever they want on the page. */
+  allowSignerPlace?: boolean;
   tool?: EsignFieldType | null;
   onToolUsed?: () => void;
   signatureImg?: string | null;
@@ -98,20 +100,35 @@ export default function PdfDoc({
   }, [pages]);
 
   const placeAt = useCallback((pageNum: number, e: React.MouseEvent) => {
-    if (mode !== "place" || !tool || !onChange) return;
+    // TWO WAYS A FIELD GETS PLACED.
+    //
+    // "place" — the SENDER arms a tool and drops a field for a signer, before sending.
+    // "sign" + allowSignerPlace — the SIGNER puts their own signature wherever they want, on
+    //   the document in front of them. That is what a person actually means by "let me put the
+    //   signature where I want it": not pre-arranging a box as the sender, but placing their
+    //   own name while signing. Without it, a signer can only fill a box somebody else chose.
+    const signerPlacing = mode === "sign" && allowSignerPlace;
+    if (!signerPlacing && (mode !== "place" || !tool)) return;
+    if (!onChange) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const sz = FIELD_SIZE[tool];
+    const kind: EsignFieldType = signerPlacing ? "signature" : (tool as EsignFieldType);
+    const sz = FIELD_SIZE[kind];
     let xPct = (e.clientX - rect.left) / rect.width - sz.w / 2;
     let yPct = (e.clientY - rect.top) / rect.height - sz.h / 2;
     xPct = Math.max(0, Math.min(1 - sz.w, xPct));
     yPct = Math.max(0, Math.min(1 - sz.h, yPct));
-    const f: EsignField = { id: Math.random().toString(36).slice(2, 9), type: tool, page: pageNum, xPct, yPct, wPct: sz.w, hPct: sz.h, recipientId: activeRecipientId };
-    onChange([...fields, f]);
+    const f: EsignField = { id: Math.random().toString(36).slice(2, 9), type: kind, page: pageNum, xPct, yPct, wPct: sz.w, hPct: sz.h, recipientId: activeRecipientId, mine: signerPlacing ? true : undefined };
+    // A signer placing their own signature replaces any they already dropped — one signature,
+    // moved, not a trail of them down the page.
+    const base = signerPlacing ? fields.filter((x) => !(x.type === "signature" && x.mine)) : fields;
+    onChange([...base, f]);
     onToolUsed?.();
-  }, [mode, tool, fields, onChange, onToolUsed]);
+  }, [mode, tool, fields, onChange, onToolUsed, allowSignerPlace, activeRecipientId]);
 
   function startDrag(field: EsignField, e: React.PointerEvent) {
-    if (mode !== "place" || !onChange) return;
+    // A signer may nudge their own signature; they may not move anyone else's field.
+    const canDrag = mode === "place" || (mode === "sign" && allowSignerPlace && field.type === "signature" && field.mine);
+    if (!canDrag || !onChange) return;
     e.stopPropagation();
     const overlay = (e.currentTarget as HTMLElement).parentElement!;
     const rect = overlay.getBoundingClientRect();
@@ -155,7 +172,7 @@ export default function PdfDoc({
           <canvas ref={(el) => { canvasRefs.current[p.num] = el; }} className="block" style={{ width: p.w, height: p.h }} />
           <div
             data-overlay
-            className={`absolute inset-0 ${mode === "place" && tool ? "cursor-crosshair" : ""}`}
+            className={`absolute inset-0 ${(mode === "place" && tool) || (mode === "sign" && allowSignerPlace) ? "cursor-crosshair" : ""}`}
             onClick={(e) => placeAt(p.num, e)}
           >
             {fields.filter((f) => f.page === p.num).map((f) => {
