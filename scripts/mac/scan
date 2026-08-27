@@ -1,0 +1,126 @@
+#!/bin/bash
+# Scan from the Canon MF741C/743C over eSCL (AirScan) — no driver, no toner needed.
+#
+# The print engine and the scan engine are separate. eSCL talks straight to the scanner over
+# HTTP, so an empty cartridge is irrelevant: it never touches the printer side.
+#
+#   scan                      one page from the glass -> ~/Desktop/Scan-<date>.pdf
+#   scan --adf                every page in the feeder -> one PDF
+#   scan --gray               greyscale (smaller file)
+#   scan --out ~/x.pdf        choose the destination
+#   scan --host 192.168.1.98  if the printer's IP changes
+set -euo pipefail
+
+# FIND THE SCANNER, don't assume it.
+#
+# This stopped working because the printer's address moved: the old canonA9E13B.local no longer
+# resolved and the IP had changed to .98. A hardcoded address is a thing that breaks on the next
+# DHCP lease, so try, in order: an override, the device's own hostname, the last address that
+# worked, then a sweep of the subnet. The one that answers eSCL wins and is remembered.
+CACHE="$HOME/.canon-scan-host"
+alive() { curl -s -m 3 -o /dev/null "http://$1/eSCL/ScannerCapabilities" 2>/dev/null; }
+find_host() {
+  for h in "${CANON_SCAN_HOST:-}" "Canona9e13b.lan" "$(cat "$CACHE" 2>/dev/null)"; do
+    [ -n "$h" ] && alive "$h" && { echo "$h"; return; }
+  done
+  # Last resort: ask every address on this subnet whether it is a scanner.
+  local base; base=$(ipconfig getifaddr en0 2>/dev/null | cut -d. -f1-3)
+  [ -n "$base" ] || return
+  echo "  looking for the scanner on $base.0/24…" >&2
+  for i in $(seq 1 254); do
+    ( alive "$base.$i" && echo "$base.$i" > "$CACHE.found" ) &
+  done; wait
+  [ -f "$CACHE.found" ] && { cat "$CACHE.found"; rm -f "$CACHE.found"; }
+}
+HOST=$(find_host)
+if [ -z "$HOST" ]; then
+  echo "Can't find the scanner on this network." >&2
+  echo "Check it is powered on and on the same network, then read its IP from the panel:" >&2
+  echo "  Menu > Preferences > Network > TCP/IP Settings > IPv4 > IP Address" >&2
+  echo "and run:  scan --host <that address>" >&2
+  exit 1
+fi
+echo "$HOST" > "$CACHE"
+SOURCE="Platen"; COLOR="RGB24"; OUT=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --adf) SOURCE="Feeder"; shift;;
+    --gray|--grey) COLOR="Grayscale8"; shift;;
+    --out) OUT="$2"; shift 2;;
+    --host) HOST="$2"; shift 2;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0;;
+    *) echo "unknown option: $1"; exit 2;;
+  esac
+done
+[ -n "$OUT" ] || OUT="$HOME/Desktop/Scan-$(date +%Y-%m-%d-%H%M%S).pdf"
+
+REQ=$(cat <<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<scan:ScanSettings xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
+  <pwg:Version>2.63</pwg:Version>
+  <scan:Intent>Document</scan:Intent>
+  <pwg:InputSource>$SOURCE</pwg:InputSource>
+  <scan:ColorMode>$COLOR</scan:ColorMode>
+  <scan:XResolution>300</scan:XResolution>
+  <scan:YResolution>300</scan:YResolution>
+  <pwg:DocumentFormat>application/pdf</pwg:DocumentFormat>
+</scan:ScanSettings>
+XML
+)
+
+if [ "$SOURCE" = "Feeder" ]; then WHERE="document feeder"; else WHERE="glass"; fi
+echo "Scanning from the $WHERE…"
+# eSCL scanners take ONE job at a time and answer 503 while the last one is still releasing.
+# Scanning twice in a row is completely normal, so wait it out instead of reporting a failure.
+JOB=""
+for attempt in 1 2 3 4 5 6 7 8; do
+  RESP=$(curl -s -m 30 -i -X POST "http://$HOST/eSCL/ScanJobs" \
+           -H "Content-Type: text/xml" --data "$REQ" | tr -d '\r')
+  JOB=$(printf '%s' "$RESP" | awk '/^[Ll]ocation:/ {print $2}')
+  [ -n "$JOB" ] && break
+  CODE=$(printf '%s' "$RESP" | awk 'NR==1 {print $2}')
+  if [ "$CODE" = "503" ] || [ "$CODE" = "409" ]; then
+    [ "$attempt" = "1" ] && echo "  scanner busy, waiting…"
+    sleep $((attempt < 4 ? 2 : 5))
+  else
+    break
+  fi
+done
+if [ -z "$JOB" ]; then
+  echo "The scanner wouldn't start a job (HTTP ${CODE:-no response})." >&2
+  echo "Check the panel: paper jam, open cover, or a scan already running from the device itself." >&2
+  exit 1
+fi
+
+# Each GET returns the next page; a 404 means there are no more.
+tmp=$(mktemp -d); n=0
+while :; do
+  f="$tmp/page-$(printf '%03d' $n).pdf"
+  code=$(curl -s -m 120 -o "$f" -w "%{http_code}" "$JOB/NextDocument")
+  [ "$code" = "200" ] && [ -s "$f" ] || { rm -f "$f"; break; }
+  n=$((n+1)); echo "  page $n"
+  [ "$SOURCE" = "Platen" ] && break     # the glass holds exactly one sheet
+done
+
+# RELEASE THE JOB. eSCL scanners run one job at a time and hold this one until the client either
+# reads to a 404 or deletes it. The glass path breaks after a single page and never reaches the
+# 404, so without this DELETE the Canon stays busy and answers 409 to the NEXT scan — which is
+# every second document of a session, the thing this tool exists to do. Failing to release is
+# also why "scanner busy, waiting…" appeared on a first scan: the previous run never let go.
+curl -s -m 10 -X DELETE "$JOB" >/dev/null 2>&1 || true
+
+if [ "$n" -eq 0 ]; then
+  rm -rf "$tmp"
+  echo "Nothing came back. On the glass? Close the lid. In the feeder? Check the sheets are seated." >&2
+  exit 1
+fi
+
+if [ "$n" -eq 1 ]; then
+  mv "$tmp"/page-000.pdf "$OUT"
+else
+  # Multi-page from the feeder: join without re-rendering, so nothing is re-compressed.
+  /System/Library/Automator/Combine\ PDF\ Pages.action/Contents/MacOS/join \
+    -o "$OUT" "$tmp"/page-*.pdf 2>/dev/null || cp "$tmp"/page-000.pdf "$OUT"
+fi
+rm -rf "$tmp"
+echo "Saved: $OUT  ($(du -h "$OUT" | cut -f1), $n page$([ "$n" = 1 ] || echo s))"

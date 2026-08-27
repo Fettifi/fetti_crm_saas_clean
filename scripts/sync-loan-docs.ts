@@ -47,6 +47,7 @@ import { supabaseAdmin } from "../lib/supabaseAdminClient";
 import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync, renameSync } from "fs";
 import { join, dirname, basename, extname } from "path";
 import { homedir } from "os";
+import { safe, loanFolderName } from "../lib/docNaming";
 
 const ROOT = process.env.FETTI_DOCS_ROOT || join(homedir(), "Fetti Loan Files");
 const BUCKET = "loan-docs";
@@ -66,14 +67,8 @@ function pushSafeName(name: string): string {
 
 // Finder and every file dialog choke on "/" and ":" in a name; the rest is trimmed so a long
 // condition sentence used as a document label cannot produce a 300-character filename.
-function safe(s: string, max = 70): string {
-  return String(s || "")
-    .replace(/[/\\:*?"<>|\r\n]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, max)
-    .replace(/[. ]+$/, "") || "untitled";
-}
+// safe() and loanFolderName() live in lib/docNaming.ts — the scanner writes into this same
+// tree and must name things identically.
 
 (async () => {
   const { data: files, error: fErr } = await supabaseAdmin
@@ -108,7 +103,7 @@ function safe(s: string, max = 70): string {
     const f = byFile.get(d.loan_file_id);
     if (!f) { orphaned++; continue; }       // a document whose loan file is gone
 
-    const folder = join(ROOT, safe(`${f.borrower_name || "Borrower"} — ${f.file_number || d.loan_file_id.slice(0, 8)}`, 90));
+    const folder = join(ROOT, loanFolderName(f.borrower_name, f.file_number, d.loan_file_id));
     // NAME BY THE CHECKLIST ITEM, not by the name the file arrived under.
     //
     // The first version preferred the uploaded filename "because that is what he recognises".
