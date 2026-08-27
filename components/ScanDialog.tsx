@@ -42,7 +42,7 @@ type Props = {
 };
 
 export default function ScanDialog({ fileId, borrowerName, docId, docName, onClose, onFiled }: Props) {
-  const [health, setHealth] = useState<"idle" | "checking" | "ready" | "offline" | "blocked">("idle");
+  const [health, setHealth] = useState<"idle" | "checking" | "ready" | "offline" | "blocked" | "unanswered">("idle");
   const [scanner, setScanner] = useState<{ reachable: boolean; host: string } | null>(null);
   const [name, setName] = useState(docName || "");
   const [source, setSource] = useState<"adf" | "glass">("adf");
@@ -91,7 +91,12 @@ export default function ScanDialog({ fileId, borrowerName, docId, docName, onClo
       setDests(d?.options || []);
       setDest(d?.default || d?.options?.[0]?.path || "");
     } catch {
-      setHealth((await lnaState()) === "denied" ? "blocked" : "offline");
+      // Three different failures look identical from here, and each has a different fix:
+      // the permission was refused, the permission was never answered (the request just sat
+      // there), or the agent genuinely is not running. Telling him to go start a helper that is
+      // already running is the kind of wrong advice that wastes an afternoon.
+      const st = await lnaState();
+      setHealth(st === "denied" ? "blocked" : st === "prompt" ? "unanswered" : "offline");
     }
   }, [fileId]);
 
@@ -149,6 +154,21 @@ export default function ScanDialog({ fileId, borrowerName, docId, docName, onClo
           )}
 
           {health === "checking" && <div className="text-sm text-slate-400">Connecting to the scanner…</div>}
+
+          {health === "unanswered" && (
+            <div className="bg-amber-950/30 border border-amber-800/50 rounded-xl p-3 text-sm">
+              <div className="text-amber-200 font-semibold mb-1">Chrome is still waiting on permission</div>
+              <p className="text-slate-300 text-[13px]">
+                Chrome asks before a website may reach anything on your local network, and it hasn&apos;t
+                been answered yet. Press Connect again and choose{" "}
+                <span className="text-amber-200 font-semibold">Allow</span> on the bar that appears under
+                the address bar.
+              </p>
+              <button onClick={connect} className="mt-3 text-xs font-semibold bg-amber-700/70 hover:bg-amber-600 text-white rounded-lg px-3 py-1.5">
+                Connect again
+              </button>
+            </div>
+          )}
 
           {health === "blocked" && (
             <div className="bg-amber-950/30 border border-amber-800/50 rounded-xl p-3 text-sm">
