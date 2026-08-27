@@ -41,6 +41,24 @@ export default function EsignPage() {
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [recipients, setRecipients] = useState<Recipient[]>([{ id: "r1", name: "", email: "", phone: "", order: 1 }]);
   const [activeRid, setActiveRid] = useState("r1");
+  // ONLY-I-SIGN MODE. Self-signing used to be a button that bypassed the signer form, which
+  // meant the placement toolbar still said "Placing for Signer 1" and there was nothing to tell
+  // you the fields you drop are yours. Making it a MODE instead means the existing per-recipient
+  // placement works untouched — you are simply recipient 1 — and the labels read correctly.
+  const [onlyMe, setOnlyMe] = useState(false);
+  function toggleOnlyMe(on: boolean) {
+    setOnlyMe(on);
+    if (on) {
+      // Collapse to a single signer: me. Fields already placed follow onto that signer, so
+      // switching the toggle never silently throws away placement work.
+      setRecipients([{ id: "r1", name: BRAND.mlo.name, email: "", phone: "", order: 1 }]);
+      setActiveRid("r1");
+      setFields((f) => f.map((x) => ({ ...x, recipientId: "r1" })));
+    } else {
+      setRecipients([{ id: "r1", name: "", email: "", phone: "", order: 1 }]);
+      setActiveRid("r1");
+    }
+  }
   const [fileId, setFileId] = useState("");
   const [fields, setFields] = useState<EsignField[]>([]);
   const [tool, setTool] = useState<EsignFieldType | null>(null);
@@ -200,9 +218,13 @@ export default function EsignPage() {
           title: title.trim() || pdf.name.replace(/\.pdf$/i, ""),
           loan_file_id: fileId.trim() || undefined,
           self_sign: true,
-          // One signer: me. No email or phone — nothing is being delivered.
-          recipients: [{ id: "self", name: BRAND.mlo.name, email: null, phone: null, order: 1 }],
-          fields: fields.map((f) => ({ ...f, recipientId: "self" })),
+          // One signer: me. No email or phone — nothing is being delivered. The recipient id
+          // stays "r1", the same id the placement canvas assigns, so fields dropped on the page
+          // carry through untouched. If NO field is placed the route falls back to a default
+          // signature block in the lower right — which is why the toggle above exists: it makes
+          // the placement toolbar say your name, so it is obvious the fields are yours to drop.
+          recipients: [{ id: "r1", name: BRAND.mlo.name, email: null, phone: null, order: 1 }],
+          fields: fields.map((f) => ({ ...f, recipientId: "r1" })),
         }),
       });
       const j = await r.json().catch(() => null);
@@ -278,7 +300,16 @@ export default function EsignPage() {
             <div><label className="text-xs text-slate-400 mb-1 block">Document title</label><input className={inp} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Borrower Authorization" /></div>
 
             <div>
-              <div className="flex items-center justify-between mb-1"><label className="text-xs text-slate-400">Signers (in order)</label><button onClick={addRecipient} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1"><Plus className="w-3 h-3" /> Add signer</button></div>
+              {/* Only I sign — collapses the signer list to me so the placement toolbar reads
+                  my name and the fields I drop are plainly mine. */}
+              <label className="flex items-center gap-2 mb-2 text-xs text-slate-300 cursor-pointer select-none">
+                <input type="checkbox" checked={onlyMe} onChange={(e) => toggleOnlyMe(e.target.checked)} className="accent-emerald-500" />
+                Only I sign this — no email, sign it here
+              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-slate-400">{onlyMe ? "Signing as" : "Signers (in order)"}</label>
+                {!onlyMe && <button onClick={addRecipient} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1"><Plus className="w-3 h-3" /> Add signer</button>}
+              </div>
               <div className="space-y-2">
                 {recipients.map((r, i) => (
                   <div key={r.id} className={`rounded-lg border p-2 ${activeRid === r.id ? "border-emerald-500/60 bg-slate-900" : "border-slate-800 bg-slate-900/40"}`}>
@@ -301,16 +332,24 @@ export default function EsignPage() {
             <div><label className="text-xs text-slate-400 mb-1 block">Loan file ID (optional)</label><input className={inp} value={fileId} onChange={(e) => setFileId(e.target.value)} placeholder="links the signed doc to a file" /></div>
             {!confirming ? (
               <>
-                <button onClick={review} disabled={sending} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
-                  <Send className="w-4 h-4" /> Review &amp; send
-                </button>
-                {/* Only I need to sign it — skip the inbox round trip entirely. */}
-                <button onClick={signItMyself} disabled={sending || !pdf}
-                  title="Creates the envelope with you as the only signer and opens it for signature right now. No email."
-                  className="w-full mt-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-100 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2 border border-slate-700">
-                  <PenLine className="w-4 h-4" /> {sending ? "Opening…" : "I'll sign it myself"}
-                </button>
-                <p className="text-[11px] text-slate-500 mt-1.5 text-center">Signs as {BRAND.mlo.name} — no email sent. Same audit trail and certificate.</p>
+                {onlyMe ? (
+                  <>
+                    <button onClick={signItMyself} disabled={sending || !pdf}
+                      title="Creates the envelope with you as the only signer and opens it for signature right now. No email."
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
+                      <PenLine className="w-4 h-4" /> {sending ? "Opening…" : "Sign it now"}
+                    </button>
+                    <p className="text-[11px] text-slate-500 mt-1.5 text-center">
+                      {fields.length
+                        ? `${fields.length} field${fields.length === 1 ? "" : "s"} placed — no email sent.`
+                        : "Drop a Signature field on the page first, or it lands bottom-right by default."}
+                    </p>
+                  </>
+                ) : (
+                  <button onClick={review} disabled={sending} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
+                    <Send className="w-4 h-4" /> Review &amp; send
+                  </button>
+                )}
               </>
             ) : (
               <div className="rounded-lg border border-emerald-600/50 bg-emerald-500/5 p-3 space-y-2">
