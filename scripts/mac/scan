@@ -87,8 +87,17 @@ for attempt in 1 2 3 4 5 6 7 8; do
   fi
 done
 if [ -z "$JOB" ]; then
-  echo "The scanner wouldn't start a job (HTTP ${CODE:-no response})." >&2
-  echo "Check the panel: paper jam, open cover, or a scan already running from the device itself." >&2
+  # An empty feeder is refused at job creation with a 500, which is by far the most common way
+  # this fails. Saying "paper jam" to someone who simply has not put the pages in sends them to
+  # the panel looking for a fault that is not there.
+  if [ "$SOURCE" = "Feeder" ]; then
+    echo "The feeder didn't start (HTTP ${CODE:-no response})." >&2
+    echo "Usually that means it is empty — load the pages face up and try again." >&2
+    echo "If there are pages in it, check the panel for a jam or an open cover." >&2
+  else
+    echo "The scanner wouldn't start a job (HTTP ${CODE:-no response})." >&2
+    echo "Check the panel: paper jam, open cover, or a scan already running from the device itself." >&2
+  fi
   exit 1
 fi
 
