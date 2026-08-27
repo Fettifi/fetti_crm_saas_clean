@@ -4,8 +4,9 @@
 // signing order, drop each signer's fields (color-coded) onto the live document,
 // and send. Tracks per-signer status; void anytime before completion.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, FileUp, Send, Link2, ExternalLink, FileSignature, Plus, Trash2, Ban, Download, Eye, X, RefreshCw, AlertTriangle } from "lucide-react";
+import { Loader2, FileUp, Send, Link2, ExternalLink, FileSignature, Plus, Trash2, Ban, Download, Eye, X, RefreshCw, AlertTriangle, PenLine } from "lucide-react";
 import PdfDoc, { EsignField, EsignFieldType } from "@/components/PdfDoc";
+import { BRAND } from "@/lib/brand";
 
 type Recipient = { id: string; name: string; email: string; phone: string; order: number };
 type Req = { token: string; title: string; status: string; created_at: string; has_signed?: boolean; has_cert?: boolean; recipients: { name: string; email?: string | null; order: number; status: string; delivery?: string | null }[] };
@@ -174,6 +175,47 @@ export default function EsignPage() {
     setConfirming(true);
   }
 
+  // SIGN IT MYSELF — no email, no confirm-recipients gate, no inbox round trip.
+  //
+  // Those two steps exist to catch a typo'd address before a document goes to a borrower. When
+  // Ramon is the only signer, there is no address to typo and nobody to protect: mailing
+  // yourself a link, leaving the app to find it, and coming back is pure friction on a document
+  // he is already holding. The envelope, the signing page, the audit events and the Certificate
+  // of Completion are all identical — only the delivery hop is skipped.
+  async function signItMyself() {
+    if (!pdf) { setMsg({ text: "Choose a PDF." }); return; }
+    if (pdf.size > 40 * 1024 * 1024) { setMsg({ text: "That PDF is over 40 MB — split it and send in parts." }); return; }
+    setSending(true); setMsg(null);
+    try {
+      const uRes = await fetch("/api/esign/requests/upload-url", { method: "POST" });
+      const u = await uRes.json().catch(() => null);
+      if (!uRes.ok || !u?.url) { setMsg({ text: (u && u.error) || `Couldn't start the upload (HTTP ${uRes.status}).` }); setSending(false); return; }
+      const put = await fetch(u.url, { method: "PUT", headers: { "Content-Type": "application/pdf" }, body: pdf });
+      if (!put.ok) { setMsg({ text: `The PDF upload failed (HTTP ${put.status}).` }); setSending(false); return; }
+
+      const r = await fetch("/api/esign/requests", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_path: u.path, pdf_name: pdf.name,
+          title: title.trim() || pdf.name.replace(/\.pdf$/i, ""),
+          loan_file_id: fileId.trim() || undefined,
+          self_sign: true,
+          // One signer: me. No email or phone — nothing is being delivered.
+          recipients: [{ id: "self", name: BRAND.mlo.name, email: null, phone: null, order: 1 }],
+          fields: fields.map((f) => ({ ...f, recipientId: "self" })),
+        }),
+      });
+      const j = await r.json().catch(() => null);
+      if (r.ok && j?.signNow) {
+        // Straight to the signing page. Same page a borrower would see.
+        window.location.href = j.signNow;
+        return;
+      }
+      setMsg({ text: (j && j.error) || `Couldn't open it for signing (HTTP ${r.status}).` });
+    } catch { setMsg({ text: "Network error — check your connection and try again." }); }
+    setSending(false);
+  }
+
   // Step 2 — actually send, after the LO confirms every recipient is correct.
   async function doSend() {
     if (!pdf) return;
@@ -258,9 +300,18 @@ export default function EsignPage() {
 
             <div><label className="text-xs text-slate-400 mb-1 block">Loan file ID (optional)</label><input className={inp} value={fileId} onChange={(e) => setFileId(e.target.value)} placeholder="links the signed doc to a file" /></div>
             {!confirming ? (
-              <button onClick={review} disabled={sending} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
-                <Send className="w-4 h-4" /> Review &amp; send
-              </button>
+              <>
+                <button onClick={review} disabled={sending} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
+                  <Send className="w-4 h-4" /> Review &amp; send
+                </button>
+                {/* Only I need to sign it — skip the inbox round trip entirely. */}
+                <button onClick={signItMyself} disabled={sending || !pdf}
+                  title="Creates the envelope with you as the only signer and opens it for signature right now. No email."
+                  className="w-full mt-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-100 font-semibold px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2 border border-slate-700">
+                  <PenLine className="w-4 h-4" /> {sending ? "Opening…" : "I'll sign it myself"}
+                </button>
+                <p className="text-[11px] text-slate-500 mt-1.5 text-center">Signs as {BRAND.mlo.name} — no email sent. Same audit trail and certificate.</p>
+              </>
             ) : (
               <div className="rounded-lg border border-emerald-600/50 bg-emerald-500/5 p-3 space-y-2">
                 <div className="text-xs font-semibold text-emerald-300">Confirm recipients — check every email is exactly right:</div>

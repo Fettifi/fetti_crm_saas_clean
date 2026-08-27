@@ -156,9 +156,27 @@ export async function POST(req: NextRequest) {
     const origin = req.nextUrl.origin;
     const first = recipients[0];
     first.status = "sent";
-    const { sent } = await sendSignRequest({ to_name: first.name, to_email: first.email, to_phone: first.phone, link: `${origin}/sign/${first.token}`, title });
-    if (sent.includes("email")) first.delivery = "sent"; // pending delivery confirmation; the Resend webhook flips to delivered/bounced
-    env.events!.push({ type: "sent", at: new Date().toISOString(), detail: sent.length ? `Sent to ${first.name} via ${sent.join(" + ")}` : `Link created for ${first.name} (manual delivery)` });
+
+    // SELF-SIGN: Ramon is the only signer and he is sitting right here.
+    //
+    // The normal path emails the signer a link. When the only person who has to sign is the
+    // person creating the envelope, that means mailing yourself, leaving the app, finding the
+    // message, and coming back — for a document you are already holding. `self_sign` skips the
+    // send entirely and returns the link so the UI can open the signing page immediately.
+    //
+    // Nothing else is bypassed: the same envelope, the same recipient token, the same signing
+    // page, the same audit events and Certificate of Completion. Only the delivery hop is gone,
+    // and delivery to yourself is not evidence of anything.
+    const selfSign = gv("self_sign") === true || String(gv("self_sign") || "") === "true";
+    let sent: string[] = [];
+    if (selfSign) {
+      first.delivery = "self";
+      env.events!.push({ type: "sent", at: new Date().toISOString(), detail: `Self-signed envelope — opened directly by ${first.name}, no delivery` });
+    } else {
+      ({ sent } = await sendSignRequest({ to_name: first.name, to_email: first.email, to_phone: first.phone, link: `${origin}/sign/${first.token}`, title }));
+      if (sent.includes("email")) first.delivery = "sent"; // pending delivery confirmation; the Resend webhook flips to delivered/bounced
+      env.events!.push({ type: "sent", at: new Date().toISOString(), detail: sent.length ? `Sent to ${first.name} via ${sent.join(" + ")}` : `Link created for ${first.name} (manual delivery)` });
+    }
     await saveRequest(env);
 
     if (loan_file_id) {
@@ -169,7 +187,12 @@ export async function POST(req: NextRequest) {
       ok: true, token: envToken,
       links: recipients.map((r) => ({ name: r.name, order: r.order, link: `${origin}/sign/${r.token}` })),
       sent,
-      message: (sent.length ? `Sent to ${first.name} via ${sent.join(" + ")}.` : "Created — copy the first signer's link to send manually.") + (compressNote ? ` (${compressNote})` : ""),
+      // The UI opens this directly when self-signing — no inbox round trip.
+      signNow: selfSign ? `/sign/${first.token}` : null,
+      message: (selfSign
+        ? "Ready to sign — opening it now."
+        : sent.length ? `Sent to ${first.name} via ${sent.join(" + ")}.` : "Created — copy the first signer's link to send manually.")
+        + (compressNote ? ` (${compressNote})` : ""),
     });
   } catch (e: any) {
     console.error("[esign/requests] error:", e);

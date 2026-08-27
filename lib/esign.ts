@@ -21,7 +21,10 @@ export type Recipient = {
   status: "pending" | "sent" | "viewed" | "signed" | "declined";
   // Email DELIVERY state (separate from signing status) — updated by the Resend
   // bounce/delivery webhook so a mistyped address auto-flips to "bounced".
-  delivery?: "sent" | "delivered" | "bounced" | "complained";
+  // "self" = never delivered anywhere, because the signer opened it themselves. A
+  // self-signed envelope has no inbox hop to report on, and calling that "sent" would put a
+  // delivery in the audit trail that never happened.
+  delivery?: "sent" | "delivered" | "bounced" | "complained" | "self";
   deliveryAt?: string;
   viewedAt?: string; signedAt?: string; ip?: string; ua?: string; typedName?: string; declineReason?: string;
 };
