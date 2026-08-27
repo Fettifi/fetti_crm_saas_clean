@@ -10,6 +10,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // img-src https: stays permissive (images can't execute). object/base/frame are
 // locked down. Supabase https+wss is included so the app/login/realtime never break.
 const SB = "https://hgnpxdivozbmjagmshda.supabase.co";
+
+// The Scan button talks to a scan agent running on the loan officer's OWN machine — the CRM is in
+// the cloud and the office Canon is on the LAN, so the browser is the only thing on both networks.
+// Loopback is the narrowest possible addition: it lets the page reach 127.0.0.1 and nothing else,
+// exfiltrates nothing (there is no remote host to send to), and the agent itself refuses any
+// origin but this one. Without it the CSP blocks the call before mixed-content or private-network
+// rules are even consulted — which is exactly how this first failed.
+const SCAN_AGENT = "http://127.0.0.1:3401 http://localhost:3401";
 const csp = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -20,7 +28,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline' https://*.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://*.gstatic.com",
-  `connect-src 'self' ${SB} wss://hgnpxdivozbmjagmshda.supabase.co https://*.googleapis.com https://*.google-analytics.com https://*.googletagmanager.com https://*.analytics.google.com https://*.google.com https://*.doubleclick.net https://*.googleadservices.com https://*.facebook.com https://*.facebook.net https://*.tiktok.com https://*.vercel-insights.com https://*.vercel-scripts.com`,
+  `connect-src 'self' ${SCAN_AGENT} ${SB} wss://hgnpxdivozbmjagmshda.supabase.co https://*.googleapis.com https://*.google-analytics.com https://*.googletagmanager.com https://*.analytics.google.com https://*.google.com https://*.doubleclick.net https://*.googleadservices.com https://*.facebook.com https://*.facebook.net https://*.tiktok.com https://*.vercel-insights.com https://*.vercel-scripts.com`,
   "media-src 'self' blob: data:",
   "worker-src 'self' blob:",
   "manifest-src 'self'",

@@ -13,6 +13,7 @@ import DeleteConfirm from "@/components/DeleteConfirm";
 import ConditionsImporter from "@/components/los/ConditionsImporter";
 import IncomeQualifier from "@/components/los/IncomeQualifier";
 import CardAuthPanel from "@/components/los/CardAuthPanel";
+import ScanDialog from "@/components/ScanDialog";
 import { isBusinessCreditDeal } from "@/lib/bizApp";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
@@ -61,6 +62,8 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   // combineMsg would have printed failures in success green.
   const [docMsg, setDocMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const uploadTargetRef = useRef<string | null>(null);
+  // Scan straight off the Canon into this file. null = closed; docId null = a new item.
+  const [scanTarget, setScanTarget] = useState<{ docId: string | null; name: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const [delOpen, setDelOpen] = useState(false);
@@ -776,6 +779,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                       {d.storage_path && <button onClick={() => viewDoc(d.id, d.name)} title={rejected ? "View the rejected copy" : "View"} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">View</button>}
                       {isOversizedPdf(d) && <button onClick={() => compressDoc(d.id, d.name)} disabled={docBusy === d.id} title={`${((d.size_bytes || 0) / 1048576).toFixed(1)} MB — too big for most lender portals. Shrink it, keeping the original.`} className="text-xs px-2 py-1 rounded bg-amber-700/70 hover:bg-amber-600 disabled:opacity-50">{docBusy === d.id ? "…" : `Shrink ${((d.size_bytes || 0) / 1048576).toFixed(0)}MB`}</button>}
                       {needsPdf(d) && <button onClick={() => convertToPdf(d.id, d.name)} disabled={docBusy === d.id} title="Convert this image to a PDF — the original is kept on file" className="text-xs px-2 py-1 rounded bg-violet-700/70 hover:bg-violet-600 disabled:opacity-50">{docBusy === d.id ? "…" : "→ PDF"}</button>}
+                      <button onClick={() => setScanTarget({ docId: d.id, name: d.name })} disabled={docBusy === d.id} title="Scan this straight off the Canon into this item" className="text-xs px-2 py-1 rounded bg-teal-700/70 hover:bg-teal-600 disabled:opacity-50">Scan</button>
                       <button onClick={() => pickUpload(d.id)} disabled={docBusy === d.id} title="Upload a file for this item (e.g. one the borrower emailed you)" className="text-xs px-2 py-1 rounded bg-sky-700/70 hover:bg-sky-600 disabled:opacity-50">{docBusy === d.id ? "…" : (provided ? "Replace" : "Upload")}</button>
                       {d.status === "received" && <button onClick={() => patchDoc(d.id, "accepted")} className="text-xs px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500">Accept</button>}
                       {(d.status === "received" || d.status === "accepted") && <button onClick={() => { setRejectTarget({ id: d.id, name: d.name }); setRejectNote(""); }} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-red-900/60">Reject</button>}
@@ -807,10 +811,16 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
             <div className="mt-3">
               <input ref={fileInputRef} type="file" className="hidden" onChange={onFilePicked}
                 accept=".pdf,.png,.jpg,.jpeg,.heic,.heif,.webp,.gif,.bmp,.tif,.tiff,.doc,.docx,.xls,.xlsx,.csv,.txt" />
-              <button onClick={() => pickUpload("new")} disabled={docBusy === "new"}
-                className="w-full text-xs font-semibold bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 rounded-lg py-2 flex items-center justify-center gap-1.5">
-                {docBusy === "new" ? "Uploading…" : "⬆️ Add a file directly (emailed / on hand)"}
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button onClick={() => pickUpload("new")} disabled={docBusy === "new"}
+                  className="w-full text-xs font-semibold bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 rounded-lg py-2 flex items-center justify-center gap-1.5">
+                  {docBusy === "new" ? "Uploading…" : "⬆️ Add a file directly (emailed / on hand)"}
+                </button>
+                <button onClick={() => setScanTarget({ docId: null, name: "" })}
+                  className="w-full text-xs font-semibold bg-teal-800/70 hover:bg-teal-700 text-teal-100 rounded-lg py-2 flex items-center justify-center gap-1.5">
+                  🖨️ Scan a document
+                </button>
+              </div>
             </div>
 
             {/* Import conditions / approval → Claude splits it into line-item requests,
@@ -1312,6 +1322,17 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
             <iframe src={viewer.url} title={viewer.name} className="flex-1 w-full bg-white" onClick={(e) => e.stopPropagation()} />
           )}
         </div>
+      )}
+
+      {scanTarget && file && (
+        <ScanDialog
+          fileId={file.id}
+          borrowerName={file.borrower_name}
+          docId={scanTarget.docId}
+          docName={scanTarget.name}
+          onClose={() => setScanTarget(null)}
+          onFiled={() => { load(); }}
+        />
       )}
 
       {rejectTarget && (
