@@ -320,7 +320,8 @@ export default function EsignPage() {
                       <button onClick={() => setActiveRid(r.id)} className={`text-[10px] px-2 py-1 rounded ${activeRid === r.id ? "bg-emerald-600 text-slate-950 font-semibold" : "bg-slate-800 text-slate-400"}`}>{activeRid === r.id ? "placing" : "place fields"}</button>
                       {recipients.length > 1 && <button onClick={() => removeRecipient(r.id)} className="text-slate-500 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>}
                     </div>
-                    <div className="grid grid-cols-2 gap-1.5">
+                    {/* Nothing is delivered when I am the only signer, so there is no address to collect. */}
+                    <div className={`grid grid-cols-2 gap-1.5 ${onlyMe ? "hidden" : ""}`}>
                       <input className={`bg-slate-900 border rounded px-2 py-1 text-xs ${r.email.trim() && !isEmail(r.email) ? "border-red-500 text-red-300" : "border-slate-700 text-white"}`} value={r.email} onChange={(e) => setR(r.id, { email: e.target.value })} placeholder="email" />
                       <input className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" value={r.phone} onChange={(e) => setR(r.id, { phone: e.target.value })} placeholder="phone (optional)" />
                     </div>
