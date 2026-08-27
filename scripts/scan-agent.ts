@@ -31,15 +31,16 @@ import { loanFolderName } from "../lib/docNaming";
 const PORT = Number(process.env.SCAN_AGENT_PORT || 3401);
 const VERSION = "1.0.0";
 
-const ALLOWED_ORIGINS = new Set([
-  "https://app.fettifi.com",
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-]);
+// Exactly one remote origin, plus any loopback port so a dev server can be on whatever port it
+// lands on. Loopback is not a loophole: a page can only be served from localhost if something on
+// this machine is already serving it, and anything with that much access has .env.local too.
+const REMOTE_ORIGIN = "https://app.fettifi.com";
+const LOOPBACK = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+const originAllowed = (o: string) => o === REMOTE_ORIGIN || LOOPBACK.test(o);
 
 function cors(req: IncomingMessage, res: ServerResponse): boolean {
   const origin = String(req.headers.origin || "");
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
+  if (origin && originAllowed(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -150,6 +151,6 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Fetti scan agent v${VERSION} — listening on http://127.0.0.1:${PORT}`);
-  console.log(`Serving: ${[...ALLOWED_ORIGINS].join(", ")}`);
+  console.log(`Serving: ${REMOTE_ORIGIN} and any http://localhost:<port>`);
   console.log("Leave this window open. The Scan buttons in the CRM use it.\n");
 });

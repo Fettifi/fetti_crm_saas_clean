@@ -10,6 +10,25 @@
 // which the agent answers.
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// Chrome 138+ gates a public page reaching 127.0.0.1 behind a "local network access" permission.
+// Until it is granted the request does not fail — it HANGS, with nothing in the console, waiting
+// on a prompt that a background tab never gets to show. So every call here carries its own
+// deadline, and the first one is fired from a real click so Chrome has a gesture to attach the
+// prompt to. Verified on Chrome 151: permission state "prompt", fetch pending forever.
+async function withTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try { return await fetch(url, { ...init, signal: ctl.signal }); }
+  finally { clearTimeout(t); }
+}
+
+async function lnaState(): Promise<"granted" | "denied" | "prompt" | "unknown"> {
+  try {
+    const p = await navigator.permissions.query({ name: "local-network-access" as PermissionName });
+    return p.state as any;
+  } catch { return "unknown"; }
+}
+
 const AGENT = (typeof window !== "undefined" && localStorage.getItem("fetti.scanAgent")) || "http://127.0.0.1:3401";
 
 type Dest = { label: string; path: string };
@@ -23,7 +42,7 @@ type Props = {
 };
 
 export default function ScanDialog({ fileId, borrowerName, docId, docName, onClose, onFiled }: Props) {
-  const [health, setHealth] = useState<"checking" | "ready" | "offline">("checking");
+  const [health, setHealth] = useState<"idle" | "checking" | "ready" | "offline" | "blocked">("idle");
   const [scanner, setScanner] = useState<{ reachable: boolean; host: string } | null>(null);
   const [name, setName] = useState(docName || "");
   const [source, setSource] = useState<"adf" | "glass">("adf");
@@ -59,31 +78,36 @@ export default function ScanDialog({ fileId, borrowerName, docId, docName, onClo
     return () => window.removeEventListener("keydown", onKey);
   }, [close]);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const h = await fetch(`${AGENT}/health`, { cache: "no-store" }).then((r) => r.json());
-        if (!alive) return;
-        setScanner(h?.scanner || null);
-        setHealth("ready");
-        const d = await fetch(`${AGENT}/destinations?fileId=${encodeURIComponent(fileId)}`).then((r) => r.json());
-        if (!alive) return;
-        setDests(d?.options || []);
-        setDest(d?.default || d?.options?.[0]?.path || "");
-      } catch { if (alive) setHealth("offline"); }
-    })();
-    return () => { alive = false; };
+  // Connecting is a CLICK, not something that happens on open. Chrome will only show the local
+  // network prompt for a gesture, and asking the moment a dialog appears is also how a permission
+  // gets dismissed out of hand.
+  const connect = useCallback(async () => {
+    setHealth("checking"); setErr(null);
+    try {
+      const h = await withTimeout(`${AGENT}/health`, { cache: "no-store" }, 20_000).then((r) => r.json());
+      setScanner(h?.scanner || null);
+      setHealth("ready");
+      const d = await withTimeout(`${AGENT}/destinations?fileId=${encodeURIComponent(fileId)}`, {}, 10_000).then((r) => r.json());
+      setDests(d?.options || []);
+      setDest(d?.default || d?.options?.[0]?.path || "");
+    } catch {
+      setHealth((await lnaState()) === "denied" ? "blocked" : "offline");
+    }
   }, [fileId]);
+
+  // If the permission is already granted this is invisible — it just connects.
+  useEffect(() => { (async () => { if ((await lnaState()) === "granted") connect(); })(); }, [connect]);
 
   async function scan() {
     setErr(null); setBusy(true); setDone(null);
     try {
       const destDir = useCustom ? customDest.trim() : dest;
-      const r = await fetch(`${AGENT}/scan`, {
+      // A full feeder run is genuinely slow, so this deadline is generous — it exists to stop a
+      // dead agent hanging the dialog forever, not to police the scanner.
+      const r = await withTimeout(`${AGENT}/scan`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source, fileId, docId: docId || null, docName: name.trim(), destDir: destDir || null }),
-      });
+      }, 10 * 60_000);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { setErr(j?.error || `The scan failed (${r.status}).`); return; }
       setDone({ name: j.name, path: j.localPath, mb: (j.bytes / 1048576).toFixed(1), notes: j.notes || [] });
@@ -107,7 +131,35 @@ export default function ScanDialog({ fileId, borrowerName, docId, docName, onClo
         </div>
 
         <div className="p-4 space-y-4">
-          {health === "checking" && <div className="text-sm text-slate-400">Looking for the scanner…</div>}
+          {health === "idle" && (
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3">
+              <p className="text-[13px] text-slate-300">
+                The scanner is on the office network and this page isn&apos;t, so it connects through the
+                helper running on your Mac.
+              </p>
+              <p className="text-[12px] text-slate-500 mt-2">
+                The first time, Chrome will ask whether this site may reach devices on your local
+                network. Choose <span className="text-slate-300 font-semibold">Allow</span> — it only ever
+                talks to your own machine, and it won&apos;t ask again.
+              </p>
+              <button onClick={connect} className="mt-3 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg py-2 text-sm">
+                Connect to the scanner
+              </button>
+            </div>
+          )}
+
+          {health === "checking" && <div className="text-sm text-slate-400">Connecting to the scanner…</div>}
+
+          {health === "blocked" && (
+            <div className="bg-amber-950/30 border border-amber-800/50 rounded-xl p-3 text-sm">
+              <div className="text-amber-200 font-semibold mb-1">Chrome is blocking the local connection</div>
+              <p className="text-slate-300 text-[13px]">
+                Local network access was denied for this site. Click the icon to the left of the address
+                bar, find <span className="text-amber-200">Local network access</span>, set it to Allow,
+                then reload.
+              </p>
+            </div>
+          )}
 
           {health === "offline" && (
             <div className="bg-amber-950/30 border border-amber-800/50 rounded-xl p-3 text-sm">
@@ -120,8 +172,8 @@ export default function ScanDialog({ fileId, borrowerName, docId, docName, onClo
                 Double-click <span className="font-mono text-amber-200">Fetti Scanner Agent</span> on the
                 Desktop, leave that window open, then come back and press Scan again.
               </p>
-              <button onClick={() => location.reload()} className="mt-3 text-xs font-semibold bg-amber-700/70 hover:bg-amber-600 text-white rounded-lg px-3 py-1.5">
-                I&apos;ve started it — check again
+              <button onClick={connect} className="mt-3 text-xs font-semibold bg-amber-700/70 hover:bg-amber-600 text-white rounded-lg px-3 py-1.5">
+                I&apos;ve started it — try again
               </button>
             </div>
           )}
@@ -144,7 +196,7 @@ export default function ScanDialog({ fileId, borrowerName, docId, docName, onClo
                 <button onClick={close} className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-3 py-1.5">Done</button>
               </div>
             </div>
-          ) : (
+          ) : health === "ready" ? (
             <>
               <div>
                 <label className="block text-[11px] uppercase tracking-wide text-slate-500 mb-1">Document</label>
@@ -195,7 +247,7 @@ export default function ScanDialog({ fileId, borrowerName, docId, docName, onClo
               </button>
               {busy && <p className="text-[11px] text-slate-500 text-center">Feeding pages — this can take a minute.</p>}
             </>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
