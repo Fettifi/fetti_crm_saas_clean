@@ -130,6 +130,22 @@ export default function EsignPage() {
       setTries((t) => t + 1);
     }
   }, []);
+  // ARM THE SIGNATURE TOOL AUTOMATICALLY when I am signing my own document.
+  //
+  // Placement always worked — arm a tool from the toolbar, click the page, the field lands where
+  // you clicked. But the toolbar is one line of small text above the document, and if you do not
+  // notice it, clicking the page does nothing and the signature ends up wherever the default
+  // put it. That reads as "I can't place the signature", which is exactly what it was reported
+  // as, twice.
+  //
+  // When the only signer is me and nothing has been placed yet, the intent is not ambiguous:
+  // arm Signature so the very first click on the document drops it there. Any other tool stays
+  // one click away, and this never fires once a field exists, so it cannot fight a deliberate
+  // choice.
+  useEffect(() => {
+    if (onlyMe && pdfData && fields.length === 0 && !tool) setTool("signature");
+  }, [onlyMe, pdfData, fields.length, tool]);
+
   useEffect(() => { load(); }, [load]);
 
   // KEEP ASKING UNTIL THE LIST IS ACTUALLY HERE. Every attempt is independent, so a lost
@@ -392,7 +408,11 @@ export default function EsignPage() {
             ) : (
               <>
                 <div className="flex items-center gap-2 flex-wrap mb-3">
-                  <span className="text-xs text-slate-400">Placing for <b style={{ color: colorOf(activeRid) }}>{labels[activeRid]}</b> — pick a field, then click the document:</span>
+                  <span className="text-xs text-slate-400">
+                    {onlyMe && tool === "signature" && !fields.length
+                      ? <b className="text-emerald-400">Click the document where you want your signature.</b>
+                      : <>Placing for <b style={{ color: colorOf(activeRid) }}>{labels[activeRid]}</b> — pick a field, then click the document:</>}
+                  </span>
                   {TOOLS.map(([t, label]) => (
                     <button key={t} onClick={() => setTool(tool === t ? null : t)} className={`text-xs px-2.5 py-1.5 rounded-lg ${tool === t ? "bg-sky-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{label}</button>
                   ))}
