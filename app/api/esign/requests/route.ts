@@ -93,7 +93,18 @@ export async function POST(req: NextRequest) {
     }
     raw = raw.filter((r) => r && String(r.name || "").trim());
     if (!raw.length) return NextResponse.json({ error: "Add at least one signer (name + email or phone)." }, { status: 400 });
-    for (const r of raw) if (!String(r.email || "").trim() && !String(r.phone || "").trim()) return NextResponse.json({ error: `Add an email or phone for ${r.name}.` }, { status: 400 });
+    // A signer needs a way to RECEIVE the link — unless nothing is being sent. Self-signing has
+    // no delivery, so demanding an address there rejects the one case that needs none. (The UI
+    // dropped this check for self-sign; the API had not, so the button 400'd on its first real
+    // run. Client-side validation is never the enforcement point, and never the whole rule.)
+    const selfSignReq = gv("self_sign") === true || String(gv("self_sign") || "") === "true";
+    if (!selfSignReq) {
+      for (const r of raw) if (!String(r.email || "").trim() && !String(r.phone || "").trim()) return NextResponse.json({ error: `Add an email or phone for ${r.name}.` }, { status: 400 });
+    } else if (raw.length !== 1) {
+      // Self-sign is exactly one signer, by definition. More than one means someone else has to
+      // be told, and that is the normal send path with its address checks intact.
+      return NextResponse.json({ error: "Signing it yourself means one signer. Use Review & send when anyone else has to sign." }, { status: 400 });
+    }
     // Validate email FORMAT so a malformed address is rejected at the source (caught
     // immediately, not after a silent bounce). Syntactically-valid-but-wrong addresses
     // are caught by the sender's confirm-recipients step + the Resend bounce webhook.
@@ -167,7 +178,7 @@ export async function POST(req: NextRequest) {
     // Nothing else is bypassed: the same envelope, the same recipient token, the same signing
     // page, the same audit events and Certificate of Completion. Only the delivery hop is gone,
     // and delivery to yourself is not evidence of anything.
-    const selfSign = gv("self_sign") === true || String(gv("self_sign") || "") === "true";
+    const selfSign = selfSignReq;
     let sent: string[] = [];
     if (selfSign) {
       first.delivery = "self";
