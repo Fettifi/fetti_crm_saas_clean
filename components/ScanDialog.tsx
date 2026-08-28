@@ -112,7 +112,7 @@ export default function ScanDialog({ fileId, borrowerName, docId, docName, onClo
       const r = await withTimeout(`${AGENT}/scan`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source, fileId, docId: docId || null, docName: name.trim(), destDir: destDir || null }),
-      }, 10 * 60_000);
+      }, 21 * 60_000);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { setErr(j?.error || `The scan failed (${r.status}).`); return; }
       setDone({ name: j.name, path: j.localPath, mb: (j.bytes / 1048576).toFixed(1), notes: j.notes || [] });

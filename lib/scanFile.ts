@@ -59,12 +59,19 @@ export async function scanToPdf(source: ScanSource): Promise<Buffer> {
   const out = join(homedir(), "Desktop", `.fetti-scan-${Date.now()}.pdf`);
   const args = [...(source === "adf" ? ["--adf"] : []), "--out", out];
   try {
-    await execFileP(join(homedir(), "bin", "scan"), args, { timeout: 5 * 60_000, maxBuffer: 1 << 20 });
+    // A full feeder stack is genuinely slow. This is a backstop against a hung scanner, not a
+    // policy on how long scanning may take — the old 5 minutes was inside the range of a real job.
+    await execFileP(join(homedir(), "bin", "scan"), args, { timeout: 20 * 60_000, maxBuffer: 4 << 20 });
   } catch (e: any) {
-    // ~/bin/scan already explains itself on stderr; pass that through rather than a generic failure.
-    const msg = String(e?.stderr || e?.message || "").trim().split("\n").filter(Boolean).slice(0, 3).join(" ");
+    // ~/bin/scan explains itself on stderr, so pass that through. But it can also die WITHOUT
+    // saying anything — `set -e` aborts it the moment any unguarded command fails — and the
+    // message that reached the screen then was "Command failed: /Users/fetti/bin/scan --adf",
+    // which tells him nothing about what to do. Say which kind of failure this was.
     try { if (existsSync(out)) unlinkSync(out); } catch {}
-    throw new Error(msg || "The scan didn't complete.");
+    const stderr = String(e?.stderr || "").trim();
+    if (stderr) throw new Error(stderr.split("\n").filter(Boolean).slice(0, 3).join(" "));
+    if (e?.killed || e?.signal) throw new Error("The scan ran past 20 minutes and was stopped. If the stack is very large, scan it in two halves.");
+    throw new Error(`The scanner tool stopped without an explanation (exit ${e?.code ?? "?"}). Check ~/Library/Logs/fetti-scan-agent.log.`);
   }
   if (!existsSync(out)) throw new Error("The scan produced no file.");
   const bytes = readFileSync(out);

@@ -102,12 +102,45 @@ if [ -z "$JOB" ]; then
 fi
 
 # Each GET returns the next page; a 404 means there are no more.
-tmp=$(mktemp -d); n=0
+#
+# TWO THINGS BIT HERE, and only one of them announced itself.
+#
+# 1. `set -euo pipefail` is on, and `code=$(curl ...)` puts curl's exit status where -e can see
+#    it. A page that timed out therefore killed the whole script INSTANTLY AND SILENTLY — no
+#    stderr, no message, just a non-zero exit. One page off the glass is a single quick request
+#    and always worked; a feeder run is many long ones, which is why "it worked for one sheet"
+#    and failed the moment a real stack went in. `|| echo 000` keeps the status out of -e's way.
+#
+# 2. Worse, and quiet: the old loop treated ANY non-200 as "no more pages". The feeder answers
+#    503 while it pulls the next sheet, so a ten-page bank statement could stop at page three,
+#    get joined, saved and filed as complete. A short document that LOOKS complete is worse than
+#    a failure — nothing about the PDF says pages are missing. 503/409 and a dropped connection
+#    are now retried, and if the scanner really does stop, the run FAILS rather than filing a
+#    truncated document.
+tmp=$(mktemp -d); n=0; stall=0; PARTIAL=0
 while :; do
   f="$tmp/page-$(printf '%03d' $n).pdf"
-  code=$(curl -s -m 120 -o "$f" -w "%{http_code}" "$JOB/NextDocument")
-  [ "$code" = "200" ] && [ -s "$f" ] || { rm -f "$f"; break; }
-  n=$((n+1)); echo "  page $n"
+  code=$(curl -s -m 300 -o "$f" -w "%{http_code}" "$JOB/NextDocument" 2>/dev/null || echo 000)
+  case "$code" in
+    200)
+      if [ -s "$f" ]; then n=$((n+1)); echo "  page $n"; stall=0
+      else rm -f "$f"; break; fi
+      ;;
+    404) rm -f "$f"; break ;;                      # the normal end of a feeder run
+    503|409|000)
+      rm -f "$f"; stall=$((stall+1))
+      if [ "$stall" -ge 12 ]; then
+        echo "The scanner stopped responding after $n page(s)." >&2
+        PARTIAL=1; break
+      fi
+      sleep 3
+      ;;
+    *)
+      rm -f "$f"
+      echo "The scanner returned HTTP $code after $n page(s)." >&2
+      PARTIAL=1; break
+      ;;
+  esac
   [ "$SOURCE" = "Platen" ] && break     # the glass holds exactly one sheet
 done
 
@@ -117,6 +150,14 @@ done
 # every second document of a session, the thing this tool exists to do. Failing to release is
 # also why "scanner busy, waiting…" appeared on a first scan: the previous run never let go.
 curl -s -m 10 -X DELETE "$JOB" >/dev/null 2>&1 || true
+
+if [ "$PARTIAL" = "1" ] && [ "$n" -gt 0 ]; then
+  # Do NOT save these. A partial scan that gets filed is a document nobody knows is incomplete.
+  rm -rf "$tmp"
+  echo "Only $n page(s) came through, so nothing was saved." >&2
+  echo "Take the stack out, straighten it, put it back and scan again." >&2
+  exit 1
+fi
 
 if [ "$n" -eq 0 ]; then
   rm -rf "$tmp"
