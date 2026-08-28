@@ -1,0 +1,12 @@
+#!/bin/zsh
+# Wrapper the LaunchAgent runs. Kept separate from the plist so the environment fix lives in a
+# script that can be read and edited, not buried in XML.
+REPO="/Users/fetti/Desktop/fetti_crm_saas_clean_fresh"
+cd "$REPO" || exit 1
+# PATH first, then nvm — the other order wipes nvm's entry and drops to the system Node 18.
+export PATH="$HOME/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+  . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1
+  nvm use default >/dev/null 2>&1
+fi
+exec npx tsx scripts/scan-agent.ts

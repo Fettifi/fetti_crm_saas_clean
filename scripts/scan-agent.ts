@@ -63,8 +63,12 @@ async function scannerReachable(): Promise<{ reachable: boolean; host: string }>
   const hostFile = join(homedir(), ".canon-scan-host");
   const host = (existsSync(hostFile) ? readFileSync(hostFile, "utf8").trim() : "") || "Canona9e13b.lan";
   try {
+    // 8s, not 3. The Canon drops to Wi-Fi standby and takes several seconds to answer the first
+    // request after it wakes — a tighter timeout reports "the scanner isn't answering" about a
+    // scanner that is Idle and perfectly fine, and sends him to check a printer with nothing
+    // wrong with it. Seen immediately: the agent said unreachable while curl said Idle.
     const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 3000);
+    const t = setTimeout(() => ctl.abort(), 8000);
     const r = await fetch(`http://${host}/eSCL/ScannerStatus`, { signal: ctl.signal });
     clearTimeout(t);
     return { reachable: r.ok, host };
@@ -152,5 +156,9 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Fetti scan agent v${VERSION} — listening on http://127.0.0.1:${PORT}`);
   console.log(`Serving: ${REMOTE_ORIGIN} and any http://localhost:<port>`);
-  console.log("Leave this window open. The Scan buttons in the CRM use it.\n");
+  // Started from the Desktop launcher it lives in a Terminal window he must not close; started by
+  // launchd there is no window at all. Saying the wrong one is how a correct setup reads as broken.
+  console.log(process.stdout.isTTY
+    ? "Leave this window open. The Scan buttons in the CRM use it.\n"
+    : "Running in the background. The Scan buttons in the CRM use it.\n");
 });

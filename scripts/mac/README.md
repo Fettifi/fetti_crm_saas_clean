@@ -44,3 +44,24 @@ Two things had to be true for that to work, and both bit:
 
 Loopback origins are not gated this way, which is why a dev server on `http://localhost:<port>`
 talks to the agent with no prompt at all.
+
+
+## Auto-start
+
+The agent runs as a user LaunchAgent so the CRM's Scan buttons always find it:
+
+- `~/bin/fetti-scan-agent` — wrapper that fixes PATH/nvm, then runs the agent
+- `~/Library/LaunchAgents/com.fetti.scanagent.plist` — RunAtLoad, restarts on a crash
+- log: `~/Library/Logs/fetti-scan-agent.log`
+
+Verified by killing it: launchd had it back in about ten seconds.
+
+```bash
+# status / restart / stop for good
+launchctl list | grep scanagent
+launchctl kickstart -k gui/$(id -u)/com.fetti.scanagent
+launchctl bootout gui/$(id -u)/com.fetti.scanagent && rm ~/Library/LaunchAgents/com.fetti.scanagent.plist
+```
+
+`Fetti Scanner Agent.command` on the Desktop still works and is now just a manual fallback — it
+detects an agent that is already running and says so instead of fighting for the port.
