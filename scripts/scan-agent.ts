@@ -29,7 +29,7 @@ import { scanToPdf, shrinkIfNeeded, fileScannedDocument, ALLOWED_ROOTS, MIRROR_R
 import { loanFolderName } from "../lib/docNaming";
 
 const PORT = Number(process.env.SCAN_AGENT_PORT || 3401);
-const VERSION = "1.0.0";
+const VERSION = "1.0.1";
 
 // Exactly one remote origin, plus any loopback port so a dev server can be on whatever port it
 // lands on. Loopback is not a loophole: a page can only be served from localhost if something on
@@ -60,19 +60,22 @@ const json = (res: ServerResponse, code: number, body: unknown) => {
 };
 
 async function scannerReachable(): Promise<{ reachable: boolean; host: string }> {
+  // SAME PRECEDENCE AS ~/bin/scan: the device's own hostname first, the remembered address only
+  // as a fallback. Reading the cache first made a healthy scanner look dead the moment that file
+  // held anything stale — which happened immediately, when a test run wrote a throwaway address
+  // into it and health then reported unreachable while the Canon sat there answering.
   const hostFile = join(homedir(), ".canon-scan-host");
-  const host = (existsSync(hostFile) ? readFileSync(hostFile, "utf8").trim() : "") || "Canona9e13b.lan";
-  try {
-    // 8s, not 3. The Canon drops to Wi-Fi standby and takes several seconds to answer the first
-    // request after it wakes — a tighter timeout reports "the scanner isn't answering" about a
-    // scanner that is Idle and perfectly fine, and sends him to check a printer with nothing
-    // wrong with it. Seen immediately: the agent said unreachable while curl said Idle.
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 8000);
-    const r = await fetch(`http://${host}/eSCL/ScannerStatus`, { signal: ctl.signal });
-    clearTimeout(t);
-    return { reachable: r.ok, host };
-  } catch { return { reachable: false, host }; }
+  const cached = existsSync(hostFile) ? readFileSync(hostFile, "utf8").trim() : "";
+  for (const host of ["Canona9e13b.lan", cached].filter(Boolean)) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 8000);
+      const r = await fetch(`http://${host}/eSCL/ScannerStatus`, { signal: ctl.signal });
+      clearTimeout(t);
+      if (r.ok) return { reachable: true, host };
+    } catch { /* try the next candidate */ }
+  }
+  return { reachable: false, host: cached || "Canona9e13b.lan" };
 }
 
 const readBody = (req: IncomingMessage): Promise<any> => new Promise((resolve) => {
