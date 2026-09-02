@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { use } from "react";
 import { CheckCircle2, Clock, Upload, Loader2, FileText, ShieldCheck, CalendarDays } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
-import { isBusinessCreditDeal } from "@/lib/bizApp";
+import { isBusinessCreditDeal } from "@/lib/bizProduct";
 
 type Doc = { id: string; name: string; category: string; required: boolean; status: string; file_name?: string; notes?: string };
 type FileInfo = { file_number: string; borrower_name: string; product: string; stage: string; status: string; property_address?: string; state?: string };

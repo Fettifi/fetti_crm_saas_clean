@@ -4,6 +4,12 @@
 // "enc:v1:<iv>:<tag>:<ciphertext>" (base64 parts). Backward compatible: legacy
 // plaintext values are returned as-is on read and encrypted on the next save.
 // Server-only (uses the node crypto module).
+//
+// "server-only" is load-bearing, not decorative. Without it this module was reachable from a
+// client component through lib/bizApp and shipped to the browser, where process.env is empty and
+// the start-up check below screamed that SSNs were not being persisted — on every page load, in
+// production, untruthfully. Importing this from client code is now a BUILD failure.
+import "server-only";
 import crypto from "crypto";
 
 const PREFIX = "enc:v1:";

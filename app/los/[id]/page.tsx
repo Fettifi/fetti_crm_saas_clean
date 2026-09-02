@@ -14,7 +14,7 @@ import ConditionsImporter from "@/components/los/ConditionsImporter";
 import IncomeQualifier from "@/components/los/IncomeQualifier";
 import CardAuthPanel from "@/components/los/CardAuthPanel";
 import ScanDialog from "@/components/ScanDialog";
-import { isBusinessCreditDeal } from "@/lib/bizApp";
+import { isBusinessCreditDeal } from "@/lib/bizProduct";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
 

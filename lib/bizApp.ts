@@ -112,21 +112,11 @@ const str = (v: unknown): string | null => {
   return s ? s : null;
 };
 
-/** Business-purpose products. A file matching one of these gets this form, not a 1003. */
-const BIZ_PRODUCTS =
-  /working.?capital|business.?loan|sba|line.?of.?credit|\bloc\b|merchant.?cash|\bmca\b|equipment|invoice.?factor|revenue.?based|commercial.?real.?estate|\bcre\b/i;
-
-/**
- * Does this deal get a Business Credit Application instead of a 1003?
- * Business PURPOSE is the test, not property type — a DSCR loan is business-purpose but is
- * still underwritten on the property and keeps the 1003-style package, whereas working
- * capital has no property at all.
- */
-export function isBusinessCreditDeal(product?: string | null, purpose?: string | null): boolean {
-  const blob = `${product || ""} ${purpose || ""}`;
-  if (/dscr|fix.?(and.?)?flip|hard.?money|bridge|rental/i.test(blob)) return false;   // property-secured → 1003 package
-  return BIZ_PRODUCTS.test(blob);
-}
+// Product logic moved to lib/bizProduct.ts so client pages can import it WITHOUT pulling
+// lib/crypto (and its start-up key check) into the browser bundle. Re-exported here so every
+// existing server-side import of isBusinessCreditDeal keeps working unchanged.
+export { isBusinessCreditDeal, BIZ_PRODUCTS } from "@/lib/bizProduct";
+import { isBusinessCreditDeal } from "@/lib/bizProduct";
 
 /** Parse the "Key: value" notes blob the intake writes, same convention as lib/urla.ts. */
 function parseNotes(notes?: string | null): Record<string, string> {

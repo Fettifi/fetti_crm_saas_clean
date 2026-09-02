@@ -1,4 +1,4 @@
-import { valueProvenance, rentProvenance } from "@/lib/urla";
+import { valueProvenance, rentProvenance } from "@/lib/urlaProvenance";
 // UNDERWRITING DESK — the single-property underwriting engine. Pure, client-safe math
 // (no I/O) that composes the existing pricer + income calculators, plus the two AI
 // prompt templates used server-side (read an uploaded TitlePro/assessor profile; then
