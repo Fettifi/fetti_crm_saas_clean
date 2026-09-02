@@ -46,20 +46,55 @@ const fails: string[] = [];
 // Named checkResolver, not check: `check(condition, message)` is this repo's assertion-helper
 // convention, and verify:assertions reads a bare `check(a, b)` as an assertion with its
 // arguments reversed. This is a per-resolver runner, not an assertion.
+// A RESOLVER THAT DID NOT ANSWER HAS NOT TOLD YOU A RECORD IS GONE.
+//
+// 2026-08-23 this guard went red with "Cloudflare 1.1.1.1: DNS lookup itself failed — queryMx
+// ETIMEOUT" under a headline that tells you to go restore wiped records at GoDaddy. Nothing was
+// wiped: `dig @1.1.1.1` answered correctly seconds later, and on the very next run it was
+// 8.8.8.8 that timed out instead. It was this Mac's network, one query deep, with no retry.
+//
+// That is worse than a nuisance. This guard exists because a PUT to GoDaddy once removed the
+// email TXT records, and the one thing it must never do is make "your MX records are gone" and
+// "your wifi hiccuped" print the same way — a red that is usually noise gets waved through, and
+// then the one that is real gets waved through too.
+//
+// So: transient transport failures are retried, and if a resolver still will not answer it is
+// reported as UNREACHABLE — explicitly not a finding about the records. NODATA/NOTFOUND is the
+// opposite: the resolver answered and said the name has nothing. That stays a hard failure.
+const TRANSIENT = new Set(["ETIMEOUT", "ETIMEDOUT", "ECONNREFUSED", "ECONNRESET", "ESERVFAIL", "EREFUSED"]);
+const unreachable: string[] = [];
+let answered = 0;
+
 async function checkResolver(label: string, ip: string): Promise<void> {
   const r = new Resolver();
   r.setServers([ip]);
 
-  let txt: string[];
-  let mx: { exchange: string; priority: number }[];
-  try {
-    // resolveTxt returns chunked strings per record; a long record arrives split across chunks.
-    txt = (await r.resolveTxt(DOMAIN)).map((chunks) => chunks.join(""));
-    mx = await r.resolveMx(DOMAIN);
-  } catch (e: any) {
-    fails.push(`${label}: DNS lookup itself failed — ${e?.message || e}`);
+  let txt: string[] | undefined;
+  let mx: { exchange: string; priority: number }[] | undefined;
+  let last: any = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      // resolveTxt returns chunked strings per record; a long record arrives split across chunks.
+      txt = (await r.resolveTxt(DOMAIN)).map((chunks) => chunks.join(""));
+      mx = await r.resolveMx(DOMAIN);
+      last = null;
+      break;
+    } catch (e: any) {
+      last = e;
+      // An answer of "this name has no such record" is a finding, not a flaky link. Stop.
+      if (!TRANSIENT.has(String(e?.code || ""))) break;
+      if (attempt < 3) await new Promise((res) => setTimeout(res, attempt * 750));
+    }
+  }
+  if (last || !txt || !mx) {
+    if (TRANSIENT.has(String(last?.code || ""))) {
+      unreachable.push(`${label}: no answer after 3 attempts — ${last?.message || last} (transport, NOT a statement about the records)`);
+    } else {
+      fails.push(`${label}: DNS lookup itself failed — ${last?.message || last}`);
+    }
     return;
   }
+  answered++;
 
   console.log(`\n${label} — ${txt.length} root TXT, ${mx.length} MX`);
 
@@ -87,6 +122,16 @@ async function checkResolver(label: string, ip: string): Promise<void> {
   console.log(`Checking critical DNS for ${DOMAIN}`);
   for (const [label, ip] of RESOLVERS) await checkResolver(label, ip);
 
+  for (const u of unreachable) console.log(`\n  unreachable  ${u}`);
+
+  // If NO resolver answered, nothing above was checked. Passing here would be the vacuous
+  // green this repo keeps paying for — say plainly that the run proved nothing, and fail.
+  if (answered === 0) {
+    console.error(`\nFAIL — no resolver answered, so NOTHING about ${DOMAIN}'s records was verified by this run.`);
+    console.error(`  This is a network result, not a DNS finding. Re-run on a working connection before concluding anything.`);
+    process.exit(1);
+  }
+
   if (fails.length) {
     console.error(`\nFAIL — ${fails.length} problem(s):`);
     for (const f of fails) console.error(`  - ${f}`);
@@ -97,5 +142,10 @@ async function checkResolver(label: string, ip: string): Promise<void> {
     );
     process.exit(1);
   }
-  console.log(`\nPASS — every critical TXT and MX resolves on both resolvers.`);
+  console.log(
+    unreachable.length
+      ? `\nPASS — every critical TXT and MX resolves on the ${answered} of ${RESOLVERS.length} resolver(s) that answered. ` +
+        `${unreachable.length} did not answer and was NOT checked.`
+      : `\nPASS — every critical TXT and MX resolves on both resolvers.`
+  );
 })();

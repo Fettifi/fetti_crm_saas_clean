@@ -10,7 +10,8 @@
     "1": 12830,
     "2": 750
    },
-   "factCount": 12
+   "factCount": 12,
+   "factsHash": "389f35dc9a11304a"
   },
   "FF-202607-1321": {
    "file": "FF-202607-1321",
@@ -18,27 +19,8 @@
    "qualifying": 0,
    "shipped": 0,
    "perBorrower": {},
-   "factCount": 3
-  },
-  "FF-202608-1913": {
-   "file": "FF-202608-1913",
-   "loanType": "fha",
-   "qualifying": 22547,
-   "shipped": 22547,
-   "perBorrower": {
-    "1": 22547
-   },
-   "factCount": 14
-  },
-  "FF-202607-9927": {
-   "file": "FF-202607-9927",
-   "loanType": "conventional",
-   "qualifying": 8645,
-   "shipped": 8645,
-   "perBorrower": {
-    "1": 8645
-   },
-   "factCount": 6
+   "factCount": 3,
+   "factsHash": "7372ad59ed7a2e29"
   },
   "FF-202607-8421": {
    "file": "FF-202607-8421",
@@ -49,7 +31,52 @@
     "1": 10208,
     "2": 9545
    },
-   "factCount": 13
+   "factCount": 13,
+   "factsHash": "e035f4a185fc1247"
+  },
+  "FF-202607-9927": {
+   "file": "FF-202607-9927",
+   "loanType": "conventional",
+   "qualifying": 8645,
+   "shipped": 8645,
+   "perBorrower": {
+    "1": 8645
+   },
+   "factCount": 6,
+   "factsHash": "4214338c7ff85814"
+  },
+  "FF-202608-1913": {
+   "file": "FF-202608-1913",
+   "loanType": "fha",
+   "qualifying": 22547,
+   "shipped": 22547,
+   "perBorrower": {
+    "1": 22547
+   },
+   "factCount": 14,
+   "factsHash": "c280722349497c0b"
+  },
+  "FF-202608-2600": {
+   "file": "FF-202608-2600",
+   "loanType": "fha",
+   "qualifying": 10829,
+   "shipped": 10829,
+   "perBorrower": {
+    "1": 10829
+   },
+   "factCount": 13,
+   "factsHash": "6a96e37dfb01e6d0"
+  },
+  "FF-202608-5944": {
+   "file": "FF-202608-5944",
+   "loanType": "conventional",
+   "qualifying": 2678,
+   "shipped": 2678,
+   "perBorrower": {
+    "1": 2678
+   },
+   "factCount": 6,
+   "factsHash": "29fd82e056c795a3"
   },
   "FF-202608-6901": {
    "file": "FF-202608-6901",
@@ -59,7 +86,8 @@
    "perBorrower": {
     "1": 4874
    },
-   "factCount": 7
+   "factCount": 7,
+   "factsHash": "6444097ef1416ef0"
   }
  }
 }

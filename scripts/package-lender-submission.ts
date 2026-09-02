@@ -38,7 +38,16 @@ const RULES: Rule[] = [
     } },
   { rank: 4, label: (f, n) => /entity|operating[_ ]agreement|articles|good[_ ]standing|ein\b/i.test(f + n) ? "Entity documents" : null },
   { rank: 5, label: (f, n) => /licen[cs]e|photo[_ ]?id|government|passport|drivers/i.test(f + n) ? "ID — Driver's Licence" : null },
-  { rank: 6, label: (f, n) => /bank[_ ]?statement|morgan[_ ]stanley|statement/i.test(f + n) ? "Assets — Statement" : null },
+  { rank: 6, label: (f, n) => {
+      if (!/bank[_ ]?statement|morgan[_ ]stanley|statement/i.test(f + n)) return null;
+      // Say WHICH month. Two files called "Assets — Statement" and "Assets — Statement (2)" make
+      // an underwriter open both to find out whether the period they need is even there.
+      // Statement exports almost always carry the period as YYYYMM in the filename.
+      const m = /(20\d{2})(0[1-9]|1[0-2])(?!\d)/.exec(f);
+      if (!m) return "Assets — Statement";
+      const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+      return `Assets — Statement ${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
+    } },
 ];
 
 function classify(fileName: string, docName: string): { rank: number; label: string } {

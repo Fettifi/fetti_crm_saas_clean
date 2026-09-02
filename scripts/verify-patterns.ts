@@ -73,6 +73,12 @@ for (const f of files) {
 // the "default 8" branch never ran and 159 texts went out at once.
 for (const f of files) {
   const src = readFileSync(path.join(ROOT, f), "utf8");
+  // Every `const NAME = <number>` this file declares, so a `|| NAMED_DEFAULT` can be resolved
+  // to the value it actually stands for. See guard (c) below.
+  const numericConsts = new Map<string, number>();
+  for (const m of src.matchAll(/(?:^|\n)\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::\s*number\s*)?=\s*(-?\d+(?:\.\d+)?)\s*[;\r\n]/g)) {
+    numericConsts.set(m[1], Number(m[2]));
+  }
   src.split("\n").forEach((ln, i) => {
     if (isComment(ln)) return;
     if (!/Number\(\s*(await\s+)?(cfg|getSetting)\s*\(/.test(ln)) return;
@@ -84,10 +90,24 @@ for (const f of files) {
     //   (a) an explicit isFinite / isNaN test within a few lines, or
     //   (b) a NON-ZERO `|| default` / `?? default` on the same line — which catches the 0 that
     //       Number(null) produces and substitutes something safe.
+    //   (c) that same fallback written as a NAMED constant instead of a bare literal. On
+    //       2026-08-23 this detector failed lib/eventPhotos.ts:121 —
+    //           Number(await getSetting(PHOTOS_BUDGET_KEY)) || BUDGET_MB_DEFAULT
+    //       — which is correct: BUDGET_MB_DEFAULT is 200, so the 0 from Number(null) is
+    //       caught exactly as (b) intends. Only the literal-only regex could not see it.
+    //       That is this rule's second false alarm on already-correct code, and the comment
+    //       above says what a detector that cries wolf is worth. So resolve the name against
+    //       the constants THIS FILE declares. A name that resolves to 0, to a non-number, or
+    //       that is declared somewhere this cannot see is NOT a guard and still fails.
     const fallback = /(\|\||\?\?)\s*[1-9][0-9._]*/.test(ln);
+    const named = ln.match(/(?:\|\||\?\?)\s*([A-Za-z_$][\w$]*)/);
+    const namedFallback = !!named && (() => {
+      const v = numericConsts.get(named[1]);
+      return typeof v === "number" && isFinite(v) && v !== 0;
+    })();
     const window = src.split("\n").slice(i, i + 6).join(" ");
     const explicit = /isFinite|isNaN|Number\.isInteger/.test(window);
-    if (!fallback && !explicit) {
+    if (!fallback && !explicit && !namedFallback) {
       problems.push({ file: f, line: i + 1, why: `Number(cfg(...)) with no isFinite/isNaN guard within 3 lines. cfg() returns NULL when unset and Number(null) === 0 — an unset setting silently becomes a limit of ZERO, which usually means "off" or "no cap".` });
     }
   });

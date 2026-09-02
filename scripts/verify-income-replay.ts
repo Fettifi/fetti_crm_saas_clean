@@ -25,6 +25,7 @@
 //   npx tsx scripts/verify-income-replay.ts            check every snapshotted file
 //   npx tsx scripts/verify-income-replay.ts --save     re-snapshot (only after a change is APPROVED)
 import "./_env";
+import { createHash } from "crypto";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
@@ -33,6 +34,48 @@ import { computeQualifyingIncome, type DocFact } from "@/lib/income/docFacts";
 const SNAP = path.join(process.cwd(), "scripts", "income-replay-snapshot.json");
 const save = process.argv.includes("--save");
 const money = (n: any) => (n == null ? "—" : `$${Math.round(Number(n)).toLocaleString()}`);
+
+// SAY WHICH OF THE TWO THINGS HAPPENED, OR ADMIT YOU DO NOT KNOW.
+//
+// 2026-09-02: FF-202608-2600 (Mario Washington) moved $10,817 -> $10,829 and this guard printed
+//
+//     FAIL   FF-202608-2600: qualifying income moved $10,817 -> $10,829 on the SAME documents
+//
+// "on the SAME documents" was a hardcoded string. Nothing checked it. The snapshot had recorded
+// `factCount: 8` and the file now carried 13 facts, so the guard held the evidence that the
+// input had changed and asserted the opposite.
+//
+// This is not a wording nit — it inverts the diagnosis. This guard exists to answer exactly one
+// question: did the ENGINE move a settled number, or did the FACTS move under it? Those have
+// opposite remedies. "Same documents, different number" means the logic regressed and you go
+// read the engine. A changed fact set means the same documents were re-read and extraction
+// came back different — the engine is innocent and the AI re-read is the thing to inspect
+// (`income-number-moves-come-from-extraction`). On this file the truth was the second one: the
+// engine reproduces the stored figure exactly, and the leave-one-out shows the 5 added facts
+// are worth $0 — one of the original 8 was re-read differently.
+//
+// So the guard sent the operator to audit deterministic math while a live FHA borrower's
+// extraction had silently shifted, and the fix it printed (`--save`) buries both cases the same
+// way. Now the fact set is fingerprinted and the two cases are named apart. The hash covers
+// every field the engine computes from and is stored as an opaque digest, so the snapshot still
+// records no borrower name or SSN.
+const FACT_KEYS = [
+  "docType", "borrower", "incomeCategory", "employerOrPayer", "ein", "streamId", "taxYear",
+  "payFrequency", "regularPerPeriod", "otPerPeriod", "grossPerPeriod", "ytdRegular", "ytdGross",
+  "ytdThroughDate", "w2Box1", "w2Box5", "selfEmploymentNet", "monthlyBenefit", "benefitType",
+  "continuanceMonthsRemaining", "monthsReceived", "nonTaxable", "isJointReturn",
+  "yearsAtCurrentEmployer", "propertyAddress", "unit", "leaseMonthlyRent", "leaseRentFrequency",
+  "leaseStartDate", "leaseEndDate", "isMonthToMonth", "marketRent",
+] as const;
+
+// Order-independent: the route's fact order is not part of the borrower's income, so a reshuffle
+// must not read as a re-extraction.
+function factsHash(facts: DocFact[]): string {
+  const rows = facts
+    .map((f) => JSON.stringify(FACT_KEYS.map((k) => (f as any)[k] ?? null)))
+    .sort();
+  return createHash("sha256").update(rows.join("\n")).digest("hex").slice(0, 16);
+}
 
 type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: number; shipped: number; perBorrower: Record<string, number> };
 
@@ -124,7 +167,12 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
   }
 
   if (save || !existsSync(SNAP)) {
-    const lean = Object.fromEntries(Object.entries(now).map(([k, v]) => [k, { file: v.file, loanType: v.loanType, qualifying: v.qualifying, shipped: v.shipped, perBorrower: v.perBorrower, factCount: v.facts.length }]));
+    // Keys sorted so a re-save is a diff of the NUMBERS, not of row order. The unsorted version
+    // produced churn that moved real entries around in every commit and made a genuine change
+    // hard to see in review.
+    const lean = Object.fromEntries(Object.entries(now)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => [k, { file: v.file, loanType: v.loanType, qualifying: v.qualifying, shipped: v.shipped, perBorrower: v.perBorrower, factCount: v.facts.length, factsHash: factsHash(v.facts) }]));
     writeFileSync(SNAP, JSON.stringify({ savedAt: null, files: lean }, null, 1) + "\n");
     console.log(`  ${existsSync(SNAP) && !save ? "No snapshot existed — created" : "Snapshot saved"}: ${count} file(s)\n`);
     process.exit(0);
@@ -133,6 +181,9 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
   const prev = JSON.parse(readFileSync(SNAP, "utf8")).files || {};
   let bad = 0, checked = 0;
   const unsnapshotted: string[] = [];
+  const logicMoves: string[] = [];   // moved on byte-identical facts — the engine did it
+  const factMoves: string[] = [];    // moved because extraction re-read differently
+  const quietRereads: string[] = []; // facts changed, total did not
   for (const [fileNo, cur] of Object.entries(now)) {
     const before = prev[fileNo];
     // AN UNMEASURED FILE IS NOT A PASSING FILE.
@@ -144,14 +195,41 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
     // anyway. Coverage is part of the verdict, so a gap in it is a failure, not a note.
     if (!before) { unsnapshotted.push(`${fileNo}: ${money(cur.qualifying)} (${cur.facts.length} facts, ${cur.loanType || "?"})`); continue; }
     checked++;
+    const curHash = factsHash(cur.facts);
+    // A snapshot written before fingerprinting shipped has no hash. Then this guard genuinely
+    // cannot separate the two causes, and it says so rather than picking the scarier one.
+    const sameFacts = before.factsHash == null ? null : before.factsHash === curHash;
+
     if (before.qualifying !== cur.qualifying) {
       bad++;
-      console.log(`  FAIL   ${fileNo}: qualifying income moved ${money(before.qualifying)} -> ${money(cur.qualifying)} on the SAME documents`);
+      console.log(`  FAIL   ${fileNo}: qualifying income moved ${money(before.qualifying)} -> ${money(cur.qualifying)}`);
       for (const [b, v] of Object.entries(cur.perBorrower)) {
         const was = before.perBorrower?.[b];
         if (was !== v) console.log(`           borrower ${b}: ${money(was)} -> ${money(v)}`);
       }
-    } else console.log(`  ok     ${fileNo}: ${money(cur.qualifying)} (${cur.facts.length} facts)`);
+      if (sameFacts === true) {
+        logicMoves.push(fileNo);
+        console.log(`           on BYTE-IDENTICAL facts (${cur.facts.length}, ${curHash}) — the ENGINE moved it. Read the engine.`);
+      } else if (sameFacts === false) {
+        factMoves.push(fileNo);
+        const dCount = before.factCount == null || before.factCount === cur.facts.length
+          ? `${cur.facts.length} facts, same count` : `${before.factCount} -> ${cur.facts.length} facts`;
+        console.log(`           the FACTS also changed (${dCount}; ${before.factsHash} -> ${curHash}) — the documents were`);
+        console.log(`           re-read and extraction came back different. This is NOT an engine regression.`);
+      } else {
+        console.log(`           this snapshot entry predates fact fingerprinting, so this run CANNOT tell an`);
+        console.log(`           engine change from a re-read. Re-save the snapshot to get that answer next time.`);
+      }
+    } else {
+      console.log(`  ok     ${fileNo}: ${money(cur.qualifying)} (${cur.facts.length} facts)`);
+      // Same total, different facts: not a failure — the number a borrower ships is what this
+      // corpus protects — but a re-extraction that lands on the same dollar is still worth
+      // seeing, because the next one may not.
+      if (sameFacts === false) {
+        quietRereads.push(fileNo);
+        console.log(`           note: facts changed under an unchanged total (${before.factCount ?? "?"} -> ${cur.facts.length} facts, ${before.factsHash} -> ${curHash})`);
+      }
+    }
   }
 
   console.log("");
@@ -169,10 +247,28 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
     process.exit(1);
   }
   if (bad) {
-    console.error(`FAIL — ${bad} of ${checked} real file(s) changed. Replaying the exact documents the engine was given\n` +
-      `produces a different qualifying income than it did before this change. If every move is intended:\n` +
+    // Both causes stop the build — a live borrower's number moved either way. What differs is
+    // where the operator should look, and the old message only ever described one of them.
+    console.error(`FAIL — ${bad} of ${checked} real file(s) ship a different qualifying income than the snapshot.`);
+    if (logicMoves.length) {
+      console.error(`\n  ${logicMoves.length} moved on BYTE-IDENTICAL facts: ${logicMoves.join(", ")}\n` +
+        `  The engine was handed the same numbers and returned a different answer. This is a logic\n` +
+        `  regression on a real mortgage file. Fix the engine — do not re-baseline it away.`);
+    }
+    if (factMoves.length) {
+      console.error(`\n  ${factMoves.length} moved because the FACTS changed: ${factMoves.join(", ")}\n` +
+        `  The engine is not implicated — extraction re-read the documents and returned different\n` +
+        `  figures. Open the file's stored factsUsed against the documents and satisfy yourself the\n` +
+        `  NEW extraction is the correct one; a re-read is exactly how a wrong number gets in\n` +
+        `  (payroll-deposit-counted-twice, income-number-moves-come-from-extraction).`);
+    }
+    console.error(`\n  Once every move above is understood and intended:\n` +
       `    npx tsx scripts/verify-income-replay.ts --save\n`);
     process.exit(1);
   }
-  console.log(`PASS — ${checked} real file(s) replay to the same qualifying income.\n`);
+  console.log(`PASS — ${checked} real file(s) replay to the same qualifying income.`);
+  if (quietRereads.length) {
+    console.log(`       (${quietRereads.length} had facts re-extracted without moving the total: ${quietRereads.join(", ")})`);
+  }
+  console.log("");
 })();

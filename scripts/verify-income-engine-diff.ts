@@ -35,6 +35,40 @@ import path from "path";
 const ENGINE = "lib/income/docFacts.ts";
 const ROUTE = "app/api/los/files/[id]/verify-income/route.ts";
 
+// THIS GUARD ONLY MEASURES THE STANDARD ENGINE. SAY SO, AND REFUSE TO STAND BEHIND THE REST.
+//
+// 2026-08-25: with `lib/income/bankStatement.ts` deliberately altered to halve every
+// bank-statement borrower's income, this guard printed:
+//
+//     same   $  6288  FF-202607-7963 Corine Lucas  (50 facts, conventional)
+//     PASS — this engine moves NO real borrower's qualifying income.
+//
+// Both lines were false. Corine Lucas does not ship $6,288 — she ships $7,246, because her file
+// qualifies on the BANK-STATEMENT method, and the route rebuilds the total with
+// computeBankStatementIncome + combineBankStatement AFTER computeQualifyingIncome returns. This
+// guard replayed only the standard engine, compared a number nobody reads, and reported it as
+// measured.
+//
+// That is not a cosmetic mislabel. Read the header above: this guard's whole purpose is to be
+// the MEASUREMENT that justifies `verify:income-logic -- --repin --no-reroll`. So the live path
+// to a wrong number on a mortgage file was:
+//   touch bankStatement.ts -> income-logic goes red -> run this guard -> "moves NO real
+//   borrower's number" -> --no-reroll on that basis -> Corine's figure halves the next time
+//   anything re-reads her file.
+// A guard used as proof must never report coverage it does not have.
+//
+// So: files on a non-standard method are reported as NOT MEASURED and excluded from the count,
+// and if the modules that DO compute those files changed, this guard fails instead of blessing
+// a change it cannot measure. verify-income-replay.ts learned this same lesson about its own
+// snapshot; this is the parallel path that never got the fix.
+const METHOD_MODULES: Record<string, string[]> = {
+  bank_statement: ["lib/income/bankStatement.ts", "lib/income/combineBankStatement.ts"],
+  dscr: ["lib/income/rentalIncome.ts"],
+  "1099_only": ["lib/income/altDoc.ts"],
+  pnl_only: ["lib/income/altDoc.ts"],
+  asset_depletion: ["lib/income/altDoc.ts"],
+};
+
 function gitShow(rel: string): string | null {
   try { return execFileSync("git", ["show", `HEAD:${rel}`], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 }); }
   catch { return null; }
@@ -92,10 +126,17 @@ async function main() {
   const { data: files, error: fErr } = await supabaseAdmin
     .from("loan_files").select("id, file_number, borrower_name");
   if (fErr) { console.error("loan_files read failed: " + fErr.message); process.exit(1); }
-  const who = new Map((files || []).map((f: any) => [f.id, `${f.file_number} ${f.borrower_name}`]));
+  // Annotated, not inferred: from an untyped `files` TS widens the value to `{}`, which type-checks
+  // fine while `label` is only interpolated into a template string and breaks the build the moment
+  // anything stores it. Guards run under tsx (no type-check), so `npm run build` is the only place
+  // that says so — which is how this file sat un-buildable and therefore undeployable.
+  const who = new Map<string, string>((files || []).map((f: any) => [String(f.id), `${f.file_number} ${f.borrower_name}`]));
 
   const moves: string[] = [];
   let covered = 0, noFacts = 0;
+  // Live files whose shipped figure this guard cannot reproduce, keyed by the method that built
+  // it — so an unmeasurable change can name the borrowers it puts at risk.
+  const unmeasured: { label: string; method: string; ships: number }[] = [];
 
   for (const row of data || []) {
     const id = String(row.key).split(":")[1];
@@ -103,11 +144,22 @@ async function main() {
     try { p = JSON.parse(row.value)?.payload; } catch { continue; }
     const facts = p?.factsUsed;
     if (!Array.isArray(facts) || !facts.length) { noFacts++; continue; }
-    covered++;
     const loanType = p.loanType === "fha" ? "fha" : "conventional";
+    const label = who.get(id) || id;
+    const method = String(p.method || "standard");
+
+    // A file the route rebuilds after the standard engine does not ship the standard engine's
+    // number, so replaying that engine says nothing about it. Report it, never count it.
+    if (method !== "standard") {
+      const ships = Math.round(Number(p.qualifyingMonthlyIncome) || 0);
+      unmeasured.push({ label, method, ships });
+      console.log(`  NOT MEASURED  ships $${String(ships).padStart(6)}  ${label}  (${facts.length} facts, ${method} method)`);
+      continue;
+    }
+
+    covered++;
     const b = before.computeQualifyingIncome(facts, { loanType }).qualifyingMonthlyIncome;
     const a = after.computeQualifyingIncome(facts, { loanType }).qualifyingMonthlyIncome;
-    const label = who.get(id) || id;
     if (b === a) {
       console.log(`  same   $${String(a).padStart(6)}  ${label}  (${facts.length} facts, ${loanType})`);
     } else {
@@ -118,10 +170,42 @@ async function main() {
 
   // Coverage is stated, never implied. A guard that silently measured nothing is the thing this
   // whole family of checks exists to prevent.
-  console.log(`\n  coverage: ${covered} file(s) replayed; ${noFacts} verified file(s) carry no stored facts and CANNOT be measured here.`);
+  console.log(`\n  coverage: ${covered} file(s) replayed on the standard engine; ` +
+              `${unmeasured.length} live file(s) qualify on a method this guard CANNOT replay; ` +
+              `${noFacts} verified file(s) carry no stored facts.`);
 
   if (!covered) {
     console.error(`\nFAIL — no file carried replayable facts, so this guard compared nothing. That is not a pass.`);
+    process.exit(1);
+  }
+
+  // THE MODULES THAT BUILD THE NUMBERS ABOVE ARE NOT REPLAYED HERE. IF THEY MOVED, SAY SO.
+  //
+  // Only fires when a module that computes a LIVE file's shipped figure actually changed, so an
+  // untouched tree stays quiet — a guard that cries wolf on every edit gets waved through, and
+  // then the real one gets waved through too.
+  const atRisk: string[] = [];
+  for (const u of unmeasured) {
+    for (const mod of METHOD_MODULES[u.method] || []) {
+      const head = gitShow(mod);
+      let work: string | null = null;
+      try { work = readFileSync(path.join(process.cwd(), mod), "utf8"); } catch { work = null; }
+      if (head == null || work == null || head !== work) {
+        atRisk.push(`${u.label} — ships $${u.ships.toLocaleString()}/mo via the ${u.method} method, built by ${mod} (${head == null || work == null ? "unreadable" : "CHANGED"})`);
+      }
+    }
+  }
+  if (atRisk.length && !versionMoved) {
+    console.error(
+      `\nFAIL — ${atRisk.length} live borrower figure(s) are produced by code this guard cannot replay,\n` +
+      `and that code CHANGED in the working tree:\n` +
+      atRisk.map((m) => `  • ${m}`).join("\n") +
+      `\n\nThis guard replays computeQualifyingIncome only. The route rebuilds these files' totals\n` +
+      `after it, so a "same" line above is not evidence about them and this run is NOT the\n` +
+      `measurement that justifies \`verify:income-logic -- --repin --no-reroll\`.\n` +
+      `Bump LOGIC_VERSION in ${ROUTE} so the change actually reaches these files, or revert the\n` +
+      `module. Do not claim the change moves nobody's number — nothing here measured it.`,
+    );
     process.exit(1);
   }
 
@@ -143,11 +227,22 @@ async function main() {
     return;
   }
 
-  console.log(`\nPASS — this engine moves NO real borrower's qualifying income.`);
+  // The claim is scoped to what was actually replayed. It used to read "moves NO real
+  // borrower's qualifying income" full stop, while `unmeasured` files sat right above it
+  // untested — and the next three lines then invited the operator to cite that sentence as
+  // grounds for --no-reroll.
+  console.log(`\nPASS — this engine moves NO qualifying income on the ${covered} file(s) it replayed.`);
+  if (unmeasured.length) {
+    console.log(`NOT a statement about ${unmeasured.length} live file(s) on a non-standard method:`);
+    for (const u of unmeasured) console.log(`  • ${u.label} — $${u.ships.toLocaleString()}/mo via ${u.method}`);
+    console.log(`Their totals are rebuilt by ${[...new Set(unmeasured.flatMap((u) => METHOD_MODULES[u.method] || []))].join(", ") || "route code"},`);
+    console.log(`which this guard does not replay. It only checks those modules are unchanged.`);
+  }
   if (engineChanged) {
-    console.log(`The change is measurably inert on every file that can be measured, which is what`);
+    console.log(`\nThe change is measurably inert on every file that can be measured, which is what`);
     console.log(`  npm run verify:income-logic -- --repin --no-reroll --reason="…"`);
-    console.log(`asks you to claim. Cite this run as the reason.`);
+    console.log(`asks you to claim. Cite this run as the reason — and only for the files listed as`);
+    console.log(`replayed, never for the ones listed as not measured.`);
   }
 }
 
