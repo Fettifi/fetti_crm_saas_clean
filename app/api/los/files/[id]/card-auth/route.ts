@@ -133,7 +133,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const sent = await sendSignRequest({
         email, phone,
         subject: `Quick confirmation for your card ending ${a.last4 || ""}`,
-        body: `Hi ${who} — we're processing the payment you already authorized on your Fetti loan file. For your security we don't keep the 3-digit code from the back of your card, so we need you to confirm it one more time. It takes a few seconds: ${link}`,
+        body: `Hi ${who} — we're processing the payment you already authorized on your Fetti loan file. We don't have the 3-digit code from the back of your card on file, so we need you to confirm it one more time. It takes a few seconds: ${link}`,
         link,
       } as any).catch((e: any) => ({ sent: [], error: e?.message }));
       await logActivity({

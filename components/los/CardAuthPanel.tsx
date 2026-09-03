@@ -74,6 +74,18 @@ export default function CardAuthPanel({ fileId }: { fileId: string }) {
       setRevealed((m) => ({ ...m, [i]: { pan: j.pan, exp: j.exp, cardholder: j.cardholder, cvv: j.cvv } }));
     } finally { setBusy(null); }
   }
+  // Ask the borrower to re-enter the 3-digit code. The API has always supported this; the panel
+  // never offered it, so a card whose code was dropped by the old auto-purge had no route back —
+  // the LO could see "no CVV" and had nothing to do about it.
+  async function requestCvv(i: number) {
+    setBusy(i); setErr("");
+    try {
+      const r = await fetch(`/api/los/files/${fileId}/card-auth`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ borrowerIndex: i, action: "request_cvv" }) });
+      const j = await r.json();
+      setSendMsg((m) => ({ ...m, [i]: (r.ok ? "✓ Asked the borrower for the code — sent to " + (j.sentTo || []).join(", ") : "⚠ " + (j.error || "Couldn't send the request.")) }));
+      if (r.ok) await load();
+    } finally { setBusy(null); }
+  }
   async function clearCvv(i: number) {
     setBusy(i); setErr("");
     try {
@@ -92,7 +104,7 @@ export default function CardAuthPanel({ fileId }: { fileId: string }) {
         <CreditCard className="w-4 h-4 text-emerald-400" />
         <div className="text-xs uppercase tracking-wide text-slate-500">Credit card authorization</div>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">Per borrower: send a secure link to e-sign a <span className="text-slate-300">blanket authorization</span> for this loan&apos;s fees (you set the max amount) and provide a card. The card is stored <span className="text-slate-300">encrypted</span>; the CVV is never stored. Reveal it to key into the credit vendor — every reveal is logged.</p>
+      <p className="text-[11px] text-slate-500 mb-3">Per borrower: send a secure link to e-sign a <span className="text-slate-300">blanket authorization</span> for this loan&apos;s fees (you set the max amount) and provide a card. The card and the 3-digit code are stored <span className="text-slate-300">encrypted</span> and kept until you clear them. Reveal to key into the credit vendor — every reveal is logged.</p>
       {err && <div className="text-[11px] text-red-300 mb-2">{err}</div>}
 
       <div className="space-y-3">
@@ -114,7 +126,7 @@ export default function CardAuthPanel({ fileId }: { fileId: string }) {
               {authed && a ? (
                 <div className="mt-2 text-[12px] text-slate-300 space-y-1">
                   <div>{a.brand} •••• {a.last4} · exp {a.exp} · ZIP {a.billingZip}</div>
-                  <div className="text-slate-500 text-[11px]">Cardholder {a.cardholder} · blanket up to ${Number(a.amount || 0).toLocaleString()} · signed {a.signedAt ? new Date(a.signedAt).toLocaleDateString() : "—"} · {a.cvvOnFile ? <span className="text-emerald-400/80">CVV available until {a.cvvExpiresAt ? new Date(a.cvvExpiresAt).toLocaleDateString() : "—"}</span> : <span className="text-slate-600">CVV cleared</span>}{a.revealedAt ? ` · last revealed ${new Date(a.revealedAt).toLocaleString()}` : ""}</div>
+                  <div className="text-slate-500 text-[11px]">Cardholder {a.cardholder} · blanket up to ${Number(a.amount || 0).toLocaleString()} · signed {a.signedAt ? new Date(a.signedAt).toLocaleDateString() : "—"} · {a.cvvOnFile ? <span className="text-emerald-400/80">CVV on file{a.cvvExpiresAt ? ` until ${new Date(a.cvvExpiresAt).toLocaleDateString()}` : ""}</span> : <span className="text-amber-400/70">no CVV on file</span>}{a.revealedAt ? ` · last revealed ${new Date(a.revealedAt).toLocaleString()}` : ""}</div>
                   {rev ? (
                     <div className="mt-1 space-y-1.5">
                       <div className="bg-slate-950 border border-emerald-700/40 rounded-lg px-3 py-2 font-mono text-emerald-300 text-sm flex items-center justify-between gap-2">
@@ -122,7 +134,10 @@ export default function CardAuthPanel({ fileId }: { fileId: string }) {
                         <button onClick={() => { navigator.clipboard?.writeText(rev.pan); setCopied(row.index); setTimeout(() => setCopied(null), 1500); }} className="text-slate-400 hover:text-white shrink-0">{copied === row.index ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}</button>
                       </div>
                       {rev.cvv ? <button onClick={() => clearCvv(row.index)} className="text-[11px] text-amber-300 hover:text-amber-200">🗑 Clear CVV now (do this once you&apos;ve charged the card)</button>
-                        : <span className="text-[10px] text-slate-500">CVV not available — it auto-deletes after 48h for security; the signed card-on-file authorization still lets you charge.</span>}
+                        : <span className="text-[10px] text-slate-500 flex flex-wrap items-center gap-2">
+                            <span>No 3-digit code on file for this card — cards authorized before 29 Aug 2026 had it auto-deleted. The signed authorization still lets you charge.</span>
+                            <button onClick={() => requestCvv(row.index)} disabled={busy === row.index} className="text-[11px] font-semibold text-emerald-300 hover:text-emerald-200 disabled:opacity-50 underline underline-offset-2">Ask the borrower for it</button>
+                          </span>}
                     </div>
                   ) : (
                     <button onClick={() => reveal(row.index)} disabled={busy === row.index} className="mt-1 text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
