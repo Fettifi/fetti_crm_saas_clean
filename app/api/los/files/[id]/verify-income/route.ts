@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { pdfText, looksLikeIncomeDoc, INCOME_KIND_RANK } from "@/lib/docContent";
+import { pdfText, looksLikeIncomeDoc, looksLikeCreditCardStatement, INCOME_KIND_RANK } from "@/lib/docContent";
 import { logActivity } from "@/lib/activity";
 import { getSetting, setSetting } from "@/lib/settings";
 import { assembleUrla, isInvestmentDeal, type Urla } from "@/lib/urla";
@@ -415,6 +415,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const docBufs: { name: string; buf: Buffer; mediaType: string }[] = [];
     const read: string[] = [];
     const unreadable: string[] = [];
+    // Name-matched documents that turned out, BY CONTENT, to be credit-card statements. They are
+    // excluded from the read and FLAGGED — never silently dropped. See lib/docContent.ts.
+    const cardStatements: string[] = [];
     const overflow: string[] = [];             // only the runaway guard can populate this
     const seenHash = new Set<string>();
     // Sized so a 24-MONTH bank-statement file (24 statements + W-2s/stubs/IDs) never drops a
@@ -446,6 +449,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (seenHash.has(hash)) continue; // exact same file already included (multi-slot dup) — silently skip
       seenHash.add(hash);
       if (mt === "application/pdf" && !pdfLooksValid(buf)) { unreadable.push(name); continue; } // truncated/corrupt
+      // A CREDIT-CARD STATEMENT IS NOT A BANK STATEMENT. The filename pass selects on the
+      // CHECKLIST SLOT — "Bank statements — last 2 months" — so four Chase card statements
+      // landed in the income candidate set on FF-202609-7039 and would have been read as
+      // deposits, counting the borrower's own card payments as income. Content decides here,
+      // on the buffer already in hand (local text + regex, no model call, no second download).
+      // Positive identification only, and the document is FLAGGED, never quietly dropped.
+      if (mt === "application/pdf") {
+        try {
+          const card = looksLikeCreditCardStatement(await pdfText(buf));
+          if (card.ok) { cardStatements.push(`${name}${d.file_name && d.file_name !== name ? ` (${d.file_name})` : ""}`); continue; }
+        } catch { /* unreadable text — the pdfLooksValid check above already had its say */ }
+      }
       // Shrink a large scan so its own read call stays fast/legible (kept OCR-legible).
       try {
         if (mt === "application/pdf" && buf.length > 1_800_000) {
@@ -457,6 +472,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }
       } catch { /* keep the original on any compression error */ }
       docBufs.push({ name, buf, mediaType: mt });
+    }
+    // When EVERY candidate was a card statement — the Tylor Stone case, where the only four
+    // "income" documents on the file were Chase card statements — "corrupt or unsupported" is a
+    // false explanation that sends the LO chasing clean copies of the wrong documents. Say what
+    // actually happened and what to collect.
+    if (!docBufs.length && cardStatements.length) {
+      return NextResponse.json({
+        error: `The only documents filed as bank statements on this file are CREDIT-CARD statements (${cardStatements.slice(0, 8).join(", ")}), not deposit-account statements. A card statement's credits are the borrower paying their own card, so none of it is income. Collect the checking/savings statements.`,
+        cardStatementDocs: cardStatements, unreadableDocs: unreadable,
+      }, { status: 422 });
     }
     if (!docBufs.length) return NextResponse.json({ error: "Could not read any of the uploaded income documents — they may be corrupt/truncated or an unsupported format. Re-request clean copies from the borrower.", unreadableDocs: unreadable }, { status: 422 });
 
@@ -633,6 +658,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // evidence was skipped and can re-request a clean copy — never silently omitted.
     const unreadableFlags = unreadable.map((nm) => `Couldn't read "${nm}" — the file looks truncated or corrupt; income from it was NOT counted. Re-request a clean copy from the borrower.`);
     const overflowFlags = overflow.length ? [`${overflow.length} income document(s) exceeded the ${RUNAWAY_GUARD}-document runaway guard and were NOT counted this pass: ${overflow.slice(0, 8).join(", ")}.`] : [];
+    // Say WHICH documents and WHY. An LO who uploaded a card statement into the bank-statement
+    // slot has to know it was not counted — otherwise a quietly lower income looks like the
+    // borrower's, and the fix (upload the DEPOSIT account statements) is never made.
+    const cardFlags = cardStatements.length
+      ? [`${cardStatements.length} document(s) filed as bank statements are CREDIT-CARD statements, not deposit-account statements, and were NOT counted as income: ${cardStatements.slice(0, 8).join(", ")}. A card statement's credits are the borrower paying their own card. Upload the checking/savings statements for the bank-statement method.`]
+      : [];
     // Flags are objects {text, addBackMonthly, borrower}: a flag that gates held-back income carries
     // the $ that OMITTING it adds. Normalize (accept legacy string flags too) so the UI wires Omit→+.
     const normFlag = (f: any) => typeof f === "string"
@@ -660,7 +691,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const report = {
       perDoc,
       crossChecks: [] as string[],
-      flags: [...qcFlags, ...overflowFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...computed.flags.map(normFlag)].slice(0, 30),
+      flags: [...qcFlags, ...cardFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...overflowFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...unreadableFlags.map((t) => ({ text: t, addBackMonthly: 0, borrower: 1 as 1 | 2 })), ...computed.flags.map(normFlag)].slice(0, 30),
       confidence: qc.confidence || (computed.breakdown.length ? "high" : "low"),
       notes: `${effectiveMethod === "dscr" ? `DSCR method (qualifies on the property's rent — ${rental?.units.length || 0} unit${(rental?.units.length || 0) === 1 ? "" : "s"} read from lease/1007, personal income not counted)` : effectiveMethod === "bank_statement" ? `BANK-STATEMENT method (${bankMonthCount} statement-months read)` : effectiveMethod === "1099_only" ? "1099-ONLY method (gross 1099 comp × counted factor)" : effectiveMethod === "pnl_only" ? "P&L-ONLY method (licensed-preparer P&L net)" : effectiveMethod === "asset_depletion" ? "ASSET-DEPLETION method (assets ÷ divisor)" : "Standard method"} · read ${incomeReads.length} document${incomeReads.length === 1 ? "" : "s"} individually · QC ${qc.findings.length} finding${qc.findings.length === 1 ? "" : "s"}.`,
     };
@@ -711,7 +742,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // fails loudly the next time a change moves its number. No borrower PII beyond what the
     // payload already holds; these are the same figures already stored in `report.perDoc`.
     const factsUsed = docFacts;
-    const payload = { factsUsed, qcContested, qcHigh, perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage,
+    const payload = { factsUsed, qcContested, qcHigh, perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, cardStatementDocs: cardStatements, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage,
       contentIncluded,
       ...(contentIncluded.length ? { contentNotice: `${contentIncluded.length} document(s) were included by reading them, not by their filename: ${contentIncluded.map((c: any) => `${c.doc} (${c.readAs})`).join(", ")}. Earlier runs of this file left them out.` } : {}),
       // The DSCR panel prefills its Gross monthly rent from this, so the rent the LO sees in

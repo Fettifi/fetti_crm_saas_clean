@@ -178,3 +178,78 @@ export const INCOME_KIND_RANK: Record<IncomeKind, number> = {
   w2: 0, "1099": 1, k1: 1, lease: 1, paystub: 2, voe: 2, ssa_award: 2, pension: 2,
   "1040": 3, unknown: 4, bank_statement: 5,
 };
+
+// ── A CREDIT-CARD STATEMENT IS NOT A BANK STATEMENT ────────────────────────────────────────
+//
+// 2026-09-03, found by the autopilot sweep on Tylor Stone (FF-202609-7039). Four Chase CREDIT
+// CARD statements — saph_res.pdf, saph_res_2.pdf, ink_statement.pdf, ink_2.pdf, every one of
+// them carrying "Payment Due Date", "Minimum Payment Due", "Available Credit" and
+// chase.com/cardhelp — were uploaded into the checklist slot named "Bank statements — last 2
+// months". INCOME_RE matched the SLOT NAME, so all four entered the income candidate set and
+// would have been read as deposit statements on the borrower's next income verification.
+//
+// On the bank-statement method that is not a cosmetic error. The method qualifies a borrower on
+// DEPOSITS. A card statement's credits are the borrower PAYING THEIR OWN CARD — $4,262.63 on
+// saph_res.pdf alone — so the money would have been counted as income. Same shape as the payroll
+// ACH that was typed `ssa_award` and stacked on the same employer's wages: the borrower's own
+// money, counted as if someone else had paid it to them.
+//
+// WHY THIS DEFECT SURVIVED A CONTENT CLASSIFIER THAT ALREADY EXISTED. `looksLikeIncomeDoc` runs
+// only over the documents the FILENAME pass did NOT pick up, and it can only ADD. Nothing in the
+// pipeline could ever reject a document the filename let in. The house pattern exactly: a
+// mechanism that exists and does nothing on the path that needed it. (These four do read as
+// `ok:false` — but only via looksLikeCreditReport, and only on the add path they never take.)
+//
+// THE OTHER DIRECTION IS THE WORSE ONE. On 2026-08-01 an income document that should have been
+// read was excluded and the Wilson file fell $11,701 -> $3,129. So this rejects only on POSITIVE
+// evidence of a card statement, never on the absence of evidence:
+//   • ≥4 distinct card markers — a deposit statement carries none of them;
+//   • AND at most 1 deposit-account marker, so a real checking statement is safe even if its
+//     disclosures mention an APR;
+//   • AND the text must not read as an income document of any kind;
+//   • AND never on a scan — no extractable text is not a finding about the document.
+// Measured over every income-candidate document in the live database: it fires on those four and
+// on nothing else. See scripts/verify-card-statement.ts, which re-measures it against the real
+// corpus on every run rather than against anything invented.
+const CARD_MARKERS: [string, RegExp][] = [
+  ["minimum payment", /\bminimum\s+payment\s+(?:due|warning)\b/i],
+  ["payment due date", /\bpayment\s+due\s+date\b/i],
+  ["available credit", /\bavailable\s+credit\b/i],
+  ["credit limit", /\bcredit\s+(?:limit|line)\b/i],
+  ["apr", /\bannual\s+percentage\s+rate\b|\bpurchase\s+interest\s+charge\b/i],
+  ["previous balance", /\bprevious\s+balance\b/i],
+  ["new balance", /\bnew\s+balance\b/i],
+  ["card servicing", /\bcard\s*(?:member|holder|services|help)\b|\bcredit\s+card\b/i],
+  ["late payment warning", /\blate\s+payment\s+warning\b/i],
+  ["cash advance", /\bcash\s+advance\b/i],
+];
+
+/** The structure a DEPOSIT account statement has and a card statement does not. */
+const DEPOSIT_MARKERS: RegExp[] = [
+  /\bbeginning\s+balance\b/i,
+  /\bending\s+balance\b/i,
+  /\bdeposits?\s+and\s+(?:other\s+)?credits?\b|\btotal\s+deposits\b/i,
+  /\bwithdrawals?\s+and\s+(?:other\s+)?debits?\b|\btotal\s+withdrawals\b/i,
+  /\bavailable\s+balance\b/i,
+  /\bdirect\s+deposit\b/i,
+  /\bchecking\s+account\b|\bsavings\s+account\b/i,
+];
+
+export type CardVerdict = { ok: boolean; cardScore: number; depositScore: number; hits: string[] };
+
+/**
+ * Is this a CREDIT-CARD statement — i.e. a document that must never reach the income engine as
+ * a bank statement? Positive identification only; see the note above for why each condition is
+ * required and what it cost to learn.
+ */
+export function looksLikeCreditCardStatement(text: string): CardVerdict {
+  const t = String(text || "");
+  // A scan yields no text. "No markers" is then a fact about the extraction, not the document.
+  if (isScan(t)) return { ok: false, cardScore: 0, depositScore: 0, hits: [] };
+  const hits = CARD_MARKERS.filter(([, re]) => re.test(t)).map(([n]) => n);
+  const depositScore = DEPOSIT_MARKERS.filter((re) => re.test(t)).length;
+  // If it reads as an actual income document, it is one — never exclude it on card vocabulary.
+  const income = looksLikeIncomeDoc(t);
+  const ok = hits.length >= 4 && depositScore <= 1 && !(income.ok && income.kind !== "bank_statement");
+  return { ok, cardScore: hits.length, depositScore, hits };
+}

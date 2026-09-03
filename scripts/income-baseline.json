@@ -170,6 +170,21 @@
       ],
       "cachedIncome": 22547
     },
+    "599ab8ca-4f43-440c-9fe3-6699b1e14c28": {
+      "file": "FF-202607-3633",
+      "borrower": "Michelle Jackson Metoyer",
+      "candidates": [
+        "002a783e-76ff-4540-ac99-57a484d25cdc|Lease agreement or market rent estimate (Form 1007) — additional",
+        "00491793-6d06-432e-9535-11ddcb0a18e3|Bank statements — last 2 months — additional",
+        "0dc7e292-1408-4cd9-90d3-6f3a0ec91f49|Lease agreement or market rent estimate (Form 1007) — additional",
+        "45a9dc69-f13b-46d9-9b4c-3cd600180ea0|Lease agreement or market rent estimate (Form 1007) — additional",
+        "5f566fda-de10-499c-83a5-c4bac608fc54|Lease agreement or market rent estimate (Form 1007) — additional",
+        "a1d8916b-195a-4d15-80e1-aafaf7ae8c0a|Lease agreement or market rent estimate (Form 1007)",
+        "acb80280-5647-4d2b-826c-ff40a4cb288b|Bank statements — last 2 months",
+        "eb120c5d-e232-46bf-8446-7c485cdff46a|Bank statements — last 2 months — additional"
+      ],
+      "cachedIncome": null
+    },
     "7eeeffb6-a0ee-4723-8758-0244c211c4ee": {
       "file": "FF-202606-9231",
       "borrower": "David Stidhum",
@@ -222,21 +237,6 @@
       ],
       "cachedIncome": null
     },
-    "599ab8ca-4f43-440c-9fe3-6699b1e14c28": {
-      "file": "FF-202607-3633",
-      "borrower": "Michelle Jackson Metoyer",
-      "candidates": [
-        "002a783e-76ff-4540-ac99-57a484d25cdc|Lease agreement or market rent estimate (Form 1007) — additional",
-        "00491793-6d06-432e-9535-11ddcb0a18e3|Bank statements — last 2 months — additional",
-        "0dc7e292-1408-4cd9-90d3-6f3a0ec91f49|Lease agreement or market rent estimate (Form 1007) — additional",
-        "45a9dc69-f13b-46d9-9b4c-3cd600180ea0|Lease agreement or market rent estimate (Form 1007) — additional",
-        "5f566fda-de10-499c-83a5-c4bac608fc54|Lease agreement or market rent estimate (Form 1007) — additional",
-        "a1d8916b-195a-4d15-80e1-aafaf7ae8c0a|Lease agreement or market rent estimate (Form 1007)",
-        "acb80280-5647-4d2b-826c-ff40a4cb288b|Bank statements — last 2 months",
-        "eb120c5d-e232-46bf-8446-7c485cdff46a|Bank statements — last 2 months — additional"
-      ],
-      "cachedIncome": null
-    },
     "21d5ada1-2c88-489d-b928-b38908089e62": {
       "file": "FF-202607-6368",
       "borrower": "Joseph Boykan",
@@ -250,7 +250,12 @@
     "e8579877-0e59-43a7-9b05-ff02606c00e0": {
       "file": "FF-202609-7039",
       "borrower": "Tylor Stone",
-      "candidates": [],
+      "candidates": [
+        "1ffb2d62-c6f6-4913-a3ff-3484526f0b29|Bank statements — last 2 months — additional",
+        "5a434695-475e-499e-8fae-5133ebd9a313|Bank statements — last 2 months",
+        "e701a70f-064c-49e7-89f0-150022d5321b|Bank statements — last 2 months — additional",
+        "ee45152d-08b6-4a32-9c27-dc70ff079e06|Bank statements — last 2 months — additional"
+      ],
       "cachedIncome": null
     },
     "45a69da4-6162-408d-b2eb-0aff5a471890": {
@@ -448,6 +453,14 @@
       "file": "FF-202608-7447",
       "borrower": "Lashone Duncan ",
       "candidates": [],
+      "cachedIncome": null
+    },
+    "d5451875-1325-4ab8-8b46-dd61aa07cdd9": {
+      "file": "FF-202609-8779",
+      "borrower": "Vicente Gonzalez",
+      "candidates": [
+        "e3ba3666-620f-4a12-b670-efd0729a6108|Lease agreement or market rent estimate (Form 1007)"
+      ],
       "cachedIncome": null
     },
     "a41557b2-58c8-40e4-b51e-7848cea0a70c": {

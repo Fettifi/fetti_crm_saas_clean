@@ -91,7 +91,8 @@
     "verify:rsvp-line": "tsx scripts/verify-rsvp-line.ts",
     "verify:twilio-sig": "tsx scripts/verify-twilio-signature.ts",
     "scan": "tsx scripts/scan-to-file.ts",
-    "scan:agent": "tsx scripts/scan-agent.ts"
+    "scan:agent": "tsx scripts/scan-agent.ts",
+    "verify:card-statement": "tsx scripts/verify-card-statement.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

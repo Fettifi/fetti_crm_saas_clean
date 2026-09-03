@@ -1,8 +1,8 @@
 {
   "logicVersion": "2026-08-01-override-exemplars",
-  "pinnedAt": "2026-08-21T16:21:46.513Z",
+  "pinnedAt": "2026-09-03T16:35:45.481Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "969cf3eb5e2c69dd",
+    "app/api/los/files/[id]/verify-income/route.ts": "bc30d04c79db4559",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankStatement.ts": "4302f2fdd78e85c9",
     "lib/income/combineBankStatement.ts": "43f917108941029d",
@@ -32,6 +32,14 @@
         "lib/income/docFacts.ts",
         "lib/income/readDocument.ts",
         "lib/income/rentalIncome.ts"
+      ]
+    },
+    {
+      "at": "2026-09-03T16:35:45.481Z",
+      "logicVersion": "2026-08-01-override-exemplars",
+      "reason": "Excludes credit-card statements from the income read by CONTENT (lib/docContent looksLikeCreditCardStatement). Measured over the live corpus: it rejects exactly 4 documents, all Chase card statements on FF-202609-7039 (Tylor Stone), which has NO cached income. Across all 12 files that DO have a cached number, 106 candidate PDFs were read and zero are excluded, so no shipped number can move. A global LOGIC_VERSION bump would re-roll all 12 settled files through a non-deterministic read to fix a file that has no number yet.",
+      "files": [
+        "app/api/los/files/[id]/verify-income/route.ts"
       ]
     }
   ]
