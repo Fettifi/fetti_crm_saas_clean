@@ -139,6 +139,25 @@ function argValue(flag: string): string | null {
   return hit ? hit.slice(flag.length + 1) : null;
 }
 
+// A RE-SAVE MUST BE A DIFF OF THE NUMBERS, NOT OF ROW ORDER.
+//
+// `snapshot()` builds `files` in whatever order the query returned, so a re-baseline reordered
+// unrelated borrowers and buried the real change. On 2026-09-04 three paystubs were added to one
+// live file (Lucki Long) and `--save` produced 25 insertions / 22 deletions: the ONLY substantive
+// line was the three new documents, and Magali Lopez Villafuerte's whole block moved position
+// with her $19,753 completely unchanged. A reviewer scanning that diff for a moved `cachedIncome`
+// is reading 47 lines of churn to find 3 real ones — and this baseline's entire job is to make a
+// moved number impossible to miss.
+//
+// verify-income-replay.ts already learned exactly this ("Keys sorted so a re-save is a diff of the
+// NUMBERS, not of row order") and sorts its snapshot. This is the parallel path that never got the
+// fix. Sorted by file number, because that is what a human reads, with the id as tie-break.
+export function sortFiles<T extends Snapshot>(snap: T): T {
+  const entries = Object.entries(snap.files).sort(([idA, a], [idB, b]) =>
+    (a.file || "").localeCompare(b.file || "") || idA.localeCompare(idB));
+  return { ...snap, files: Object.fromEntries(entries) };
+}
+
 async function main() {
   const save = process.argv.includes("--save");
   const acceptMove = (argValue("--accept-move") || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -146,7 +165,7 @@ async function main() {
   const now = await snapshot();
 
   if (!existsSync(BASELINE)) {
-    writeFileSync(BASELINE, JSON.stringify(now, null, 2));
+    writeFileSync(BASELINE, JSON.stringify(sortFiles(now), null, 2));
     console.log(`No baseline existed — created: ${Object.keys(now.files).length} files, LOGIC_VERSION=${now.logicVersion}`);
     console.log("Re-run without --save to check against it.");
     return;
@@ -224,7 +243,7 @@ async function main() {
       const m = [...moved.values()].find((x) => x.file === f)!;
       next.acceptedMoves!.push({ file: m.file, borrower: m.borrower, from: m.from, to: m.to, acceptedAt: new Date().toISOString(), reason });
     }
-    writeFileSync(BASELINE, JSON.stringify(next, null, 2));
+    writeFileSync(BASELINE, JSON.stringify(sortFiles(next), null, 2));
     console.log(`\nBaseline saved: ${Object.keys(next.files).length} files, LOGIC_VERSION=${next.logicVersion}`);
     if (acceptMove.length) for (const f of acceptMove) console.log(`  ACCEPTED MOVE ${f} — "${reason}" (recorded in the baseline)`);
     if (unnamed.length) {
