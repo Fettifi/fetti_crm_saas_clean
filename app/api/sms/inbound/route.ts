@@ -12,14 +12,24 @@ import { phoneMatchForms } from "@/lib/phone";
 import { magicApplyLink } from "@/lib/magicLink";
 import { automationPaused } from "@/lib/automationGate";
 import { isRevocation } from "@/lib/smsConsent";
-import { findPendingPartyByPhone, parsePartyReply, resolveParty, eventLabel, EVENT_DATE } from "@/lib/rsvp";
+import { findPendingPartyByPhone, parsePartyReply, resolveParty, eventLabel, EVENT_DATE, upsertRsvp, rsvpLineOpen } from "@/lib/rsvp";
 import { partyConfirmation, firstNameOf } from "@/lib/rsvpFromCall";
+import { parseRsvpText, parseFollowUp, askDetails, askCount, declineReply, NAME_PENDING, isNamePending } from "@/lib/rsvpSms";
 
 export const dynamic = "force-dynamic";
 // inbound-reply auto-promote may replay the full pipeline (after Twilio ACK)
 export const maxDuration = 120;
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
+
+// One TwiML reply, escaped once. The guest paths all answer inline (never via sendSms) so the
+// reply rides Twilio's own response to the inbound webhook — no second API call to fail, and
+// nothing that can be suppressed by a mortgage-side consent or quiet-hours rule.
+const xmlReply = (text: string) =>
+  new NextResponse(
+    `<Response><Message>${String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</Message></Response>`,
+    { status: 200, headers: { "Content-Type": "text/xml" } },
+  );
 
 // Twilio inbound SMS webhook ("A message comes in"). When a lead replies:
 //  - pause their automated nurture (they're engaged — a human takes over)
@@ -82,17 +92,70 @@ export async function POST(req: NextRequest) {
       return new NextResponse(xml, { status: 200, headers: { "Content-Type": "text/xml" } });
     }
 
-    // ——— A WEDDING GUEST ANSWERING "HOW MANY OF YOU?" ———
+    // ——— TEXTING THE CODE PUTS YOU ON THE LIST ———
     //
-    // They phoned in an RSVP, we texted back asking for a head count, and this is the answer.
-    // It runs before the lead paths deliberately: a guest is not a lead, and "2" must never be
-    // read as a keyword, an opt-in, or a reply to a mortgage nurture sequence. Only numbers
-    // FROM A GUEST WE ARE ALREADY WAITING ON can reach this branch, so nothing else changes.
+    // 2026-09-05, Ramon: "Calling penny is becoming difficult. So just give me something simple
+    // number or some sort of text code." Placed with the branch below and for the same reason:
+    // this endpoint is a MORTGAGE funnel, and before this a guest texting "RSVP" fell through to
+    // the lead paths — filed as a lead, stamped with a campaign, sent marketing. A guest is not
+    // a lead. Nothing here touches the leads table; it answers and returns.
+    if (digits && rsvpLineOpen()) {
+      const intent = parseRsvpText(body);
+      if (intent.isRsvp) {
+        const label = await eventLabel();
+        if (intent.declined) {
+          await upsertRsvp({ name: intent.name || NAME_PENDING, phone: digits, party: 1, status: "no", source: "sms" });
+          try { await logActivity({ entity_type: "rsvp", entity_id: digits.slice(-4), actor: "consumer", action: "rsvp.sms_declined", detail: { from, text: body.slice(0, 200) } }); } catch { /* */ }
+          return xmlReply(declineReply(label));
+        }
+        // A name we were not given is NEVER invented — the entry is parked under a placeholder
+        // and their next text fills it in. `upsertRsvp` refuses an empty name, which is what
+        // keeps a blank guest off the caterer's count.
+        const named = intent.name || NAME_PENDING;
+        const knowCount = intent.party != null;
+        const { rsvp } = await upsertRsvp({
+          name: named, phone: digits, party: intent.party ?? 1, status: "yes", source: "sms",
+          party_pending: !knowCount,
+        });
+        try { await logActivity({ entity_type: "rsvp", entity_id: rsvp.id, actor: "consumer", action: "rsvp.sms_started", detail: { from, name: named, party: intent.party, text: body.slice(0, 200) } }); } catch { /* */ }
+        if (isNamePending(named)) return xmlReply(askDetails(label, EVENT_DATE));
+        if (!knowCount) return xmlReply(askCount(firstNameOf(named)));
+        return xmlReply(partyConfirmation(firstNameOf(named), rsvp.party, label, EVENT_DATE));
+      }
+    }
+
+    // ——— A GUEST ANSWERING A QUESTION WE ASKED THEM ———
+    //
+    // They RSVP'd by phone or text and we asked for a name and/or a head count; this is the
+    // answer. Before the lead paths for the same reason as the branch above: "2" must never be
+    // read as a keyword, an opt-in, or a reply to a mortgage nurture sequence. Only a guest we
+    // are ALREADY WAITING ON reaches this branch, so nothing else changes.
     if (digits) {
       const pending = await findPendingPartyByPhone(digits);
       if (pending) {
-        const n = parsePartyReply(body);
         const label = await eventLabel();
+        // THE FOLLOW-UP MAY CARRY THE NAME TOO. A guest who texted the bare code is parked under
+        // a placeholder, so their reply has to be read for a name as well as a count — otherwise
+        // "John Smith, 2" sets the count and leaves "(name pending)" on the list.
+        const needName = isNamePending(pending.name);
+        if (needName) {
+          const fu = parseFollowUp(body, true);
+          if (fu.name) {
+            const { rsvp: withName } = await upsertRsvp({
+              name: fu.name, phone: digits, party: fu.party ?? pending.party, status: "yes", source: "sms",
+              party_pending: fu.party == null,
+            });
+            try { await logActivity({ entity_type: "rsvp", entity_id: withName.id, actor: "consumer", action: "rsvp.sms_named", detail: { from, name: fu.name, party: fu.party, text: body.slice(0, 200) } }); } catch { /* */ }
+            return xmlReply(fu.party == null
+              ? askCount(firstNameOf(fu.name))
+              : partyConfirmation(firstNameOf(fu.name), withName.party, label, EVENT_DATE));
+          }
+          const askAgain = await rateLimit(`rsvpname:${digits}`, 1, 86400);
+          return xmlReply(askAgain
+            ? `Thanks! What name should we put on the list for ${label}?`
+            : "Thanks! Ramon will follow up to confirm your details.");
+        }
+        const n = parsePartyReply(body);
         const first = firstNameOf(pending.name);
         if (n === null) {
           // Ask once more, then stop — a loop of "sorry, a number please" is worse than a

@@ -92,7 +92,9 @@
     "verify:twilio-sig": "tsx scripts/verify-twilio-signature.ts",
     "scan": "tsx scripts/scan-to-file.ts",
     "scan:agent": "tsx scripts/scan-agent.ts",
-    "verify:card-statement": "tsx scripts/verify-card-statement.ts"
+    "verify:card-statement": "tsx scripts/verify-card-statement.ts",
+    "verify:rsvp-text": "tsx scripts/verify-rsvp-text.ts",
+    "rsvp:kit": "tsx scripts/make-rsvp-qr-kit.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -132,6 +134,7 @@
     "dotenv": "^17.2.3",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.0.7",
+    "jsqr": "^1.4.0",
     "nodemon": "^3.1.11",
     "postcss": "^8.5.6",
     "supabase": "^2.64.2",
