@@ -258,22 +258,41 @@ export default function PreApprovals() {
     } catch { setTsMsg({ text: "⚠️ Connection error." }); } finally { setTsBusy(false); }
   }
 
-  async function issue(e: React.FormEvent) {
+  // A 409 REFUSAL MUST OFFER THE WAY THROUGH, NOT JUST THE WALL.
+  //
+  // /api/preapprovals rejects a contested-income file with `code: "income_contested"` and the
+  // QC's findings, and it accepts `contested_ack` as the deliberate override. This page threw
+  // both away: it rendered `j.error` in the generic red box and never sent an acknowledgement,
+  // so the refusal's own instruction ("re-send with an explicit acknowledgement") had no control
+  // behind it. Ramon, 2026-09-04: "it's not allowing me to issue a preapproval after I use omit
+  // or accept." Holding the findings here is what lets the banner below offer the override.
+  const [contested, setContested] = useState<{ findings: string[] } | null>(null);
+  const [ackReason, setAckReason] = useState("");
+
+  async function issue(e: React.FormEvent, contestedAck?: string) {
     e.preventDefault(); if (!f.borrower_name.trim()) return;
     setSaving(true); setIssueError(null);
+    if (!contestedAck) { setContested(null); setAckReason(""); }
     try {
       const extra_terms: any = Object.fromEntries(
         ALL_EXTRA_KEYS.map((k) => [k, f[k]]).filter(([, v]) => v != null && String(v).trim() !== ""),
       );
       if (Array.isArray(f.other_terms) && f.other_terms.length) extra_terms.other_terms = f.other_terms;
       (extra_terms as any).__hiddenSend = undefined;
-      const r = await fetch("/api/preapprovals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, extra_terms, hidden_fields: hidden }) });
+      const r = await fetch("/api/preapprovals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, extra_terms, hidden_fields: hidden, ...(contestedAck ? { contested_ack: contestedAck } : {}) }) });
       const j = await r.json();
       if (r.ok) {
         setJustIssued(j.preapproval); setEmailed(j.emailed || []); setWarnings(j.warnings || []);
         setF({ ...BLANK, officer_name: f.officer_name, officer_nmls: f.officer_nmls });
         setUnmapped([]); setTsMsg(null); setConflicts([]); setHidden([]);
+        setContested(null); setAckReason("");
         await load();
+      } else if (j?.code === "income_contested") {
+        // Not a generic failure — a gate with a documented key. Keep the findings so the LO can
+        // sign off here instead of bouncing to the income screen and back.
+        setJustIssued(null); setWarnings([]);
+        setContested({ findings: Array.isArray(j.findings) ? j.findings.map(String) : [] });
+        setIssueError(j.error || "This file's income is contested.");
       } else {
         // A REJECTED ISSUE MUST SAY SO, IN ITS OWN BANNER. This branch did not exist: a non-2xx
         // left the button un-spinning, the form untouched and NOTHING on screen, which reads as
@@ -309,7 +328,33 @@ export default function PreApprovals() {
         {issueError && (
           <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 p-4">
             <div className="font-semibold text-red-300">❌ Letter not issued</div>
-            <div className="text-xs text-red-200/90 mt-1">{issueError}</div>
+            <div className="text-xs text-red-200/90 mt-1 whitespace-pre-wrap">{issueError}</div>
+            {contested && (
+              <div className="mt-3 border-t border-red-500/30 pt-3">
+                <div className="text-xs font-semibold text-amber-300">Issue it anyway — on your signature</div>
+                <div className="text-[11px] text-amber-200/80 mt-1">
+                  If you have reviewed the objection{contested.findings.length === 1 ? "" : "s"} above and stand behind the figure, say why. The
+                  letter is issued and your reason is written to the file&rsquo;s audit record as an income override — it is not a silent bypass.
+                </div>
+                <input
+                  value={ackReason}
+                  onChange={(e) => setAckReason(e.target.value)}
+                  placeholder="e.g. Verified the OT against the 2024 W-2 and the 09/09 VOE; the reviewer missed the second stub."
+                  className="w-full mt-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200"
+                />
+                <button
+                  type="button"
+                  disabled={saving || ackReason.trim().length < 4}
+                  onClick={(e) => issue(e as any, ackReason.trim())}
+                  className="mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs px-3 py-2 rounded-lg"
+                >
+                  {saving ? "Issuing…" : "Acknowledge and issue the letter"}
+                </button>
+                <div className="text-[10px] text-slate-400 mt-1.5">
+                  You can also clear this permanently on the income screen: accept each objection in the red “Contested” panel and give a reason there.
+                </div>
+              </div>
+            )}
           </div>
         )}
 

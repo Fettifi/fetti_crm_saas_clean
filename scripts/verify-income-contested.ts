@@ -131,6 +131,64 @@ const ck = (n: string, c: boolean, d = "") => { if (!c) fail++; console.log(`  $
   const leaked = await sweep();
   if (leaked) console.log(`  ↳ removed ${leaked} letter(s) this run created, and their activity rows, from live records`);
 
-  console.log(fail ? `\n❌ FAILURES — ${fail} check(s) failed\n` : "\n✅ ALL PASS — a contested number cannot become a letter\n");
+  // ── THE WAY OUT MUST EXIST, OR THE GATE IS A WALL ─────────────────────────────────────────
+  //
+  // 2026-09-04, Ramon: "it's not allowing me to issue a preapproval after I use omit or accept
+  // because it's saying the income is being challenged." He was right, and the refusal above was
+  // only half the story. `contestedAck` — the documented way through, named in this gate's own
+  // error text — was READ in lib/income/contested.ts and WRITTEN NOWHERE. Five active files
+  // (Jazmine Wilson, Corine Lucas, Asia Dearman, Mario Washington, Ricardo Barron) were
+  // permanently unable to produce a letter, and the Accept/Omit buttons on the income screen
+  // drove `flagDecisions` — the ENGINE's flags — which this gate never consults.
+  //
+  // A one-sided mechanism reads as working: the refusal fires, the tests are green, and the only
+  // symptom is a loan officer who cannot do his job. So the reader is not enough — assert a
+  // WRITER exists, and that a complete acknowledgement actually opens the gate.
+  console.log("\nthe acknowledgement that clears it is real, not just documented:");
+  const { readFileSync } = await import("fs");
+  const iq = readFileSync("components/los/IncomeQualifier.tsx", "utf8");
+  const pa = readFileSync("app/preapprovals/page.tsx", "utf8");
+  const contestedLib = readFileSync("lib/income/contested.ts", "utf8");
+
+  ck("lib/income/contested.ts still READS contestedAck", /contestedAck/.test(contestedLib));
+  ck("…and something WRITES it — a key with no writer is a door with no handle",
+     /contestedAck:/.test(iq));
+  const reviewObj = (iq.match(/const review = \{[\s\S]*?\n      \};/) || [""])[0];
+  ck("…inside the persisted review blob, where the gate looks for it", /contestedAck:/.test(reviewObj));
+  ck("the income screen gives the QC findings their OWN control (Accept/Omit reaches flagDecisions, never these)",
+     /decideQcFinding/.test(iq) && /qcFindings\.map/.test(iq));
+  ck("the pre-approval screen SENDS contested_ack", /contested_ack:/.test(pa));
+  ck("…and recognises the 409 by its code rather than showing a dead end",
+     /income_contested/.test(pa));
+
+  // Behavioural proof on a SYNTHETIC id — deliberately, and only here. Every real contested file
+  // today has contestedAck: NONE, so there is no live example of the OPEN path to measure; a
+  // fixture is the only way to prove the door swings. The refusal checks above stay on real files.
+  const { setSetting, getSetting } = await import("../lib/settings");
+  const SID = "zz-guard-contested-ack";
+  const VKEY = `los_income_verify:${SID}`, RKEY = `los_income_review:${SID}`;
+  const A = "Objection A — OT is unseasoned.", B = "Objection B — figure does not reconcile.";
+  const setVerify = (h: string[]) => setSetting(VKEY, JSON.stringify({ payload: { qcContested: h.length > 0, qcHigh: h, qualifyingMonthlyIncome: 8645 } }));
+  const setAck = (ack: any) => setSetting(RKEY, JSON.stringify({ contestedAck: ack }));
+  const blocked = async () => { const s = await incomeContestedState(SID); return s.contested && !s.acknowledged; };
+  try {
+    await setVerify([A, B]);
+    await setAck(null);
+    ck("no acknowledgement → still refused", await blocked() === true);
+    await setAck({ reason: "Checked it.", findings: [A] });
+    ck("PARTIAL acknowledgement (1 of 2) → still refused", await blocked() === true);
+    await setAck({ reason: "", findings: [A, B] });
+    ck("every finding ticked but no reason → still refused", await blocked() === true);
+    await setAck({ reason: "Verified against the W-2 and the VOE.", findings: [A, B] });
+    ck("COMPLETE acknowledgement → the letter is allowed through", await blocked() === false);
+    await setVerify([A, B, "Objection C — raised on re-read."]);
+    ck("a NEW finding appears after re-read → the old sign-off does NOT cover it", await blocked() === true);
+  } finally {
+    await (supabaseAdmin as any).from("app_settings").delete().in("key", [VKEY, RKEY]);
+    const l1 = await getSetting(VKEY), l2 = await getSetting(RKEY);
+    ck("the fixture is deleted from live records", !l1 && !l2, `${JSON.stringify(l1)} / ${JSON.stringify(l2)}`);
+  }
+
+  console.log(fail ? `\n❌ FAILURES — ${fail} check(s) failed\n` : "\n✅ ALL PASS — a contested number cannot become a letter, and a reviewed one can\n");
   process.exit(fail ? 1 : 0);
 })();

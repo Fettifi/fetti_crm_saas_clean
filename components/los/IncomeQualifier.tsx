@@ -74,6 +74,22 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   // index is stable across reload.
   const [flagDecisions, setFlagDecisions] = useState<Record<number, FlagState>>({});
   const [flagNotes, setFlagNotes] = useState<Record<number, string>>({});
+  // ── QC contest acknowledgement ──────────────────────────────────────────────
+  // THE ACCEPT/OMIT BUTTONS BELOW DO NOT REACH THE QC FINDINGS, AND NOTHING ELSE DID EITHER.
+  //
+  // Ramon, 2026-09-04: "we have all the omission and acceptance buttons, [but] it's not
+  // allowing me to issue a preapproval after I use omit or accept because it's saying the
+  // income is being challenged."
+  //
+  // He was right, and it was worse than a UI gap. `flagDecisions` decides the ENGINE's flags
+  // (verified.report.flags). The pre-approval gate in lib/income/contested.ts reads a different
+  // thing entirely — `qcContested` / `qcHigh`, raised by the QC reviewer — and clears only on a
+  // `contestedAck` in this review blob. That key was READ in one place and WRITTEN IN NONE, so
+  // the refusal's own advice ("re-send with an explicit acknowledgement") named a door that was
+  // never built. Once a file went contested, no sequence of clicks on this screen could issue a
+  // letter. These two pieces of state are that door: acknowledge each finding, give a reason.
+  const [qcAck, setQcAck] = useState<Record<number, boolean>>({});
+  const [qcAckReason, setQcAckReason] = useState("");
   // Per-line include toggle (keyed by the AI breakdown line index): omit a line the
   // AI counted, OR the LO adds lines the AI held back so ALL real income counts.
   const [lineIncluded, setLineIncluded] = useState<Record<number, boolean>>({});
@@ -297,7 +313,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         }),
       });
       const j = await r.json();
-      if (!r.ok) { setVerifyErr(j?.error || "Verification failed."); setVerified(null); } else { setVerified(j); setLineBorrower({}); setLineIncluded({}); setExcluded(new Set()); setFlagDecisions({}); setFlagNotes({}); incomeEditedRef.current = false; setIncomeInput(""); }
+      if (!r.ok) { setVerifyErr(j?.error || "Verification failed."); setVerified(null); } else { setVerified(j); setLineBorrower({}); setLineIncluded({}); setExcluded(new Set()); setFlagDecisions({}); setFlagNotes({}); setQcAck({}); setQcAckReason(""); incomeEditedRef.current = false; setIncomeInput(""); }
     } catch (e: any) { setVerifyErr(e?.message || "Verification failed."); } finally { setVerifying(false); }
   }
   const fmtWhen = (iso?: string) => { if (!iso) return ""; try { return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); } catch { return ""; } };
@@ -314,6 +330,32 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     }
   }
   const setFlagNote = (i: number, note: string) => setFlagNotes((p) => ({ ...p, [i]: note }));
+
+  // ── QC contest: derive the acknowledgement the gate will read ───────────────
+  // Deliberately mirrors lib/income/contested.ts rather than inventing a second rule: the ack
+  // counts only if it names every CURRENT high-severity finding and carries a reason. Keeping
+  // the two in step is why this is computed from `verified.qcHigh` and not from a stored count.
+  const qcFindings: string[] = useMemo(
+    () => (verified?.qcContested && Array.isArray(verified?.qcHigh) ? verified.qcHigh.map(String) : []),
+    [verified],
+  );
+  const qcAllAcked = qcFindings.length > 0 && qcFindings.every((_, i) => qcAck[i]);
+  const qcAckComplete = qcAllAcked && qcAckReason.trim().length >= 4;
+  const contestedAckPayload = qcAckComplete
+    ? { reason: qcAckReason.trim().slice(0, 500), findings: qcFindings, at: new Date().toISOString() }
+    : null;
+
+  function decideQcFinding(i: number, next: boolean, findingText: string) {
+    setQcAck((p) => ({ ...p, [i]: next }));
+    // An LO signing off a QC objection is exactly the kind of override that must be on the
+    // record — same audit path the engine-flag omit already uses.
+    if (next && fileId) {
+      fetch(`/api/los/files/${fileId}/income-review`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: { action: "income.flag_omitted", detail: { qcFinding: String(findingText).slice(0, 300), reason: qcAckReason.slice(0, 200) } } }),
+      }).catch(() => {});
+    }
+  }
   function toggleLine(i: number) { clearIncomeOverride(); setLineIncluded((p) => ({ ...p, [i]: p[i] === false ? true : false })); }
   function addIncomeLine() { clearIncomeOverride(); setAddedLines((p) => [...p, { label: "", monthly: 0, basis: "Added by loan officer", borrower: 1 }]); }
   const updAdded = (j: number, patch: Partial<AddedLine>) => { clearIncomeOverride(); setAddedLines((p) => p.map((l, k) => (k === j ? { ...l, ...patch } : l))); };
@@ -331,6 +373,18 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         if (rv.verified) setVerified(rv.verified);
         if (rv.flagDecisions) setFlagDecisions(rv.flagDecisions);
         if (rv.flagNotes) setFlagNotes(rv.flagNotes);
+        // Restore the acknowledgement by MATCHING TEXT, not by index. `contestedAck.findings`
+        // is the list of QC findings the LO signed off, and lib/income/contested.ts compares it
+        // to the CURRENT qcHigh strings. Restoring by position would tick a box next to a
+        // finding nobody signed off if a re-read reorders them.
+        if (rv.contestedAck && typeof rv.contestedAck === "object") {
+          const signed: string[] = Array.isArray(rv.contestedAck.findings) ? rv.contestedAck.findings.map(String) : [];
+          const current: string[] = (rv.verified?.qcHigh || []).map(String);
+          const restored: Record<number, boolean> = {};
+          current.forEach((t, i) => { if (signed.includes(t)) restored[i] = true; });
+          setQcAck(restored);
+          if (typeof rv.contestedAck.reason === "string") setQcAckReason(rv.contestedAck.reason);
+        }
         if (rv.lineIncluded) setLineIncluded(rv.lineIncluded);
         if (rv.lineBorrower) setLineBorrower(rv.lineBorrower);
         if (Array.isArray(rv.addedLines)) setAddedLines(rv.addedLines);
@@ -387,6 +441,14 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         // re-derive it, and a second implementation of a number is how two documents on one deal
         // end up disagreeing. So the figure he is looking at is persisted with the review, and
         // the letter READS it rather than recomputing it.
+        // THE ACKNOWLEDGEMENT THE PRE-APPROVAL GATE ACTUALLY READS.
+        //
+        // Shape is dictated by lib/income/contested.ts: `{ reason, findings }`, where `findings`
+        // must cover EVERY current qcHigh string or the ack does not count. Written only when
+        // the LO has ticked every finding AND typed a reason — a half-finished sign-off must not
+        // read as a whole one. Written as `null` otherwise so un-ticking a finding REVOKES the
+        // acknowledgement instead of leaving a stale one on the file.
+        contestedAck: contestedAckPayload,
         settledMonthlyIncome: Math.round(income || 0),
         settledPerBorrower: Object.fromEntries(Object.entries(incomeCalc.byB || {}).map(([b, v]) => [b, Math.round(Number(v) || 0)])),
         settledAt: new Date().toISOString(),
@@ -397,7 +459,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     }, 800);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileId, reviewLoaded, verified, flagDecisions, flagNotes, lineIncluded, lineBorrower, addedLines, excluded, incomeInput, rentInput, liabs, liabDocs, liabWarn, debtsInput]);
+  }, [fileId, reviewLoaded, verified, flagDecisions, flagNotes, lineIncluded, lineBorrower, addedLines, excluded, incomeInput, rentInput, liabs, liabDocs, liabWarn, debtsInput, qcAck, qcAckReason]);
   // The PDF/email payload built from the EFFECTIVE on-screen state so the printed
   // headline income AND breakdown match exactly what the LO sees — reflecting a typed
   // income override, excluded borrowers, and any B1/B2 line reassignment. (Never ship
@@ -638,16 +700,53 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
                   objecting on the same screen. It is a contested number now, and it says so
                   before anything else on the panel. */}
               {verified.qcContested && (
-                <div className="mt-2 rounded-lg border border-red-500/50 bg-red-950/30 px-3 py-2.5">
-                  <div className="text-[13px] font-semibold text-red-300">⚠️ Contested — do not rely on this figure yet</div>
-                  <div className="text-[11px] text-red-200/80 mt-1">
-                    The QC reviewer disagrees with this worksheet on the borrower&rsquo;s own documents. Resolve or override before pricing, issuing a pre-approval, or sending to an underwriter.
+                <div className={`mt-2 rounded-lg border px-3 py-2.5 ${qcAckComplete ? "border-emerald-600/50 bg-emerald-950/25" : "border-red-500/50 bg-red-950/30"}`}>
+                  <div className={`text-[13px] font-semibold ${qcAckComplete ? "text-emerald-300" : "text-red-300"}`}>
+                    {qcAckComplete ? "✓ Contested — reviewed and cleared by you" : "⚠️ Contested — do not rely on this figure yet"}
                   </div>
-                  <ul className="mt-1.5 space-y-1">
-                    {(verified.qcHigh || []).map((t: string, i: number) => (
-                      <li key={i} className="text-[11px] text-red-100/90">• {t}</li>
+                  <div className={`text-[11px] mt-1 ${qcAckComplete ? "text-emerald-200/80" : "text-red-200/80"}`}>
+                    {qcAckComplete
+                      ? "You have omitted every objection below, so pricing, the pre-approval letter and the underwriter package are unblocked. Your reason travels with the file."
+                      : "The QC reviewer disagrees with this worksheet on the borrower’s own documents. These are NOT the flags below — they have their own Omit button, here. Omit each objection you have reviewed (or re-read the documents / untick the disputed line); a pre-approval cannot be issued until every one is cleared."}
+                  </div>
+                  {/* EACH OBJECTION GETS ITS OWN BUTTON. Until 2026-09-04 this was a plain <ul>:
+                      the Accept/Omit buttons further down the panel belong to the ENGINE's flags,
+                      never to these, so clicking every button on screen still left the file
+                      contested and the letter refused with no way forward. */}
+                  <ul className="mt-1.5 space-y-1.5">
+                    {qcFindings.map((t: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <div className={`flex-1 text-[11px] ${qcAck[i] ? "text-slate-400 line-through" : "text-red-100/90"}`}>• {t}</div>
+                        <button
+                          type="button"
+                          onClick={() => decideQcFinding(i, !qcAck[i], t)}
+                          className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${qcAck[i] ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+                          title={qcAck[i] ? "Undo — put this objection back" : "You reviewed it — it doesn't hold; count the figure as it stands"}
+                        >
+                          {qcAck[i] ? "Omitted" : "Omit"}
+                        </button>
+                      </li>
                     ))}
                   </ul>
+                  {qcAllAcked && (
+                    <div className="mt-2">
+                      <label className="text-[10px] text-slate-400">
+                        Why you stand behind this figure <span className="text-slate-500">(required — goes on the file&rsquo;s permanent record and into the override audit)</span>
+                      </label>
+                      <input
+                        value={qcAckReason}
+                        onChange={(e) => setQcAckReason(e.target.value)}
+                        placeholder="e.g. Verified the OT against the 2024 W-2 and the 09/09 VOE; the reviewer missed the second stub."
+                        className="w-full mt-0.5 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] text-slate-200"
+                      />
+                      {!qcAckComplete && <div className="text-[10px] text-amber-400 mt-0.5">Type a reason to clear the block.</div>}
+                    </div>
+                  )}
+                  {!qcAllAcked && qcFindings.length > 0 && (
+                    <div className="text-[10px] text-slate-400 mt-1.5">
+                      {qcFindings.filter((_, i) => qcAck[i]).length} of {qcFindings.length} omitted — clear them all to unblock the pre-approval.
+                    </div>
+                  )}
                 </div>
               )}
               {verified.contentNotice && (

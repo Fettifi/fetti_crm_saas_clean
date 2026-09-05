@@ -83,8 +83,16 @@ chk(/if \(Array\.isArray\(rv\.liabs\)\) setLiabs\(rv\.liabs\)/.test(iq),
   "and RESTORES them when the file is reopened — including his per-tradeline include/exclude decisions");
 chk(/if \(typeof rv\.debtsInput === "string"\) setDebtsInput\(rv\.debtsInput\)/.test(iq),
   "and the debts figure with them");
-chk(/liabs, liabDocs, liabWarn, debtsInput\]\)/.test(iq),
-  "the save fires when any of them changes — a persist that never runs is not a persist");
+// ASSERT MEMBERSHIP, NOT POSITION. This matched the literal tail `...debtsInput])`, so it broke
+// the first time anything new was appended to the dependency array (2026-09-04, qcAck) even
+// though all four were still there — a guard that fails on an unrelated, correct edit trains
+// people to edit the guard. Pull the array out and check each name is IN it.
+const saveDeps = (iq.match(/\}, \[fileId, reviewLoaded, verified[^\]]*\]\);/) || [""])[0];
+chk(saveDeps.length > 0, "the review save effect's dependency array is findable");
+for (const d of ["liabs", "liabDocs", "liabWarn", "debtsInput"]) {
+  chk(new RegExp(`\\b${d}\\b`).test(saveDeps),
+    `the save fires when ${d} changes — a persist that never runs is not a persist`);
+}
 chk(/if \(!verified && !liabs\.length && !debtsInput\) return;/.test(iq),
   "and pulling credit BEFORE running income still saves — the old gate required a verified income first");
 
