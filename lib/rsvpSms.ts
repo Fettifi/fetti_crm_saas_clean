@@ -107,7 +107,24 @@ export function parseFollowUp(body: string | null | undefined, needName: boolean
   return { name: needName ? asIfKeyword.name : null, party: asIfKeyword.party };
 }
 
-/** What a guest gets back when they text the code and we still need their details. */
+/**
+ * The FIRST question after a bare keyword. ONE thing is asked, and it is the head count.
+ *
+ * The first cut of this asked for a name and a count together ("Reply with your name and how
+ * many are coming, like: John Smith, 2") and Ramon corrected it the next day: a text that asks
+ * two things gets one answered. The count leads because it is the number the caterer needs;
+ * the name is asked straight after and can be fixed by hand, a wrong head count cannot.
+ */
+export function askCountFirst(label: string, date: string): string {
+  return `You're on the guest list for ${label} — ${date}. How many in your party, including you? Just reply with a number.`;
+}
+
+/** Asked once the count is in and we still do not know who they are. */
+export function askNameAfterCount(party: number): string {
+  return `Got it — ${party} ${party === 1 ? "seat" : "seats"}. And what name should we put it under?`;
+}
+
+/** Kept for the one-shot/lead-in copy that still asks for both at once. */
 export function askDetails(label: string, date: string): string {
   return `You're on the guest list for ${label} — ${date}. Reply with your name and how many are coming, like: John Smith, 2`;
 }

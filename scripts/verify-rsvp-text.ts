@@ -52,45 +52,56 @@ const onList = async (phone: string) => (await listRsvps()).find((x) => last10(x
   const before = await listRsvps();
   console.log(`  guest list holds ${before.length} entr${before.length === 1 ? "y" : "ies"} before this run\n`);
 
-  console.log("the bare code parks you on the list and asks for details:");
+  console.log("the bare code asks ONE question, and it is the head count:");
   let reply = await sms(A, "RSVP");
   ck("texting RSVP is answered", !!reply && !reply.startsWith("HTTP"), reply.slice(0, 90));
-  ck("the answer asks for a name and a head count", /name/i.test(reply) && /how many|coming/i.test(reply));
+  ck("the answer asks HOW MANY", /how many/i.test(reply));
+  ck("and does NOT also ask for a name in the same breath", !/name/i.test(reply), reply.slice(0, 90));
   let e = await onList(A);
   ck("the guest is ON THE LIST immediately", !!e);
   ck("under a placeholder — a name is never invented", !!e && /name pending/i.test(e.name), e?.name);
   ck("and marked awaiting a count, not guessed", !!e?.party_pending);
 
-  console.log("\ntheir reply fills in BOTH the name and the count:");
-  reply = await sms(A, "Jordan Pike, 3");
+  console.log("\nreplying with a bare number sets the count, then asks the name:");
+  reply = await sms(A, "3");
   e = await onList(A);
-  ck("the name is set from the reply", e?.name === "Jordan Pike", e?.name);
-  ck("the head count is set", e?.party === 3, String(e?.party));
-  ck("no longer pending", !e?.party_pending);
-  ck("and they are told so", /3/.test(reply), reply.slice(0, 90));
+  ck("the head count is set from a bare number", e?.party === 3, String(e?.party));
+  ck("no longer pending a count", !e?.party_pending);
+  ck("the reply confirms the number back", /3/.test(reply), reply.slice(0, 90));
+  ck("and NOW asks for the name", /name/i.test(reply));
 
-  console.log("\nname and count in ONE text confirms on the spot:");
+  console.log("\nand the name finishes it:");
+  reply = await sms(A, "Jordan Pike");
+  e = await onList(A);
+  ck("the name is set", e?.name === "Jordan Pike", e?.name);
+  ck("the party survived the name step", e?.party === 3, String(e?.party));
+  ck("they are told they are confirmed", /Jordan/.test(reply) && /3/.test(reply), reply.slice(0, 90));
+
+  console.log("\nname and count in ONE text still confirms on the spot:");
   reply = await sms(B, "RSVP Dana Reyes 2");
   e = await onList(B);
   ck("on the list with the name given", e?.name === "Dana Reyes", e?.name);
   ck("party of 2, nothing pending", e?.party === 2 && !e?.party_pending, `party=${e?.party} pending=${e?.party_pending}`);
   ck("confirmed in the reply", /2/.test(reply), reply.slice(0, 90));
 
-  console.log("\na name with no number asks for the number:");
+  console.log("\na name with no number is asked how many, BY NAME:");
   reply = await sms(C, "RSVP Sam Whitfield");
   e = await onList(C);
   ck("on the list under their name", e?.name === "Sam Whitfield", e?.name);
   ck("awaiting the count", !!e?.party_pending);
-  ck("the reply asks for it", /how many/i.test(reply), reply.slice(0, 90));
+  ck("the reply asks how many and uses their name", /how many/i.test(reply) && /Sam/.test(reply), reply.slice(0, 90));
   reply = await sms(C, "just me");
   e = await onList(C);
   ck("a worded answer sets it", e?.party === 1 && !e?.party_pending, `party=${e?.party}`);
+  ck("and no name question follows — we already have it", !/what name/i.test(reply), reply.slice(0, 80));
 
   console.log("\na regret is recorded, and never chased:");
   reply = await sms(D, "RSVP no, we can't make it");
   e = await onList(D);
   ck("recorded as a decline", e?.status === "no", e?.status);
   ck("acknowledged warmly", /miss|thank/i.test(reply), reply.slice(0, 90));
+  const strayAfterDecline = await sms(D, "2");
+  ck("a declined guest is NOT re-opened by a stray number", !/party|how many|confirmed/i.test(strayAfterDecline), strayAfterDecline.slice(0, 70));
 
   console.log("\nA GUEST IS NOT A LEAD — and a lead is not a guest:");
   const mortgage = await sms("+15550101999", "What's my rate?");
