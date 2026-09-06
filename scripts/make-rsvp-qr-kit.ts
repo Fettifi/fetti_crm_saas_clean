@@ -120,7 +120,7 @@ function html(p: Piece, qrDataUri: string, label: string): string {
   </div></body></html>`;
 }
 
-const REPLY_LINE = "We'll text back to ask your name and how many are coming.";
+const REPLY_LINE = "We'll text straight back to ask how many are in your party.";
 const CALL_LINE = `Rather talk? Call ${RSVP_NUMBER_TEXT} and press 1.`;
 
 const PIECES: Piece[] = [
@@ -218,8 +218,9 @@ TWO WAYS TO REPLY, ON EVERY PIECE
   Anyone who would rather speak to a person can call the same number and press 1.
 
 WHAT HAPPENS WHEN THEY DO
-  They are on the guest list the moment they text. We reply asking for their name and how
-  many are coming; their answer sets it. "${RSVP_KEYWORD} Jane Doe 2" does it in one message.
+  They are on the guest list the moment they text. We reply asking ONE thing — how many are
+  in their party — and their number sets it; we then ask the name. "${RSVP_KEYWORD} Jane Doe 2"
+  does the whole thing in one message.
   A regret ("${RSVP_KEYWORD} no") is recorded and never chased.
   You read the list at app.fettifi.com/rsvp.
 
