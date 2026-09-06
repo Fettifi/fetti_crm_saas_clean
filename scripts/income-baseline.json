@@ -1,5 +1,5 @@
 {
-  "logicVersion": "2026-08-01-override-exemplars",
+  "logicVersion": "2026-09-06-partial-year-w2-cannot-season-inferred-variable",
   "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re)lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
   "files": {
     "c3473ce9-7bdb-4882-8a7b-bbd1a30a86d3": {
@@ -158,6 +158,7 @@
         "002a783e-76ff-4540-ac99-57a484d25cdc|Lease agreement or market rent estimate (Form 1007) — additional",
         "00491793-6d06-432e-9535-11ddcb0a18e3|Bank statements — last 2 months — additional",
         "0dc7e292-1408-4cd9-90d3-6f3a0ec91f49|Lease agreement or market rent estimate (Form 1007) — additional",
+        "3760ee70-244b-4346-942c-a5f8d9f79317|AD_Statement_8th_ave_.pdf",
         "45a9dc69-f13b-46d9-9b4c-3cd600180ea0|Lease agreement or market rent estimate (Form 1007) — additional",
         "5f566fda-de10-499c-83a5-c4bac608fc54|Lease agreement or market rent estimate (Form 1007) — additional",
         "a1d8916b-195a-4d15-80e1-aafaf7ae8c0a|Lease agreement or market rent estimate (Form 1007)",
@@ -410,7 +411,7 @@
         "e390ccd8-1929-4a88-9243-eecd37bba11b|Bank statements — last 2 months — additional",
         "fd8c16e2-f5e9-4910-8766-7be46dad15ff|2024-25_Tax_Returns_2_of_2.pdf"
       ],
-      "cachedIncome": 10829
+      "cachedIncome": 10817
     },
     "d18ab95a-0c6f-44b0-8d0d-89ec8a2df054": {
       "file": "FF-202608-5585",
@@ -513,6 +514,14 @@
       "to": 10829,
       "acceptedAt": "2026-09-02T16:19:51.613Z",
       "reason": "Re-extraction of an unchanged 8-doc set, +$12 (0.11%). Verified 2026-09-02: engine reproduces $10,829 from the file's own stored facts with no drift; the four Housing Authority stubs reconcile exactly at $4,806.46/period across the 2- and 3-period gaps with a flat $6,000 YTD variable; basis is base biweekly x26/12 + variable 2-yr avg; Community Corp correctly excluded for want of a current stub ($6,454 add-back flagged). File is qcContested, so /api/preapprovals refuses it 409 and the number cannot reach a letter."
+    },
+    {
+      "file": "FF-202608-2600",
+      "borrower": "Mario Washington",
+      "from": 10829,
+      "to": 10817,
+      "acceptedAt": "2026-09-06T18:05:43.428Z",
+      "reason": "Pre-existing $12 oscillation, reproduced at HEAD before today's change: the flapping term was the YTD-derived variable on a stub set showing OT=0. 2026-09-06 partial-year-W2 fix removes that term; the file re-reads to $10,414 under the new LOGIC_VERSION and settles. Accepted to record what it ships today."
     }
   ]
 }

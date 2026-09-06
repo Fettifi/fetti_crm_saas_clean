@@ -88,14 +88,27 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
   const now: Record<string, Row> = {};
   const unreplayable: string[] = [];   // non-standard methods — reported, never counted as passing
   const drift: string[] = [];          // stored number no longer matches a replay of its own facts
+  const pendingReread: string[] = [];  // stored read predates the current LOGIC_VERSION — re-reads on next verify
+
+  // The pin date of the LOGIC_VERSION currently in the tree. Read from the same manifest
+  // verify:income-logic maintains, so the two guards cannot disagree about which version is live.
+  let pinnedAt = "", logicVersion = "";
+  try {
+    const m = JSON.parse(readFileSync(path.join(process.cwd(), "scripts", "income-logic-manifest.json"), "utf8"));
+    pinnedAt = String(m.pinnedAt || ""); logicVersion = String(m.logicVersion || "");
+  } catch { /* no manifest — every mismatch stays a hard failure, which is the safe direction */ }
   let withPayload = 0, withFacts = 0;
   for (const f of files || []) {
     const { data: row, error: e2 } = await supabaseAdmin
       .from("app_settings").select("value").eq("key", `los_income_verify:${f.id}`).maybeSingle();
     if (e2) throw new Error(`app_settings: ${e2.message}`);
     if (!row) continue;
-    let p: any;
-    try { p = JSON.parse((row as any).value)?.payload; } catch { continue; }
+    let p: any, envVerifiedAt: string | null = null;
+    try {
+      const env = JSON.parse((row as any).value);
+      p = env?.payload;
+      envVerifiedAt = typeof env?.verifiedAt === "string" ? env.verifiedAt : null;
+    } catch { continue; }
     // Only files verified since factsUsed shipped can be replayed; older ones are skipped, not
     // silently treated as passing.
     withPayload++;
@@ -124,7 +137,31 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
     // reproduce the number the route stored. A mismatch means the logic moved under a file
     // nobody re-read, and the snapshot below would otherwise enshrine the drift.
     if (stored && Math.abs(stored - replayQ) > 1) {
-      drift.push(`${f.file_number}: the file SHIPS ${money(stored)} but replaying its own facts now gives ${money(replayQ)}`);
+      // TWO THINGS LOOK IDENTICAL HERE AND HAVE OPPOSITE REMEDIES.
+      //
+      // "Stored ≠ replay" was a single hard failure. But it covers a case the engine is entitled
+      // to produce: a DELIBERATE engine change that bumped LOGIC_VERSION. LOGIC_VERSION is half
+      // the income cache key, so such a change re-reads every file on its next verify — until
+      // then the stored payload is simply OLD, and that is the mechanism working, not drift.
+      // 2026-09-05 (partial-year W-2 seasoning) hit exactly this: verify:income-engine-diff
+      // PASSED — "2 numbers move and LOGIC_VERSION moves with them" — while this guard called the
+      // same two files drift and blocked the commit that carried the fix.
+      //
+      // The distinction is in the data, not in a judgement call: the manifest records when the
+      // current LOGIC_VERSION was pinned, and the cache envelope records when the file was last
+      // verified. Verified BEFORE the pin ⇒ this file has not yet been read under the current
+      // logic. Verified AFTER it ⇒ the logic genuinely moved underneath a current read, which is
+      // the 2026-08-04 defect and still fails hard.
+      //
+      // Pending files are NEVER snapshotted either way — neither number is settled yet, and
+      // enshrining one would defeat the corpus.
+      const pending = pinnedAt && envVerifiedAt && Date.parse(envVerifiedAt) < Date.parse(pinnedAt);
+      const line = `${f.file_number}: the file SHIPS ${money(stored)} but replaying its own facts now gives ${money(replayQ)}`;
+      if (pending) {
+        pendingReread.push(`${line}\n           last verified ${String(envVerifiedAt).slice(0, 10)}, before LOGIC_VERSION "${logicVersion}" was pinned ${String(pinnedAt).slice(0, 10)} — re-reads on next verify`);
+        continue;   // not snapshotted: this file's number is not settled under the current logic
+      }
+      drift.push(line);
     }
 
     now[f.file_number] = {
@@ -143,9 +180,22 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
               `${Object.keys(now).length} on the standard method, ${unreplayable.length} not replayable\n`);
   for (const u of unreplayable) console.log(`  skip   ${u}`);
   for (const d of drift) console.log(`  DRIFT  ${d}`);
+  for (const q of pendingReread) console.log(`  PENDING ${q}`);
 
   const count = Object.keys(now).length;
   if (!count) {
+    // "Nothing to replay yet" and "every file was excluded from this run" are opposite
+    // situations and this line used to print the first for both. After a LOGIC_VERSION bump
+    // every file can land in `pendingReread` at once, and an empty corpus then reported itself
+    // as a clean start — a guard announcing safety while checking literally nothing, which is
+    // the failure mode this whole file exists to prevent. Say which one it is.
+    if (pendingReread.length) {
+      console.log(`  NOTHING WAS CHECKED — all ${pendingReread.length} replayable file(s) are awaiting a re-read`);
+      console.log(`  under LOGIC_VERSION "${logicVersion}". This run proves nothing about the engine.`);
+      console.log(`  verify:income-engine-diff still compares HEAD to the working tree; re-verify each`);
+      console.log(`  open file in the LOS, then re-run this guard to rebuild the corpus.\n`);
+      process.exit(0);
+    }
     console.log("  No file has been verified since factsUsed shipped — nothing to replay yet.");
     console.log("  Open a loan file and run Verify income; it becomes a permanent test case.\n");
     process.exit(0);
@@ -269,6 +319,14 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
   console.log(`PASS — ${checked} real file(s) replay to the same qualifying income.`);
   if (quietRereads.length) {
     console.log(`       (${quietRereads.length} had facts re-extracted without moving the total: ${quietRereads.join(", ")})`);
+  }
+  // A file excluded from the corpus is a file this run did NOT check. Say so on the PASS line —
+  // "8 of 8 green" while two live borrowers sit outside the corpus is the kind of quiet coverage
+  // loss this guard exists to prevent.
+  if (pendingReread.length) {
+    console.log(`\n       ${pendingReread.length} file(s) NOT CHECKED — awaiting a re-read under LOGIC_VERSION "${logicVersion}".`);
+    console.log(`       They keep serving their old number until each is re-verified in the LOS; re-run this`);
+    console.log(`       guard afterwards and snapshot the settled figures. Until then they are unguarded.`);
   }
   console.log("");
 })();

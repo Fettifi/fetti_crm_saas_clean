@@ -739,9 +739,78 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
             && stub && stub.ytdThroughDate && elapsedMonths(stub.ytdThroughDate) > 0
             ? ytdDiff / elapsedMonths(stub.ytdThroughDate) * 12 : 0;
       const priorW2 = w2s.find((w) => num(w.w2Box5) != null || num(w.w2Box1) != null);
-      const priorVarAnnual = priorW2 ? Math.max(0, wageOf(priorW2) - annualBase) : null;
+      // A PARTIAL YEAR IS NOT A PRIOR YEAR OF ZERO VARIABLE PAY.
+      //
+      // Mario Washington (FF-202608-2600, FHA), 2026-09-05. Salaried, $4,806.46 biweekly, every
+      // stub OT=0. His prior W-2 at this employer is $31,691 — a quarter of the $124,968
+      // annualized base, because he started there partway through the year. `Math.max(0, …)`
+      // turned that shortfall into `priorVarAnnual = 0`, and a zero is not a missing value: it
+      // fell through to the `else` below, which reads a number as a SEASONED prior year and
+      // averages it over 24 months. So the $6,000 insurance allowance in his YTD was credited at
+      // half rate — $400/mo of "variable 2-yr avg" on a man with no variable pay at all. His own
+      // QC said it in as many words ("the salaried stubs show OT=0 and no variable component")
+      // and $10,817 shipped instead of $10,414.
+      //
+      // The clamp inverts the evidence: the LESS the prior W-2 supports, the more the engine
+      // credits. `w2Wage - annualBase` only measures last year's variable pay when that W-2
+      // actually covers a comparable year at this base. Below it, the difference is dominated by
+      // a partial year or a raise and says NOTHING about overtime — which makes it unknown, not
+      // zero. Unknown holds the variable back and offers it to the LO as an Omit, the same way a
+      // missing W-2 already did. (income-number-moves-come-from-extraction: this also removes
+      // the file's $10,829/$10,817 oscillation, because the flapping term was the YTD-derived
+      // variable that no longer counts.)
+      // ...BUT A RAISE IS NOT A PARTIAL YEAR, AND THIS IS THE LINE BETWEEN THEM.
+      //
+      // The first cut of this fix rejected EVERY prior W-2 below the current annualized base.
+      // That over-corrected and deleted real income: `verify:employer`'s "an 8% YTD bonus DOES
+      // count" case is a borrower whose W-2 is $111,252 against a $122,500 base — 91%, which is
+      // a full year at a slightly lower base, i.e. a RAISE. Reading that as "unknown" threw away
+      // a documented bonus, which is the mirror image of the defect this block exists to stop
+      // (2026-08-04: "the fix must not delete real overtime").
+      //
+      // Both readings live in the same subtraction, and the RATIO separates them. Mario's W-2 is
+      // 25% of his base — no raise explains that, only a start date partway through the year, so
+      // the shortfall says nothing about overtime and the variable stays unknown. At 91% the W-2
+      // plausibly covers a comparable year, so a zero difference is a real observation: a full
+      // year with no documented variable pay, which seasons a 2-yr average at half rate.
+      //
+      // 0.75 is where a full year stops being a credible reading: it is a 33% one-year raise at
+      // one end and a 9-month partial year at the other. It is a judgement call, and it is
+      // deliberately the CONSERVATIVE one to get wrong — inside the band the engine credits
+      // variable pay at HALF rate (2-yr average against a prior zero), which is exactly what
+      // shipped before this fix, so no file moves UP from the behaviour already in production.
+      // Below the floor the variable is held back and offered to the LO as an explicit Omit.
+      const FULL_YEAR_W2_FLOOR = 0.75;
+      const priorW2Wage = priorW2 ? wageOf(priorW2) : null;
+      const priorCoversAComparableYear =
+        priorW2Wage != null && annualBase > 0 && priorW2Wage >= annualBase * FULL_YEAR_W2_FLOOR;
+      // AND IT ONLY WITHHOLDS VARIABLE PAY THAT WAS INFERRED, NEVER PAY THE STUB PRINTS.
+      //
+      // Scoping this cost a live borrower $1,041/mo before it was caught. FF-202607-9927 is a
+      // Metro operator whose stubs carry an explicit OT line ($1,209.11 and $960.99 a period)
+      // and whose prior W-2 is 57% of his annualized base — under the floor, so the first cut of
+      // this rule held back $2,082/mo of overtime that is PRINTED ON HIS PAY STUB, and dropped
+      // him from $8,645 to $7,604.
+      //
+      // Every defect this block was written for — Milton's +$4,091, Magali's +$81, Mario's
+      // +$403 — is the same shape: variable pay INFERRED by subtracting YTD-regular from
+      // YTD-gross, on stubs that show OT=0 and no variable component. A partial-year W-2 is a
+      // reason to distrust an inference. It is not a reason to disbelieve a document. So the
+      // withholding is scoped to the inferred case, using the engine's own already-tested
+      // notion of documented-on-the-face (an explicit OT line, or gross exceeding regular on
+      // the same stub). Documented variable pay keeps the treatment it ships with today.
+      // NO prior W-2 at all still means no history, documented or not — that case was already
+      // held back before any of this and must stay that way.
+      const priorVarAnnual = priorW2Wage != null && (priorCoversAComparableYear || showsVariableOnItsFace)
+        ? Math.max(0, priorW2Wage - annualBase)
+        : null;
       if (priorVarAnnual == null) {
-        if (currentVarAnnual > 0) flags.push({ text: `${employer}: overtime/variable pay held back — needs a 2-yr history to count. Omit to credit the current run-rate.`, addBackMonthly: r2(currentVarAnnual / 12), borrower: b });
+        if (currentVarAnnual > 0) flags.push({
+          text: priorW2Wage != null
+            ? `${employer}: overtime/variable pay held back — the prior-year W-2 ($${Math.round(priorW2Wage).toLocaleString()}) is only ${Math.round(priorW2Wage / annualBase * 100)}% of the current annualized base ($${Math.round(annualBase).toLocaleString()}), so it covers a partial year and cannot season a variable average. Omit to credit the current run-rate.`
+            : `${employer}: overtime/variable pay held back — needs a 2-yr history to count. Omit to credit the current run-rate.`,
+          addBackMonthly: r2(currentVarAnnual / 12), borrower: b,
+        });
       } else if (currentVarAnnual < priorVarAnnual) {
         variableMonthly = currentVarAnnual / 12;   // declining — use the lower current year
         varBasis = `variable (declining, current yr)`;
