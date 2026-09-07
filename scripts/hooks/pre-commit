@@ -22,7 +22,7 @@ CHANGED=$(git diff --cached --name-only --diff-filter=ACMR)
 
 # Only the paths that can move a borrower's qualifying income.
 INCOV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income.ts' -e 'lib/incomePdf' -e 'app/income/' -e 'IncomeQualifier' -e 'scripts/verify-income-overrides')
-WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'verify-income' -e 'scripts/verify-employer-merge' -e 'scripts/verify-benefit-deposits' -e 'scripts/verify-income-stability')
+WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'lib/income.ts' -e 'verify-income' -e 'verify-benefit-income' -e 'scripts/verify-employer-merge' -e 'scripts/verify-benefit-deposits' -e 'scripts/verify-income-stability')
 # The auth gate is a separate, cheaper concern: proxy.ts requires every protected API to be
 # listed in TWO places, and forgetting the second leaves the route fully public. Milliseconds.
 AUTH=$(printf '%s\n' "$CHANGED" | grep -F -e 'proxy.ts' -e 'scripts/verify-auth-gate')
@@ -291,6 +291,11 @@ if [ -n "$WATCHED" ] && [ -f .env.local ]; then
   OUT=$(npm run --silent verify:income-logic 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:income-logic"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+  printf "   %-18s " "verify:benefit-income"
+  OUT=$(npm run --silent verify:benefit-income 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:benefit-income"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
   printf "   %-18s " "verify:income-method"
   OUT=$(npm run --silent verify:income-method 2>&1)

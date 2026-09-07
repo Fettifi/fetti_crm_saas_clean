@@ -67,6 +67,7 @@
     "verify:governor-rules": "tsx scripts/verify-governor-rules.ts",
     "verify:governor": "tsx scripts/verify-governor.ts",
     "verify:stale-files": "tsx scripts/verify-stale-files.ts",
+    "verify:benefit-income": "tsx scripts/verify-benefit-income.ts",
     "verify:file-liveness": "tsx scripts/verify-file-liveness.ts",
     "verify:tracked-imports": "tsx scripts/verify-tracked-imports.ts",
     "verify:card-auth": "NODE_OPTIONS=--conditions=react-server tsx scripts/verify-card-auth.ts",

@@ -385,6 +385,8 @@ function monthsBetweenISO(a?: string | null, b?: string | null): number {
   return Math.abs((+pa[1] - +pb[1]) * 12 + (+pa[2] - +pb[2]) + (+pa[3] - +pb[3]) / 30);
 }
 
+import { nonTaxableShare, grossedUpMonthly, isTrimmedGrossUp, isSameBenefitStream, benefitClassOf } from "@/lib/income/benefitRules";
+
 const WAGE_DOCS = new Set<DocType>(["paystub", "w2", "wage_income_transcript", "voe", "military_les"]);
 const SE_DOCS = new Set<DocType>(["schedule_c", "1099nec", "1099misc"]);
 const BENEFIT_DOCS = new Set<DocType>(["ssa_award", "pension", "disability", "va_award"]);
@@ -866,9 +868,42 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
       const k = streamKey(f) + "|" + f.docType; const cur = benStreams.get(k);
       if (!cur || (f.taxYear ?? 0) > (cur.taxYear ?? 0) || num(f.monthlyBenefit)! > num(cur.monthlyBenefit)!) benStreams.set(k, f);
     }
+    // ONE BENEFIT ON TWO DOCUMENTS IS STILL ONE BENEFIT.
+    //
+    // The map above is keyed on streamKey + docType, so a benefit printed under two different
+    // payer names survives as two entries and is counted twice. Osborne's Aerospace pension:
+    // $5,218.91 from a payer-code list and $5,218.91 from the plan's legal name — $10,438/mo
+    // against the $60,145/yr her own 1040 line 5a disclosed.
+    //
+    // The test is the amount TO THE CENT and the benefit class, nothing else. A fuzzy version
+    // of this (same payer, within 5%) was written first and it merged a retiree's own CalPERS
+    // pension with her husband's survivor continuance, deleting $2,050/mo silently. Cent-exact
+    // cannot: $2,100.00 is not $2,050.00.
+    const benCounted: DocFact[] = [];
+    const benDuplicate = new Map<string, DocFact>();
     for (const k of [...benStreams.keys()].sort()) {
       const f = benStreams.get(k)!;
-      const m = f.nonTaxable ? num(f.monthlyBenefit)! * grossUp : num(f.monthlyBenefit)!;
+      const twin = benCounted.find((c) => isSameBenefitStream(c, f));
+      if (twin) { benDuplicate.set(k, twin); continue; }
+      benCounted.push(f);
+    }
+    for (const k of [...benStreams.keys()].sort()) {
+      const f = benStreams.get(k)!;
+      const twin = benDuplicate.get(k);
+      if (twin) {
+        // Excluded, never silently: the add-back is this benefit's own value, computed with
+        // its own taxability, so Omit restores exactly what was removed.
+        const dupM = rd(grossedUpMonthly(num(f.monthlyBenefit)!, nonTaxableShare(f), grossUp));
+        flags.push({
+          text: `${f.employerOrPayer || benefitClassOf(f.benefitType, f.docType)} benefit: the same ${benefitClassOf(f.benefitType, f.docType).replace(/_/g, " ")} of $${num(f.monthlyBenefit)!.toLocaleString("en-US", { minimumFractionDigits: 2 })}/mo is already counted from "${twin.employerOrPayer || twin.docType}" — the same benefit documented twice under two payer names, not two benefits. Excluded as a DUPLICATE. Omit to count it as a second, separate benefit.`,
+          addBackMonthly: dupM, borrower: b,
+        });
+        continue;
+      }
+      // GROSS UP THE TAX-FREE SHARE, NOT THE WHOLE BENEFIT. PROGRAMS.md always said "portion";
+      // this line said yes/no. VA disability and SSI are share=1 and are unchanged.
+      const share = nonTaxableShare(f);
+      const m = grossedUpMonthly(num(f.monthlyBenefit)!, share, grossUp);
       const bt = (f.benefitType || "").toLowerCase();
       const label = `${f.employerOrPayer || bt || f.docType} benefit`;
 
@@ -907,7 +942,18 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
       if (failsCont || failsReceipt) {
         flags.push({ text: `${label}: ${failsReceipt ? "needs 6-month receipt history" : "<3-yr continuance remaining"} — held back. Omit to count it.`, addBackMonthly: rd(m), borrower: b });
       } else {
-        add(b, m, label, `documented monthly${f.nonTaxable ? ` grossed up ×${grossUp}` : ""}`, streamKey(f));
+        const basis = share <= 0 ? "documented monthly"
+          : share >= 1 ? `documented monthly, non-taxable — grossed up ×${grossUp}`
+          : `documented monthly — grossed up ×${grossUp} on the ${Math.round(share * 100)}% of it that is tax-free by statute`;
+        add(b, m, label, basis, streamKey(f));
+        if (isTrimmedGrossUp(f)) {
+          // Never a silent reduction: the add-back restores the full gross-up in one click.
+          const full = rd(num(f.monthlyBenefit)! * grossUp);
+          flags.push({
+            text: `${label}: Social Security is taxable up to 85%, so only ${Math.round(share * 100)}% of it is grossed up here. If the borrower's own 1040 shows line 6b is low or zero — none of the benefit taxed — the full ×${grossUp} applies. Omit to count the full gross-up.`,
+            addBackMonthly: Math.max(0, rd(full - m)), borrower: b,
+          });
+        }
       }
     }
 

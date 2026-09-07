@@ -1,13 +1,14 @@
 {
-  "logicVersion": "2026-09-06-full-doc-beats-bank-statement-package",
-  "pinnedAt": "2026-09-07T04:41:57.421Z",
+  "logicVersion": "2026-09-06-gross-up-the-tax-free-share-and-count-a-benefit-once",
+  "pinnedAt": "2026-09-07T05:45:09.185Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "9025b617581ebe4c",
+    "app/api/los/files/[id]/verify-income/route.ts": "548b6d794fa622ec",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankStatement.ts": "4302f2fdd78e85c9",
+    "lib/income/benefitRules.ts": "9955d04ebea68d3f",
     "lib/income/combineBankStatement.ts": "43f917108941029d",
     "lib/income/contested.ts": "4bef5f41ecf107eb",
-    "lib/income/docFacts.ts": "af9a5c3df8defa50",
+    "lib/income/docFacts.ts": "f9a805df0b9d00ed",
     "lib/income/overrideExemplars.ts": "d33ed7c3fa074035",
     "lib/income/programs.ts": "3ef831cba44f1919",
     "lib/income/readDocument.ts": "e0380964e130461f",

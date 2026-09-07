@@ -49,8 +49,16 @@ chk(z.monthly === 0 && z.overridden === true,
   "$0 applies as a real decision (source excluded by the LO), not swallowed as 'unset'");
 
 // ── 5. It must override the HARD cases too — the ones with no other escape hatch.
-const gross = sourceMonthlyDetail(src({ type: "social_security", amount: 2000, nonTaxable: true }), "conventional");
-chk(gross.monthly === 2500, "non-taxable gross-up applies by default (2,000 x 1.25)");
+// VA benefits are wholly tax-free by statute (IRS Pub 525), so the FULL gross-up is correct
+// here and this is the case that proves the override reaches a grossed-up figure at all.
+const gross = sourceMonthlyDetail(src({ type: "va_benefits", amount: 2000, nonTaxable: true }), "conventional");
+chk(gross.monthly === 2500, "wholly non-taxable gross-up applies by default (2,000 x 1.25)");
+
+// Social Security is NOT wholly tax-free: at most 85% of a title-II benefit is includible
+// (IRC 86(a)(2)), so only the 15% statutory floor grosses up until the borrower's own 1040
+// proves more. This asserted 2,500 until 2026-09-06 and that was the defect, not the rule.
+const ss = sourceMonthlyDetail(src({ type: "social_security", amount: 2000, nonTaxable: true }), "conventional");
+chk(ss.monthly === 2075, "Social Security grosses up on the 15% floor (2,000 x 1.0375), not in full");
 const grossOv = sourceMonthlyDetail(src({ type: "social_security", amount: 2000, nonTaxable: true, overrideMonthly: 2000 }), "conventional");
 chk(grossOv.monthly === 2000, "the LO can decline the gross-up by stating the figure");
 

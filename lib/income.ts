@@ -1,3 +1,4 @@
+import { nonTaxableShare, grossedUpMonthly } from "@/lib/income/benefitRules";
 // Lender-grade qualifying-income / DTI / DSCR / max-loan engine for the Income
 // Calculator (/income) and the LOS loan-file qualifier. Computes MONTHLY
 // QUALIFYING INCOME the way an underwriter does (Fannie Mae Selling Guide /
@@ -157,7 +158,20 @@ function guidelineDetail(s: IncomeSource, loanType: LoanType): SourceDetail {
       if (meta.expirationEligible && s.hasEndDate && pos(s.continuanceMonths) < CONTINUANCE_MONTHS) {
         return { monthly: 0, basis: `continues <${CONTINUANCE_MONTHS} mo — excluded`, flag: `Continues only ${pos(s.continuanceMonths)} mo (<36) — excluded per guideline` };
       }
-      if (meta.canGrossUp && s.nonTaxable) return { monthly: pos(s.amount) * grossUp, basis: `non-taxable × ${grossUp} gross-up`, flag: "Gross-up applied — verify the income is documented non-taxable" };
+      // SECOND BUILDER, SAME RULE. This calculator had its own copy of the boolean gross-up;
+      // one predicate now serves both it and the LOS engine (lib/income/benefitRules.ts).
+      if (meta.canGrossUp && s.nonTaxable) {
+        const share = nonTaxableShare({ benefitType: s.type, nonTaxable: true });
+        const monthly = grossedUpMonthly(pos(s.amount), share, grossUp);
+        return {
+          monthly,
+          basis: share >= 1 ? `non-taxable × ${grossUp} gross-up`
+            : `× ${grossUp} gross-up on the ${Math.round(share * 100)}% tax-free by statute`,
+          flag: share >= 1
+            ? "Gross-up applied — verify the income is documented non-taxable"
+            : `Social Security is taxable up to 85%, so only ${Math.round(share * 100)}% is grossed up. The borrower's 1040 line 6b can prove more of it is tax-free.`,
+        };
+      }
       return { monthly: pos(s.amount), basis: "monthly, as stated" };
     }
     default: return { monthly: 0, basis: "" };
