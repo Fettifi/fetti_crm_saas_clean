@@ -74,6 +74,11 @@ GOV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/governor' -e 'lib/conversationG
 # all of them read the DISK. Vercel only has what git has, so every production build died at
 # "Module not found" and three fixes reached nobody for hours. 0.6s, so it runs on any TS commit.
 ANYTS=$(printf '%s\n' "$CHANGED" | grep -E '\.(ts|tsx)$')
+# WHO IS STILL LIVE. `status` is the Reg B disposition and stays "active" through funding;
+# `stage` is where the file actually is. Five places asked only `status`, so a stage="Closed"
+# file counted as live everywhere — and the bulk document chaser would have emailed AND texted
+# a closed borrower. Any touch of the predicate or of a file that reads it re-runs the guard.
+LIVE=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/fileLiveness' -e 'lib/stalledFiles' -e 'lib/los.ts' -e 'los/remind-all' -e 'app/api/dashboard' -e 'app/api/stats' -e 'org-learn' -e 'app/los/' -e 'scripts/verify-file-liveness')
 OUTL=$(printf '%s\n' "$CHANGED" | grep -F -e 'api/outlook' -e 'taskpane.html' -e 'outlookAuth' -e 'outlookEmail' -e 'api/outlook' -e 'verify-outlook-attach' -e 'verify-outlook-send')
 IMGPDF=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/imageToPdf' -e 'to-pdf/route' -e 'combine-docs' -e 'verify-image-pdf')
 DRAG=$(printf '%s\n' "$CHANGED" | grep -F -e 'los/[id]/page.tsx' -e 'verify-doc-dragout')
@@ -102,6 +107,14 @@ if [ -n "$ANYTS" ]; then
 fi
 
 # Runs FIRST: if the guards themselves are broken, every PASS printed below it is unreliable.
+if [ -n "$LIVE" ] && [ -f .env.local ]; then
+  printf "   %-24s " "verify:file-liveness"
+  OUT=$(npm run --silent verify:file-liveness 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:file-liveness"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$GUARDMETA" ]; then
   printf "   %-24s " "verify:assertions"
   OUT=$(npm run --silent verify:assertions 2>&1)
@@ -329,6 +342,12 @@ if [ -n "$FAILED" ]; then
       ;;
   esac
   case "$FAILED" in
+    *verify:file-liveness*)
+      echo "   A loan file is live only when BOTH columns agree: status (the Reg B disposition,"
+      echo "   which stays 'active' right through funding) AND stage (where it actually is)."
+      echo "   Never filter on status alone — that is how a closed borrower got into the chase list."
+      echo "   The predicates are in lib/fileLiveness.ts: isOpenFile(status, stage) / mayChaseDocs(status, stage)."
+      ;;
     *verify:auth*)
       echo "   verify:auth is NEVER a false alarm — a route in apiProtected but missing from"
       echo "   config.matcher is PUBLIC in production. Add the matcher entry named above."

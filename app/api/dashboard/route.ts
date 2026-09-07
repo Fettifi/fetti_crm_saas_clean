@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { isOpenFile, TERMINAL_STAGES } from "@/lib/fileLiveness";
 import { cfg } from "@/lib/settings";
 
 // Real dashboard KPIs: leads, loan files, loan volume in dollars, and potential
@@ -8,7 +9,8 @@ import { cfg } from "@/lib/settings";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const FUNDED_STAGES = ["funded", "closed"];
+// One list. TERMINAL_STAGES is the shared definition of "the work is over".
+const FUNDED_STAGES: string[] = TERMINAL_STAGES.map((s) => s.toLowerCase());
 const DEAD = ["dead", "lost", "not_qualified", "declined"];
 
 export async function GET() {
@@ -46,7 +48,7 @@ export async function GET() {
     // ---- Loan files by stage ----
     const byStage: Record<string, number> = {};
     for (const f of F) { const s = f.stage || "Application"; byStage[s] = (byStage[s] || 0) + 1; }
-    const active = F.filter((f) => stageL(f.status) === "active" && !FUNDED_STAGES.includes(stageL(f.stage)));
+    const active = F.filter((f) => isOpenFile(f.status, f.stage));
     const funded = F.filter((f) => FUNDED_STAGES.includes(stageL(f.stage)));
     const fileStats = { total: F.length, active: active.length, funded: funded.length, byStage };
 
@@ -126,7 +128,7 @@ export async function GET() {
       id: l.id, name: l.full_name || "Lead", purpose: l.loan_purpose || "—",
       tier: l.tier || null, stage: l.stage || "New Lead", amount: loanOfLead(l), created_at: l.created_at,
     }));
-    const recentFiles = F.filter((f) => stageL(f.status) === "active").slice(0, 8).map((f) => ({
+    const recentFiles = F.filter((f) => isOpenFile(f.status, f.stage)).slice(0, 8).map((f) => ({
       id: f.id, borrower: f.borrower_name || "Borrower", stage: f.stage || "Application", amount: loanOfFile(f), created_at: f.created_at,
     }));
 

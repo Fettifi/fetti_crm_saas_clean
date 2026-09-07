@@ -35,12 +35,19 @@ export const STAGES = [
 export const FILE_STATUSES = ["active", "withdrawn", "denied", "closed"] as const;
 export type FileStatus = (typeof FILE_STATUSES)[number];
 
-/** A file still being worked: it counts in the pipeline and its borrower may be contacted. */
-export const isActiveFile = (status?: string | null): boolean =>
-  String(status || "active").toLowerCase() === "active";
-
-/** May we chase this borrower for documents on this file? Only on an active file. */
-export const mayChaseDocs = (status?: string | null): boolean => isActiveFile(status);
+// STATUS IS ONLY HALF THE ANSWER. `status` is the Reg B disposition; `stage` is where the
+// file is in the pipeline. A funded or closed file keeps `status = "active"` because nobody
+// withdrew or denied it, so `status` alone reports it as live and the chaser keeps chasing.
+// The predicates live in lib/fileLiveness.ts — pure, no imports, safe for client components —
+// and take BOTH columns as required arguments so a caller cannot ask half the question.
+export {
+  TERMINAL_STAGES,
+  TERMINAL_FILE_VALUES,
+  isTerminalFileValue,
+  isOpenFile,
+  mayChaseDocs,
+  isActiveDisposition,
+} from "@/lib/fileLiveness";
 
 export function shareToken(): string {
   // Unguessable, URL-safe. Two UUIDs of entropy, hex, no dashes.

@@ -14,6 +14,7 @@
 // it is a document you can find.
 import "./_env";
 import { supabaseAdmin } from "../lib/supabaseAdminClient";
+import { isOpenFile } from "../lib/fileLiveness";
 import { execFileSync } from "child_process";
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
 import { homedir } from "os";
@@ -183,10 +184,12 @@ async function scanOneDocument(file: any): Promise<string | null> {
 
 (async () => {
   const { data: files } = await supabaseAdmin.from("loan_files")
-    .select("id,file_number,borrower_name,lead_id")
-    .eq("status", "active").order("updated_at", { ascending: false }).limit(40);
-  if (!files?.length) { say("No active loan files found."); rl.close(); process.exit(1); }
-  const labels = files.map((f: any) => `${f.borrower_name || "Borrower"} — ${f.file_number}`);
+    .select("id,file_number,borrower_name,lead_id,status,stage")
+    .order("updated_at", { ascending: false }).limit(60);
+  // status alone said 32 of 34 files were live; a stage="Closed" file keeps status="active".
+  const open = (files || []).filter((f: any) => isOpenFile(f.status, f.stage)).slice(0, 40);
+  if (!open.length) { say("No open loan files found."); rl.close(); process.exit(1); }
+  const labels = open.map((f: any) => `${f.borrower_name || "Borrower"} — ${f.file_number}`);
 
   // A loan file almost never needs exactly one document, so stay open until he says he's done.
   // Re-launching the tool for every page of a bank statement is how a good tool goes unused.

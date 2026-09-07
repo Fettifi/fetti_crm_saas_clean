@@ -28,6 +28,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { senderFrom } from "@/lib/notify/mailFrom";
+import { isTerminalFileValue, isOpenFile } from "@/lib/fileLiveness";
 
 const APP = (process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com").replace(/\/$/, "");
 
@@ -96,8 +97,10 @@ export const severityOf = (bucket: StaleBucket, flag: StaleFlag): number =>
 // Exported so the verification script can exercise the REAL predicate — the live
 // table currently holds zero terminal files, so a data-driven check of this would
 // pass vacuously and tell us nothing.
-const TERMINAL = ["funded", "closed", "dead", "declined", "withdrawn", "cancelled", "canceled"];
-export const isTerminal = (v: unknown) => TERMINAL.some((t) => String(v || "").toLowerCase().includes(t));
+// The list itself moved to lib/fileLiveness.ts on 2026-09-06: this file had one copy and
+// lib/los.ts had another that only looked at `status`, so the two disagreed about whether a
+// stage="Closed" file was live. One list, re-exported under the name this file already used.
+export { isTerminalFileValue as isTerminal };
 
 export type StaleFile = {
   id: string;
@@ -172,7 +175,7 @@ export async function findStalledFiles(): Promise<StaleFile[]> {
     .select("id, file_number, lead_id, borrower_name, email, phone, stage, status, product, state, loan_amount, property_value, updated_at, created_at")
     .limit(2000);
 
-  const open = (data || []).filter((f: any) => !isTerminal(f.status) && !isTerminal(f.stage));
+  const open = (data || []).filter((f: any) => isOpenFile(f.status, f.stage));
 
   const stale: StaleFile[] = [];
   for (const f of open as any[]) {

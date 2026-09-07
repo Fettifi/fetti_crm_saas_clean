@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isOpenFile } from "@/lib/fileLiveness";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 
 export const dynamic = "force-dynamic";
@@ -84,7 +85,7 @@ export async function GET() {
   let activeFiles = 0, fundedFiles = 0;
   for (const f of (lf || []) as any[]) {
     pipeline[f.stage] = (pipeline[f.stage] || 0) + 1;
-    if (f.status === "active") activeFiles++;
+    if (isOpenFile(f.status, f.stage)) activeFiles++;
     if (f.stage === "Funded") fundedFiles++;
   }
   const org = {

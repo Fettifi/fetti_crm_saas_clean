@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Loader2, RefreshCw, Link2, Check, Plus, FileUp, CheckSquare, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { borrowerCode } from "@/lib/borrowerCode";
+import { isOpenFile, isActiveDisposition } from "@/lib/fileLiveness";
 import StalledWorklist from "@/components/StalledWorklist";
 
 const STAGES = ["Application", "Processing", "Underwriting", "Approved", "Clear to Close", "Funded", "Closed"];
@@ -135,7 +136,9 @@ export default function LosBoard() {
     finally { setBulkBusy(false); }
   }
 
-  const active = files.filter((f) => f.status === "active");
+  // Liveness is status AND stage: a stage="Closed" file keeps status="active" because
+  // nobody withdrew or denied it. Filtering on status alone put closed files in this list.
+  const active = files.filter((f) => isOpenFile(f.status, f.stage));
   const funded = files.filter((f) => f.stage === "Funded").length;
   const visibleActive = active; // every active file is selectable
   const allVisibleSelected = visibleActive.length > 0 && visibleActive.every((f) => selected.has(f.id));
@@ -224,7 +227,7 @@ export default function LosBoard() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-6">
           {STAGES.map((stage) => {
-            const col = files.filter((f) => f.stage === stage && f.status === "active");
+            const col = files.filter((f) => f.stage === stage && isActiveDisposition(f.status));
             if (!col.length && stage !== "Application") return null;
             return (
               <div key={stage}>

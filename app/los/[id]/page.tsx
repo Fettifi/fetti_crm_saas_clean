@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Link2, Check, ArrowLeft, Plus, ExternalLink, Send, X, Trash2 } from "lucide-react";
 import { borrowerCode } from "@/lib/borrowerCode";
+import { isOpenFile, isActiveDisposition } from "@/lib/fileLiveness";
 import DeleteConfirm from "@/components/DeleteConfirm";
 import ConditionsImporter from "@/components/los/ConditionsImporter";
 import IncomeQualifier from "@/components/los/IncomeQualifier";
@@ -601,13 +602,29 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
 
   const badge = (s: string) => s === "accepted" ? "text-emerald-400" : s === "received" ? "text-yellow-400" : s === "rejected" ? "text-red-400" : "text-slate-500";
   const code = borrowerCode(file.borrower_name, file.id);
-  // A withdrawn / denied / closed file is read-only for stage changes and is not chased.
-  const isActive = String(file.status || "active").toLowerCase() === "active";
+  // TWO QUESTIONS, TWO ANSWERS.
+  //   isActive — the Reg B DISPOSITION. Gates the Withdraw/Reinstate toggle and the stage
+  //              buttons: you reinstate a withdrawn file, and a withdrawn file is read-only.
+  //   isOpen   — whether there is still work to do. A file at stage "Closed" or "Funded"
+  //              keeps status "active" (nobody withdrew it), so it showed NO banner at all
+  //              while the document chaser had already stopped chasing it.
+  const isActive = isActiveDisposition(file.status);
+  const isOpen = isOpenFile(file.status, file.stage);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
       <div className="max-w-5xl mx-auto">
         <Link href="/los" className="text-slate-400 hover:text-white text-sm flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Loan files</Link>
+        {isActive && !isOpen && (
+          <div className="mt-3 rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-2.5">
+            <div className="text-sm font-semibold text-slate-200">
+              ✓ This file is at stage {String(file.stage)} — the pipeline work is done and the borrower is no longer chased for documents.
+            </div>
+            <div className="text-[12px] text-slate-400 mt-1">
+              No Reg B disposition has been recorded. If it was withdrawn or denied, record that below so the reason is on the file.
+            </div>
+          </div>
+        )}
         {!isActive && (
           <div className="mt-3 rounded-xl border border-amber-600/50 bg-amber-950/25 px-4 py-2.5">
             <div className="text-sm font-semibold text-amber-200">

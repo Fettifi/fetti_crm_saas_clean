@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { isStaffOrCron } from "@/lib/authSession";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { isOpenFile } from "@/lib/fileLiveness";
 import { runOrgBrain } from "@/lib/agents/orgBrain";
 import { logActivity } from "@/lib/activity";
 import { recordHeartbeat } from "@/lib/heartbeat";
@@ -34,7 +35,7 @@ async function learn() {
   let funded30 = 0, fundedVolume30 = 0, activeFiles = 0;
   for (const f of frows) {
     pipeline[f.stage] = (pipeline[f.stage] || 0) + 1;
-    if (f.status === "active") activeFiles++;
+    if (isOpenFile(f.status, f.stage)) activeFiles++;
     if (f.stage === "Funded" && new Date(f.created_at).getTime() >= sinceMs) { funded30++; fundedVolume30 += Number(f.loan_amount || 0); }
   }
 
