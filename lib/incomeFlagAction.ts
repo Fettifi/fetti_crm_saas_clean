@@ -30,6 +30,10 @@ export type FlagAction =
   | "add-manually"
   /** A document could not be read. The fix is a clean copy, not a click. */
   | "re-request-doc"
+  /** A recurring OBLIGATION found on the return. Not income — it belongs in the liabilities. */
+  | "add-to-debts"
+  /** Money that is not income at all (a rollover between retirement accounts). Never count it. */
+  | "not-income"
   /** An observation, or a dispute that the income is too HIGH. Omit means "reviewed, doesn't hold". */
   | "dismiss";
 
@@ -43,6 +47,13 @@ const UNREADABLE = /couldn'?t read|could not read|truncated or corrupt|re-?reque
 
 // QC asserting money EXISTS in the documents and is not in the worksheet. Deliberately does not
 // match "over-count" (the opposite finding) — `under-?count` cannot match inside "over-count".
+// An obligation the 1040 discloses — alimony or support PAID. Omit does nothing useful here:
+// the money belongs in the DEBTS box, and no amount of clicking on a flag puts it there.
+const OBLIGATION = /\b(alimony|child support|separate maintenance)\b[\s\S]{0,40}\b(paid|obligation)\b|\bpaid\b[\s\S]{0,20}\b(alimony|child support)\b/i;
+
+// A rollover is a transfer between retirement accounts. It is not income in any amount.
+const NOT_INCOME = /\brollover\b|\brolled over\b/i;
+
 const MISSED_INCOME =
   /\bunder-?count(?:ed|ing)?\b|\bmissed income\b|\bincome (?:is )?entirely omitted\b|\bincome omitted\b|\bomitted:|\bworksheet counted none\b|\bcounted none\b|\bmaterially under/i;
 
@@ -56,6 +67,8 @@ export function flagAction(text: string | null | undefined, addBackMonthly: numb
   const add = Number(addBackMonthly) || 0;
   if (add > 0) return "omit-counts";
   const t = String(text || "");
+  if (OBLIGATION.test(t)) return "add-to-debts";
+  if (NOT_INCOME.test(t)) return "not-income";
   if (PROMISES_COUNT.test(t)) return "omit-counts-zero";
   if (UNREADABLE.test(t)) return "re-request-doc";
   if (MISSED_INCOME.test(t)) return "add-manually";
@@ -73,6 +86,10 @@ export function omitConsequence(action: FlagAction): string | null {
       return "Omitting only marks this reviewed — it counts $0. To actually count this income, use “+ Add income” below and enter the documented monthly amount.";
     case "re-request-doc":
       return "Omitting only marks this reviewed. Nothing here can be counted until a clean copy of the document is on file.";
+    case "add-to-debts":
+      return "This is an OBLIGATION, not income — Omit changes nothing. Enter it in the liabilities below so it reaches the DTI.";
+    case "not-income":
+      return "This is a transfer between accounts, not income. Omit only marks it reviewed — the money must not be counted at all.";
     case "dismiss":
       return null;
   }
@@ -80,6 +97,9 @@ export function omitConsequence(action: FlagAction): string | null {
 
 /** Does this flag deserve a one-click “+ Add this as income” shortcut next to Omit? */
 export const offersAddIncome = (action: FlagAction) => action === "add-manually" || action === "omit-counts-zero";
+
+/** Does this flag belong in the DEBTS box rather than anywhere in the income worksheet? */
+export const isObligation = (action: FlagAction) => action === "add-to-debts";
 
 /**
  * A short label for a line seeded from a flag.
