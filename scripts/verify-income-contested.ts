@@ -146,9 +146,31 @@ const ck = (n: string, c: boolean, d = "") => { if (!c) fail++; console.log(`  $
   // WRITER exists, and that a complete acknowledgement actually opens the gate.
   console.log("\nthe acknowledgement that clears it is real, not just documented:");
   const { readFileSync } = await import("fs");
-  const iq = readFileSync("components/los/IncomeQualifier.tsx", "utf8");
-  const pa = readFileSync("app/preapprovals/page.tsx", "utf8");
-  const contestedLib = readFileSync("lib/income/contested.ts", "utf8");
+
+  // GREP THE CODE, NOT THE PROSE. A source-grep guard elsewhere in this repo passed with the
+  // code DELETED because it matched the comment that explained the code. Every file here is
+  // heavily commented — and the comments name `contestedAck` repeatedly — so a guard reading raw
+  // text would stay green through exactly the regression it exists to catch. Strip comments
+  // first; the check below is re-proved by deleting the writer and watching this go red.
+  const code = (f: string) => readFileSync(f, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")            // block comments (incl. JSX {/* ... */})
+    .split("\n")
+    .map((ln) => {
+      let out = "", q: string | null = null;
+      for (let i = 0; i < ln.length; i++) {
+        const c = ln[i], n = ln[i + 1];
+        if (q) { out += c; if (c === q && ln[i - 1] !== "\\") q = null; continue; }
+        if (c === '"' || c === "'" || c === "`") { q = c; out += c; continue; }
+        if (c === "/" && n === "/") break;             // line comment, outside any string
+        out += c;
+      }
+      return out;
+    })
+    .join("\n");
+
+  const iq = code("components/los/IncomeQualifier.tsx");
+  const pa = code("app/preapprovals/page.tsx");
+  const contestedLib = code("lib/income/contested.ts");
 
   ck("lib/income/contested.ts still READS contestedAck", /contestedAck/.test(contestedLib));
   ck("…and something WRITES it — a key with no writer is a door with no handle",
