@@ -1,8 +1,8 @@
 {
-  "logicVersion": "2026-09-06-1040-carries-obligations-and-rollovers",
-  "pinnedAt": "2026-09-07T04:22:14.909Z",
+  "logicVersion": "2026-09-06-full-doc-beats-bank-statement-package",
+  "pinnedAt": "2026-09-07T04:41:57.421Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "f054b819d5649659",
+    "app/api/los/files/[id]/verify-income/route.ts": "9025b617581ebe4c",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankStatement.ts": "4302f2fdd78e85c9",
     "lib/income/combineBankStatement.ts": "43f917108941029d",
@@ -12,6 +12,7 @@
     "lib/income/programs.ts": "3ef831cba44f1919",
     "lib/income/readDocument.ts": "e0380964e130461f",
     "lib/income/rentalIncome.ts": "134ed0667752a05a",
+    "lib/income/selectMethod.ts": "73532ce57baaba19",
     "lib/income/verifyWorksheet.ts": "25a83dafe34daa81"
   },
   "noRerollClaims": [

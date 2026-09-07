@@ -279,6 +279,11 @@ if [ -n "$WATCHED" ] && [ -f .env.local ]; then
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:income-logic"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
+  printf "   %-18s " "verify:income-method"
+  OUT=$(npm run --silent verify:income-method 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:income-method"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
   printf "   %-18s " "verify:income-replay"
   OUT=$(npm run --silent verify:income-replay 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else

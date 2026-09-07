@@ -95,7 +95,8 @@
     "verify:card-statement": "tsx scripts/verify-card-statement.ts",
     "verify:rsvp-text": "tsx scripts/verify-rsvp-text.ts",
     "rsvp:kit": "tsx scripts/make-rsvp-qr-kit.ts",
-    "verify:flag-action": "tsx scripts/verify-income-flag-action.ts"
+    "verify:flag-action": "tsx scripts/verify-income-flag-action.ts",
+    "verify:income-method": "tsx scripts/verify-income-method.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

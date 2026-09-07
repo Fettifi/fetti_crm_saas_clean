@@ -1,5 +1,5 @@
 {
-  "logicVersion": "2026-09-06-1040-carries-obligations-and-rollovers",
+  "logicVersion": "2026-09-06-full-doc-beats-bank-statement-package",
   "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re)lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
   "files": {
     "c3473ce9-7bdb-4882-8a7b-bbd1a30a86d3": {
@@ -36,7 +36,7 @@
         "dd9ca684-2cf3-4a05-b9fa-5a1903f936e2|2025 W2 — additional",
         "f36adb0d-2180-4d3b-9c85-e4e05c978405|2024 W2 — additional"
       ],
-      "cachedIncome": 9103
+      "cachedIncome": 11784
     },
     "1c7a616f-549c-4a7b-b565-b7a6c14cb2ef": {
       "file": "FF-202606-4157",
@@ -87,7 +87,7 @@
         "e71594f5-9eca-4c06-b929-57974e51bee4|2024 TAX RETURN",
         "f984015a-8f71-4bbe-b817-ad96d6d4b390|Pay stubs — last 30 days"
       ],
-      "cachedIncome": 16867
+      "cachedIncome": 20653
     },
     "6cd60248-6525-4fe6-a36b-e82541585271": {
       "file": "FF-202606-5978",
@@ -201,7 +201,7 @@
         "ab3af2a6-b829-413f-adf0-1272931f7b89|W-2s — last 2 years",
         "b3ebeccb-951a-4f0b-a8f1-4c7f307db0dd|Pay stubs — last 30 days — additional"
       ],
-      "cachedIncome": 6864
+      "cachedIncome": 8627
     },
     "21d5ada1-2c88-489d-b928-b38908089e62": {
       "file": "FF-202607-6368",
@@ -276,7 +276,7 @@
         "eee89d38-2c03-440b-b326-397665332bae|Bank statements — last 2 months — additional",
         "fb39ddd7-f99c-4ea4-bb50-60d477bb7a75|Bank statements — last 2 months — additional — additional"
       ],
-      "cachedIncome": 7246
+      "cachedIncome": 7266
     },
     "87561748-ce06-4f94-9a8a-7a0eb0665604": {
       "file": "FF-202607-8421",
@@ -318,7 +318,7 @@
         "a64ce174-8810-43fb-896b-e16fd3e211b5|W-2s — last 2 years — additional",
         "fcdfe909-9e59-45ad-838e-4e73e223797a|Bank statements — last 2 months — additional"
       ],
-      "cachedIncome": 8645
+      "cachedIncome": 8923
     },
     "769715b1-05a2-4053-9476-2dbc0bb59ed3": {
       "file": "FF-202608-1250",
@@ -365,7 +365,7 @@
         "f61c66ca-e0ab-4442-895c-1a0cc6cd3974|Bank statements — last 2 months — additional",
         "f75fbd44-d044-4d42-8cbe-6fa57dcf2622|2024 Tax return"
       ],
-      "cachedIncome": 22547
+      "cachedIncome": 24218
     },
     "7ba557c8-03c3-41f7-ba52-d379a817b31b": {
       "file": "FF-202608-2047",
@@ -411,7 +411,7 @@
         "e390ccd8-1929-4a88-9243-eecd37bba11b|Bank statements — last 2 months — additional",
         "fd8c16e2-f5e9-4910-8766-7be46dad15ff|2024-25_Tax_Returns_2_of_2.pdf"
       ],
-      "cachedIncome": 10817
+      "cachedIncome": 10414
     },
     "d18ab95a-0c6f-44b0-8d0d-89ec8a2df054": {
       "file": "FF-202608-5585",
@@ -436,7 +436,7 @@
         "c409a8aa-11fa-4c13-b09c-76259fb21925|Social security Statement",
         "d07a6f01-8db5-4c5b-8e20-1923944f2a93|2025 W2 second"
       ],
-      "cachedIncome": 2678
+      "cachedIncome": 6341
     },
     "f4cd4c2d-2d37-4675-8769-0e2fa636fdbe": {
       "file": "FF-202608-6901",
@@ -522,6 +522,70 @@
       "to": 10817,
       "acceptedAt": "2026-09-06T18:05:43.428Z",
       "reason": "Pre-existing $12 oscillation, reproduced at HEAD before today's change: the flapping term was the YTD-derived variable on a stub set showing OT=0. 2026-09-06 partial-year-W2 fix removes that term; the file re-reads to $10,414 under the new LOGIC_VERSION and settles. Accepted to record what it ships today."
+    },
+    {
+      "file": "FF-202608-2600",
+      "borrower": "Mario Washington",
+      "from": 10817,
+      "to": 10414,
+      "acceptedAt": "2026-09-07T04:42:33.411Z",
+      "reason": "QC said the $10,817 did not reconcile: the 08/14/2026 stub is $4,806.46 biweekly x26/12 = $10,414 base. d2c9066 (partial-year W-2 cannot season a variable average) removed the unseasoned OT and the read now returns the reconciled figure."
+    },
+    {
+      "file": "FF-202608-5944",
+      "borrower": "Ricardo Barron",
+      "from": 2678,
+      "to": 6341,
+      "acceptedAt": "2026-09-07T04:42:34.527Z",
+      "reason": "Facts 6 -> 7: the borrower uploaded a clean SSA Notice of Award (05/09/2026, $3,171/mo from May 2026). The prior copy was a MIRRORED scan the reader could not open, so the benefit was silently dropped. The engine now sees documented income it had been discarding."
+    },
+    {
+      "file": "FF-202608-1913",
+      "borrower": "Charletha Osborne",
+      "from": 22547,
+      "to": 24218,
+      "acceptedAt": "2026-09-07T04:44:46.897Z",
+      "reason": "Method-selection fix: this full-doc FHA file (2yr W-2s, current 2026 stubs, SSA award, pension statements) had been auto-switched to bank_statement because its reserve statements crossed 8 months, returning $2,714 against documented income. Now qualifies on the documents. NOTE: $24,218 still carries two PRE-EXISTING defects the QC raises as HIGH - the Aerospace pension counted twice under two streamIds, and the SSA gross-up applied to the taxable portion. File is stage=Closed."
+    },
+    {
+      "file": "FF-202607-9927",
+      "borrower": "Asia Dearman",
+      "from": 8645,
+      "to": 8923,
+      "acceptedAt": "2026-09-07T04:44:48.241Z",
+      "reason": "Same facts (6), number moved by d2c9066 - a partial-year W-2 cannot season a variable average. Her QC objection was exactly that: MTA hire date 06/09/2025, OT tenure under 2 years and not seasoned. ENGINE change, not a re-read."
+    },
+    {
+      "file": "FF-202607-7963",
+      "borrower": "Corine Lucas",
+      "from": 7246,
+      "to": 7266,
+      "acceptedAt": "2026-09-07T04:44:49.491Z",
+      "reason": "+$20/mo on a 51-fact bank-statement file (facts 50 -> 51). Re-read variance on a deposit average, 0.3%, no change of method or basis."
+    },
+    {
+      "file": "FF-202607-6280",
+      "borrower": "Merwin Bachiller",
+      "from": 6864,
+      "to": 8627,
+      "acceptedAt": "2026-09-07T04:45:03.748Z",
+      "reason": "Legacy read: the stored payload carried 0 factsUsed (pre-dating structured fact capture), so there was no fact set to compare against. The re-read produced 6 facts. This is the file being read properly for the first time, not a number drifting."
+    },
+    {
+      "file": "FF-202606-3544",
+      "borrower": "Brijanae Aubrey",
+      "from": 9103,
+      "to": 11784,
+      "acceptedAt": "2026-09-07T04:45:05.392Z",
+      "reason": "Legacy read: the stored payload carried 0 factsUsed (pre-dating structured fact capture), so there was no fact set to compare against. The re-read produced 17 facts. This is the file being read properly for the first time, not a number drifting."
+    },
+    {
+      "file": "FF-202606-5223",
+      "borrower": "Dominic Glover",
+      "from": 16867,
+      "to": 20653,
+      "acceptedAt": "2026-09-07T04:45:06.861Z",
+      "reason": "Legacy read: the stored payload carried 0 factsUsed (pre-dating structured fact capture), so there was no fact set to compare against. The re-read produced 9 facts. This is the file being read properly for the first time, not a number drifting."
     }
   ]
 }

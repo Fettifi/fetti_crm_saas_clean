@@ -14,6 +14,7 @@ import { assembleUrla, isInvestmentDeal, type Urla } from "@/lib/urla";
 import type { LoanType } from "@/lib/income";
 import sharp from "sharp";
 import { compressPdfIfNeeded } from "@/lib/pdfCompress";
+import { selectIncomeMethod } from "@/lib/income/selectMethod";
 import { computeQualifyingIncome, assignBorrowers, makeBorrowerResolver, type DocFact } from "@/lib/income/docFacts";
 import { computeBankStatementIncome } from "@/lib/income/bankStatement";
 import { combineBankStatement } from "@/lib/income/combineBankStatement";
@@ -80,7 +81,7 @@ const STUB_PRIORITY_WINDOW = 8;
 //
 // `npm run verify:income-logic` fails when these files change and this line does not, so the
 // choice gets forced at the moment the engine actually moves.
-const LOGIC_VERSION = "2026-09-06-1040-carries-obligations-and-rollovers";
+const LOGIC_VERSION = "2026-09-06-full-doc-beats-bank-statement-package";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" stays GENERIC — a Chase/Wells file is rarely named "bank
 // statement" — but it is no longer BARE, because "a non-income statement is harmless" (what this
@@ -545,12 +546,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // still runs standard (some investor programmes are full-doc), and the LO can force
     // either way with body.method.
     const rentalFacts = docFacts.filter(isRentalDoc);
-    const effectiveMethod: (typeof METHOD_VALUES)[number] =
-      method !== "auto" ? method
-      : isInvestment && rentalFacts.length ? "dscr"
-      : bankMonthCount >= 8 ? "bank_statement"
-      : has1099s && !has1040 && !hasPaystubs ? "1099_only"
-      : "standard";
+    // Selection lives in lib/income/selectMethod.ts so it can be tested on its own. It used to be
+    // this ternary, and the bank_statement arm carried no condition beyond the month count —
+    // which qualified full-doc borrowers on deposit averages because every file uses bank
+    // statements for reserves. See that file for the Osborne case it was extracted to fix.
+    const hasW2 = incomeReads.some((r) => r.docType === "w2");
+    const choice = selectIncomeMethod({
+      requested: method, isInvestment, rentalFactCount: rentalFacts.length,
+      bankMonthCount, has1099s, has1040, hasPaystubs, hasW2,
+    });
+    const effectiveMethod: (typeof METHOD_VALUES)[number] = choice.method;
 
     let computed = standard;
     let bankCoverage: any[] = [];   // per-account month-by-month PROOF of coverage (12/24-mo programs)
@@ -688,6 +693,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         f.taxYear ? `TY${f.taxYear}` : "",
       ].filter(Boolean).join("; "),
     }));
+    // STATEMENTS ON A FULL-DOC FILE ARE ASSETS, AND THE LO SHOULD BE TOLD THAT CHOICE WAS MADE.
+    // Silently ignoring a package the borrower uploaded is how the opposite bug (qualifying a
+    // full-doc borrower on deposits) went unnoticed for months. addBackMonthly 0: the statements
+    // add nothing here, the method switch is the LO's to make.
+    if (choice.bankStatementsNotUsed) {
+      computed = { ...computed, flags: [...computed.flags, {
+        text: `${choice.bankStatementsNotUsed.months} statement-month(s) are on file but were NOT used to qualify — ${choice.bankStatementsNotUsed.reason}. Qualified on the documents instead. If this really is a bank-statement programme, select that method explicitly.`,
+        addBackMonthly: 0, borrower: 1 as 1 | 2,
+      }] };
+    }
+
     const report = {
       perDoc,
       crossChecks: [] as string[],
