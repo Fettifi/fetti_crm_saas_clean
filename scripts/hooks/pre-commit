@@ -264,6 +264,21 @@ done
 # Needs the database + .env.local. Skip cleanly where they are absent (CI, a fresh clone)
 # rather than blocking a commit for a reason the committer cannot act on.
 if [ -n "$WATCHED" ] && [ -f .env.local ]; then
+  # FIRST, AND IT NEEDS NO DATABASE. verify:income-logic compares the CONTENT HASH of every
+  # engine file against the LOGIC_VERSION they were pinned at. LOGIC_VERSION is half the cache
+  # key for every borrower's qualifying income: change the engine without bumping it and the
+  # change reaches NO existing file, then a number moves on its own the next time something
+  # unrelated forces a re-verify. That is the 2026-07-22 "different this week on the same file"
+  # complaint.
+  #
+  # The guard existed and this hook never ran it. On 2026-09-06 I edited readDocument.ts and
+  # docFacts.ts, every other guard went green, the hook passed, and it SHIPPED unbumped — a
+  # guard that exists and does nothing is the house failure mode, and it caught me.
+  printf "   %-18s " "verify:income-logic"
+  OUT=$(npm run --silent verify:income-logic 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:income-logic"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
   printf "   %-18s " "verify:income-replay"
   OUT=$(npm run --silent verify:income-replay 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
