@@ -22,7 +22,7 @@
 import "./_env";
 import { readFileSync } from "fs";
 import { computeQualifyingIncome } from "../lib/income/docFacts";
-import { nonTaxableShare, grossedUpMonthly, isSameBenefitStream, SS_MIN_NON_TAXABLE_SHARE } from "../lib/income/benefitRules";
+import { nonTaxableShare, grossedUpMonthly, isSameBenefitStream, isSameBenefitByIdentity, SS_MIN_NON_TAXABLE_SHARE } from "../lib/income/benefitRules";
 
 let fail = 0;
 const ck = (n: string, c: boolean, d = "") => { if (!c) fail++; console.log(`  ${c ? "✅" : "❌"} ${n}${d ? ` — ${d}` : ""}`); };
@@ -92,6 +92,60 @@ const ben = (o: any) => F({ docType: o.docType || "ssa_award", employerOrPayer: 
   ck("Osborne's Aerospace pension counts ONCE ($5,219, not $10,438)", total(osbPen) === 5219, `$${total(osbPen)}`);
   ck("…and the excluded twin is FLAGGED with its full value as an add-back",
      osbPen.flags.some((f: any) => f.addBackMonthly === 5219 && /DUPLICATE/.test(f.text)));
+
+  console.log("\n── ONE PERSON, ONE SOCIAL SECURITY PAYMENT (Corine Lucas, FF-202607-7963) ──");
+  // Her real shape: an award letter plus the SAME deposits split across two benefitType
+  // spellings on ONE account. $8,296/mo of Social Security for one person.
+  const lucas = run([
+    ben({ payer: "Social Security Administration", sid: "SSA|CORINE LUCAS", benefitType: "social_security", monthlyBenefit: 2884.9, nonTaxable: true }),
+    ben({ payer: "Social Security Administration", sid: "benefit|social_security|1510", benefitType: "social_security", monthlyBenefit: 2682, nonTaxable: false }),
+    ben({ payer: "Federal Benefit Deposit From SSA TREAS 310", sid: "benefit|ssa|1510", benefitType: "ssa", monthlyBenefit: 2621, nonTaxable: false }),
+  ]);
+  ck("her Social Security counts ONCE, on the award letter ($2,993, not $8,296)",
+     total(lucas) === 2993, `$${total(lucas)}`);
+  ck("…and BOTH excluded deposits carry a full add-back",
+     [2682, 2621].every((v) => lucas.flags.some((f: any) => f.addBackMonthly === v)),
+     JSON.stringify(lucas.flags.map((f: any) => f.addBackMonthly)));
+  ck("the award letter GOVERNS — it states the gross, a deposit is that money after deductions",
+     lucas.breakdown.length === 1 && lucas.breakdown[0].monthly === 2993);
+  ck("same account + same class merges even when the reader spells the type two ways",
+     isSameBenefitByIdentity({ benefitType: "social_security", streamId: "benefit|social_security|1510" },
+                             { benefitType: "ssa", streamId: "benefit|ssa|1510" }));
+  ck("…but NOT across two different accounts",
+     !isSameBenefitByIdentity({ benefitType: "social_security", streamId: "benefit|social_security|1510" },
+                              { benefitType: "ssa", streamId: "benefit|ssa|9987" }));
+  const vaPair = run([
+    ben({ docType: "va_award", payer: "U.S. Dept of Veterans Affairs", sid: "VA|AWARD", benefitType: "va_disability", monthlyBenefit: 4898.05, nonTaxable: true }),
+    ben({ docType: "va_award", payer: "VACP TREAS 310", sid: "benefit|va_disability|2201", benefitType: "va_disability", monthlyBenefit: 4898.05, nonTaxable: true }),
+  ]);
+  ck("a VA award and its own VACP deposits are ONE benefit ($6,123, not $12,246)",
+     total(vaPair) === 6123, `$${total(vaPair)}`);
+
+  // A STALE AWARD LETTER MUST NOT OUTRANK CURRENT DEPOSITS. Ranking the award letter first
+  // looked right and passed every test — because Lucas's award happens to be the largest. On
+  // a 2024 letter against 2026 deposits raised by two COLAs it would under-count the borrower.
+  const stale = run([
+    ben({ payer: "Social Security Administration", sid: "SSA|AWARD2024", benefitType: "social_security", monthlyBenefit: 2700, nonTaxable: true }),
+    ben({ payer: "SSA TREAS 310", sid: "benefit|social_security|1510", benefitType: "social_security", monthlyBenefit: 2884, nonTaxable: false }),
+  ]);
+  ck("a stale award letter loses to higher current deposits ($2,884, not $2,700)",
+     stale.breakdown.length === 1 && stale.breakdown[0].monthly === 2884, `$${total(stale)}`);
+  // The add-back is what that stream WOULD HAVE CONTRIBUTED ($2,700 grossed on the 15% floor
+  // = $2,801), not its face amount — Omit must restore exactly what the exclusion removed.
+  ck("…and the superseded letter is flagged with what it would have contributed ($2,801)",
+     stale.flags.some((f: any) => f.addBackMonthly === 2801));
+
+  console.log("\n── AND A PENSION IS NOT A SINGLE-PAYMENT BENEFIT ──");
+  // The whole point of scoping rule B: a borrower CAN draw two pensions. Social Security,
+  // SSI and VA compensation each arrive as one payment; pensions do not.
+  ck("an award-letter pension and a DIFFERENT pension deposit do not merge on identity alone",
+     !isSameBenefitByIdentity({ benefitType: "pension", streamId: "PENSION|PlanA" },
+                              { benefitType: "pension", streamId: "benefit|pension|4410" }));
+  const twoPen = run([
+    ben({ docType: "pension", payer: "CalPERS", sid: "PENSION|own", benefitType: "pension", monthlyBenefit: 2100 }),
+    ben({ docType: "pension", payer: "CalPERS deposit", sid: "benefit|pension|4410", benefitType: "pension", monthlyBenefit: 2050 }),
+  ]);
+  ck("…so two pensions still BOTH count ($4,150)", total(twoPen) === 4150, `$${total(twoPen)}`);
 
   console.log("\n── THE MONEY A FUZZY RULE DELETED (each of these merged silently once) ──");
   const calpers = run([

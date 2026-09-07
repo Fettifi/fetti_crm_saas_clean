@@ -81,7 +81,7 @@ const STUB_PRIORITY_WINDOW = 8;
 //
 // `npm run verify:income-logic` fails when these files change and this line does not, so the
 // choice gets forced at the moment the engine actually moves.
-const LOGIC_VERSION = "2026-09-06-gross-up-the-tax-free-share-and-count-a-benefit-once";
+const LOGIC_VERSION = "2026-09-06-one-person-one-social-security-payment";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" stays GENERIC — a Chase/Wells file is rarely named "bank
 // statement" — but it is no longer BARE, because "a non-income statement is harmless" (what this

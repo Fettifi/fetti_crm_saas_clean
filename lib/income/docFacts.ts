@@ -385,7 +385,7 @@ function monthsBetweenISO(a?: string | null, b?: string | null): number {
   return Math.abs((+pa[1] - +pb[1]) * 12 + (+pa[2] - +pb[2]) + (+pa[3] - +pb[3]) / 30);
 }
 
-import { nonTaxableShare, grossedUpMonthly, isTrimmedGrossUp, isSameBenefitStream, benefitClassOf } from "@/lib/income/benefitRules";
+import { nonTaxableShare, grossedUpMonthly, isTrimmedGrossUp, isSameBenefitStream, isSameBenefitByIdentity, benefitAuthority, isDepositDerived, benefitClassOf } from "@/lib/income/benefitRules";
 
 const WAGE_DOCS = new Set<DocType>(["paystub", "w2", "wage_income_transcript", "voe", "military_les"]);
 const SE_DOCS = new Set<DocType>(["schedule_c", "1099nec", "1099misc"]);
@@ -879,13 +879,40 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
     // of this (same payer, within 5%) was written first and it merged a retiree's own CalPERS
     // pension with her husband's survivor continuance, deleting $2,050/mo silently. Cent-exact
     // cannot: $2,100.00 is not $2,050.00.
-    const benCounted: DocFact[] = [];
-    const benDuplicate = new Map<string, DocFact>();
-    for (const k of [...benStreams.keys()].sort()) {
+    // Cluster first, THEN choose which document represents the benefit. Picking whichever
+    // sorted first would have kept Lucas's $2,621 deposit over her $2,884.90 award letter.
+    const benKey = [...benStreams.keys()].sort();
+    const clusters: { members: string[] }[] = [];
+    for (const k of benKey) {
       const f = benStreams.get(k)!;
-      const twin = benCounted.find((c) => isSameBenefitStream(c, f));
-      if (twin) { benDuplicate.set(k, twin); continue; }
-      benCounted.push(f);
+      const into = clusters.find((c) => c.members.some((mk) => {
+        const m = benStreams.get(mk)!;
+        return isSameBenefitStream(m, f) || isSameBenefitByIdentity(m, f);
+      }));
+      if (into) into.members.push(k); else clusters.push({ members: [k] });
+    }
+    const benDuplicate = new Map<string, DocFact>();
+    for (const c of clusters) {
+      if (c.members.length < 2) continue;
+      // KEEP THE LARGEST DOCUMENTED FIGURE; AUTHORITY ONLY BREAKS A TIE.
+      //
+      // An award letter states the GROSS benefit and a deposit is that money after the Medicare
+      // Part B premium, so the award is normally the larger of the two and wins on amount alone
+      // (Lucas: $2,884.90 award vs $2,682 deposit — the $202.90 gap IS the premium).
+      //
+      // But "the award letter always governs" is wrong when the letter is STALE. A 2024 award
+      // of $2,700 against 2026 deposits of $2,884 after two COLAs means the benefit rose and
+      // the letter understates it — and since the deposit is already net of the premium, the
+      // true gross is at least that. Ranking authority first would have quietly under-counted
+      // that borrower. So: largest first, and when two documents state the SAME figure, the
+      // award letter is the one to cite. Deterministic either way.
+      const keep = c.members.slice().sort((x, y) => {
+        const fx = benStreams.get(x)!, fy = benStreams.get(y)!;
+        return ((num(fy.monthlyBenefit) || 0) - (num(fx.monthlyBenefit) || 0))
+          || (benefitAuthority(fy) - benefitAuthority(fx))
+          || x.localeCompare(y);
+      })[0];
+      for (const mk of c.members) if (mk !== keep) benDuplicate.set(mk, benStreams.get(keep)!);
     }
     for (const k of [...benStreams.keys()].sort()) {
       const f = benStreams.get(k)!;
@@ -895,7 +922,7 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
         // its own taxability, so Omit restores exactly what was removed.
         const dupM = rd(grossedUpMonthly(num(f.monthlyBenefit)!, nonTaxableShare(f), grossUp));
         flags.push({
-          text: `${f.employerOrPayer || benefitClassOf(f.benefitType, f.docType)} benefit: the same ${benefitClassOf(f.benefitType, f.docType).replace(/_/g, " ")} of $${num(f.monthlyBenefit)!.toLocaleString("en-US", { minimumFractionDigits: 2 })}/mo is already counted from "${twin.employerOrPayer || twin.docType}" — the same benefit documented twice under two payer names, not two benefits. Excluded as a DUPLICATE. Omit to count it as a second, separate benefit.`,
+          text: `${f.employerOrPayer || benefitClassOf(f.benefitType, f.docType)} benefit: $${num(f.monthlyBenefit)!.toLocaleString("en-US", { minimumFractionDigits: 2 })}/mo — this ${benefitClassOf(f.benefitType, f.docType).replace(/_/g, " ")} is already counted at $${num(twin.monthlyBenefit)!.toLocaleString("en-US", { minimumFractionDigits: 2 })}/mo from "${twin.employerOrPayer || twin.docType}"${isDepositDerived(f.streamId) && !isDepositDerived(twin.streamId) ? ", which is the award letter and states the GROSS benefit — this is that same money arriving in the bank, net of any Medicare premium" : ""}. Excluded as a DUPLICATE — one benefit documented twice, not two benefits. Omit to count it as a second, separate benefit.`,
           addBackMonthly: dupM, borrower: b,
         });
         continue;

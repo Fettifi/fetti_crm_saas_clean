@@ -175,3 +175,69 @@ export function isSameBenefitStream(
   const ca = benefitCents(a.monthlyBenefit), cz = benefitCents(z.monthlyBenefit);
   return ca != null && cz != null && ca > 0 && ca === cz;
 }
+
+// ── ONE PERSON, ONE SOCIAL SECURITY PAYMENT, THREE LINES ────────────────────────────────
+//
+// Corine Lucas (FF-202607-7963) carried the same Social Security benefit as THREE streams:
+//
+//   $2,884.90  SSA|CORINE LUCAS                 <- her award letter
+//   $2,682     benefit|social_security|1510     <- the deposits
+//   $2,621     benefit|ssa|1510                 <- THE SAME DEPOSITS, same account
+//
+// $8,296/mo of Social Security for one person. Two separate causes:
+//
+//   A. The bank-deposit reader keys a stream `benefit|<benefitType>|<last4>`
+//      (readDocument.ts:336), so the same deposits on the same account split in two purely
+//      because the reader wrote "social_security" on some and "ssa" on others. Same account,
+//      same class, same money — a spelling, not a second benefit.
+//
+//   B. An award letter and its own deposits are one benefit documented twice. The file
+//      already says this out loud for wages — "A PAYROLL DEPOSIT IS NOT A BENEFIT, IT IS THE
+//      WAGES ARRIVING" — and the same is true here. The award letter GOVERNS: it states the
+//      GROSS benefit, while the deposit is that benefit net of the Medicare Part B premium and
+//      any withholding, and agencies qualify on the gross. Lucas corroborates it exactly:
+//      $2,884.90 - $2,682 = $202.90, about a Part B premium.
+//
+// Scoped to benefits where one person receives exactly ONE payment. Social Security pays a
+// single combined amount — own vs spousal vs survivor is one payment, never two — and so do
+// SSI and VA compensation. PENSIONS ARE NOT IN THIS SET, deliberately: a borrower can genuinely
+// draw two, which is the CalPERS own-plus-survivor shape a fuzzy rule already destroyed once.
+
+const SINGLE_PAYMENT_CLASSES = new Set(["social_security", "ssi", "va_disability"]);
+
+/** Facts built from a bank statement's benefit deposits, keyed `benefit|<type>|<last4>`. */
+export const isDepositDerived = (streamId?: string | null): boolean =>
+  /^benefit\|/i.test(String(streamId || ""));
+
+/** The account/case identity a deposit stream carries — its last segment. */
+export const benefitAccountId = (streamId?: string | null): string => {
+  const parts = String(streamId || "").split("|");
+  return parts.length >= 3 ? parts[parts.length - 1].trim().toLowerCase() : "";
+};
+
+/**
+ * Higher wins when one stream must represent the benefit. An award letter states the GROSS
+ * entitlement; a deposit is that money arriving after deductions.
+ */
+export const benefitAuthority = (f: { streamId?: string | null }): number =>
+  isDepositDerived(f.streamId) ? 0 : 1;
+
+/**
+ * The same benefit documented twice, beyond the cent-exact test. Both rules are narrow and
+ * identity-based; neither compares payer names or amount bands.
+ */
+export function isSameBenefitByIdentity(
+  a: { benefitType?: string | null; docType?: string | null; streamId?: string | null },
+  z: { benefitType?: string | null; docType?: string | null; streamId?: string | null },
+): boolean {
+  const ca = benefitClassOf(a.benefitType, a.docType);
+  if (ca !== benefitClassOf(z.benefitType, z.docType)) return false;
+
+  // A. Same account, same class — the same deposits split by how the reader spelled the type.
+  const ia = benefitAccountId(a.streamId), iz = benefitAccountId(z.streamId);
+  if (isDepositDerived(a.streamId) && isDepositDerived(z.streamId) && ia && ia === iz) return true;
+
+  // B. An award letter and deposits of a single-payment benefit are one benefit.
+  if (!SINGLE_PAYMENT_CLASSES.has(ca)) return false;
+  return isDepositDerived(a.streamId) !== isDepositDerived(z.streamId);
+}
