@@ -64,6 +64,14 @@ export type DocFact = {
   monthsReceived?: number | null;              // receipt history (support/alimony need >= 6)
   nonTaxable?: boolean;
   isJointReturn?: boolean;
+  // A 1040 carries OBLIGATIONS as well as income — see readDocument.ts for why these exist.
+  alimonyPaidAnnual?: number | null;            // Sch 1 line 19a — paid OUT, a DTI liability
+  alimonyAgreementDate?: string | null;         // Sch 1 line 19c
+  retirementRolloverChecked?: boolean | null;   // 1040 line 4c / 5c "Rollover"
+  pensionGrossAnnual?: number | null;           // 1040 line 5a
+  pensionTaxableAnnual?: number | null;         // 1040 line 5b
+  iraGrossAnnual?: number | null;               // 1040 line 4a
+  iraTaxableAnnual?: number | null;             // 1040 line 4b
   yearsAtCurrentEmployer?: number | null;
   ssnLast4?: string | null;        // last 4 of SSN (identity key for clustering); null if not shown
   // ── RENTAL (lease / rent roll / 1007 market-rent appraisal) ──────────────────────────
@@ -900,6 +908,43 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
         flags.push({ text: `${label}: ${failsReceipt ? "needs 6-month receipt history" : "<3-yr continuance remaining"} — held back. Omit to count it.`, addBackMonthly: rd(m), borrower: b });
       } else {
         add(b, m, label, `documented monthly${f.nonTaxable ? ` grossed up ×${grossUp}` : ""}`, streamKey(f));
+      }
+    }
+
+    // ── OBLIGATIONS AND NON-INCOME READ OFF THE 1040 ────────────────────────────────────
+    //
+    // Neither of these changes a number. Both exist because a number was changed WITHOUT them.
+    //
+    // Ricardo Barron (FF-202608-5944), 2026-09-06: $18,000/yr of alimony on Schedule 1 line 19a
+    // of both his returns, on the file for nine days, in nobody's debts — $1,500/mo of DTI that
+    // no screen showed. And line 5a "Pensions and annuities" read $109,320 against $7,686
+    // taxable with the ROLLOVER box ticked: about $101,634 moved between retirement accounts.
+    // The QC reviewer called that "recurring distributions with presumed continuance" and told
+    // the loan officer to count it.
+    //
+    // So: say it out loud, and let the loan officer decide. addBackMonthly is 0 on both — an
+    // obligation is not income to add back, and a rollover is not income at all.
+    {
+      const alimonyFacts = bf.filter((f) => (num(f.alimonyPaidAnnual) ?? 0) > 0);
+      const worst = alimonyFacts.sort((x, y) => (num(y.alimonyPaidAnnual) ?? 0) - (num(x.alimonyPaidAnnual) ?? 0))[0];
+      if (worst) {
+        const annual = num(worst.alimonyPaidAnnual)!;
+        const years = [...new Set(alimonyFacts.map((f) => f.taxYear).filter(Boolean))].sort().join(" and ");
+        const when = worst.alimonyAgreementDate ? ` Agreement dated ${worst.alimonyAgreementDate}.` : "";
+        flags.push({
+          text: `Alimony PAID ${money(annual)}/yr (${money(r2(annual / 12))}/mo) on the ${years || "filed"} return, Schedule 1 line 19a — a recurring OBLIGATION, not income. It is not in this worksheet because it is a DEBT: enter it in the liabilities below so it reaches DTI.${when} If under 10 months remain on the decree it may be excluded — get the decree to find out.`,
+          addBackMonthly: 0, borrower: b,
+        });
+      }
+
+      const rollover = bf.find((f) => f.retirementRolloverChecked === true);
+      if (rollover) {
+        const g = num(rollover.pensionGrossAnnual), t = num(rollover.pensionTaxableAnnual);
+        const spread = g != null && t != null ? ` Line 5a gross ${money(g)} against ${money(t)} taxable — about ${money(r2(g - t))} of it moved between accounts.` : "";
+        flags.push({
+          text: `1040 ROLLOVER box is ticked on the retirement lines${rollover.taxYear ? ` (${rollover.taxYear})` : ""}.${spread} A rollover is a transfer between retirement accounts, NOT income — do not qualify on the gross. Any distribution you do count needs its own 1099-R and 3-year continuance.`,
+          addBackMonthly: 0, borrower: b,
+        });
       }
     }
 

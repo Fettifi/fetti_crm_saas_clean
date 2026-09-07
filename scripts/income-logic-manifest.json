@@ -1,16 +1,16 @@
 {
-  "logicVersion": "2026-09-06-partial-year-w2-cannot-season-inferred-variable",
-  "pinnedAt": "2026-09-06T18:04:47.285Z",
+  "logicVersion": "2026-09-06-1040-carries-obligations-and-rollovers",
+  "pinnedAt": "2026-09-07T04:22:14.909Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "3f80294b4c11eec4",
+    "app/api/los/files/[id]/verify-income/route.ts": "f054b819d5649659",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankStatement.ts": "4302f2fdd78e85c9",
     "lib/income/combineBankStatement.ts": "43f917108941029d",
     "lib/income/contested.ts": "4bef5f41ecf107eb",
-    "lib/income/docFacts.ts": "08320fa7fec02f60",
+    "lib/income/docFacts.ts": "af9a5c3df8defa50",
     "lib/income/overrideExemplars.ts": "d33ed7c3fa074035",
     "lib/income/programs.ts": "3ef831cba44f1919",
-    "lib/income/readDocument.ts": "95f2015fbd2334b9",
+    "lib/income/readDocument.ts": "e0380964e130461f",
     "lib/income/rentalIncome.ts": "134ed0667752a05a",
     "lib/income/verifyWorksheet.ts": "25a83dafe34daa81"
   },
