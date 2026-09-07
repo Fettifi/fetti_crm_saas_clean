@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { maxHousingPayment, maxLoanFromPayment, dscrExact, miAnnualFactor } from "@/lib/income";
 import CurrencyInput from "@/components/ui/CurrencyInput";
+import { flagAction, omitConsequence, offersAddIncome, labelFromFlag } from "@/lib/incomeFlagAction";
 
 const money = (n: number) => "$" + Math.round(n || 0).toLocaleString();
 const num = (s: string) => Number(String(s).replace(/[^0-9.]/g, "")) || 0;
@@ -357,6 +358,20 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     }
   }
   function toggleLine(i: number) { clearIncomeOverride(); setLineIncluded((p) => ({ ...p, [i]: p[i] === false ? true : false })); }
+  // SEED A LINE FROM A FLAG, WITH NO AMOUNT.
+  //
+  // These flags are full of figures — "$7,686", "gross $109,320", "$28,572" — and lifting one
+  // into the qualifying income would be the screen inventing a number out of a sentence. The
+  // seeded line carries the label and a BLANK amount; the LO types what the documents support.
+  function addIncomeFromFlag(flagText: string, borrower: number) {
+    clearIncomeOverride();
+    setAddedLines((p) => [...p, {
+      label: labelFromFlag(flagText),
+      monthly: 0,
+      basis: "Added by loan officer from a QC finding — enter the documented monthly figure",
+      borrower: Number(borrower) || 1,
+    }]);
+  }
   function addIncomeLine() { clearIncomeOverride(); setAddedLines((p) => [...p, { label: "", monthly: 0, basis: "Added by loan officer", borrower: 1 }]); }
   const updAdded = (j: number, patch: Partial<AddedLine>) => { clearIncomeOverride(); setAddedLines((p) => p.map((l, k) => (k === j ? { ...l, ...patch } : l))); };
   const removeAdded = (j: number) => { clearIncomeOverride(); setAddedLines((p) => p.filter((_, k) => k !== j)); };
@@ -804,6 +819,12 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
                       const addBack = f && typeof f === "object" ? Math.max(0, Number(f.addBackMonthly) || 0) : 0;
                       const fb = f && typeof f === "object" && Number(f.borrower) === 2 ? 2 : 1;
                       const st: FlagState = flagDecisions[i] || "open";
+                      // WHAT WILL "OMIT" ACTUALLY DO TO THIS ONE? On a flag carrying an add-back
+                      // it moves money. On a QC finding that says income was MISSED it moves
+                      // nothing — and Ricardo Barron's file has that flag Omitted three times,
+                      // adding $0 each time, because the button was the only thing to click.
+                      const act = flagAction(ft, addBack);
+                      const consequence = omitConsequence(act);
                       return (
                         <div key={i} className={`rounded-lg px-2 py-1.5 ${st === "omitted" ? "bg-slate-800/40" : st === "accepted" ? "bg-emerald-500/5 border border-emerald-700/30" : "bg-amber-500/10"}`}>
                           <div className="flex items-start justify-between gap-2">
@@ -813,10 +834,20 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
                               <button onClick={() => decideFlag(i, st === "accepted" ? "open" : "accepted", ft)} className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st === "accepted" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`} title="Keep it held back / as a condition to resolve">Accept</button>
-                              <button onClick={() => decideFlag(i, st === "omitted" ? "open" : "omitted", ft)} className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st === "omitted" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`} title={addBack > 0 ? "You reviewed it — count this income" : "You reviewed it — it doesn't hold"}>Omit</button>
+                              <button onClick={() => decideFlag(i, st === "omitted" ? "open" : "omitted", ft)} className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st === "omitted" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`} title={addBack > 0 ? "You reviewed it — count this income" : "You reviewed it — it doesn't hold; this counts $0"}>Omit</button>
+                              {offersAddIncome(act) && (
+                                <button onClick={() => addIncomeFromFlag(ft, fb)} className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-700 text-white hover:bg-emerald-600" title="Start a line for this income — you enter the documented monthly figure">+ Add income</button>
+                              )}
                             </div>
                           </div>
                           {st === "omitted" && addBack > 0 && <div className="text-[10px] text-emerald-400 mt-0.5">✓ +{money(addBack)}/mo added to the qualifying income</div>}
+                          {/* SAY WHAT THE CLICK DOES BEFORE IT IS CLICKED. A flag that reads
+                              "income omitted" invites an Omit that counts nothing at all. */}
+                          {consequence && (
+                            <div className={`text-[10px] mt-0.5 ${st === "omitted" ? "text-amber-400" : "text-slate-500"}`}>
+                              {st === "omitted" ? "⚠ " : ""}{consequence}
+                            </div>
+                          )}
                           {st === "omitted" && (
                             <input value={flagNotes[i] || ""} onChange={(e) => setFlagNote(i, e.target.value)} placeholder="Why it doesn't hold (e.g. continuous 2-yr history — OT is stable)" className="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200 focus:border-emerald-500 focus:outline-none" />
                           )}
