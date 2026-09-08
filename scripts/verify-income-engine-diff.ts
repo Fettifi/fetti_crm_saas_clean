@@ -24,16 +24,112 @@
 // nothing makes the `--no-reroll` claim a measurement instead of an assurance.
 //
 // It reads facts the system actually recorded. It never invents an input.
+// ── 2026-09-08: THE ENGINE STOPPED BEING ONE FILE, AND THIS GUARD STOPPED RUNNING ───────
+//
+// The 09-06/09-07 benefit work moved gross-up and duplicate-detection out of docFacts.ts into
+// lib/income/benefitRules.ts, so the engine became TWO files. This guard had loaded the
+// committed engine by writing `git show HEAD:docFacts.ts` to a temp file and importing it —
+// which only works while that file imports nothing. It correctly refused to run rather than
+// compare something else, and then sat red, which meant `verify:income-logic --repin
+// --no-reroll` had no measurement behind it at all.
+//
+// THE OBVIOUS FIX IS THE DANGEROUS ONE. Deleting the bail-out makes the guard green again,
+// because the temp copy's `@/lib/income/benefitRules` specifier DOES resolve — tsx maps `@/`
+// to the process cwd, which is the repo, so the committed docFacts.ts gets the WORKING TREE's
+// benefitRules. Both sides then share the changed module. Measured on 2026-09-08 with
+// SS_MIN_NON_TAXABLE_SHARE mutated 0.15 -> 0.95 in the working tree:
+//
+//     same   $ 18563 -> $ 18563  FF-202608-1913 Charletha Osborne
+//     same   $  5667 -> $  5667  FF-202608-5944 Ricardo Barron
+//     PASS — this engine moves NO real borrower's qualifying income.
+//
+// Every line false. Osborne actually moved $18,563 -> $18,973 and Barron $5,667 -> $6,301;
+// the guard could not see it because it moved BOTH sides. That is the Corine Lucas
+// bank-statement failure (see below) in a second place, and it would again have been cited as
+// grounds for --no-reroll.
+//
+// So the committed side is now a COMPLETE checkout of HEAD — `git archive HEAD` extracted to a
+// scratch directory with node_modules symlinked — replayed in a subprocess whose cwd is that
+// directory, so `@/` resolves inside the committed tree and nothing of the working tree can
+// leak in. `git archive` is used rather than `git worktree add` deliberately: it registers
+// nothing and mutates no repo state.
+//
+// AND THE ISOLATION IS MEASURED, NOT ASSUMED, ON EVERY RUN. A per-run nonce is written into
+// the scratch tree as lib/income/__canary.ts and imported by the replay runner through the
+// same `@/` alias the engine uses. It exists ONLY in the scratch tree, so:
+//   • `@/` resolves to the scratch tree -> import succeeds, nonce comes back, isolation held;
+//   • `@/` resolves anywhere else       -> "Cannot find module '@/lib/income/__canary'" and
+//                                          this guard fails instead of reporting a comparison
+//                                          it did not make.
+// Both branches were exercised on 2026-09-08 before this was trusted.
 import "./_env";
 import { requireLiveDb } from "./_liveDb";
 import { supabaseAdmin } from "../lib/supabaseAdminClient";
 import { execFileSync } from "child_process";
-import { writeFileSync, mkdtempSync, readFileSync } from "fs";
+import { writeFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
+import { randomUUID } from "crypto";
 
 const ENGINE = "lib/income/docFacts.ts";
 const ROUTE = "app/api/los/files/[id]/verify-income/route.ts";
+
+type ReplayJob = { id: string; loanType: string; facts: unknown[] };
+
+/**
+ * Extract HEAD into a scratch directory and replay the committed engine there, in its own
+ * process, with its own tsconfig. Returns qualifying income per job id.
+ *
+ * Throws rather than degrading. There is no in-process fallback on purpose: a fallback is how
+ * a guard ends up silently measuring the working tree against itself.
+ */
+function replayCommittedEngine(jobs: ReplayJob[], repo: string): Record<string, number | null> {
+  const dir = mkdtempSync(path.join(tmpdir(), "income-engine-head-"));
+  try {
+    // The whole committed tree, so every transitive import of the engine is HEAD's copy.
+    // node_modules is untracked and therefore absent from the archive; symlink the real one.
+    execFileSync("/bin/sh", ["-c", `git archive HEAD | tar -x -C ${JSON.stringify(dir)}`], { cwd: repo });
+    if (!existsSync(path.join(dir, ENGINE))) {
+      throw new Error(`HEAD:${ENGINE} is missing from the extracted tree — nothing to compare against.`);
+    }
+    symlinkSync(path.join(repo, "node_modules"), path.join(dir, "node_modules"));
+
+    const nonce = randomUUID();
+    writeFileSync(path.join(dir, "lib/income/__canary.ts"), `export const CANARY = ${JSON.stringify(nonce)};\n`);
+    writeFileSync(
+      path.join(dir, "__replay.ts"),
+      // Both imports go through `@/` — the same specifier shape the engine's own internal
+      // imports use — so the canary proves resolution for the engine, not merely for itself.
+      `import { CANARY } from "@/lib/income/__canary";\n` +
+        `import { computeQualifyingIncome } from "@/lib/income/docFacts";\n` +
+        `import { readFileSync, writeFileSync } from "fs";\n` +
+        `const jobs = JSON.parse(readFileSync(process.argv[2], "utf8"));\n` +
+        `const out: Record<string, unknown> = {};\n` +
+        `for (const j of jobs) out[j.id] = computeQualifyingIncome(j.facts, { loanType: j.loanType }).qualifyingMonthlyIncome;\n` +
+        `writeFileSync(process.argv[3], JSON.stringify({ canary: CANARY, out }));\n`,
+    );
+
+    const inPath = path.join(dir, "__jobs.json");
+    const outPath = path.join(dir, "__out.json");
+    writeFileSync(inPath, JSON.stringify(jobs));
+    execFileSync(path.join(dir, "node_modules/.bin/tsx"), ["__replay.ts", inPath, outPath], {
+      cwd: dir,
+      stdio: ["ignore", "ignore", "pipe"],
+      maxBuffer: 32 * 1024 * 1024,
+    });
+
+    const res = JSON.parse(readFileSync(outPath, "utf8"));
+    if (res?.canary !== nonce) {
+      throw new Error(
+        `the committed-tree replay did not return this run's canary (expected ${nonce}, got ${String(res?.canary)}).\n` +
+          `That means "@/" did not resolve inside the scratch checkout, so the "before" side was not purely HEAD.`,
+      );
+    }
+    return res.out as Record<string, number | null>;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // THIS GUARD ONLY MEASURES THE STANDARD ENGINE. SAY SO, AND REFUSE TO STAND BEHIND THE REST.
 //
@@ -89,17 +185,6 @@ async function main() {
     process.exit(1);
   }
 
-  // The comparison imports the committed engine from a temp file, which only resolves if the
-  // engine is self-contained. It is today. If it ever gains an import, this guard must be told
-  // rather than quietly comparing something else.
-  const imports = workEngine.split("\n").filter((l) => /^\s*import\s/.test(l));
-  if (imports.length) {
-    console.error(`\n${ENGINE} now has ${imports.length} import(s):\n  ${imports.join("\n  ")}\n` +
-      `This guard loads the committed copy from a temp directory, where those will not resolve.\n` +
-      `Copy the committed tree into a scratch checkout instead of a single file, then re-run.`);
-    process.exit(1);
-  }
-
   const headVersion = logicVersionOf(gitShow(ROUTE));
   const workVersion = logicVersionOf(readFileSync(path.join(process.cwd(), ROUTE), "utf8"));
   const versionMoved = headVersion !== workVersion;
@@ -109,13 +194,11 @@ async function main() {
   console.log(`  engine ${ENGINE}: ${engineChanged ? "CHANGED" : "unchanged"}`);
   console.log(`  LOGIC_VERSION: ${headVersion} ${versionMoved ? `-> ${workVersion}` : "(unchanged)"}\n`);
 
-  const dir = mkdtempSync(path.join(tmpdir(), "income-engine-"));
-  const headPath = path.join(dir, "headEngine.ts");
-  writeFileSync(headPath, headEngine);
-  const before: any = await import(headPath);
+  // The working-tree side runs in-process: cwd is the repo, so its own `@/` imports resolve to
+  // the working tree, which is exactly what "after" means.
   const after: any = await import(path.join(process.cwd(), ENGINE));
-  if (typeof before.computeQualifyingIncome !== "function" || typeof after.computeQualifyingIncome !== "function") {
-    console.error("computeQualifyingIncome is not exported by one of the two engines — refusing to report a comparison that did not happen.");
+  if (typeof after.computeQualifyingIncome !== "function") {
+    console.error("computeQualifyingIncome is not exported by the working-tree engine — refusing to report a comparison that did not happen.");
     process.exit(1);
   }
 
@@ -138,6 +221,13 @@ async function main() {
   // it — so an unmeasurable change can name the borrowers it puts at risk.
   const unmeasured: { label: string; method: string; ships: number }[] = [];
 
+  // Pass 1: gather. The committed engine runs in one subprocess for the whole corpus rather
+  // than once per file, so a scratch checkout is built and torn down exactly once.
+  type Row = { id: string; label: string; loanType: string; facts: unknown[] };
+  const rows: Row[] = [];
+  const lines: { order: number; text: string }[] = [];
+  let order = 0;
+
   for (const row of data || []) {
     const id = String(row.key).split(":")[1];
     let p: any;
@@ -153,18 +243,51 @@ async function main() {
     if (method !== "standard") {
       const ships = Math.round(Number(p.qualifyingMonthlyIncome) || 0);
       unmeasured.push({ label, method, ships });
-      console.log(`  NOT MEASURED  ships $${String(ships).padStart(6)}  ${label}  (${facts.length} facts, ${method} method)`);
+      lines.push({ order: order++, text: `  NOT MEASURED  ships $${String(ships).padStart(6)}  ${label}  (${facts.length} facts, ${method} method)` });
       continue;
     }
 
     covered++;
-    const b = before.computeQualifyingIncome(facts, { loanType }).qualifyingMonthlyIncome;
-    const a = after.computeQualifyingIncome(facts, { loanType }).qualifyingMonthlyIncome;
+    rows.push({ id, label, loanType, facts });
+    lines.push({ order: order++, text: `@@${id}` });
+  }
+
+  // Pass 2: replay the committed tree. Any failure here is fatal — never fall back to an
+  // in-process import of the committed engine, which is what silently shared the working
+  // tree's modules between the two sides.
+  let beforeById: Record<string, number | null> = {};
+  if (rows.length) {
+    try {
+      beforeById = replayCommittedEngine(
+        rows.map((r) => ({ id: r.id, loanType: r.loanType, facts: r.facts })),
+        process.cwd(),
+      );
+    } catch (e: any) {
+      console.error(
+        `\nFAIL — could not replay the COMMITTED engine in isolation, so nothing was measured:\n  ${String(e?.message || e).trim()}\n` +
+          (e?.stderr ? `\n${String(e.stderr).trim()}\n` : "") +
+          `\nThis guard compares HEAD's engine against the working tree's. Without a clean HEAD\n` +
+          `replay there is no comparison, and a green line here would be a fabrication.`,
+      );
+      process.exit(1);
+    }
+  }
+
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  for (const l of lines) {
+    if (!l.text.startsWith("@@")) { console.log(l.text); continue; }
+    const r = byId.get(l.text.slice(2))!;
+    const b = beforeById[r.id];
+    const a = after.computeQualifyingIncome(r.facts as any, { loanType: r.loanType }).qualifyingMonthlyIncome;
+    if (!(r.id in beforeById)) {
+      console.error(`\nFAIL — the committed-tree replay returned no result for ${r.label}. Refusing to report a comparison that did not happen.`);
+      process.exit(1);
+    }
     if (b === a) {
-      console.log(`  same   $${String(a).padStart(6)}  ${label}  (${facts.length} facts, ${loanType})`);
+      console.log(`  same   $${String(a).padStart(6)}  ${r.label}  (${r.facts.length} facts, ${r.loanType})`);
     } else {
-      console.log(`  MOVED  $${String(b).padStart(6)} -> $${String(a).padStart(6)}  ${label}  (${facts.length} facts, ${loanType})`);
-      moves.push(`${label}: $${b} -> $${a}`);
+      console.log(`  MOVED  $${String(b).padStart(6)} -> $${String(a).padStart(6)}  ${r.label}  (${r.facts.length} facts, ${r.loanType})`);
+      moves.push(`${r.label}: $${b} -> $${a}`);
     }
   }
 

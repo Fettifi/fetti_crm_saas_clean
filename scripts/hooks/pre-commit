@@ -297,6 +297,23 @@ if [ -n "$WATCHED" ] && [ -f .env.local ]; then
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:benefit-income"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
+  # THE GUARD THAT MEASURES WHETHER A NUMBER ACTUALLY MOVED — and which nothing ran.
+  #
+  # verify:income-logic only asks "did the engine bytes change and was LOGIC_VERSION bumped?".
+  # It cannot say whether a real borrower's figure moved. verify:income-engine-diff replays the
+  # STORED facts through HEAD's engine and the working tree's and reports the delta per file.
+  #
+  # On 2026-09-08 it was found RED and unnoticed: the 09-06 benefit work split the engine into
+  # docFacts.ts + benefitRules.ts, and the guard's way of loading the committed engine (write
+  # one file to /tmp and import it) only ever worked while that file imported nothing. It
+  # correctly refused to run rather than compare the wrong thing — and then nobody saw it,
+  # because it lived in package.json and in NO hook. A guard that exists and never runs is the
+  # house failure mode. It runs here now.
+  printf "   %-18s " "verify:income-engine-diff"
+  OUT=$(npm run --silent verify:income-engine-diff 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:income-engine-diff"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
   printf "   %-18s " "verify:income-method"
   OUT=$(npm run --silent verify:income-method 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
