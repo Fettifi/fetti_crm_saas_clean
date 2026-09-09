@@ -97,7 +97,10 @@ const code = (f: string) => readFileSync(f, "utf8")
   const form = code("app/apply/form/page.tsx");
   ck("the full text is rendered, not a link", /AUTHORIZATION_TEXT/.test(form));
   ck("the e-sign consent is shown beside the signature box", /ESIGN_CONSENT_TEXT/.test(form));
-  ck("the step cannot be skipped", /q\.kind !== "authorization" && q\.optional/.test(form));
+  // Assert MEMBERSHIP, not adjacency: this read /!== "authorization" && q.optional/ and broke
+  // the moment another unskippable kind was narrowed in between. What matters is that the
+  // authorization kind is excluded from the Skip control at all, wherever it sits in the chain.
+  ck("the step cannot be skipped", /onSkip=\{[^}]*q\.kind !== "authorization"[^}]*q\.optional/.test(form));
   ck("the submit button is disabled until the signature validates", /disabled=\{!v\.ok\}/.test(form));
   ck("the signature is carried into the submitted payload", /borrower_authorization:/.test(form));
 

@@ -61,6 +61,32 @@ export interface UrlaDeclarations {
   ownsOtherProperty?: YesNo;
   intendToOccupyAsPrimary?: YesNo;
   borrowingDownPayment?: YesNo;
+  // URLA Section 5 in full. Until 2026-09-09 the wizard asked ONE combined question ("in the
+  // last 7 years, any bankruptcy or foreclosure?") and everything else existed only in the
+  // staff editor — so a borrower-completed 1003 answered 1 of 15 declarations, and bankruptcy
+  // and foreclosure could not be told apart. Each is its own field because the form asks each
+  // separately and a lender reads them separately.
+  priorOwnershipLast3Years?: YesNo;        // 5a(2)
+  relationshipWithSeller?: YesNo;          // 5a(3) family or business affiliation with the seller
+  undisclosedBorrowedFunds?: YesNo;        // 5a(4)
+  applyingOtherMortgage?: YesNo;           // 5a(5)
+  applyingNewCredit?: YesNo;               // 5a(6)
+  propertySubjectToLien?: YesNo;           // 5a(7) PACE / clean-energy
+  coSignerOnUndisclosedDebt?: YesNo;       // 5b(1)
+  delinquentOnFederalDebt?: YesNo;         // 5b(3)
+  conveyedTitleInLieu?: YesNo;             // 5b(5)
+  preForeclosureOrShortSale?: YesNo;       // 5b(6)
+  propertyForeclosed?: YesNo;              // 5b(7) — distinct from foreclosurePast7Years above
+  declaredBankruptcy?: YesNo;              // 5b(8) — distinct from bankruptcyPast7Years above
+  bankruptcyChapters?: string;             // "7" | "11" | "12" | "13", comma-separated
+}
+
+/** URLA Section 7. Absent from every surface until 2026-09-09; it is what gates VA eligibility. */
+export interface UrlaMilitary {
+  everServed?: YesNo;
+  currentlyServing?: YesNo;
+  survivingSpouse?: YesNo;
+  expirationOfService?: string;   // YYYY-MM-DD, only when currently serving
 }
 
 export interface UrlaDemographics {
@@ -121,6 +147,7 @@ export interface Urla {
   reo: UrlaReo[];
   declarations: UrlaDeclarations;
   demographics: UrlaDemographics;
+  military?: UrlaMilitary;
   originator: UrlaOriginator;
   meta: { source: string; assembledAt: string; leadId?: string; fileNumber?: string };
 }
@@ -431,15 +458,67 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
       ? [{ type: "CheckingAccount", balance: num(lead?.liquid_assets) ?? num(n["liquid assets"]) }]
       : [];
 
+/**
+ * The two wizard checklists -> URLA Section 5. Each declaration is recorded explicitly:
+ * ticked = "Yes", answered-but-not-ticked = "No", never asked = "" (never a defaulted "No").
+ */
+function declFrom(raw: any, seeded?: UrlaDeclarations): Partial<UrlaDeclarations> {
+  const fin = String(raw.decl_financial || ""), ev = String(raw.decl_property_events || "");
+  const askedFin = !!fin, askedEv = !!ev;
+  const has = (blob: string, v: string) => (blob.split(",").includes(v) ? "Yes" : "No") as YesNo;
+  const f = (v: string, cur?: YesNo): YesNo => cur || (askedFin ? has(fin, v) : "");
+  const e = (v: string, cur?: YesNo): YesNo => cur || (askedEv ? has(ev, v) : "");
+  const sel = (v: unknown, cur?: YesNo): YesNo => cur || (v ? (/^y/i.test(String(v)) ? "Yes" : "No") : "");
+  return {
+    outstandingJudgments: f("judgments", seeded?.outstandingJudgments),
+    delinquentOnFederalDebt: f("federal_debt", seeded?.delinquentOnFederalDebt),
+    partyToLawsuit: f("lawsuit", seeded?.partyToLawsuit),
+    coSignerOnUndisclosedDebt: f("cosigner", seeded?.coSignerOnUndisclosedDebt),
+    undisclosedBorrowedFunds: f("borrowed_funds", seeded?.undisclosedBorrowedFunds),
+    applyingNewCredit: f("new_credit", seeded?.applyingNewCredit),
+    propertySubjectToLien: f("pace_lien", seeded?.propertySubjectToLien),
+    declaredBankruptcy: e("bankruptcy", seeded?.declaredBankruptcy),
+    propertyForeclosed: e("foreclosure", seeded?.propertyForeclosed),
+    preForeclosureOrShortSale: e("short_sale", seeded?.preForeclosureOrShortSale),
+    conveyedTitleInLieu: e("deed_in_lieu", seeded?.conveyedTitleInLieu),
+    bankruptcyChapters: seeded?.bankruptcyChapters || (raw.decl_bankruptcy_chapter ? String(raw.decl_bankruptcy_chapter) : undefined),
+    relationshipWithSeller: sel(raw.decl_seller_relationship, seeded?.relationshipWithSeller),
+    borrowingDownPayment: seeded?.borrowingDownPayment || "",
+  };
+}
+
   const declarations: UrlaDeclarations = {
     bankruptcyPast7Years: seeded.declarations?.bankruptcyPast7Years || (n["bk/foreclosure 7yr"] ? (/no/i.test(n["bk/foreclosure 7yr"]) ? "No" : "Yes") : (lead?.bankruptcy_history ? "Yes" : "")),
     foreclosurePast7Years: seeded.declarations?.foreclosurePast7Years || (n["bk/foreclosure 7yr"] ? (/no/i.test(n["bk/foreclosure 7yr"]) ? "No" : "Yes") : ""),
     ownsOtherProperty: seeded.declarations?.ownsOtherProperty || (n["owns other re"] ? (/yes/i.test(n["owns other re"]) ? "Yes" : "No") : ""),
     intendToOccupyAsPrimary: seeded.declarations?.intendToOccupyAsPrimary || (property.occupancy === "PrimaryResidence" ? "Yes" : "No"),
-    outstandingJudgments: seeded.declarations?.outstandingJudgments || "",
-    partyToLawsuit: seeded.declarations?.partyToLawsuit || "",
-    borrowingDownPayment: seeded.declarations?.borrowingDownPayment || "",
+    // ── SECTION 5, FROM THE BORROWER'S OWN ANSWERS ────────────────────────────────────────
+    // The two checklist steps record every declaration EXPLICITLY. "none" is an answer, not an
+    // absence: it means the borrower was asked and said No to each, which is what a lender
+    // needs. An UNASKED declaration stays "" — never defaulted to "No", because asserting a
+    // clean declaration nobody made is the same class of defect as the fabricated 12 months.
+    ...declFrom(raw, seeded.declarations),
   };
+
+  // Section 7. Absent from the wizard until 2026-09-09; it is what gates VA eligibility.
+  const mil = String(raw.military || "");
+  const military: UrlaMilitary | undefined = mil ? {
+    everServed: /veteran|active/.test(mil) ? "Yes" : "No",
+    currentlyServing: mil === "active" ? "Yes" : "No",
+    survivingSpouse: mil === "surviving_spouse" ? "Yes" : "No",
+  } : (seeded.military || undefined);
+
+  // Section 8. Reg B 12 CFR 1002.13 requires the REQUEST on a dwelling-secured application and
+  // requires recording a refusal. "decline" is therefore stored as providedVoluntarily:false —
+  // proof we asked — and is NOT the same as the borrower never having been asked.
+  const demoAsked = !!(raw.demo_ethnicity || raw.demo_sex || raw.demo_race);
+  const dv = (v: unknown) => (String(v || "") === "decline" ? undefined : String(v || "") || undefined);
+  const demographics: UrlaDemographics = demoAsked ? {
+    ethnicity: dv(raw.demo_ethnicity),
+    sex: dv(raw.demo_sex),
+    race: dv(raw.demo_race),
+    providedVoluntarily: !(String(raw.demo_ethnicity) === "decline" && String(raw.demo_sex) === "decline" && String(raw.demo_race) === "decline"),
+  } : (seeded.demographics || {});
 
   return {
     borrowers: [borrower, ...coBorrowers],
@@ -449,7 +528,8 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     liabilities: seeded.liabilities || [],
     reo: seeded.reo || [],
     declarations,
-    demographics: seeded.demographics || {},
+    military,
+    demographics,
     originator: { ...DEFAULT_ORIGINATOR, ...(seeded.originator || {}) },
     meta: { source: seeded.borrowers ? "structured+derived" : "derived", assembledAt: new Date().toISOString(), leadId: lead?.id, fileNumber: loanFile?.file_number },
   };

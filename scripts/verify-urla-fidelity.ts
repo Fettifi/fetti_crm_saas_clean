@@ -95,6 +95,41 @@ const wizardLead = (over: Record<string, unknown> = {}) => ({
        new RegExp(`^\\s*${k}:\\s*a\\.${k}`, "m").test(form));
   }
 
+  console.log("\n── the sections the wizard never asked ──");
+  const full: any = assembleUrla(wizardLead({
+    current_address: "123 Main St, Los Angeles, CA 90045", monthly_debt_payments: "950",
+    decl_financial: "judgments,lawsuit", decl_property_events: "none", military: "veteran",
+    demo_ethnicity: "not_hispanic", demo_sex: "decline", demo_race: "black", years_at_address: "5",
+  }), {});
+  const d = full.declarations;
+  ck("a ticked declaration records Yes", d.outstandingJudgments === "Yes" && d.partyToLawsuit === "Yes");
+  ck("an answered-but-unticked declaration records No, not blank",
+     d.delinquentOnFederalDebt === "No" && d.coSignerOnUndisclosedDebt === "No" && d.propertySubjectToLien === "No");
+  ck("'none of these' answers the whole property-event group",
+     d.declaredBankruptcy === "No" && d.propertyForeclosed === "No" && d.preForeclosureOrShortSale === "No" && d.conveyedTitleInLieu === "No");
+  ck("bankruptcy and foreclosure are now SEPARATE answers, not one combined question",
+     "declaredBankruptcy" in d && "propertyForeclosed" in d);
+  // The fabrication rule again: never asked must not become a clean "No".
+  const blank: any = assembleUrla({ id: "t", full_name: "X Y", raw: { notes: "" } } as any, {});
+  ck("a declaration NOBODY was asked stays blank — never a defaulted No",
+     blank.declarations.outstandingJudgments === "" && blank.declarations.declaredBankruptcy === "",
+     JSON.stringify(blank.declarations.outstandingJudgments));
+  ck("military service is captured (it gates VA eligibility)",
+     full.military?.everServed === "Yes" && full.military?.currentlyServing === "No");
+  ck("demographic information is captured — Reg B 12 CFR 1002.13 requires the request",
+     full.demographics?.ethnicity === "not_hispanic" && full.demographics?.race === "black");
+  ck("…a declined field is recorded as declined, not invented", full.demographics?.sex === undefined);
+  ck("…and providedVoluntarily records that we asked", full.demographics?.providedVoluntarily === true);
+
+  const wiz = code("app/apply/form/page.tsx");
+  ck("the wizard asks the borrower's HOME address (lib/credit.ts refuses a credit order without it)",
+     /id: "current_address"/.test(wiz));
+  ck("the wizard asks for monthly debt payments (28 of 32 files had a back-end DTI = front-end)",
+     /id: "monthly_debt_payments"/.test(wiz));
+  ck("the declarations checklist cannot be skipped", /q\.kind !== "checklist" && q\.optional/.test(wiz));
+  ck("demographic questions offer a decline option rather than omitting the request",
+     /I'd rather not say/.test(wiz));
+
   console.log("\n── the co-borrower's address is no longer hardcoded away ──");
   ck("a co-borrower who lives with the primary inherits their address",
      code("lib/urla.ts").includes("co_lives_together") && !/currentAddress: undefined,/.test(code("lib/urla.ts")));

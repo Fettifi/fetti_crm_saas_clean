@@ -30,7 +30,12 @@ type Q =
   | { id: string; kind: "number" | "text" | "date" | "address"; prompt: string; sub?: string; placeholder?: string; optional?: boolean }
   // The Borrower's Certification and Authorization. NEVER `optional` — an application cannot
   // be submitted without it, which is the entire point of adding it.
-  | { id: string; kind: "authorization"; prompt: string; sub?: string };
+  | { id: string; kind: "authorization"; prompt: string; sub?: string }
+  // URLA Section 5 asks fifteen separate declarations. Asked one screen at a time this flow
+  // would grow by fifteen unskippable steps and nobody would finish it on a phone. A checklist
+  // keeps every declaration its OWN answer — the payload records each id explicitly as Yes or
+  // No — while costing one tap when the honest answer is "none of these", which it usually is.
+  | { id: string; kind: "checklist"; prompt: string; sub?: string; options: Opt[]; noneLabel: string };
 
 type Answers = Record<string, string>;
 
@@ -495,6 +500,82 @@ function appSteps(a: Answers): Q[] {
   }
   // Property (URLA §4)
   steps.push({ id: "property_address", kind: "address", prompt: "What's the property address?", sub: purchase ? "Already have one? We'll verify it. Still shopping? Just skip." : "The address we're financing. We'll verify it.", placeholder: "Property address", optional: true });
+  // ── URLA SECTIONS THE WIZARD NEVER ASKED ────────────────────────────────────────────────
+  // Until 2026-09-09 the borrower flow collected no home address (16 of 32 open files had
+  // none, and lib/credit.ts REFUSES a credit order without one), no liabilities at all (28 of
+  // 32 files computed a back-end DTI identical to the front-end, as though the borrower had no
+  // debts), 1 of 15 declarations, no military service, and no demographic information — which
+  // Reg B 12 CFR 1002.13 REQUIRES be requested on a dwelling-secured application.
+  steps.push({ id: "current_address", kind: "address", prompt: "Where do you live now?",
+    sub: "Your home address — not the property you're financing. Required on the application and to order credit.",
+    placeholder: "Your current home address" });
+  if (a.years_at_address === "<2") {
+    steps.push({ id: "months_at_address", kind: "number", prompt: "About how many months have you been there?",
+      sub: "Under two years means the application needs your previous address too — we'll get that with you.", placeholder: "Months", optional: true });
+  }
+  steps.push({ id: "monthly_debt_payments", kind: "number", prompt: "What do your monthly debt payments add up to?",
+    sub: "Cards, car, student loans, personal loans — the minimums, not the balances. Leave out rent or mortgage. A close estimate is fine; the credit report is what counts.",
+    placeholder: "Total monthly debt payments ($)", optional: true });
+
+  steps.push({ id: "decl_financial", kind: "checklist", noneLabel: "None of these apply to me",
+    prompt: "Do any of these apply to you?", sub: "The application asks each of these. Answering honestly here costs nothing — a surprise later can cost the loan.",
+    options: [
+      { value: "judgments", label: "I have outstanding judgments against me" },
+      { value: "federal_debt", label: "I'm delinquent or in default on federal debt" },
+      { value: "lawsuit", label: "I'm a party to a lawsuit" },
+      { value: "cosigner", label: "I'm a co-signer or guarantor on a debt not listed here" },
+      { value: "borrowed_funds", label: "I've borrowed money for this transaction that isn't disclosed" },
+      { value: "new_credit", label: "I'm applying for new credit before closing" },
+      { value: "pace_lien", label: "The property has a PACE or clean-energy lien" },
+    ] });
+  steps.push({ id: "decl_property_events", kind: "checklist", noneLabel: "None of these — clean history",
+    prompt: "In the last 7 years, has any of this happened?", sub: "Every lender sees these on your credit. Telling us first lets us pick a lender that works with it.",
+    options: [
+      { value: "bankruptcy", label: "I declared bankruptcy" },
+      { value: "foreclosure", label: "A property of mine was foreclosed" },
+      { value: "short_sale", label: "I completed a pre-foreclosure or short sale" },
+      { value: "deed_in_lieu", label: "I conveyed title in lieu of foreclosure" },
+    ] });
+  if (/bankruptcy/.test(String(a.decl_property_events || ""))) {
+    steps.push({ id: "decl_bankruptcy_chapter", kind: "select", prompt: "Which chapter was the bankruptcy?",
+      options: [{ value: "7", label: "Chapter 7" }, { value: "11", label: "Chapter 11" }, { value: "12", label: "Chapter 12" }, { value: "13", label: "Chapter 13" }] });
+  }
+  if (purchase) {
+    steps.push({ id: "decl_seller_relationship", kind: "select", prompt: "Do you know the seller personally or through business?",
+      sub: "A family or business relationship makes this an 'identity of interest' purchase — it changes some lenders' terms, so it has to be declared.",
+      options: [{ value: "no", label: "No — arm's length" }, { value: "yes", label: "Yes — family or business relationship" }] });
+  }
+  if (!isBizCredit(a)) {
+    steps.push({ id: "military", kind: "select", prompt: "Have you or your spouse served in the military?",
+      sub: "It can qualify you for a VA loan — often the best terms available.",
+      options: [
+        { value: "no", label: "No" },
+        { value: "veteran", label: "Yes — I served, not currently" },
+        { value: "active", label: "Yes — currently serving" },
+        { value: "surviving_spouse", label: "I'm the surviving spouse of a service member" },
+      ] });
+    // REG B 12 CFR 1002.13 — the creditor MUST REQUEST this on a dwelling-secured application
+    // and must record a refusal. "I'd rather not say" is a real, recorded answer, not a skip.
+    steps.push({ id: "demo_ethnicity", kind: "select", prompt: "How do you identify? (1 of 3)",
+      sub: "The government requires us to ask this on a home loan application to check lenders aren't discriminating. It does not affect your application, and you may decline.",
+      options: [
+        { value: "hispanic", label: "Hispanic or Latino" },
+        { value: "not_hispanic", label: "Not Hispanic or Latino" },
+        { value: "decline", label: "I'd rather not say" },
+      ] });
+    steps.push({ id: "demo_sex", kind: "select", prompt: "And your sex? (2 of 3)", sub: "Same reason. You may decline.",
+      options: [{ value: "female", label: "Female" }, { value: "male", label: "Male" }, { value: "decline", label: "I'd rather not say" }] });
+    steps.push({ id: "demo_race", kind: "select", prompt: "And your race? (3 of 3)", sub: "Same reason. You may decline.",
+      options: [
+        { value: "american_indian", label: "American Indian or Alaska Native" },
+        { value: "asian", label: "Asian" },
+        { value: "black", label: "Black or African American" },
+        { value: "pacific_islander", label: "Native Hawaiian or Other Pacific Islander" },
+        { value: "white", label: "White" },
+        { value: "decline", label: "I'd rather not say" },
+      ] });
+  }
+
   // LAST, AND NOT OPTIONAL. Every application ends here: the borrower reads the certification
   // and authorization and signs it before the 1003 is submitted. Declining to pull credit today
   // is a statement about timing; it is not the authorization to pull it tomorrow.
@@ -770,6 +851,17 @@ export default function ApplyWizard() {
       years_at_address: a.years_at_address || undefined,
       monthly_income: a.monthly_income || undefined,
       other_income: a.other_income || undefined,
+      current_address: a.current_address || undefined,
+      months_at_address: a.months_at_address || undefined,
+      monthly_debt_payments: a.monthly_debt_payments || undefined,
+      decl_financial: a.decl_financial || undefined,
+      decl_property_events: a.decl_property_events || undefined,
+      decl_bankruptcy_chapter: a.decl_bankruptcy_chapter || undefined,
+      decl_seller_relationship: a.decl_seller_relationship || undefined,
+      military: a.military || undefined,
+      demo_ethnicity: a.demo_ethnicity || undefined,
+      demo_sex: a.demo_sex || undefined,
+      demo_race: a.demo_race || undefined,
       // Co-borrower (URLA borrower #2) — discrete fields, gated on the explicit
       // "yes" so a Back-and-switch to "just me" never sends stale co_* answers.
       // co_ssn is encrypted server-side exactly like the primary's; never in notes.
@@ -1027,7 +1119,7 @@ export default function ApplyWizard() {
             <p className="text-xs text-emerald-700">Nice. You pre-qualify! A few quick details and your pre-approval is ready.</p>
           </div>
         )}
-        <QuestionView q={q} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.optional ? () => answerApp(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
+        <QuestionView q={q} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.kind !== "checklist" && q.optional ? () => answerApp(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
         {error && (
           <div className="mt-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
             <p className="text-sm text-red-600">{error}</p>
@@ -1044,7 +1136,7 @@ export default function ApplyWizard() {
   const displayQ = q.id === "goal" ? goalQ : q; // apply learned goal ordering
   return (
     <Shell pct={pct} onBack={i > 0 ? back : undefined}>
-      <QuestionView q={displayQ} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.optional ? () => answerFlow(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
+      <QuestionView q={displayQ} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.kind !== "checklist" && q.optional ? () => answerFlow(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
       {/* Goal is the funnel-entry screen — wizard-learn repeatedly flags goal-screen
           bounces as the top drop-off. An honest trust row (speed + no credit pull +
           human follow-up) reassures before the borrower commits to a goal, lifting
@@ -1097,6 +1189,35 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
     <>
       <h1 className="text-2xl font-bold">{q.prompt}</h1>
       {q.sub && <p className="text-slate-500 mt-1 text-sm">{q.sub}</p>}
+      {q.kind === "checklist" && (() => {
+        const picked = input ? input.split(",").filter(Boolean) : [];
+        const toggle = (v: string) => setInput((picked.includes(v) ? picked.filter((x) => x !== v) : [...picked, v]).join(","));
+        return (
+          <div className="mt-5">
+            <div className="grid grid-cols-1 gap-2">
+              {q.options.map((o) => {
+                const on = picked.includes(o.value);
+                return (
+                  <button key={o.value} onClick={() => toggle(o.value)}
+                    className={`text-left rounded-xl px-4 py-3 border transition flex items-start gap-3 ${on ? "border-emerald-500 bg-emerald-50" : "border-slate-200 bg-white hover:border-emerald-300"}`}>
+                    <span className={`mt-0.5 w-4 h-4 rounded border flex-none ${on ? "bg-emerald-600 border-emerald-600" : "border-slate-300"}`} />
+                    <span className="text-[14px]">{o.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* "None of these" is an ANSWER, not a skip: it records every declaration as No. */}
+            <button onClick={() => onAnswer("none")}
+              className="mt-3 w-full bg-white border border-slate-300 hover:border-slate-400 rounded-xl px-4 py-3 text-slate-700 font-medium transition">
+              {q.noneLabel}
+            </button>
+            <button disabled={!picked.length} onClick={() => onAnswer(picked.join(","))}
+              className="mt-2 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 py-3 transition">
+              Continue
+            </button>
+          </div>
+        );
+      })()}
       {q.kind === "authorization" && (() => {
         const v = signatureAcceptable(input, applicantName);
         return (
