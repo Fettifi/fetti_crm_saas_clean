@@ -26,7 +26,7 @@
 //   npm run verify:urla-fidelity
 import "./_env";
 import { readFileSync } from "fs";
-import { assembleUrla } from "../lib/urla";
+import { assembleUrla, computeLoanMetrics } from "../lib/urla";
 
 let fail = 0;
 const ck = (n: string, c: boolean, d = "") => { if (!c) fail++; console.log(`  ${c ? "✅" : "❌"} ${n}${d ? ` — ${d}` : ""}`); };
@@ -126,9 +126,42 @@ const wizardLead = (over: Record<string, unknown> = {}) => ({
      /id: "current_address"/.test(wiz));
   ck("the wizard asks for monthly debt payments (28 of 32 files had a back-end DTI = front-end)",
      /id: "monthly_debt_payments"/.test(wiz));
-  ck("the declarations checklist cannot be skipped", /q\.kind !== "checklist" && q\.optional/.test(wiz));
+  // MEMBERSHIP, NOT ADJACENCY. This asserted `!== "checklist" && q.optional` and broke the
+  // moment the repeater narrowing was inserted between them — the third time today an
+  // adjacency assertion failed on a correct edit. What matters is that the kind is excluded
+  // from the Skip control at all, wherever it sits in the chain.
+  ck("the declarations checklist cannot be skipped", /onSkip=\{[^}]*q\.kind !== "checklist"[^}]*q\.optional/.test(wiz));
   ck("demographic questions offer a decline option rather than omitting the request",
      /I'd rather not say/.test(wiz));
+
+  console.log("\n── the repeating schedules: assets, liabilities, real estate owned ──");
+  const sched: any = assembleUrla(wizardLead({
+    own_or_rent: "Own",
+    asset_rows: JSON.stringify([{ institution: "Chase", type: "checking", balance: "18000" }, { institution: "Fidelity", type: "401k", balance: "62000" }]),
+    liability_rows: JSON.stringify([{ creditor: "Capital One", type: "card", monthlyPayment: "95", balance: "2400" }, { creditor: "Toyota Financial", type: "auto", monthlyPayment: "512" }]),
+    reo_rows: JSON.stringify([{ address: "4233 8th Ave, Los Angeles CA", presentValue: "900000", mortgageBalance: "410000", monthlyRentalIncome: "4500" }]),
+  }), {});
+  ck("multiple asset accounts survive as separate rows", sched.assets?.length === 2, JSON.stringify(sched.assets));
+  ck("…with the institution the borrower named", sched.assets?.[0]?.institution === "Chase");
+  ck("multiple debts survive as separate rows", sched.liabilities?.length === 2);
+  ck("…and reach the back-end DTI", computeLoanMetrics(sched).liabilities === 607, String(computeLoanMetrics(sched).liabilities));
+  ck("real estate owned survives with its numbers",
+     sched.reo?.length === 1 && sched.reo[0].presentValue === 900000 && sched.reo[0].monthlyRentalIncome === 4500);
+
+  // The fabrication rule, applied to the schedules.
+  const lumpLead = wizardLead({ monthly_debt_payments: "950" }); lumpLead.liquid_assets = 25000;
+  const lump: any = assembleUrla(lumpLead, {});
+  ck("a lump savings figure does NOT get an invented account type",
+     lump.assets?.length === 1 && !lump.assets[0].type, JSON.stringify(lump.assets));
+  ck("a stated debt TOTAL is labelled as stated, not dressed up as a tradeline",
+     /stated/i.test(String(lump.liabilities?.[0]?.type)) && !lump.liabilities?.[0]?.creditor, JSON.stringify(lump.liabilities));
+
+  const wiz2 = code("app/apply/form/page.tsx");
+  ck("the wizard has a repeater for assets, liabilities and real estate",
+     /id: "asset_rows"/.test(wiz2) && /id: "liability_rows"/.test(wiz2) && /id: "reo_rows"/.test(wiz2));
+  ck("a repeater cannot be silently skipped past", /q\.kind !== "repeater"[\s\S]{0,40}q\.optional/.test(wiz2));
+  ck("the REO repeater also fires for an owner-occupant, not only 'other' property",
+     /a\.own_or_rent === "Own"[\s\S]{0,80}reo_rows|own_or_rent === "Own" \|\|/.test(wiz2));
 
   console.log("\n── the co-borrower's address is no longer hardcoded away ──");
   ck("a co-borrower who lives with the primary inherits their address",

@@ -452,11 +452,53 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     existingLienMonthlyPayment: seeded.loan?.existingLienMonthlyPayment ?? undefined,
   };
 
+  // ── SECTIONS 2 AND 3: THE REPEATING SCHEDULES ─────────────────────────────────────────
+  // The wizard now collects these as rows. A row the BORROWER typed beats both the lump sum
+  // and the notes blob; a seeded 1003 (staff editor / MISMO import) still outranks everything.
+  const rowsOf = (v: unknown): Record<string, string>[] => {
+    try { const r = JSON.parse(String(v || "[]")); return Array.isArray(r) ? r.filter((x) => x && typeof x === "object") : []; }
+    catch { return []; }
+  };
+  const assetRows = rowsOf(raw.asset_rows), liabRows = rowsOf(raw.liability_rows), reoRows = rowsOf(raw.reo_rows);
+
   const assets: UrlaAsset[] = (seeded.assets && seeded.assets.length)
     ? seeded.assets
-    : (num(lead?.liquid_assets) || num(n["liquid assets"]))
-      ? [{ type: "CheckingAccount", balance: num(lead?.liquid_assets) ?? num(n["liquid assets"]) }]
-      : [];
+    : assetRows.length
+      ? assetRows.map((r) => ({
+          institution: r.institution || undefined,
+          // Whatever the borrower called it. This used to hardcode "CheckingAccount" on the
+          // lump-sum path — a fact nobody stated, printed on a signed 1003 and exported to a
+          // lender as an account type. When they did not say, it stays unsaid.
+          type: r.type || undefined,
+          balance: num(r.balance) ?? undefined,
+        }))
+      : (num(lead?.liquid_assets) || num(n["liquid assets"]))
+        // Still no itemisation: keep the total but do NOT invent an account type for it.
+        ? [{ balance: num(lead?.liquid_assets) ?? num(n["liquid assets"]) }]
+        : [];
+
+  const liabilities: UrlaLiability[] = (seeded.liabilities && seeded.liabilities.length)
+    ? seeded.liabilities
+    : liabRows.length
+      ? liabRows.map((r) => ({
+          creditor: r.creditor || undefined, type: r.type || undefined,
+          monthlyPayment: num(r.monthlyPayment) ?? undefined, balance: num(r.balance) ?? undefined,
+        }))
+      // A stated TOTAL is not a tradeline, so it does not become a fabricated one-line
+      // schedule. It is carried so the back-end DTI stops pretending the borrower has no debts.
+      : num(raw.monthly_debt_payments)
+        ? [{ type: "Borrower-stated total monthly debt", monthlyPayment: num(raw.monthly_debt_payments)! }]
+        : [];
+
+  const reo: UrlaReo[] = (seeded.reo && seeded.reo.length)
+    ? seeded.reo
+    : reoRows.map((r) => ({
+        address: r.address || undefined,
+        presentValue: num(r.presentValue) ?? undefined,
+        mortgageBalance: num(r.mortgageBalance) ?? undefined,
+        monthlyMortgage: num(r.monthlyMortgage) ?? undefined,
+        monthlyRentalIncome: num(r.monthlyRentalIncome) ?? undefined,
+      }));
 
 /**
  * The two wizard checklists -> URLA Section 5. Each declaration is recorded explicitly:
@@ -525,8 +567,8 @@ function declFrom(raw: any, seeded?: UrlaDeclarations): Partial<UrlaDeclarations
     property,
     loan,
     assets,
-    liabilities: seeded.liabilities || [],
-    reo: seeded.reo || [],
+    liabilities,
+    reo,
     declarations,
     military,
     demographics,

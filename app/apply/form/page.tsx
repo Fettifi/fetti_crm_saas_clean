@@ -35,7 +35,15 @@ type Q =
   // would grow by fifteen unskippable steps and nobody would finish it on a phone. A checklist
   // keeps every declaration its OWN answer — the payload records each id explicitly as Yes or
   // No — while costing one tap when the honest answer is "none of these", which it usually is.
-  | { id: string; kind: "checklist"; prompt: string; sub?: string; options: Opt[]; noneLabel: string };
+  | { id: string; kind: "checklist"; prompt: string; sub?: string; options: Opt[]; noneLabel: string }
+  // REPEATING ENTRIES — URLA 2a assets, 2c liabilities, Section 3 real estate owned. These are
+  // multi-ROW tables on the paper form and they cannot be a single question: a borrower with
+  // three accounts and two rentals has five rows, not five screens. One screen, add a row at a
+  // time, and "none" is a real answer that records an empty schedule rather than an unasked one.
+  | { id: string; kind: "repeater"; prompt: string; sub?: string; addLabel: string; noneLabel: string;
+      fields: { key: string; label: string; numeric?: boolean; optional?: boolean }[];
+      // which field titles the row in the list, and which renders as its amount
+      titleKey: string; amountKey?: string };
 
 type Answers = Record<string, string>;
 
@@ -500,6 +508,46 @@ function appSteps(a: Answers): Q[] {
   }
   // Property (URLA §4)
   steps.push({ id: "property_address", kind: "address", prompt: "What's the property address?", sub: purchase ? "Already have one? We'll verify it. Still shopping? Just skip." : "The address we're financing. We'll verify it.", placeholder: "Property address", optional: true });
+  // ── URLA SECTIONS 2 AND 3: THE REPEATING SCHEDULES ──────────────────────────────────────
+  // Assets, liabilities and real estate owned are TABLES on the form. They lived only in the
+  // staff 1003 editor, so a borrower-completed application carried a single lump "liquid
+  // assets" figure that the assembler then stamped as type "CheckingAccount" — a fact nobody
+  // stated — and no liabilities or REO at all.
+  steps.push({ id: "asset_rows", kind: "repeater", titleKey: "institution", amountKey: "balance",
+    prompt: "Where is your money held?", addLabel: "Add an account",
+    noneLabel: "I'd rather not list accounts now",
+    sub: "Checking, savings, retirement, brokerage — whatever you'd use for the down payment, closing costs or reserves. Balances are verified from statements later; close is fine.",
+    fields: [
+      { key: "institution", label: "Bank or firm (e.g. Chase)" },
+      { key: "type", label: "Account type (checking, savings, 401k…)", optional: true },
+      { key: "balance", label: "Approximate balance ($)", numeric: true },
+    ] });
+  steps.push({ id: "liability_rows", kind: "repeater", titleKey: "creditor", amountKey: "monthlyPayment",
+    prompt: "What monthly debts do you carry?", addLabel: "Add a debt",
+    noneLabel: "None — or let the credit report show them",
+    sub: "Cards, car, student loans, personal loans. Skip rent and mortgage — those are captured elsewhere. Your credit report is what finally counts, so an estimate is fine.",
+    fields: [
+      { key: "creditor", label: "Who is it with (e.g. Capital One)" },
+      { key: "type", label: "Type (card, auto, student…)", optional: true },
+      { key: "monthlyPayment", label: "Monthly payment ($)", numeric: true },
+      { key: "balance", label: "Balance owed ($)", numeric: true, optional: true },
+    ] });
+  // The most common REO row is the borrower's OWN home when they own it — the wizard only ever
+  // asked about OTHER real estate, so an owner-occupant's own property never reached Section 3.
+  if (a.own_or_rent === "Own" || a.own_other_property === "yes" || a.goal === "refi") {
+    steps.push({ id: "reo_rows", kind: "repeater", titleKey: "address", amountKey: "presentValue",
+      prompt: "Which properties do you own?", addLabel: "Add a property",
+      noneLabel: "None to add",
+      sub: "Include the home you live in if you own it, and anything you rent out. The property you're financing here counts too.",
+      fields: [
+        { key: "address", label: "Property address" },
+        { key: "presentValue", label: "Estimated value ($)", numeric: true },
+        { key: "mortgageBalance", label: "Mortgage balance ($)", numeric: true, optional: true },
+        { key: "monthlyMortgage", label: "Monthly payment, taxes + insurance ($)", numeric: true, optional: true },
+        { key: "monthlyRentalIncome", label: "Monthly rent it brings in ($)", numeric: true, optional: true },
+      ] });
+  }
+
   // ── URLA SECTIONS THE WIZARD NEVER ASKED ────────────────────────────────────────────────
   // Until 2026-09-09 the borrower flow collected no home address (16 of 32 open files had
   // none, and lib/credit.ts REFUSES a credit order without one), no liabilities at all (28 of
@@ -854,6 +902,9 @@ export default function ApplyWizard() {
       current_address: a.current_address || undefined,
       months_at_address: a.months_at_address || undefined,
       monthly_debt_payments: a.monthly_debt_payments || undefined,
+      asset_rows: a.asset_rows || undefined,
+      liability_rows: a.liability_rows || undefined,
+      reo_rows: a.reo_rows || undefined,
       decl_financial: a.decl_financial || undefined,
       decl_property_events: a.decl_property_events || undefined,
       decl_bankruptcy_chapter: a.decl_bankruptcy_chapter || undefined,
@@ -1119,7 +1170,7 @@ export default function ApplyWizard() {
             <p className="text-xs text-emerald-700">Nice. You pre-qualify! A few quick details and your pre-approval is ready.</p>
           </div>
         )}
-        <QuestionView q={q} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.kind !== "checklist" && q.optional ? () => answerApp(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
+        <QuestionView q={q} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.kind !== "checklist" && q.kind !== "repeater" && q.optional ? () => answerApp(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
         {error && (
           <div className="mt-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
             <p className="text-sm text-red-600">{error}</p>
@@ -1136,7 +1187,7 @@ export default function ApplyWizard() {
   const displayQ = q.id === "goal" ? goalQ : q; // apply learned goal ordering
   return (
     <Shell pct={pct} onBack={i > 0 ? back : undefined}>
-      <QuestionView q={displayQ} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.kind !== "checklist" && q.optional ? () => answerFlow(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
+      <QuestionView q={displayQ} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.kind !== "checklist" && q.kind !== "repeater" && q.optional ? () => answerFlow(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
       {/* Goal is the funnel-entry screen — wizard-learn repeatedly flags goal-screen
           bounces as the top drop-off. An honest trust row (speed + no credit pull +
           human follow-up) reassures before the borrower commits to a goal, lifting
@@ -1189,6 +1240,58 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
     <>
       <h1 className="text-2xl font-bold">{q.prompt}</h1>
       {q.sub && <p className="text-slate-500 mt-1 text-sm">{q.sub}</p>}
+      {q.kind === "repeater" && (() => {
+        let rows: Record<string, string>[] = [];
+        try { rows = input ? JSON.parse(input) : []; } catch { rows = []; }
+        const draftKey = "__draft";
+        const draft: Record<string, string> = (rows as any)[draftKey] || {};
+        const setRows = (r: Record<string, string>[], d?: Record<string, string>) => {
+          const next: any = [...r]; if (d) next[draftKey] = d; setInput(JSON.stringify(next));
+        };
+        const setDraft = (k: string, v: string) => setRows(rows, { ...draft, [k]: v });
+        const ready = q.fields.filter((f) => !f.optional).every((f) => String(draft[f.key] || "").trim());
+        const commit = () => setRows([...rows, draft], {});
+        const money = (v: string) => (v ? `$${Number(String(v).replace(/[^0-9.]/g, "")).toLocaleString("en-US")}` : "");
+        return (
+          <div className="mt-5">
+            {rows.length > 0 && (
+              <div className="grid grid-cols-1 gap-2 mb-3">
+                {rows.map((r, i) => (
+                  <div key={i} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-medium truncate">{r[q.titleKey] || "(unnamed)"}</div>
+                      {q.amountKey && r[q.amountKey] && <div className="text-[12px] text-slate-500">{money(r[q.amountKey])}</div>}
+                    </div>
+                    <button aria-label="Remove" onClick={() => setRows(rows.filter((_, j) => j !== i), draft)}
+                      className="text-slate-400 hover:text-red-500 text-lg leading-none px-2 flex-none">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="bg-white border border-slate-200 rounded-xl p-3 grid grid-cols-1 gap-2">
+              {q.fields.map((f) => (
+                <input key={f.key} className={field} placeholder={f.label + (f.optional ? " (optional)" : "")}
+                  inputMode={f.numeric ? "decimal" : "text"} value={draft[f.key] || ""}
+                  onChange={(e) => setDraft(f.key, f.numeric ? e.target.value.replace(/[^0-9.]/g, "") : e.target.value)} />
+              ))}
+              <button disabled={!ready} onClick={commit}
+                className="bg-slate-900 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[14px] font-medium rounded-lg px-4 py-2.5 transition">
+                + {q.addLabel}
+              </button>
+            </div>
+            <button disabled={!rows.length} onClick={() => onAnswer(JSON.stringify(rows))}
+              className="mt-3 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 py-3 transition">
+              {rows.length ? `Continue with ${rows.length}` : "Continue"}
+            </button>
+            {/* "None" is an ANSWER — it records an EMPTY schedule, which is different from a
+                schedule nobody was ever asked for. assembleUrla keeps the two apart. */}
+            <button onClick={() => onAnswer("[]")}
+              className="mt-2 w-full bg-white border border-slate-300 hover:border-slate-400 rounded-xl px-4 py-2.5 text-slate-600 text-[14px] transition">
+              {q.noneLabel}
+            </button>
+          </div>
+        );
+      })()}
       {q.kind === "checklist" && (() => {
         const picked = input ? input.split(",").filter(Boolean) : [];
         const toggle = (v: string) => setInput((picked.includes(v) ? picked.filter((x) => x !== v) : [...picked, v]).join(","));
