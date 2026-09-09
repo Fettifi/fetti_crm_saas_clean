@@ -4,6 +4,7 @@
 // directly (that's why public submissions were being rejected). This is the
 // single front door for the website application form and the AI apply chat.
 import { NextRequest, NextResponse, after } from "next/server";
+import { AUTHORIZATION_VERSION, normalizeSignature, signatureAcceptable, type BorrowerAuthorizationRecord } from "@/lib/borrowerAuthorization";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
 import { encryptField } from "@/lib/crypto";
@@ -144,6 +145,40 @@ export async function POST(req: NextRequest) {
     // Stamp WHEN the 1003 was completed — the dashboard's "awaiting documents"
     // list sorts/ages on this (created_at misleads for merged returning leads).
     if ((body as any).app_completed === true) rawBody.app_completed_at = new Date().toISOString();
+
+    // ── THE BORROWER'S CERTIFICATION AND AUTHORIZATION ────────────────────────────────────
+    //
+    // Enforced HERE, not in the wizard. The wizard step is the borrower's experience; this is
+    // the control. A completed 1003 without a valid signature is REFUSED — 422, nothing
+    // written — because a half-saved application that looks complete is how a file reaches
+    // underwriting with no authorization behind it, which is exactly what happened before
+    // 2026-09-09 (34 files, 2 authorizations, both obtained by hand).
+    //
+    // IP and user-agent are stamped from the REQUEST, never from the body: a client-supplied
+    // IP is not evidence of anything.
+    if ((body as any).app_completed === true) {
+      const sub = (body as any).borrower_authorization;
+      const signedName = normalizeSignature(sub?.signedName);
+      const chk = signatureAcceptable(signedName, full_name);
+      if (!chk.ok) {
+        return NextResponse.json(
+          { error: chk.reason || "A signed Borrower's Certification and Authorization is required to submit an application.",
+            code: "authorization_required" },
+          { status: 422 },
+        );
+      }
+      const rec: BorrowerAuthorizationRecord = {
+        version: String(sub?.version || AUTHORIZATION_VERSION),
+        signedName,
+        // The server's clock, not the browser's — a signing time a client can set is not a record.
+        signedAt: new Date().toISOString(),
+        ip: (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || null,
+        userAgent: req.headers.get("user-agent") || null,
+        borrower: 1,
+      };
+      rawBody.borrower_authorization = rec;
+      rawBody.borrower_authorization_at = rec.signedAt;
+    }
 
     const row: Record<string, unknown> = {
       full_name,

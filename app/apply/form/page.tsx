@@ -12,6 +12,7 @@
 // investment loan. That drives product selection AND licensing (investment /
 // business loans are available in all 50 states; owner-occupied only FL/MI/CA).
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AUTHORIZATION_TITLE, AUTHORIZATION_TEXT, ESIGN_CONSENT_TEXT, AUTHORIZATION_VERSION, signatureAcceptable } from "@/lib/borrowerAuthorization";
 import Link from "next/link";
 import { CheckCircle2, ArrowLeft, ShieldCheck, Lightbulb } from "lucide-react";
 import { LICENSING_SHORT } from "@/lib/legal";
@@ -26,7 +27,10 @@ import CurrencyInput from "@/components/ui/CurrencyInput";
 type Opt = { value: string; label: string; emoji?: string; hint?: string };
 type Q =
   | { id: string; kind: "select"; prompt: string; sub?: string; options: Opt[] }
-  | { id: string; kind: "number" | "text" | "date" | "address"; prompt: string; sub?: string; placeholder?: string; optional?: boolean };
+  | { id: string; kind: "number" | "text" | "date" | "address"; prompt: string; sub?: string; placeholder?: string; optional?: boolean }
+  // The Borrower's Certification and Authorization. NEVER `optional` — an application cannot
+  // be submitted without it, which is the entire point of adding it.
+  | { id: string; kind: "authorization"; prompt: string; sub?: string };
 
 type Answers = Record<string, string>;
 
@@ -491,6 +495,12 @@ function appSteps(a: Answers): Q[] {
   }
   // Property (URLA §4)
   steps.push({ id: "property_address", kind: "address", prompt: "What's the property address?", sub: purchase ? "Already have one? We'll verify it. Still shopping? Just skip." : "The address we're financing. We'll verify it.", placeholder: "Property address", optional: true });
+  // LAST, AND NOT OPTIONAL. Every application ends here: the borrower reads the certification
+  // and authorization and signs it before the 1003 is submitted. Declining to pull credit today
+  // is a statement about timing; it is not the authorization to pull it tomorrow.
+  steps.push({ id: "borrower_authorization", kind: "authorization",
+    prompt: "One last thing — your authorization",
+    sub: "We need this before we can order your credit report or verify anything on your behalf." });
   return steps;
 }
 
@@ -857,7 +867,16 @@ export default function ApplyWizard() {
     try {
       // hp (honeypot) was already judged on POST #1 — re-sending a stale autofill
       // value here could quarantine the COMPLETED 1003. Send it once, never again.
-      const j = await post({ ...buildPayload(finalAnswers, contact), hp: undefined, app_completed: true });
+      // THE AUTHORIZATION TRAVELS WITH THE COMPLETED 1003. The server re-validates it and
+      // refuses the submission without it — this client-side step is the borrower's experience,
+      // not the enforcement.
+      const signed = String(finalAnswers.borrower_authorization || "").trim();
+      const j = await post({
+        ...buildPayload(finalAnswers, contact), hp: undefined, app_completed: true,
+        borrower_authorization: signed
+          ? { version: AUTHORIZATION_VERSION, signedName: signed, signedAt: new Date().toISOString() }
+          : undefined,
+      });
       if (j.file_link) setFileLink(j.file_link); // returning borrowers get the upload CTA too
       trackApplication(finalAnswers.loan_amount_requested ? Number(finalAnswers.loan_amount_requested) : undefined); // completed-1003 conversion
       track("complete", { phase: "app", goal: finalAnswers.goal, occupancy: effectiveOccupancy(finalAnswers), product: product(finalAnswers) });
@@ -925,7 +944,7 @@ export default function ApplyWizard() {
     return (
       <Shell pct={pct} onBack={back}>
         <h1 className="text-2xl font-bold">{carried ? `Let's finish it${prefill?.first_name ? `, ${prefill.first_name}` : ""} 👋` : prefill ? `Welcome back${prefill.first_name ? `, ${prefill.first_name}` : ""} 👋` : matched ? `Your ${matched} match is ready` : "Where should we send your options?"}</h1>
-        <p className="text-slate-500 mt-1 text-sm">{carried ? "We carried over what you just entered — confirm it and keep going. No impact to your credit." : prefill ? "We saved everything — confirm your info and keep going. No impact to your credit." : matched ? "Confirm your info and I'll pull your real numbers. No impact to your credit." : "No impact to your credit. A real specialist follows up fast."}</p>
+        <p className="text-slate-500 mt-1 text-sm">{carried ? "We carried over what you just entered — confirm it and keep going. No credit pull to see your options." : prefill ? "We saved everything — confirm your info and keep going. No credit pull to see your options." : matched ? "Confirm your info and I'll pull your real numbers. No credit pull to see your options." : "No credit pull to see your options. A real specialist follows up fast."}</p>
         <CediBubble size={48} className="mt-4">{carried ? "Already got your details — just check them and we keep rolling. 😎" : prefill ? "I kept your file warm. One click and we pick up right where we left off. 😎" : matched ? `Nice — you line up for a ${matched}. Drop your info and I'll get it moving. 😎` : "Almost there. Drop your info and I'll get your options moving. 😎"}</CediBubble>
         <form key={prefill ? "prefilled" : "blank"} onSubmit={submitContact} className="space-y-3 mt-5">
           <input type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: "absolute", left: "-9999px" }} />
@@ -1001,7 +1020,7 @@ export default function ApplyWizard() {
             <p className="text-xs text-emerald-700">Nice. You pre-qualify! A few quick details and your pre-approval is ready.</p>
           </div>
         )}
-        <QuestionView q={q} input={input} setInput={setInput} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerApp(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
+        <QuestionView q={q} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.optional ? () => answerApp(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
         {error && (
           <div className="mt-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
             <p className="text-sm text-red-600">{error}</p>
@@ -1018,7 +1037,7 @@ export default function ApplyWizard() {
   const displayQ = q.id === "goal" ? goalQ : q; // apply learned goal ordering
   return (
     <Shell pct={pct} onBack={i > 0 ? back : undefined}>
-      <QuestionView q={displayQ} input={input} setInput={setInput} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.optional ? () => answerFlow(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
+      <QuestionView q={displayQ} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerFlow(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.optional ? () => answerFlow(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
       {/* Goal is the funnel-entry screen — wizard-learn repeatedly flags goal-screen
           bounces as the top drop-off. An honest trust row (speed + no credit pull +
           human follow-up) reassures before the borrower commits to a goal, lifting
@@ -1064,13 +1083,43 @@ function dobISO(v?: string): string | undefined {
   return `${m[3]}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
 }
 
-function QuestionView({ q, input, setInput, onAnswer, onSkip }: {
-  q: Q; input: string; setInput: (v: string) => void; onAnswer: (v: string) => void; onSkip?: () => void;
+function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
+  q: Q; input: string; setInput: (v: string) => void; onAnswer: (v: string) => void; onSkip?: () => void; applicantName?: string | null;
 }) {
   return (
     <>
       <h1 className="text-2xl font-bold">{q.prompt}</h1>
       {q.sub && <p className="text-slate-500 mt-1 text-sm">{q.sub}</p>}
+      {q.kind === "authorization" && (() => {
+        const v = signatureAcceptable(input, applicantName);
+        return (
+          <div className="mt-5">
+            {/* The full text, scrollable and SELECTABLE. A borrower must be able to read and
+                copy what they are signing; a summary with a "view terms" link is not consent. */}
+            <div className="max-h-64 overflow-y-auto overscroll-contain bg-slate-50 border border-slate-200 rounded-xl p-4 text-[12.5px] leading-relaxed text-slate-700 whitespace-pre-wrap">
+              <div className="font-semibold text-slate-900 mb-2">{AUTHORIZATION_TITLE}</div>
+              {AUTHORIZATION_TEXT}
+            </div>
+            <p className="text-[11.5px] text-slate-500 mt-3 leading-relaxed">{ESIGN_CONSENT_TEXT}</p>
+            <input
+              className={field + " mt-3"}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type your full legal name to sign"
+              autoComplete="off"
+              aria-label="Type your full legal name to sign"
+            />
+            {input && !v.ok && <p className="text-[12px] text-amber-700 mt-1.5">{v.reason}</p>}
+            <button
+              disabled={!v.ok}
+              onClick={() => onAnswer(input.replace(/\s+/g, " ").trim())}
+              className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 py-3 transition">
+              Sign and submit my application
+            </button>
+            <p className="text-[11px] text-slate-400 mt-2">Version {AUTHORIZATION_VERSION} · a copy is saved to your file and available on request.</p>
+          </div>
+        );
+      })()}
       {q.kind === "select" && (
         <div className="grid grid-cols-1 gap-2.5 mt-5">
           {q.options.map((o) => (

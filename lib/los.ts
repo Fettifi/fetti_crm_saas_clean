@@ -93,6 +93,12 @@ export function docChecklistFor(product?: string, occupancy?: string, employment
   const isPurchase = !isRefi && (p.includes("purchase") || p.includes("buy") || /(flip|fix)/.test(p));
 
   const base: Doc[] = [
+    // FIRST ON EVERY FILE, EVERY PRODUCT. Before 2026-09-09 no file had one: the application
+    // captured a TCPA contact consent and nothing that authorized a credit report, an
+    // employment or deposit verification, or release to a lender. Only two of 34 files carried
+    // a signed credit authorization, both obtained by hand. It is required on every product
+    // because every product needs credit and verifications — there is no file this is optional on.
+    { name: "Borrower's Certification and Authorization", category: "Identity", required: true },
     { name: "Government-issued photo ID", category: "Identity", required: true },
     { name: "Bank statements — last 2 months", category: "Assets", required: true },
   ];

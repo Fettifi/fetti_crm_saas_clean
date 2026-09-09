@@ -103,6 +103,18 @@ FAILED=""
 # opens, crashes, closes on a keypress, and the CRM's Scan buttons just see a dead port. Walks
 # the real import graph, and checks the double-clickable .command files too — a correct
 # package.json does not help if the launcher beside it still runs plain tsx.
+# No application may be submitted without a signed Borrower's Certification and Authorization.
+# Before 2026-09-09 the apply flow captured a TCPA contact consent and nothing else: 34 files,
+# 2 authorizations, both obtained by hand. This blocks the item being dropped from the base
+# checklist, made optional, skippable in the wizard, or unenforced at the API.
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:borrower-auth"
+  OUT=$(npm run --silent verify:borrower-authorization 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:borrower-authorization"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$ANYTS" ] || printf '%s\n' "$CHANGED" | grep -q '^package\.json$'; then
   printf "   %-24s " "verify:script-conditions"
   OUT=$(npm run --silent verify:script-conditions 2>&1)
