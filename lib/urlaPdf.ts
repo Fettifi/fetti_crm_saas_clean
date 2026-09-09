@@ -159,7 +159,12 @@ export async function buildUrlaPdf(u: Urla, loanFile?: any): Promise<Uint8Array>
   subhead("1d. IF APPLICABLE, Complete Information for Previous Employment/Self-Employment and Income");
   row([{ label: "Employer or Business Name", value: "", w: CW * 0.6 }, { label: "Previous Gross Monthly Income ($)", value: "", w: CW * 0.4 }]);
   subhead("1e. Income from Other Sources");
-  row([{ label: "Income Source (e.g., rental, retirement, child support)", value: p.expectedMonthlyRentalIncome ? "Subject property rental income" : "", w: CW * 0.65 }, { label: "Monthly Income ($)", value: money(p.expectedMonthlyRentalIncome), w: CW * 0.35 }]);
+  // THE SUBJECT'S RENT USED TO PRINT HERE **AND** IN 4c ON THE SAME SIGNED PAGE — the same
+  // figure, under two different headings, reading as two separate income streams. 1e is
+  // "Income from Other Sources", which on this form means income that is NOT the subject
+  // property's rent; 4c is where the subject's rent belongs and it still prints there.
+  // 1e now renders the borrower's actual other income, from the source they gave.
+  row([{ label: "Income Source (e.g., rental, retirement, child support)", value: (u.borrowers?.[0]?.income?.other ? (u.borrowers[0].income as any).otherSource || "Other" : ""), w: CW * 0.65 }, { label: "Monthly Income ($)", value: money(u.borrowers?.[0]?.income?.other), w: CW * 0.35 }]);
   gap();
 
   // ================= SECTION 2 =================

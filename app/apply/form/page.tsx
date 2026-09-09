@@ -763,6 +763,13 @@ export default function ApplyWizard() {
       job_title: a.job_title || undefined,
       years_employed: a.years_employed || undefined,
       own_or_rent: a.own_or_rent || undefined,
+      // COLLECTED, THEN DISCARDED. These were asked, written into the notes STRING, and never
+      // sent as discrete keys — present on 0 of 17 wizard leads — which is why assembleUrla had
+      // to regex-parse prose to recover them, and why other income vanished entirely.
+      housing_payment: a.housing_payment || undefined,
+      years_at_address: a.years_at_address || undefined,
+      monthly_income: a.monthly_income || undefined,
+      other_income: a.other_income || undefined,
       // Co-borrower (URLA borrower #2) — discrete fields, gated on the explicit
       // "yes" so a Back-and-switch to "just me" never sends stale co_* answers.
       // co_ssn is encrypted server-side exactly like the primary's; never in notes.

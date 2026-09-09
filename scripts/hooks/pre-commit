@@ -107,6 +107,18 @@ FAILED=""
 # Before 2026-09-09 the apply flow captured a TCPA contact consent and nothing else: 34 files,
 # 2 authorizations, both obtained by hand. This blocks the item being dropped from the base
 # checklist, made optional, skippable in the wizard, or unenforced at the API.
+# The 1003 must not state a fact nobody gave, nor discard one they did. Borrower 1's employment
+# was read from the seeded 1003 only, so 10 of 32 open files exported base WAGES to lenders
+# flagged as non-employment income; an "under 2 years" bucket became a precise 12 months in the
+# MISMO file; and the subject's rent printed twice on one signed page as two income streams.
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:urla-fidelity"
+  OUT=$(npm run --silent verify:urla-fidelity 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:urla-fidelity"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$ANYTS" ]; then
   printf "   %-24s " "verify:borrower-auth"
   OUT=$(npm run --silent verify:borrower-authorization 2>&1)

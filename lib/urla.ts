@@ -276,9 +276,46 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     currentAddress: seededBorrower.currentAddress || undefined,
     housingStatus: seededBorrower.housingStatus || (n["owns/rents"] ? (/(own)/i.test(n["owns/rents"]) ? "Own" : "Rent") : undefined),
     monthlyHousingExpense: seededBorrower.monthlyHousingExpense ?? num(n["current housing pmt"]),
-    yearsAtAddress: seededBorrower.yearsAtAddress ?? (n["yrs at address"] && /(<\s*2|less)/.test(n["yrs at address"]) ? 1 : num(n["yrs at address"])),
-    employment: seededBorrower.employment || undefined,
-    income: seededBorrower.income || (num(lead?.income) ? { total: num(lead?.income) } : undefined),
+    // A BUCKET IS NOT A MEASUREMENT. This read "<2" and returned 1, which lib/mismo.ts then
+    // exported as BorrowerResidencyDurationMonthsCount = 12 — a precise-looking twelve months
+    // manufactured out of a two-option answer and sent to a lender. Under two years is now
+    // recorded as under two years: months_at_address when the borrower gave it, otherwise
+    // nothing. urlaCompleteness reports the gap instead of the form inventing a number.
+    yearsAtAddress: seededBorrower.yearsAtAddress
+      ?? (num(raw.months_at_address) ? Number((num(raw.months_at_address)! / 12).toFixed(2)) : undefined)
+      // Discrete key FIRST (the wizard now sends it), notes blob only as the legacy fallback.
+      // Either way a "<2" bucket resolves to undefined rather than a manufactured 1.
+      ?? (/(<\s*2|less)/.test(String(raw.years_at_address || "")) ? undefined : num(raw.years_at_address))
+      ?? (n["yrs at address"] && /(<\s*2|less)/.test(n["yrs at address"]) ? undefined : num(n["yrs at address"])),
+    // BORROWER 1 WAS THE ONLY ONE WHOSE JOB WAS THROWN AWAY. This was seeded-only, so the
+    // employer / title / status the wizard already collects (present in raw on 10 of 17 wizard
+    // leads) never reached the 1003 — while the CO-borrower's employment IS built from
+    // raw.co_employer below. The cost was not cosmetic: lib/mismo.ts:234 emits
+    // EmploymentIncomeIndicator = bool(isEmp && hasEmployer), so with no employer the
+    // borrower's BASE WAGES exported to a wholesale lender flagged as NON-employment income.
+    employment: seededBorrower.employment || (() => {
+      const name = raw.employer || lead?.employer || undefined;
+      const status = String(raw.employment_status || "");
+      const selfEmp = /self|1099|contract|business owner/i.test(status) || undefined;
+      if (!name && !status) return undefined;
+      return {
+        employerName: name,
+        position: raw.job_title || undefined,
+        selfEmployed: selfEmp,
+        // years_employed is the same two-option bucket; do NOT convert it to a number here.
+        // lib/mismo.ts multiplies yearsInLineOfWork into a months count, and inventing "24
+        // months" from "2+" is the identical fabrication this block just removed above.
+      };
+    })(),
+    income: seededBorrower.income || (() => {
+      const base = num(lead?.income) ?? num(raw.monthly_income);
+      const other = num(raw.other_income) ?? num(n["other monthly income"]);
+      if (base == null && other == null) return undefined;
+      // Keep base and other DISTINCT and make total their sum. Reporting total = base while
+      // also printing an "Other" row is how the printed 1003 and the MISMO file end up
+      // disagreeing with each other on the same page.
+      return { base: base ?? undefined, other: other ?? undefined, total: (base ?? 0) + (other ?? 0) };
+    })(),
   };
 
   // Co-borrower(s): every borrower PAST the first comes straight from the structured
@@ -304,8 +341,13 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
       citizenship: raw.co_citizenship || undefined,
       email: raw.co_email || undefined,
       cellPhone: raw.co_phone || undefined,
-      // "Lives with you" = the primary's current address once the LO fills it in.
-      currentAddress: undefined,
+      // This branch only runs when the structured 1003 has NO co-borrower, so there is nothing
+      // seeded to preserve — but "lives with you" is an answer the wizard already collects and
+      // it was being discarded. Inherit the primary's address when they share one; otherwise
+      // leave it genuinely unknown rather than silently blank.
+      currentAddress: /^y/i.test(String(raw.co_lives_together || ""))
+        ? seededBorrower.currentAddress || undefined
+        : undefined,
       employment: (raw.co_employer || raw.co_employment_status)
         ? { employerName: raw.co_employer || undefined, selfEmployed: /self/i.test(String(raw.co_employment_status || "")) || undefined }
         : undefined,
