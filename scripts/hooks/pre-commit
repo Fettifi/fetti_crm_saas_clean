@@ -98,6 +98,19 @@ FAILED=""
 # Runs first alongside the guard-of-guards: a commit that cannot BUILD makes every check below
 # it academic. Compares imports against `git ls-files`, which is the only thing on this machine
 # that knows the difference between a file I have and a file I shipped.
+# A script that reaches `import "server-only"` and is launched with plain `npx tsx` dies the
+# instant it starts. The Fetti scan agent was dead this way and nobody knew: the launcher window
+# opens, crashes, closes on a keypress, and the CRM's Scan buttons just see a dead port. Walks
+# the real import graph, and checks the double-clickable .command files too — a correct
+# package.json does not help if the launcher beside it still runs plain tsx.
+if [ -n "$ANYTS" ] || printf '%s\n' "$CHANGED" | grep -q '^package\.json$'; then
+  printf "   %-24s " "verify:script-conditions"
+  OUT=$(npm run --silent verify:script-conditions 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:script-conditions"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$ANYTS" ]; then
   printf "   %-24s " "verify:tracked-imports"
   OUT=$(npm run --silent verify:tracked-imports 2>&1)
