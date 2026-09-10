@@ -46,6 +46,13 @@ export const CRON_EXPECTED: Record<string, number> = {
   // day one — a watchdog that dies silently is worse than no watchdog, because the
   // quiet then reads as "no stalled files" instead of "nobody is looking".
   "stale-files": 26 * 3600,      // daily
+  // Carrier-ledger reconciliation. Scheduled 2026-08-02, UNWATCHED until 2026-09-09: it had been
+  // stamping both an attempt and a heartbeat every day for five weeks and nothing read either row,
+  // because a job absent from THIS map is never evaluated by computeContinuity. It is the control
+  // that compares Twilio's message ledger to ours, so the unwatched job was the compliance
+  // watchdog — the sentence three entries up, applied to itself. verify:cron-watched now fails the
+  // build on any scheduled job that is missing here, in either direction.
+  "comms-reconcile": 26 * 3600,  // daily
 };
 
 // Per-job rows: each cron stamps ONLY its own key, so there is no shared cell to

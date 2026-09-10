@@ -101,7 +101,8 @@
     "verify:rsvp-text": "tsx scripts/verify-rsvp-text.ts",
     "rsvp:kit": "tsx scripts/make-rsvp-qr-kit.ts",
     "verify:flag-action": "tsx scripts/verify-income-flag-action.ts",
-    "verify:income-method": "tsx scripts/verify-income-method.ts"
+    "verify:income-method": "tsx scripts/verify-income-method.ts",
+    "verify:cron-watched": "tsx scripts/verify-cron-watched.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

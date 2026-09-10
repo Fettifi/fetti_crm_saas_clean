@@ -74,6 +74,12 @@ GOV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/governor' -e 'lib/conversationG
 # all of them read the DISK. Vercel only has what git has, so every production build died at
 # "Module not found" and three fixes reached nobody for hours. 0.6s, so it runs on any TS commit.
 ANYTS=$(printf '%s\n' "$CHANGED" | grep -E '\.(ts|tsx)$')
+# A SCHEDULED JOB NOBODY WATCHES. `comms-reconcile` was scheduled 2026-08-02 and absent from
+# CRON_EXPECTED until 2026-09-09 — five weeks stamping a heartbeat and an attempt that nothing
+# read, because computeContinuity only iterates that map. It is the Twilio-ledger reconciliation,
+# so the unwatched job was the compliance control. Three earlier sweeps found this class BY HAND
+# (07-26, 07-29, 09-09); the fourth is a gate. Offline, no database, ~0.5s.
+CRON=$(printf '%s\n' "$CHANGED" | grep -F -e 'vercel.json' -e 'lib/heartbeat.ts' -e 'lib/doctor.ts' -e 'app/api/cron/' -e 'verify-cron-watched')
 # WHO IS STILL LIVE. `status` is the Reg B disposition and stays "active" through funding;
 # `stage` is where the file actually is. Five places asked only `status`, so a stage="Closed"
 # file counted as live everywhere — and the bulk document chaser would have emailed AND texted
@@ -132,6 +138,14 @@ if [ -n "$ANYTS" ] || printf '%s\n' "$CHANGED" | grep -q '^package\.json$'; then
   OUT=$(npm run --silent verify:script-conditions 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:script-conditions"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+if [ -n "$CRON" ]; then
+  printf "   %-24s " "verify:cron-watched"
+  OUT=$(npm run --silent verify:cron-watched 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:cron-watched"; printf '%s\n' "$OUT" | grep -v 'Supabase Admin' | sed 's/^/      /'
   fi
 fi
 
