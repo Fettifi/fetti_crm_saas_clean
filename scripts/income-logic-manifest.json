@@ -1,6 +1,6 @@
 {
   "logicVersion": "2026-09-06-one-person-one-social-security-payment",
-  "pinnedAt": "2026-09-07T06:07:17.575Z",
+  "pinnedAt": "2026-09-10T16:37:07.877Z",
   "files": {
     "app/api/los/files/[id]/verify-income/route.ts": "e93ade4ab9649c74",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
@@ -9,6 +9,7 @@
     "lib/income/combineBankStatement.ts": "43f917108941029d",
     "lib/income/contested.ts": "4bef5f41ecf107eb",
     "lib/income/docFacts.ts": "b709fb780486a6c6",
+    "lib/income/driftGate.ts": "713bc089f3b5ad02",
     "lib/income/overrideExemplars.ts": "d33ed7c3fa074035",
     "lib/income/programs.ts": "3ef831cba44f1919",
     "lib/income/readDocument.ts": "e0380964e130461f",
@@ -42,6 +43,15 @@
       "reason": "Excludes credit-card statements from the income read by CONTENT (lib/docContent looksLikeCreditCardStatement). Measured over the live corpus: it rejects exactly 4 documents, all Chase card statements on FF-202609-7039 (Tylor Stone), which has NO cached income. Across all 12 files that DO have a cached number, 106 candidate PDFs were read and zero are excluded, so no shipped number can move. A global LOGIC_VERSION bump would re-roll all 12 settled files through a non-deterministic read to fix a file that has no number yet.",
       "files": [
         "app/api/los/files/[id]/verify-income/route.ts"
+      ]
+    },
+    {
+      "at": "2026-09-10T16:37:07.877Z",
+      "logicVersion": "2026-09-06-one-person-one-social-security-payment",
+      "reason": "Adds lib/income/driftGate.ts, a READ-ONLY issuance gate, and changes no math. Measured 2026-09-10: (1) reachability — the module is imported by exactly two places, app/api/preapprovals/route.ts and its own guard scripts/verify-income-drift-gate.ts; it is referenced by neither app/api/los/files/[id]/verify-income/route.ts nor lib/income/docFacts.ts, so nothing on the path that computes a borrower's number can reach it. (2) direction — it only CONSUMES computeQualifyingIncome to re-derive a comparison figure from already-stored factsUsed; it defines no rule, mutates no fact and writes no cache. (3) outcome — verify:income-engine-diff on the live corpus reports 'same' for all 11 files it can replay (13580, 4874, 18563, 8627, 20653, 8923, 11784, 19753, 10414, 0, 5667) and the bank-statement modules behind the 12th are byte-unchanged. Bumping LOGIC_VERSION would invalidate all 12 cached numbers and force a fresh non-deterministic AI re-read on every open file to deliver a gate that changes no number — the Asia Dearman trade ($5,102 -> $8,645 on an unasked-for re-roll) for zero benefit.",
+      "files": [
+        "lib/income/driftGate.ts",
+        "+lib/income/driftGate.ts"
       ]
     }
   ]

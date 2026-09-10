@@ -9,6 +9,7 @@ import { setSetting } from "@/lib/settings";
 import { PA_LETTER_KEYS, PA_INTERNAL_KEYS } from "@/lib/preapprovalFields";
 import { assertIndividualNmls, CompanyNmlsInOfficerFieldError } from "@/lib/officerIdentity";
 import { incomeContestedState, contestedRefusal } from "@/lib/income/contested";
+import { incomeDriftState, driftRefusal } from "@/lib/income/driftGate";
 
 // Term-sheet fields the preapprovals table has no column for, persisted in app_settings keyed by
 // letter id. TWO keys, deliberately:
@@ -93,6 +94,44 @@ export async function POST(req: NextRequest) {
             monthlyIncome: state.monthlyIncome,
             findings: state.findings,
             reason: ackReason || state.acknowledgedReason || "(acknowledged on the income screen)",
+          },
+        }).catch(() => {});
+      }
+
+      // AND NEITHER DOES A NUMBER THE ENGINE NO LONGER REPRODUCES.
+      //
+      // Independent of the QC dispute above: `verify:income-replay` reports files whose stored
+      // figure does not survive a replay of their own facts, and then declines to fail the build
+      // for the ones that simply predate the current LOGIC_VERSION — printing "until then they
+      // are unguarded" to a terminal nobody reads at issuance time. That advisory becomes a gate
+      // here. See lib/income/driftGate.ts for why this checks DRIFT and not age, and for the
+      // methods it deliberately refuses to judge.
+      //
+      // Checked BEFORE the row, the PDF and the emails, for the same reason the contested gate
+      // is: all three are irreversible from the borrower's side once sent.
+      const dstate = await incomeDriftState(String(b.loan_file_id));
+      const driftAck = typeof b.drift_ack === "string" ? b.drift_ack.trim() : "";
+      if (dstate.drifted && !driftAck) {
+        return NextResponse.json(
+          {
+            error: driftRefusal(dstate),
+            code: "income_stale",
+            shipped: dstate.shipped,
+            recomputed: dstate.recomputed,
+          },
+          { status: 409 },
+        );
+      }
+      if (dstate.drifted) {
+        await logActivity({
+          entity_type: "loan_file", entity_id: String(b.loan_file_id), loan_file_id: String(b.loan_file_id),
+          actor: "loan_officer", action: "income.stale_override",
+          detail: {
+            borrower: String(b.borrower_name).trim(),
+            shipped: dstate.shipped,
+            recomputed: dstate.recomputed,
+            method: dstate.method,
+            reason: driftAck,
           },
         }).catch(() => {});
       }
