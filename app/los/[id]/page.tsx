@@ -14,6 +14,7 @@ import DeleteConfirm from "@/components/DeleteConfirm";
 import ConditionsImporter from "@/components/los/ConditionsImporter";
 import IncomeQualifier from "@/components/los/IncomeQualifier";
 import CardAuthPanel from "@/components/los/CardAuthPanel";
+import PortfolioPanel from "@/components/los/PortfolioPanel";
 import ScanDialog from "@/components/ScanDialog";
 import { isBusinessCreditDeal } from "@/lib/bizProduct";
 
@@ -1070,6 +1071,9 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
         {/* Income & qualification — the income calc embedded in the file, prefilled from the 1003 */}
         {mismo?.metrics && <IncomeQualifier key={id} metrics={mismo.metrics} loan={mismo.urla?.loan} fileId={id} borrowerEmail={file.email} />}
         <CardAuthPanel fileId={id} />
+
+        {/* The property SET behind this file — see components/los/PortfolioPanel.tsx */}
+        <PortfolioPanel fileId={id} />
 
         {/* AI Deal Screen (Relip-style triage + lender match) */}
         <div className="bg-gradient-to-br from-emerald-950/40 to-slate-900/40 border border-emerald-800/40 rounded-2xl p-5 mt-4">
