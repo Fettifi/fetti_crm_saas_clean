@@ -191,7 +191,16 @@ export function addProperty(
     units: num(input.units),
     price: num(input.price),
     rent_monthly: num(input.rent_monthly),
-    back_tax_status: "unknown",
+    // Carry the whole numeric set, not a subset. These are exactly the inputs underwritePortfolio()
+    // needs, so a property added here can be screened without re-keying it — and an import that
+    // silently dropped taxes and rehab would look complete while being useless to the engine.
+    taxes_annual: num(input.taxes_annual),
+    insurance_annual: num(input.insurance_annual),
+    hoa_monthly: num(input.hoa_monthly),
+    rehab_budget: num(input.rehab_budget),
+    arv: num(input.arv),
+    back_tax_status: input.back_tax_status === "clear" || input.back_tax_status === "owed" ? input.back_tax_status : "unknown",
+    back_tax_amount: num(input.back_tax_amount),
     status, occupancy,
     contract_price: num(input.contract_price),
     requested_loan: num(input.requested_loan),

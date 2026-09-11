@@ -98,5 +98,23 @@ console.log("\n── lib/losPortfolio guard ───────────�
   ok("an unknown property id is refused", isFail(updateProperty(p, "nope", { price: 1 }, NOW)));
 }
 
+// 6. An import must be FAITHFUL. A property added without its taxes/rehab/ARV looks complete on
+//    screen and is useless to underwritePortfolio(), which is the whole reason for carrying them.
+{
+  let p = emptyPortfolio("f8", "Fidelity", NOW);
+  p = add(p, { address: "1 Full St", price: 100000, rent_monthly: 1200, taxes_annual: 2400,
+               insurance_annual: 900, rehab_budget: 35000, arv: 180000, back_tax_status: "owed",
+               back_tax_amount: 1500, hoa_monthly: 50 });
+  const x = p.properties[0];
+  ok("taxes_annual survives the add", x.taxes_annual === 2400, String(x.taxes_annual));
+  ok("insurance_annual survives", x.insurance_annual === 900, String(x.insurance_annual));
+  ok("rehab_budget survives", x.rehab_budget === 35000, String(x.rehab_budget));
+  ok("arv survives", x.arv === 180000, String(x.arv));
+  ok("hoa_monthly survives", x.hoa_monthly === 50, String(x.hoa_monthly));
+  ok("back_tax_status/amount survive", x.back_tax_status === "owed" && x.back_tax_amount === 1500);
+  ok("a bogus back_tax_status falls back to unknown",
+     (() => { const q = add(emptyPortfolio("f9","B",NOW), { address: "2 Bad St", back_tax_status: "nonsense" as never }); return q.properties[0].back_tax_status === "unknown"; })());
+}
+
 console.log(`\n${failures === 0 ? "   all guards passed" : `   ${failures} FAILURE(S)`}\n`);
 process.exit(failures === 0 ? 0 : 1);
