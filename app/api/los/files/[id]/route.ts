@@ -190,6 +190,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!v) return NextResponse.json({ error: `occupancy must be one of ${OCC.join(", ")}` }, { status: 400 });
       patch.occupancy = v;
     }
+    // state and property_address, same gap as occupancy: written at creation, never correctable.
+    // state is not cosmetic — it decides which licence a file needs and which state's rules apply,
+    // and lib/los.ts routes off it. Validated against the real 50 + DC so a typo cannot land a file
+    // in a state that does not exist.
+    if (typeof body.state === "string") {
+      const US = ["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
+      const st = body.state.trim().toUpperCase();
+      if (!US.includes(st)) return NextResponse.json({ error: `state must be a two-letter US state or DC — got "${body.state}"` }, { status: 400 });
+      patch.state = st;
+    }
+    if (typeof body.property_address === "string") {
+      const a = body.property_address.trim().replace(/\s+/g, " ").slice(0, 200);
+      if (!a) return NextResponse.json({ error: "property_address cannot be blank" }, { status: 400 });
+      patch.property_address = a;
+    }
     if (Array.isArray(body.compliance)) patch.compliance = body.compliance;
 
     // Capture the prior stage so we fire the funded conversion only on the FIRST
