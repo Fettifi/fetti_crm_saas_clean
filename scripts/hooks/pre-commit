@@ -384,6 +384,17 @@ if [ -n "$WATCHED" ] && [ -f .env.local ]; then
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:income-method"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
+  # The replay corpus cannot cover a file whose number is still PENDING a re-read, and the file
+  # this guard was written for (Lucki Long, FF-202608-2047) is exactly that: the LOGIC_VERSION
+  # bump that carried her correction also excluded her from the snapshot until an LO re-verifies
+  # her in the LOS. So for as long as it matters most, replay asserts NOTHING about her. This
+  # guard replays her stored facts directly, and Merwin Bachiller's alongside, so the fix is held
+  # from both sides in the meantime.
+  printf "   %-18s " "verify:stub-variability"
+  OUT=$(npm run --silent verify:stub-variability 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:stub-variability"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
   printf "   %-18s " "verify:income-replay"
   OUT=$(npm run --silent verify:income-replay 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
