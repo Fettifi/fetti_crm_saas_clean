@@ -174,6 +174,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
     if (typeof body.assigned_to === "string") patch.assigned_to = body.assigned_to;
+    // OCCUPANCY IS CORRECTABLE.
+    //
+    // Ramon, 2026-09-10. occupancy decides whether a file is consumer or business-purpose:
+    // complianceFor()/docChecklistFor() in lib/los.ts key TRID exemption off
+    // `investorOcc || (bizProduct && !consumerOcc)`. It was settable only at creation —
+    // /api/apply and /api/los/import-mismo write it, this whitelist did not, no UI form edits it,
+    // and the 1003 route writes occupancy to `leads`, not here. So a file created without one, or
+    // with the wrong one, could never be corrected, and its compliance routing rested on whatever
+    // words happened to be in the product string. A field that gates a regulatory determination
+    // has to be fixable.
+    if (typeof body.occupancy === "string") {
+      const OCC = ["Primary residence", "Second home", "Investment"];
+      const v = OCC.find((o) => o.toLowerCase() === body.occupancy.trim().toLowerCase());
+      if (!v) return NextResponse.json({ error: `occupancy must be one of ${OCC.join(", ")}` }, { status: 400 });
+      patch.occupancy = v;
+    }
     if (Array.isArray(body.compliance)) patch.compliance = body.compliance;
 
     // Capture the prior stage so we fire the funded conversion only on the FIRST
