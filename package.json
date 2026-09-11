@@ -69,6 +69,7 @@
     "verify:stale-files": "tsx scripts/verify-stale-files.ts",
     "verify:benefit-income": "tsx scripts/verify-benefit-income.ts",
     "verify:file-liveness": "tsx scripts/verify-file-liveness.ts",
+    "verify:los-portfolio": "tsx scripts/verify-los-portfolio.ts",
     "verify:tracked-imports": "tsx scripts/verify-tracked-imports.ts",
     "verify:card-auth": "NODE_OPTIONS=--conditions=react-server tsx scripts/verify-card-auth.ts",
     "verify:doc-dragout": "tsx scripts/verify-doc-dragout.ts",

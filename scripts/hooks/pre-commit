@@ -34,6 +34,12 @@ AVM=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/mismo' -e 'lib/urla.ts' -e 'und
 # record: the PDF route accepted originationPct from the screen and never passed it to the
 # engine, so the advisor saw one number and the borrower was handed another. Offline and
 # deterministic, so it costs nothing to make it unforgettable.
+# A portfolio loan file sums money across properties. The rule that matters is that a property
+# merely being LOOKED AT is never counted as exposure: loan_files.property_value feeds company
+# volume, a wholesaler shopping sheet's LTV and a pre-approval letter a listing agent reads, so a
+# blended sum is a confident wrong number rather than an obvious blank. The same module decides
+# consumer vs business purpose across a set, and Reg Z gives one extension of credit ONE purpose.
+PORTFOLIO=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/losPortfolio' -e 'api/los/files/[id]/portfolio' -e 'scripts/verify-los-portfolio')
 PRICER=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/closingCosts' -e 'lib/pricerPdf' -e 'app/api/pricer/' -e 'scripts/verify-pricer')
 # lib/pricer.ts owns PITIA and mortgage insurance — the file where a VA borrower was being
 # quoted MI that does not exist on a VA loan.
@@ -163,6 +169,14 @@ if [ -n "$LIVE" ] && [ -f .env.local ]; then
   OUT=$(npm run --silent verify:file-liveness 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:file-liveness"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+if [ -n "$PORTFOLIO" ]; then
+  printf "   %-24s " "verify:los-portfolio"
+  OUT=$(npm run --silent verify:los-portfolio 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:los-portfolio"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
 fi
 
@@ -420,6 +434,13 @@ if [ -n "$FAILED" ]; then
       echo "   which stays 'active' right through funding) AND stage (where it actually is)."
       echo "   Never filter on status alone — that is how a closed borrower got into the chase list."
       echo "   The predicates are in lib/fileLiveness.ts: isOpenFile(status, stage) / mayChaseDocs(status, stage)."
+      ;;
+    *verify:los-portfolio*)
+      echo "   A portfolio file must never count a property that is merely IDENTIFIED as exposure."
+      echo "   committed_value sums under_contract/in_diligence/closed only; candidates are reported"
+      echo "   separately and nothing may blend them into one 'portfolio value'. And a mixed set of"
+      echo "   occupancies must REFUSE (mixed_unresolved), never guess — Reg Z 1026.3(a) gives one"
+      echo "   extension of credit exactly one purpose. Read the failing assertion."
       ;;
     *verify:auth*)
       echo "   verify:auth is NEVER a false alarm — a route in apiProtected but missing from"
