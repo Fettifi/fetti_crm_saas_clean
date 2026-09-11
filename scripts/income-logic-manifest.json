@@ -1,14 +1,14 @@
 {
-  "logicVersion": "2026-09-06-one-person-one-social-security-payment",
-  "pinnedAt": "2026-09-10T16:37:07.877Z",
+  "logicVersion": "2026-09-11-stub-variability-within-year-and-full-periods-only",
+  "pinnedAt": "2026-09-11T16:23:07.549Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "e93ade4ab9649c74",
+    "app/api/los/files/[id]/verify-income/route.ts": "6f92b4c1c561e4d3",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankStatement.ts": "4302f2fdd78e85c9",
     "lib/income/benefitRules.ts": "1f3305b92769f546",
     "lib/income/combineBankStatement.ts": "43f917108941029d",
     "lib/income/contested.ts": "4bef5f41ecf107eb",
-    "lib/income/docFacts.ts": "b709fb780486a6c6",
+    "lib/income/docFacts.ts": "fd056f200724349e",
     "lib/income/driftGate.ts": "713bc089f3b5ad02",
     "lib/income/overrideExemplars.ts": "d33ed7c3fa074035",
     "lib/income/programs.ts": "3ef831cba44f1919",

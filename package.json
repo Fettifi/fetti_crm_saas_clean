@@ -104,7 +104,8 @@
     "verify:flag-action": "tsx scripts/verify-income-flag-action.ts",
     "verify:income-method": "tsx scripts/verify-income-method.ts",
     "verify:cron-watched": "tsx scripts/verify-cron-watched.ts",
-    "verify:income-drift-gate": "tsx scripts/verify-income-drift-gate.ts"
+    "verify:income-drift-gate": "tsx scripts/verify-income-drift-gate.ts",
+    "verify:stub-variability": "npx tsx scripts/verify-stub-variability.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

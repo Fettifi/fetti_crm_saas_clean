@@ -81,7 +81,22 @@ const STUB_PRIORITY_WINDOW = 8;
 //
 // `npm run verify:income-logic` fails when these files change and this line does not, so the
 // choice gets forced at the moment the engine actually moves.
-const LOGIC_VERSION = "2026-09-06-one-person-one-social-security-payment";
+// 2026-09-11 — BUMPED, and the trade above was made deliberately rather than dodged.
+//
+// The stub-variability reclassification in lib/income/docFacts.ts was measuring a stream's pay
+// spread across stubs from different YEARS, and counting a retro-adjustment run as a pay period.
+// On Lucki Long (FF-202608-2047, stage Approved) that turned a flat-salaried LAUSD teacher into a
+// "variable/gig" stream and qualified her on YTD ÷ 6 = $17,633/mo against a C-Basis base of
+// $9,224.54. Her own QC said so twice and the number shipped anyway.
+//
+// verify:income-engine-diff measures the corrected engine on the live corpus: 12 files replayed,
+// exactly ONE moves — Lucki Long $17,633 -> $9,225 — and the other 11 are byte-identical,
+// Merwin Bachiller ($8,627) included, whose stream is genuinely variable and stays variable.
+//
+// So `--no-reroll` was NOT available here and was not claimed: that escape is for changes that
+// cannot move any number, and this one moves a real borrower's by $8,408. A number the engine no
+// longer reproduces must not keep being served, so the cache key moves with the math.
+const LOGIC_VERSION = "2026-09-11-stub-variability-within-year-and-full-periods-only";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" stays GENERIC — a Chase/Wells file is rarely named "bank
 // statement" — but it is no longer BARE, because "a non-income statement is harmless" (what this

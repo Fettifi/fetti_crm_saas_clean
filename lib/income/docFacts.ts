@@ -614,12 +614,75 @@ export function computeQualifyingIncome(facts: DocFact[], opts: { loanType: "con
       // variable stream by evidence, whatever the per-document label said, and it qualifies on
       // the documented AVERAGE (YTD ÷ elapsed) rather than on whichever stub happens to be
       // most recent. Under 15% is ordinary rounding/OT noise and stays salaried.
-      const streamStubs = sf.filter((f) => f.docType === "paystub" && num(f.grossPerPeriod) != null);
+      // ONLY COMPARE STUBS THAT ARE COMPARABLE — A RAISE IS NOT VARIABILITY.
+      //
+      // Lucki Long (FF-202608-2047, found 2026-09-11) is an LAUSD teacher on a flat C-Basis
+      // salary of $9,224.54/mo. She qualified at $17,633/mo — nearly double her base — and her
+      // own QC said so in as many words: "Qualifying income overstated: worksheet uses 06/2026
+      // stub YTD $105,799.24 ÷ 6 ... does not equal true monthly base ($9,224.54)", and "Method
+      // mislabel: this is a full-doc W-2 salaried teacher (LAUSD), yet the line is labeled
+      // 'variable/gig wages'." The QC named it and the number shipped anyway — the +$4,091 shape
+      // again, on a file already at stage Approved.
+      //
+      // The 96.7% spread that reclassified her was measured across stubs from THREE DIFFERENT
+      // YEARS: June-2026 ($19,563.83), Nov-2024 ($15,671.54), and a Dec-2025 stub of $636.40
+      // whose own note reads "current pay is prior-pay adjustments (Special Assignment)". None of
+      // that is evidence her pay fluctuates. Across years the gross moves with raises, a
+      // B-Basis/C-Basis change and a one-time $5,000 National Board incentive, and the $636.40
+      // stub is a retro-adjustment run, not a pay period at all. She has exactly ONE stub in the
+      // current year — there was nothing to compare, so the rule compared her against her own
+      // past and called a salaried teacher a gig worker.
+      //
+      // The Jazmine Wilson case this rule was built for had both stubs in the SAME year ($6,803
+      // and $3,129 against a YTD of $40,818 through 25 June). That is real within-year
+      // variability and still reclassifies. So measure the spread only WITHIN a year.
+      //
+      // Stubs whose year cannot be read are compared to each other as one group, so wherever the
+      // dates are missing the previous behaviour is exactly preserved. A stream extraction has
+      // actually LABELLED variable is unaffected either way — that is the `wage_variable` test
+      // below, which this never weakens.
+      // ...AND A RETRO-ADJUSTMENT RUN IS NOT A PAY PERIOD.
+      //
+      // Year-grouping alone does not save Lucki Long, because two of her stubs land in 2025: the
+      // regular November one ($14,441.77) and the $636.40 December one. Its own note says "current
+      // pay is prior-pay adjustments", but a note is free text and this must not depend on
+      // reading it. The arithmetic says it outright: her 11/30/2025 stub carries a YTD of
+      // $143,063.97 and her 12/12/2025 stub carries $143,700.37 — a difference of exactly $636.40.
+      // The "period gross" IS the whole adjustment, not a month of teaching.
+      //
+      // Generalised without needing a second stub to difference against: a stub states its own
+      // YTD and the date it runs through, so it implies its own average period. A gross far below
+      // that is a partial or adjustment run and says nothing about whether regular pay varies.
+      // One third is the cut — every genuine period across the live corpus sits at 92%-131% of
+      // its implied period (Merwin Bachiller 92/110/114%, Dontinaz Jackson ~131%), while this
+      // adjustment run is 5%, so nothing real is anywhere near the line.
+      //
+      // This narrows the VARIABILITY TEST ONLY. The stub keeps its full weight everywhere else —
+      // it is still a document of record, still counted in the stream, still available to the
+      // YTD averaging below if the stream does qualify as variable.
+      const isFullPeriod = (f: DocFact): boolean => {
+        const g = num(f.grossPerPeriod); if (!(g && g > 0)) return false;
+        const ytd = num(f.ytdGross), per = FREQ[String(f.payFrequency || "")];
+        const em = elapsedMonths(f.ytdThroughDate);
+        if (!ytd || !per || em <= 0) return true;      // cannot tell — keep it, as before
+        const impliedPeriod = (ytd / em) * 12 / per;
+        return impliedPeriod <= 0 || g >= impliedPeriod / 3;
+      };
+      const streamStubs = sf.filter((f) => f.docType === "paystub" && num(f.grossPerPeriod) != null && isFullPeriod(f));
       let variesAcrossStubs = false;
       if (streamStubs.length >= 2) {
-        const grosses = streamStubs.map((f) => num(f.grossPerPeriod)!).filter((g) => g > 0);
-        const lo = Math.min(...grosses), hi = Math.max(...grosses);
-        variesAcrossStubs = lo > 0 && (hi - lo) / hi > 0.15;
+        const byYear = new Map<string, number[]>();
+        for (const f of streamStubs) {
+          const g = num(f.grossPerPeriod)!;
+          if (!(g > 0)) continue;
+          const y = String(f.ytdThroughDate || "").slice(0, 4) || "?";
+          byYear.set(y, [...(byYear.get(y) || []), g]);
+        }
+        for (const grosses of byYear.values()) {
+          if (grosses.length < 2) continue;
+          const lo = Math.min(...grosses), hi = Math.max(...grosses);
+          if (lo > 0 && (hi - lo) / hi > 0.15) { variesAcrossStubs = true; break; }
+        }
       }
       if (sf.some((f) => f.incomeCategory === "wage_variable") || variesAcrossStubs) {
         // Variable/gig/IHSS stubs frequently carry only a GROSS or YTD figure (no separate

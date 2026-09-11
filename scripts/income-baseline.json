@@ -1,5 +1,5 @@
 {
-  "logicVersion": "2026-09-06-one-person-one-social-security-payment",
+  "logicVersion": "2026-09-11-stub-variability-within-year-and-full-periods-only",
   "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re)lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
   "files": {
     "c3473ce9-7bdb-4882-8a7b-bbd1a30a86d3": {
@@ -222,6 +222,7 @@
         "3be962fe-ef9a-4c09-9b9a-a0ff38fbb85f|3545_Winthrop_lease.pdf",
         "401f0055-c6af-4b7d-864b-91f5cfd3d3dc|Rent_Deposit_Transcations_EVOE.pdf",
         "550f73b5-6884-424a-a95a-70bba95736ca|EVOE_Transactions_Deposits.pdf",
+        "798f1d41-af50-4d0d-827e-43cfa0cd92e1|EVOE_CITI_Current_9-10-26.pdf",
         "9fe245dd-85f5-43f1-88df-a02635b255fb|Signed-PGB-EVOE-Loan-Doc.pdf",
         "b2390f57-bfb8-4c2e-82d0-9abdbc77ae91|Release_Letter_-_EVOE_LLC-_3545_Winthrop.pdf",
         "bd6fe8c8-706f-473a-abe3-f6516202ee0a|Signed-3545-Winthrop-lease.pdf"
@@ -383,7 +384,7 @@
         "b81357a6-e5e1-4087-9072-1e95b3054e20|Paystub_202512.pdf",
         "ea701fce-672c-47c8-bf2b-f93fa887ffa8|Pay stubs — last 30 days"
       ],
-      "cachedIncome": null
+      "cachedIncome": 17633
     },
     "96c78542-4745-46d2-bd37-604f4a92dad1": {
       "file": "FF-202608-2136",
@@ -487,6 +488,12 @@
       "candidates": [
         "e3ba3666-620f-4a12-b670-efd0729a6108|Lease agreement or market rent estimate (Form 1007)"
       ],
+      "cachedIncome": null
+    },
+    "e01c44a0-3810-4606-9985-98d30f7e9563": {
+      "file": "FF-202609-9552",
+      "borrower": "Timothy Bryant",
+      "candidates": [],
       "cachedIncome": null
     }
   },
