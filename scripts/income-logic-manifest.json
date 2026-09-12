@@ -1,9 +1,10 @@
 {
   "logicVersion": "2026-09-11-stub-variability-within-year-and-full-periods-only",
-  "pinnedAt": "2026-09-11T16:23:07.549Z",
+  "pinnedAt": "2026-09-12T16:36:01.686Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "6f92b4c1c561e4d3",
+    "app/api/los/files/[id]/verify-income/route.ts": "dd4fb442cc9d16ed",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
+    "lib/income/bankReplay.ts": "bbb61927f654be5a",
     "lib/income/bankStatement.ts": "4302f2fdd78e85c9",
     "lib/income/benefitRules.ts": "1f3305b92769f546",
     "lib/income/combineBankStatement.ts": "43f917108941029d",
@@ -52,6 +53,16 @@
       "files": [
         "lib/income/driftGate.ts",
         "+lib/income/driftGate.ts"
+      ]
+    },
+    {
+      "at": "2026-09-12T16:36:01.686Z",
+      "logicVersion": "2026-09-11-stub-variability-within-year-and-full-periods-only",
+      "reason": "Captures the bank-statement deposit rows the engine consumes (bankFactsUsed) and routes the bank arm through lib/income/bankReplay.ts so the replay guard and a live verify make the SAME call. Cannot move a number: grep of lib/income/bankStatement.ts shows it reads exactly r.bankStatement and r.personName off a DocRead and both are carried verbatim; the rebuilt resolver returns the captured answer per holder and defaults to 1 for an unknown name, which is what makeBorrowerResolver (c > p ? 2 : 1) also returns. Verified by replaying FF-202607-7963's recorded basis: same $7,364 and the same basis string.",
+      "files": [
+        "app/api/los/files/[id]/verify-income/route.ts",
+        "lib/income/bankReplay.ts",
+        "+lib/income/bankReplay.ts"
       ]
     }
   ]

@@ -16,8 +16,7 @@ import sharp from "sharp";
 import { compressPdfIfNeeded } from "@/lib/pdfCompress";
 import { selectIncomeMethod } from "@/lib/income/selectMethod";
 import { computeQualifyingIncome, assignBorrowers, makeBorrowerResolver, type DocFact } from "@/lib/income/docFacts";
-import { computeBankStatementIncome } from "@/lib/income/bankStatement";
-import { combineBankStatement } from "@/lib/income/combineBankStatement";
+import { bankFactsFrom, replayBankStatement, type BankFactsUsed } from "@/lib/income/bankReplay";
 import { compute1099Income, computePnlIncome, computeAssetDepletion, type AltDocResult } from "@/lib/income/altDoc";
 import { readDocumentsPooled, toDocFacts, type DocRead } from "@/lib/income/readDocument";
 import { computeRentalIncome, isRentalDoc, type RentalResult } from "@/lib/income/rentalIncome";
@@ -574,6 +573,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     let computed = standard;
     let bankCoverage: any[] = [];   // per-account month-by-month PROOF of coverage (12/24-mo programs)
+    // A BANK-STATEMENT BORROWER'S NUMBER MUST BE REPRODUCIBLE TOO.
+    //
+    // 2026-09-12: Corine Lucas (FF-202607-7963) moved $7,266 -> $7,364 with no document added.
+    // verify:income caught the move and nothing could say WHY, because the only bank artefact
+    // persisted was `bankCoverage` — the month KEYS, not the dollars behind them. The replay
+    // corpus printed `skip FF-202607-7963 (method: bank_statement)` and moved on, so a live
+    // borrower shipped a figure no build could reproduce or diff.
+    //
+    // lib/income/bankStatement.ts is pure, deterministic code: same statement rows ⇒ same number,
+    // always. So the only thing that CAN move such a file is extraction re-reading the statements
+    // — exactly the cause the replay guard exists to name (income-number-moves-come-from-extraction).
+    // Naming it requires keeping the rows. This is the projection the engine actually consumes,
+    // nothing more: no invented fields, no summary.
+    let bankFactsUsed: BankFactsUsed | null = null;
     let rental: RentalResult | null = null;
     if (effectiveMethod === "dscr") {
       // The roster goes in so the direction gate can tell whether an applicant is the LANDLORD on
@@ -601,10 +614,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         computed = { ...standard, flags: [...standard.flags, ...rental.flags, { text: "DSCR method selected but no rent could be read from the lease / rent roll / 1007 — check the documents state a monthly rent and are legible; fell back to the standard calculation.", addBackMonthly: 0, borrower: 1 }] };
       }
     } else if (effectiveMethod === "bank_statement") {
-      const bank = computeBankStatementIncome(bankReads, makeBorrowerResolver(roster), { loanType, expenseFactor });
-      bankCoverage = bank.coverage;
+      // CAPTURE THE INPUT, THEN COMPUTE FROM THE CAPTURE — never the other way round. Storing a
+      // summary of a computation leaves the replay guessing at what the engine was handed;
+      // computing from the stored facts makes them the input by construction, and there is no
+      // fidelity claim left to be wrong. lib/income/bankReplay.ts is the ONE call this route and
+      // scripts/verify-income-replay.ts share, so a replay cannot disagree with a live verify.
+      bankFactsUsed = bankFactsFrom(bankReads, makeBorrowerResolver(roster), expenseFactor);
       // See lib/income/combineBankStatement.ts for the rule and why benefits are NOT additive.
-      computed = combineBankStatement(bank, standard);
+      const { bank, combined } = replayBankStatement(bankFactsUsed, standard, loanType);
+      bankCoverage = bank.coverage;
+      computed = combined;
       if (!bank.accountsUsed) computed = { ...standard, flags: [...standard.flags, { text: "Bank-statement method selected but no statement months could be read — verify the statements are legible; fell back to the standard calculation.", addBackMonthly: 0, borrower: 1 }] };
     } else if (effectiveMethod === "1099_only" || effectiveMethod === "pnl_only" || effectiveMethod === "asset_depletion") {
       const alt: AltDocResult =
@@ -773,7 +792,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // fails loudly the next time a change moves its number. No borrower PII beyond what the
     // payload already holds; these are the same figures already stored in `report.perDoc`.
     const factsUsed = docFacts;
-    const payload = { factsUsed, qcContested, qcHigh, perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, cardStatementDocs: cardStatements, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage,
+    const payload = { factsUsed, qcContested, qcHigh, perBorrowerMonthly, qualifyingMonthlyIncome, breakdown, result, report, docsRead: read, unreadableDocs: unreadable, cardStatementDocs: cardStatements, overflowDocs: overflow, loanType, method: effectiveMethod, bankCoverage, bankFactsUsed,
       contentIncluded,
       ...(contentIncluded.length ? { contentNotice: `${contentIncluded.length} document(s) were included by reading them, not by their filename: ${contentIncluded.map((c: any) => `${c.doc} (${c.readAs})`).join(", ")}. Earlier runs of this file left them out.` } : {}),
       // The DSCR panel prefills its Gross monthly rent from this, so the rent the LO sees in

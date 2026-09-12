@@ -277,7 +277,7 @@
         "eee89d38-2c03-440b-b326-397665332bae|Bank statements — last 2 months — additional",
         "fb39ddd7-f99c-4ea4-bb50-60d477bb7a75|Bank statements — last 2 months — additional — additional"
       ],
-      "cachedIncome": 7266
+      "cachedIncome": 7364
     },
     "87561748-ce06-4f94-9a8a-7a0eb0665604": {
       "file": "FF-202607-8421",
@@ -327,16 +327,18 @@
       "candidates": [
         "007fae3c-788f-4655-bc73-3e6fb18780ee|W-2s — last 2 years",
         "252a9d08-1070-4b2e-b982-98363fe40b0c|W-2s — last 2 years — additional",
+        "2582a743-538b-4654-8bdd-577d589734af|CA TAX return 2025",
         "3185091e-efc0-44cd-b818-fe6402aac16c|bank_statement_2.pdf",
         "328ec52a-b9f7-4876-8d27-09d7728d8c01|W-2s — last 2 years — additional",
         "36b6a883-ce56-4283-8778-7550858f6378|2024 tax return — additional",
         "39ea2f9c-cda1-4404-b3ed-f258e123ddc4|2024 tax return — additional",
-        "7805cae2-7a80-48f8-8014-293d073a8668|2025_W2.pdf",
+        "6b6b3006-543b-46af-82a1-7926166951c7|Compas 24 and 25 W2",
         "7ebb885e-784e-4bae-b73b-3cc1aec8f9a8|2024 tax return — additional",
         "7eca63ba-563f-47ee-8f83-da44feb786a1|bank_statement.pdf",
-        "8a9906ff-1bd3-41b0-a62d-a5c8d358064d|W-2s — last 2 years — additional",
+        "a8fe9c20-2e61-47d7-a964-fef72b85f882|Born inc pay stub. 8-21-26",
         "b3ecc6a8-b8cb-40d6-8408-a3a858c7a827|W-2s — last 2 years — additional",
         "bb484872-2014-4a89-92fc-4a3ec510813a|W-2s — last 2 years — additional",
+        "c3324d38-3495-4d87-8177-03e2754fb764|2025 1040 Tax retun",
         "c70b0cfd-732a-48bf-b0b6-6fa9f5d8b856|Pay stubs — last 30 days",
         "cf3c632a-34a4-4178-938f-48fdcf51d819|bank_statement_1.pdf",
         "d16adcaa-81fa-492b-8a8b-e91a1e5cb1b5|Pay stubs — last 30 days — additional",
@@ -593,6 +595,14 @@
       "to": 20653,
       "acceptedAt": "2026-09-07T04:45:06.861Z",
       "reason": "Legacy read: the stored payload carried 0 factsUsed (pre-dating structured fact capture), so there was no fact set to compare against. The re-read produced 9 facts. This is the file being read properly for the first time, not a number drifting."
+    },
+    {
+      "file": "FF-202607-7963",
+      "borrower": "Corine Lucas",
+      "from": 7266,
+      "to": 7364,
+      "acceptedAt": "2026-09-12T16:35:14.523Z",
+      "reason": "Re-extraction, not the engine. The 2026-09-11 LOGIC_VERSION bump invalidated every cache; she re-verified 09-11 16:52 UTC, 22 min after it shipped, and the AI re-read her 24 US Bank statements. PROVED the engine is not implicated: her file is bank_statement, combineBankStatement suppresses the standard result entirely (perturbing it by +$50,000 leaves the total at $7,364), so the 09-11 stub-variability change cannot reach her number. Which deposit month moved CANNOT be named: the per-month rows were never persisted. That hole is closed in this commit (lib/income/bankReplay.ts) — her next verify becomes replayable."
     }
   ]
 }

@@ -30,6 +30,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { computeQualifyingIncome, type DocFact } from "@/lib/income/docFacts";
+import { holderOf, replayBankStatement, type BankFactsUsed } from "@/lib/income/bankReplay";
 
 const SNAP = path.join(process.cwd(), "scripts", "income-replay-snapshot.json");
 const save = process.argv.includes("--save");
@@ -77,7 +78,40 @@ function factsHash(facts: DocFact[]): string {
   return createHash("sha256").update(rows.join("\n")).digest("hex").slice(0, 16);
 }
 
-type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: number; shipped: number; perBorrower: Record<string, number> };
+// THE BANK-STATEMENT PATH IS PART OF THE CORPUS, NOT AN EXEMPTION.
+//
+// 2026-09-12: FF-202607-7963 moved $7,266 -> $7,364 with no document added, and this guard's
+// answer was one line — `skip FF-202607-7963 (method: bank_statement, ships $7,364)`. A live
+// borrower's qualifying income was outside every check the corpus makes. It was skipped not
+// because the method is unreproducible (lib/income/bankStatement.ts is pure, deterministic
+// code) but because the route never persisted the deposit rows the engine averaged: only
+// `bankCoverage`, which lists the month KEYS and not one dollar. So nothing could reproduce
+// the figure, and nothing could say whether the $98 came from the engine or from a re-read.
+//
+// The route now CAPTURES `bankFactsUsed` and computes the borrower's number from it, and this
+// guard replays it through lib/income/bankReplay.ts — the same call the route makes, not a
+// reconstruction of it. A file verified BEFORE that shipped has no rows to replay; it is
+// reported as not replayable WITH the reason, and never counted as passing.
+const BANK_MONTH_KEYS = ["periodStart", "periodEnd", "totalDeposits", "transfersIn", "excludedDeposits", "nsfCount"] as const;
+
+/** Same contract as factsHash: order-independent, opaque, and carrying no name or account number. */
+function bankHash(b: BankFactsUsed): string {
+  const rows: string[] = [];
+  for (const r of b.reads) {
+    const bs = r.bankStatement || {};
+    // The institution and holder decide GROUPING (collectAccounts keys on them), so a change in
+    // either is a change in the input — but they are hashed, never stored.
+    const acct = JSON.stringify([bs.institution ?? null, bs.accountLast4 ?? null, holderOf(r), bs.accountType ?? null]);
+    for (const m of bs.months || []) {
+      rows.push(acct + "|" + JSON.stringify(BANK_MONTH_KEYS.map((k) => (m as any)[k] ?? null))
+        + "|" + JSON.stringify((m.largeDeposits || []).map((d: any) => d?.amount ?? null).sort()));
+    }
+  }
+  rows.sort();
+  return createHash("sha256").update(`${b.expenseFactor ?? ""}\n${rows.join("\n")}`).digest("hex").slice(0, 16);
+}
+
+type Row = { file: string; loanType: string; method: string; facts: DocFact[]; bank: BankFactsUsed | null; qualifying: number; shipped: number; perBorrower: Record<string, number> };
 
 (async () => {
   console.log("\nINCOME REPLAY — every real file re-run through the engine\n");
@@ -129,9 +163,27 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
     const method = String(p.method || "standard");
     const stored = Math.round(Number(p.qualifyingMonthlyIncome) || 0);
     const replay = computeQualifyingIncome(p.factsUsed as DocFact[], { loanType: p.loanType });
-    const replayQ = Math.round(replay.qualifyingMonthlyIncome || 0);
+    let replayQ = Math.round(replay.qualifyingMonthlyIncome || 0);
+    let perBorrowerSource: Record<string, any> = replay.perBorrowerMonthly || {};
+    let bank: BankFactsUsed | null = null;
 
-    if (method !== "standard") { unreplayable.push(`${f.file_number} (method: ${method}, ships ${money(stored)})`); continue; }
+    if (method === "bank_statement") {
+      const bf = p.bankFactsUsed;
+      // A file verified before `bankFactsUsed` shipped carries no rows. Say which of the two it
+      // is — "this method cannot be replayed" and "this file predates the rows" are different
+      // facts, and only the second one is fixed by re-verifying the file.
+      if (!bf || !Array.isArray(bf.reads) || !bf.reads.length) {
+        unreplayable.push(`${f.file_number} (method: bank_statement, ships ${money(stored)}) — verified ${String(envVerifiedAt || "?").slice(0, 10)}, before the deposit rows were persisted; re-verify it in the LOS to make it replayable`);
+        continue;
+      }
+      bank = bf as BankFactsUsed;
+      const { combined } = replayBankStatement(bank, replay, p.loanType);
+      replayQ = Math.round(combined.qualifyingMonthlyIncome || 0);
+      perBorrowerSource = combined.perBorrowerMonthly || {};
+    } else if (method !== "standard") {
+      unreplayable.push(`${f.file_number} (method: ${method}, ships ${money(stored)})`);
+      continue;
+    }
 
     // The engine must agree with itself: replaying the very facts the route handed it must
     // reproduce the number the route stored. A mismatch means the logic moved under a file
@@ -167,17 +219,21 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
     now[f.file_number] = {
       file: f.file_number,
       loanType: String(p.loanType || ""),
+      method,
       facts: p.factsUsed,
+      bank,
       qualifying: replayQ,
       shipped: stored,
-      perBorrower: Object.fromEntries(Object.entries(replay.perBorrowerMonthly || {}).map(([k, v]) => [k, Math.round(Number(v) || 0)])),
+      perBorrower: Object.fromEntries(Object.entries(perBorrowerSource).map(([k, v]) => [k, Math.round(Number(v) || 0)])),
     };
   }
 
   // COVERAGE IS PART OF THE VERDICT. A corpus that silently covers three of twenty-three files
   // reads as "all green" and is worth almost nothing.
+  const byMethod = Object.values(now).reduce((m: Record<string, number>, r) => ((m[r.method] = (m[r.method] || 0) + 1), m), {});
   console.log(`  coverage: ${withFacts} of ${withPayload} verified file(s) carry replayable facts; ` +
-              `${Object.keys(now).length} on the standard method, ${unreplayable.length} not replayable\n`);
+              `${Object.keys(now).length} replayed (${Object.entries(byMethod).map(([k, v]) => `${v} ${k}`).join(", ") || "none"}), ` +
+              `${unreplayable.length} not replayable\n`);
   for (const u of unreplayable) console.log(`  skip   ${u}`);
   for (const d of drift) console.log(`  DRIFT  ${d}`);
   for (const q of pendingReread) console.log(`  PENDING ${q}`);
@@ -222,7 +278,12 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
     // hard to see in review.
     const lean = Object.fromEntries(Object.entries(now)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => [k, { file: v.file, loanType: v.loanType, qualifying: v.qualifying, shipped: v.shipped, perBorrower: v.perBorrower, factCount: v.facts.length, factsHash: factsHash(v.facts) }]));
+      .map(([k, v]) => [k, {
+        file: v.file, loanType: v.loanType, method: v.method,
+        qualifying: v.qualifying, shipped: v.shipped, perBorrower: v.perBorrower,
+        factCount: v.facts.length, factsHash: factsHash(v.facts),
+        ...(v.bank ? { bankMonthCount: v.bank.reads.reduce((s, r) => s + (r.bankStatement?.months?.length || 0), 0), bankHash: bankHash(v.bank) } : {}),
+      }]));
     writeFileSync(SNAP, JSON.stringify({ savedAt: null, files: lean }, null, 1) + "\n");
     console.log(`  ${existsSync(SNAP) && !save ? "No snapshot existed — created" : "Snapshot saved"}: ${count} file(s)\n`);
     process.exit(0);
@@ -246,9 +307,24 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
     if (!before) { unsnapshotted.push(`${fileNo}: ${money(cur.qualifying)} (${cur.facts.length} facts, ${cur.loanType || "?"})`); continue; }
     checked++;
     const curHash = factsHash(cur.facts);
+    const curBankHash = cur.bank ? bankHash(cur.bank) : null;
     // A snapshot written before fingerprinting shipped has no hash. Then this guard genuinely
     // cannot separate the two causes, and it says so rather than picking the scarier one.
-    const sameFacts = before.factsHash == null ? null : before.factsHash === curHash;
+    //
+    // On a bank-statement file the DEPOSIT ROWS are the input that decides the number — the
+    // DocFacts can be byte-identical while every statement was re-read. Comparing only
+    // `factsHash` there would print "on BYTE-IDENTICAL facts — the ENGINE moved it" and send
+    // the operator to audit deterministic arithmetic, which is the exact inversion the
+    // 2026-09-02 hardcoded-string defect produced. Both inputs must match to claim that.
+    // null = this run cannot tell; true = every input byte-identical; false = an input moved.
+    const beforeBankHash = (before as any).bankHash ?? null;
+    const beforeMethod = (before as any).method ?? null;
+    let sameFacts: boolean | null;
+    if (before.factsHash == null) sameFacts = null;                       // snapshot predates fingerprinting
+    else if (beforeMethod && beforeMethod !== cur.method) sameFacts = false;   // the qualifying METHOD itself changed
+    else if (curBankHash == null && beforeBankHash == null) sameFacts = before.factsHash === curHash;
+    else if (curBankHash == null || beforeBankHash == null) sameFacts = null;  // one side has no deposit rows to compare
+    else sameFacts = before.factsHash === curHash && beforeBankHash === curBankHash;
 
     if (before.qualifying !== cur.qualifying) {
       bad++;
@@ -259,13 +335,31 @@ type Row = { file: string; loanType: string; facts: DocFact[]; qualifying: numbe
       }
       if (sameFacts === true) {
         logicMoves.push(fileNo);
-        console.log(`           on BYTE-IDENTICAL facts (${cur.facts.length}, ${curHash}) — the ENGINE moved it. Read the engine.`);
+        console.log(`           on BYTE-IDENTICAL facts (${cur.facts.length}${curBankHash ? ` + ${(before as any).bankMonthCount ?? "?"} deposit rows` : ""}, ${curHash}${curBankHash ? `/${curBankHash}` : ""}) — the ENGINE moved it. Read the engine.`);
       } else if (sameFacts === false) {
         factMoves.push(fileNo);
-        const dCount = before.factCount == null || before.factCount === cur.facts.length
-          ? `${cur.facts.length} facts, same count` : `${before.factCount} -> ${cur.facts.length} facts`;
-        console.log(`           the FACTS also changed (${dCount}; ${before.factsHash} -> ${curHash}) — the documents were`);
-        console.log(`           re-read and extraction came back different. This is NOT an engine regression.`);
+        if (beforeMethod && beforeMethod !== cur.method) {
+          console.log(`           the qualifying METHOD changed (${beforeMethod} -> ${cur.method}) — a different calculation`);
+          console.log(`           is now selected for this borrower. Check lib/income/selectMethod.ts and the documents.`);
+        } else {
+          const dCount = before.factCount == null || before.factCount === cur.facts.length
+            ? `${cur.facts.length} facts, same count` : `${before.factCount} -> ${cur.facts.length} facts`;
+          const docsMoved = before.factsHash !== curHash;
+          const bankMoved = curBankHash != null && beforeBankHash != null && beforeBankHash !== curBankHash;
+          // Name WHICH input moved. On a bank-statement file "the facts changed" is ambiguous:
+          // the DocFacts and the deposit rows are two separate extractions and only one of them
+          // is usually behind the dollar.
+          if (bankMoved) {
+            const mCount = (before as any).bankMonthCount == null || (before as any).bankMonthCount === (cur.bank ? cur.bank.reads.reduce((s, r) => s + (r.bankStatement?.months?.length || 0), 0) : 0)
+              ? `same count` : `${(before as any).bankMonthCount} -> ${cur.bank!.reads.reduce((s, r) => s + (r.bankStatement?.months?.length || 0), 0)}`;
+            console.log(`           the BANK STATEMENT ROWS changed (${mCount}; ${beforeBankHash} -> ${curBankHash})${docsMoved ? ` and so did the DocFacts (${dCount})` : ` while the DocFacts held (${dCount})`} — the`);
+            console.log(`           statements were re-read and a deposit/transfer/exclusion figure came back different.`);
+            console.log(`           The deposit average is pure arithmetic; this is NOT an engine regression.`);
+          } else {
+            console.log(`           the FACTS also changed (${dCount}; ${before.factsHash} -> ${curHash}) — the documents were`);
+            console.log(`           re-read and extraction came back different. This is NOT an engine regression.`);
+          }
+        }
       } else {
         console.log(`           this snapshot entry predates fact fingerprinting, so this run CANNOT tell an`);
         console.log(`           engine change from a re-read. Re-save the snapshot to get that answer next time.`);
