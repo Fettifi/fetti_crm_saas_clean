@@ -93,6 +93,7 @@
     "verify:rsvp-call": "tsx scripts/verify-rsvp-from-call.ts",
     "verify:rsvp-line": "tsx scripts/verify-rsvp-line.ts",
     "verify:twilio-sig": "tsx scripts/verify-twilio-signature.ts",
+    "verify:mirror-names": "tsx --conditions=react-server scripts/verify-mirror-names.ts",
     "verify:urla-fidelity": "tsx --conditions=react-server scripts/verify-urla-fidelity.ts",
     "verify:borrower-authorization": "tsx --conditions=react-server scripts/verify-borrower-authorization.ts",
     "verify:script-conditions": "tsx scripts/verify-script-conditions.ts",

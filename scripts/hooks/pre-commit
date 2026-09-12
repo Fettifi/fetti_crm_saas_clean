@@ -123,6 +123,16 @@ FAILED=""
 # was read from the seeded 1003 only, so 10 of 32 open files exported base WAGES to lenders
 # flagged as non-employment income; an "under 2 years" bucket became a precise 12 months in the
 # MISMO file; and the subject's rent printed twice on one signed page as two income streams.
+# The mirror folder must show the name Ramon gave a document, not the scanner's. He reported
+# this three times; the rename always worked, the scanner filename was just still glued on.
+if printf '%s\n' "$CHANGED" | grep -q -e 'sync-loan-docs' -e 'verify-mirror-names' -e 'docNaming'; then
+  printf "   %-24s " "verify:mirror-names"
+  OUT=$(npm run --silent verify:mirror-names 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:mirror-names"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$ANYTS" ]; then
   printf "   %-24s " "verify:urla-fidelity"
   OUT=$(npm run --silent verify:urla-fidelity 2>&1)

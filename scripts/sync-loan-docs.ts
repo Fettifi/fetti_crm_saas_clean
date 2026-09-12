@@ -92,11 +92,11 @@ function pushSafeName(name: string): string {
 
   // What we have already pulled down, by storage path — our own record, not the CRM's.
   const MANIFEST = join(ROOT, ".fetti-sync.json");
-  let manifest: Record<string, { file: string; bytes: number }> = {};
+  let manifest: Record<string, { file: string; bytes: number; label?: string }> = {};
   try { if (existsSync(MANIFEST)) manifest = JSON.parse(readFileSync(MANIFEST, "utf8")); } catch { manifest = {}; }
 
   const byFile = new Map<string, any>((files || []).map((f: any) => [f.id, f]));
-  let wrote = 0, skipped = 0, failed = 0, orphaned = 0;
+  let wrote = 0, skipped = 0, failed = 0, orphaned = 0, renamed = 0;
   const used = new Map<string, number>();   // per-folder filename collisions
 
   for (const d of (docs || []) as any[]) {
@@ -121,7 +121,29 @@ function pushSafeName(name: string): string {
     // `W-2_2025.pdf` becomes "W-2s — last 2 years — W-2_2025.pdf" and does not lose its YEAR.
     // Replacing an informative name with the checklist label is how two different tax returns
     // collapse into "Tax returns" and "Tax returns — additional".
-    const GENERIC = /^(image|img|photo|pic|scan|document|doc|untitled|unnamed|file|attachment)[\s_\-.()0-9]*$/i;
+    // A MACHINE NAME CARRIES NOTHING AND MUST NOT BE APPENDED TO A HUMAN ONE.
+    //
+    // Ramon, 2026-09-12, for at least the third time: "the documents that I just saved and
+    // renamed are not showing up — they're still showing as the scan name as they originally
+    // scanned in." The rename DID reach the disk every time. What he was looking at was the
+    // scanner's filename still glued to the end of his label:
+    //
+    //     july bank statement — Scan_to_OneDrive_2026-09-11-16-46-06.pdf
+    //
+    // This list only had a bare `scan`, and `Scan_to_OneDrive_2026-09-11-16-46-06` does not
+    // match it — there are letters after "scan" — so keepStem stayed true and the scanner name
+    // was preserved "because it might carry information". It carries a timestamp. The whole
+    // point of the suffix is to save a stem like `W-2_2025` that holds the YEAR; a scanner
+    // drop, a credit-vendor download (`dhqPDF.aspx-48`) and a camera roll (`20260723_211741`,
+    // `IMG_1752`) hold nothing a human needs, and they are exactly the names he renames away.
+    const GENERIC = new RegExp(
+      "^(?:" +
+      "(?:image|img|photo|pic|scan|document|doc|untitled|unnamed|file|attachment)" +   // bare words
+      "|scan[ _-]?to[ _-]?\\w+" +            // Scan_to_OneDrive, Scan-to-Email…
+      "|dhqpdf[\\w.]*" +                      // the credit vendor's download
+      "|\\d{8}[_-]\\d{4,6}" +                 // 20260723_211741 — a camera/scanner timestamp
+      "|screenshot[\\w \\-]*" +   // Screenshot_20260707-122639_ADPMobile — hyphens included
+      ")[\\s_\\-.()0-9]*$", "i");
     const ext = String(d.file_name || d.storage_path).split(".").pop()?.toLowerCase() || "pdf";
     const stem = String(d.file_name || "").replace(/\.[^.]+$/, "");
     const label = safe(String(d.name || d.file_name || "document").replace(new RegExp(`\\.${ext}$`, "i"), ""), 70);
@@ -152,6 +174,49 @@ function pushSafeName(name: string): string {
     // him two of everything he ever added.
     const prev = manifest[d.storage_path];
     const have = prev?.file || dest;
+
+    // A RENAME IN THE LOS MUST REACH THE DISK.
+    //
+    // Ramon, 2026-09-12, having raised it more than once: "the documents that I just saved and
+    // renamed are not showing up — they're still showing as the scan name as they originally
+    // scanned in." He was right, and the cause is directly below: the skip test is keyed on
+    // `storage_path`, and renaming a document changes `name` but NEVER its storage path. So
+    // `prev` existed, the bytes matched, the run skipped, and the local copy kept the scan name
+    // for good. Only a NEW storage path (an upload, a convert, a shrink) could ever move a file.
+    //
+    // He renamed nine documents on Joseph Hixon's file on 12 Sep — "july bank statement",
+    // "Social Security award letter", "2025 W2 Compass" — and every one of them still sat on
+    // disk as `Scan to OneDrive_2026-09-11-16-46-06.pdf`. That folder is what he browses when
+    // uploading to a wholesale portal, so the rename bought him nothing where it mattered.
+    //
+    // Rename in place instead of re-downloading: the bytes are already correct, only the label
+    // moved. Confined to files THIS sync put there (`prev` is the manifest record), so a file
+    // Ramon dropped in himself is never touched. A rename is also never allowed to clobber:
+    // if something already sits at `dest`, leave both alone rather than destroy one.
+    // Move the files the OLD rule mis-named. Renaming on any computed-name difference was
+    // tried first and the dry run showed it re-sanitising perfectly good human names and
+    // cascading the "(2)…(6)" collision counters — churn, and the counter shuffle could
+    // re-associate a file with the wrong document. So this fires ONLY where the name on disk
+    // still carries a machine-name segment that the rule above now strips, which is precisely
+    // the defect being fixed. Confined to files this sync downloaded, and never clobbering.
+    const staleMachineSuffix = !!prev && / — /.test(basename(prev.file))
+      && GENERIC.test(basename(prev.file).replace(/\.[^.]+$/, "").split(" — ").pop() || "");
+
+    if (staleMachineSuffix && prev.file !== dest && existsSync(prev.file) && statSync(prev.file).size === prev.bytes) {
+      if (existsSync(dest)) {
+        console.warn(`  rename skipped — ${basename(dest)} already exists; left ${basename(prev.file)} in place`);
+      } else if (DRY) {
+        console.log(`  would rename  ${basename(prev.file)}  ->  ${basename(dest)}`);
+        renamed++; continue;
+      } else {
+        mkdirSync(folder, { recursive: true });
+        renameSync(prev.file, dest);
+        manifest[d.storage_path] = { file: dest, bytes: prev.bytes, label: String(d.name || "") };
+        console.log(`  renamed  ${basename(prev.file)}  ->  ${basename(dest)}`);
+        renamed++; continue;
+      }
+    }
+
     if (prev && existsSync(have) && statSync(have).size === prev.bytes) { skipped++; continue; }
 
     if (DRY) { console.log(`  would write  ${dest.replace(homedir(), "~")}`); wrote++; continue; }
@@ -161,7 +226,7 @@ function pushSafeName(name: string): string {
     mkdirSync(folder, { recursive: true });
     const bytes = Buffer.from(await blob.arrayBuffer());
     writeFileSync(dest, bytes);
-    manifest[d.storage_path] = { file: dest, bytes: bytes.length };
+    manifest[d.storage_path] = { file: dest, bytes: bytes.length, label: String(d.name || "") };
     console.log(`  wrote  ${dest.replace(homedir(), "~")}`);
     wrote++;
   }
@@ -198,7 +263,7 @@ function pushSafeName(name: string): string {
   }
 
   if (!DRY) { mkdirSync(ROOT, { recursive: true }); writeFileSync(MANIFEST, JSON.stringify(manifest, null, 1)); }
-  console.log(`\n${DRY ? "DRY RUN — " : ""}${wrote} written · ${skipped} already current · ${failed} failed · ${orphaned} with no loan file${labelled ? ` · ${labelled} superseded copy(ies) labelled` : ""}`);
+  console.log(`\n${DRY ? "DRY RUN — " : ""}${wrote} written · ${renamed} renamed · ${skipped} already current · ${failed} failed · ${orphaned} with no loan file${labelled ? ` · ${labelled} superseded copy(ies) labelled` : ""}`);
 
   // ── PUSH ────────────────────────────────────────────────────────────────────────────────────
   let pushed = 0, pushFailed = 0, pushSkipped = 0, conflicts = 0;
