@@ -57,6 +57,8 @@
     "audit:officer-nmls": "tsx scripts/audit-preapproval-nmls.ts",
     "verify:image-pdf": "tsx scripts/verify-image-pdf.ts",
     "verify:doc-detection": "tsx scripts/verify-doc-detection.ts",
+    "verify:doc-identify": "tsx scripts/verify-doc-identify.ts",
+    "identify": "NODE_OPTIONS=--conditions=react-server tsx scripts/identify-local-doc.ts",
     "verify:stalled": "tsx scripts/verify-stalled-worklist.ts",
     "verify:income-replay": "tsx scripts/verify-income-replay.ts",
     "verify:preapproval-from-calc": "tsx scripts/verify-preapproval-from-calc.ts",

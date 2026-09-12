@@ -223,6 +223,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       });
     }
 
+    // READ WHAT THE BORROWER ACTUALLY SENT.
+    //
+    // Ramon, 2026-09-12: "read what the document actually is and label it for what it is so I
+    // don't have to." A phone upload arrives called IMG_4507.heic or 20260907_142233.jpg, and a
+    // borrower who taps "Upload" on the wrong checklist row files a driver's licence against
+    // "W-2s — last 2 years" — which is not hypothetical; it is sitting on FF-202608-1250.
+    //
+    // After the ACK, never before it: this is a vision call and the borrower's upload must stay
+    // instant. Failure here is invisible to them by design — the document is already stored,
+    // already recorded, already counted; identification improves its label, and an improvement
+    // that fails must never look like an upload that failed.
+    const identDocId = doc?.id as string | undefined;
+    if (identDocId) {
+      after(async () => {
+        try {
+          const { applyIdentification } = await import("@/lib/identifyAndLabel");
+          await applyIdentification(file.id, identDocId, { actor: "borrower" });
+        } catch (e) { console.warn("[upload] identification failed", e); }
+      });
+    }
+
     await maybeAdvanceStage(file.id);
     return NextResponse.json({ ok: true, document: { id: doc?.id, name: doc?.name, status: "received" } }, { status: 201 });
   } catch (e) {

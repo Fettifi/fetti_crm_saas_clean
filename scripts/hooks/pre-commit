@@ -58,6 +58,13 @@ PA=$(printf '%s\n' "$CHANGED" | grep -F -e 'preapproval' -e 'letter/' -e 'preapp
 # Scoped wider than $PA because brand.ts, urla.ts and the pricer sheet all carry an id too.
 NMLS=$(printf '%s\n' "$CHANGED" | grep -F -e 'officerIdentity' -e 'lib/brand.ts' -e 'lib/urla.ts' -e 'preapproval' -e 'letter/' -e 'pricerPdf' -e 'verify-officer-nmls')
 DOC=$(printf '%s\n' "$CHANGED" | grep -F -e 'docContent' -e 'credit-liabilities' -e 'files/[id]/docs' -e 'verify-doc-detection' -e 'verify-income' -e 'IncomeQualifier')
+# WHAT A DOCUMENT IS, AND WHAT MAY BE RENAMED. The identifier writes the LABEL an underwriter
+# reads, and it is allowed to contradict the checklist slot a file was dropped into — so the two
+# properties that must hold are that it never overwrites a name a human wrote (a requirement IS
+# the request) and that it only ever contradicts on positive evidence. Both are silent when they
+# break: a rename that eats a requirement looks tidy, and a mismatch check that never fires looks
+# like a clean file.
+IDENT=$(printf '%s\n' "$CHANGED" | grep -F -e 'docIdentify' -e 'identifyAndLabel' -e 'docs/[docId]/identify' -e 'file/[token]/upload' -e 'verify-doc-identify' -e 'los/[id]/page.tsx')
 # WHO IS A REAL PERSON. The Shield verdict now decides whether a lead is nurtured at all, so a
 # band written wrongly either silences a borrower or clears a bot. On 2026-08-02 a backfill
 # wrote a verdict outside the declared union on 190 rows, collapsed the whole "watch" tier into
@@ -276,6 +283,14 @@ if [ -n "$DOC" ]; then
   OUT=$(npm run --silent verify:doc-detection 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:doc-detection"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+if [ -n "$IDENT" ]; then
+  printf "   %-24s " "verify:doc-identify"
+  OUT=$(npm run --silent verify:doc-identify 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:doc-identify"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
 fi
 

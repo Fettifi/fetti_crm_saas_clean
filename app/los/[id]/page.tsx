@@ -63,6 +63,10 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   // Result of a single-document action (convert to PDF). Carries its own tone: reusing
   // combineMsg would have printed failures in success green.
   const [docMsg, setDocMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // READ THE DOCUMENT, DON'T READ ITS NAME. `idBusy` is the doc currently being read;
+  // `idAll` is the progress of a sweep across the whole checklist.
+  const [idBusy, setIdBusy] = useState<string | null>(null);
+  const [idAll, setIdAll] = useState<{ done: number; total: number } | null>(null);
   const uploadTargetRef = useRef<string | null>(null);
   // Scan straight off the Canon into this file. null = closed; docId null = a new item.
   const [scanTarget, setScanTarget] = useState<{ docId: string | null; name: string } | null>(null);
@@ -267,6 +271,58 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
       await load();
     } finally { setDocBusy(null); }
   }
+  // IDENTIFY A DOCUMENT BY WHAT IS ON IT.
+  //
+  // Ramon, 2026-09-12: "read what the document actually is and label it for what it is so I
+  // don't have to." The route renames only a machine name (a raw filename, a scanner string);
+  // a checklist requirement it leaves alone and reports the contradiction instead. Both
+  // outcomes land in the document's notes, which is why this always reloads.
+  async function identifyDoc(doc_id: string, opts: { quiet?: boolean } = {}) {
+    if (!opts.quiet) setIdBusy(doc_id);
+    try {
+      const r = await fetch(`/api/los/files/${id}/docs/${doc_id}/identify`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apply: true }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok && !opts.quiet) setDocMsg({ ok: false, text: j.error || "Couldn't read that document." });
+      return j;
+    } catch {
+      if (!opts.quiet) setDocMsg({ ok: false, text: "Connection error while reading the document." });
+      return null;
+    } finally {
+      if (!opts.quiet) { setIdBusy(null); await load(); }
+    }
+  }
+  // Sweep the whole checklist. Three at a time: each read is a vision call, and firing thirty
+  // at once trips the rate limit, which silently drops documents.
+  async function identifyAll() {
+    const targets = docs.filter((d) => !!d.storage_path);
+    if (!targets.length) { setDocMsg({ ok: false, text: "Nothing uploaded on this file yet." }); return; }
+    setIdAll({ done: 0, total: targets.length });
+    let done = 0, mismatches = 0, named = 0, unknown = 0;
+    const queue = targets.slice();
+    const worker = async () => {
+      for (;;) {
+        const d = queue.shift();
+        if (!d) return;
+        const j = await identifyDoc(d.id, { quiet: true });
+        if (j?.slot?.verdict === "mismatch") mismatches++;
+        else if (j?.renamed) named++;
+        else if (j?.identification?.kind === "unknown") unknown++;
+        setIdAll({ done: ++done, total: targets.length });
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    setIdAll(null);
+    await load();
+    const bits = [
+      `${targets.length} read`,
+      named ? `${named} relabelled` : "",
+      mismatches ? `${mismatches} in the wrong slot` : "",
+      unknown ? `${unknown} couldn't be identified` : "",
+    ].filter(Boolean);
+    setDocMsg({ ok: mismatches === 0, text: bits.join(" · ") });
+  }
   async function patchDoc(doc_id: string, status: string, notes?: string) {
     await fetch(`/api/los/files/${id}/docs`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ doc_id, status, ...(notes !== undefined ? { notes } : {}) }) });
     await load();
@@ -276,6 +332,10 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
   // "scan.jpg" that is really a PDF comes back "already a PDF" instead of being re-wrapped.
   const needsPdf = (d: Doc) =>
     !!d.storage_path && !/\.pdf$/i.test(d.file_name || d.storage_path || "");
+  // The identification line the identify route wrote into notes, if there is one. Tagged rather
+  // than stored in its own column so a human's note in the same field survives untouched.
+  const autoId = (d: Doc): string | null =>
+    String(d.notes || "").split("\n").map((l) => l.trim()).find((l) => l.startsWith("[auto-id]"))?.replace(/^\[auto-id\]\s*/, "") || null;
   // Anything over 2 MB is worth offering to shrink — portal caps vary and some sit well under
   // 5 MB, so the button should be there before a document is obviously huge. Only PDFs: an
   // image gets the "→ PDF" button instead, which downsizes on the way.
@@ -550,20 +610,25 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ storage_path: sj.path, file_name: sj.fileName, size_bytes: f.size, doc_id: target !== "new" ? target : null }),
         });
-        if (!rec.ok) { const j = await rec.json().catch(() => ({})); alert(j.error || "The file uploaded but could not be recorded."); }
+        const rj = await rec.json().catch(() => ({} as any));
+        if (!rec.ok) { alert(rj.error || "The file uploaded but could not be recorded."); }
         await load();
+        // Read it now, while the LO is still looking at the file. Never block on it: a failed
+        // identification must not make a successful upload look broken.
+        if (rj?.document?.id) await identifyDoc(rj.document.id, { quiet: true }).then(() => load()).catch(() => {});
         return;
       }
       const fd = new FormData(); fd.append("file", f);
       if (target !== "new") fd.append("doc_id", target);
       const r = await fetch(`/api/los/files/${id}/upload`, { method: "POST", body: fd });
+      // A 413 comes back as HTML from the platform, so json() throws and the old code
+      // showed the misleading "Connection error" for what is really a size limit.
+      const j = await r.json().catch(() => ({} as any));
       if (!r.ok) {
-        // A 413 comes back as HTML from the platform, so json() throws and the old code
-        // showed the misleading "Connection error" for what is really a size limit.
-        const j = await r.json().catch(() => ({}));
         alert(j.error || (r.status === 413 ? "That file is too large to send this way — please try again; it will now upload directly." : `Upload failed (${r.status}).`));
       }
       await load();
+      if (r.ok && j?.document?.id) await identifyDoc(j.document.id, { quiet: true }).then(() => load()).catch(() => {});
     } catch { alert("Connection error during upload."); } finally { setDocBusy(null); }
   }
   async function removeDoc(docId: string, name: string) {
@@ -749,6 +814,7 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
               <div className="text-xs uppercase tracking-wide text-slate-500">Documents & conditions</div>
               <div className="flex items-center gap-3">
                 <button onClick={() => (combineMode ? exitCombine() : (setCombineMode(true), setCombineMsg(null)))} className={`text-xs font-semibold flex items-center gap-1 ${combineMode ? "text-amber-400 hover:text-amber-300" : "text-emerald-400 hover:text-emerald-300"}`}>{combineMode ? "✕ Cancel combine" : "🔗 Combine PDFs"}</button>
+                <button onClick={identifyAll} disabled={!!idAll} title="Open every uploaded file, read what it actually is, and label it. Renames only machine filenames; a document in the wrong checklist slot is flagged, never silently renamed." className="text-xs font-semibold flex items-center gap-1 text-indigo-400 hover:text-indigo-300 disabled:opacity-50">{idAll ? `Reading ${idAll.done}/${idAll.total}…` : "🔍 Identify all"}</button>
                 <a href={`/esign?file=${id}`} className="text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1">✍️ Send for signature</a>
               </div>
             </div>
@@ -789,11 +855,16 @@ export default function LoanFileDetail({ params }: { params: Promise<{ id: strin
                       >
                       <div className="font-medium truncate">{d.storage_path && <span className="text-slate-600 mr-1 select-none" aria-hidden="true">⠿</span>}{d.name} {d.required && !provided && <span className="text-[10px] text-amber-400/70">required</span>}{borrowers.length > 1 && (d.borrowerName || primaryName) && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 align-middle">{(d.borrowerName || primaryName)!.split(" ")[0]}</span>}</div>
                       <div className={`text-xs ${badge(d.status)}`}>{rejected ? "rejected · not provided — awaiting new upload" : `${d.status}${d.file_name ? ` · ${d.file_name}` : ""}`}</div>
-                      {rejected && d.notes && <div className="text-[11px] text-red-300/90 mt-0.5">↩︎ Sent back: {d.notes}</div>}
+                      {rejected && d.notes && <div className="text-[11px] text-red-300/90 mt-0.5">↩︎ Sent back: {d.notes.split("\n").filter((l) => !l.trim().startsWith("[auto-id]")).join(" ")}</div>}
+                      {/* What the document turned out to BE. A mismatch — the file sitting in the
+                          wrong checklist slot — is the finding worth shouting about, so it gets
+                          its own tone rather than being one more grey line. */}
+                      {autoId(d) && <div className={`text-[11px] mt-0.5 ${autoId(d)!.startsWith("⚠") ? "text-amber-300 font-medium" : "text-indigo-300/80"}`}>{autoId(d)!.startsWith("⚠") ? autoId(d) : `🔍 ${autoId(d)}`}</div>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => renameDoc(d.id, d.name)} disabled={docBusy === d.id} title="Rename this document" className="text-xs px-1.5 py-1 rounded text-slate-500 hover:text-sky-300 hover:bg-slate-800">✎</button>
+                      {d.storage_path && <button onClick={() => identifyDoc(d.id)} disabled={idBusy === d.id || !!idAll} title="Read this file and label it for what it actually is" className="text-xs px-1.5 py-1 rounded text-slate-500 hover:text-indigo-300 hover:bg-slate-800 disabled:opacity-50">{idBusy === d.id ? "…" : "🔍"}</button>}
                       {d.storage_path && <button onClick={() => viewDoc(d.id, d.name)} title={rejected ? "View the rejected copy" : "View"} className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">View</button>}
                       {isOversizedPdf(d) && <button onClick={() => compressDoc(d.id, d.name)} disabled={docBusy === d.id} title={`${((d.size_bytes || 0) / 1048576).toFixed(1)} MB — too big for most lender portals. Shrink it, keeping the original.`} className="text-xs px-2 py-1 rounded bg-amber-700/70 hover:bg-amber-600 disabled:opacity-50">{docBusy === d.id ? "…" : `Shrink ${((d.size_bytes || 0) / 1048576).toFixed(0)}MB`}</button>}
                       {needsPdf(d) && <button onClick={() => convertToPdf(d.id, d.name)} disabled={docBusy === d.id} title="Convert this image to a PDF — the original is kept on file" className="text-xs px-2 py-1 rounded bg-violet-700/70 hover:bg-violet-600 disabled:opacity-50">{docBusy === d.id ? "…" : "→ PDF"}</button>}
