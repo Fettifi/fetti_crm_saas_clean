@@ -81,6 +81,10 @@ export default function EsignPage() {
   // Envelope token whose "Complete as signed" request is in flight — one click, one completion.
   const [completing, setCompleting] = useState<string | null>(null);
   const pdfRef = useRef<HTMLInputElement>(null);
+  // The document viewer renders ABOVE the envelope list. Ramon clicked Certificate on the 3545
+  // Winthrop VOM, far down a list of 35, and "nothing happened": the certificate had opened 1,451px
+  // above the top of the screen, Download button and all. Opening a document now brings it into view.
+  const viewerRef = useRef<HTMLDivElement>(null);
 
   function acceptDrop(e: React.DragEvent) {
     e.preventDefault(); setDragOver(false);
@@ -151,6 +155,11 @@ export default function EsignPage() {
   }, [onlyMe, pdfData, fields.length, tool]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Bring the viewer to the eye whenever a document is opened or switched.
+  useEffect(() => {
+    if (viewing) viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [viewing]);
 
   // KEEP ASKING UNTIL THE LIST IS ACTUALLY HERE. Every attempt is independent, so a lost
   // result costs one interval instead of the whole screen. Gives up after MAX_TRIES and
@@ -490,7 +499,7 @@ export default function EsignPage() {
           {/* Inline viewer — the signed copy and the Certificate of Completion open HERE,
               on this page, instead of only downloading. */}
           {viewing && (
-            <div className="mb-3 bg-slate-900/60 border border-slate-700 rounded-2xl overflow-hidden">
+            <div ref={viewerRef} className="mb-3 scroll-mt-4 bg-slate-900/60 border border-slate-700 rounded-2xl overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-800 flex-wrap">
                 <FileSignature className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span className="font-medium text-sm truncate">{viewing.title}</span>
@@ -525,6 +534,8 @@ export default function EsignPage() {
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.closed_by_sender ? "bg-amber-500/20 text-amber-300" : badge(r.status)}`} title={r.closed_by_sender ? `Completed by sender. Not signed: ${r.closed_by_sender.not_signed.join(", ")}` : undefined}>{r.closed_by_sender ? `completed · ${(r.recipients || []).filter((x) => x.status === "signed").length} of ${(r.recipients || []).length} signed` : r.status.replace("_", " ")}</span>
                   {r.has_signed && <button onClick={() => setViewing({ token: r.token, title: r.title, doc: "signed" })} className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center gap-1" title="View the signed PDF on this page"><Eye className="w-3.5 h-3.5" /> Signed</button>}
                   {r.has_cert && <button onClick={() => setViewing({ token: r.token, title: r.title, doc: "cert" })} className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1" title="View the Certificate of Completion on this page"><Eye className="w-3.5 h-3.5" /> Certificate</button>}
+                  {/* Download straight from the row — never depends on finding the viewer first. */}
+                  {r.has_cert && <a href={docUrl({ token: r.token, doc: "cert" })} download className="text-[11px] p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center" title="Download the Certificate of Completion" aria-label="Download the Certificate of Completion"><Download className="w-3.5 h-3.5" /></a>}
                   {!r.has_signed && <button onClick={() => setViewing({ token: r.token, title: r.title, doc: "source" })} className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 flex items-center gap-1" title="View the document that was sent"><Eye className="w-3.5 h-3.5" /> Document</button>}
                   {(r.status === "sent" || r.status === "in_progress") && (r.recipients || []).some((x) => x.status === "signed") && (
                     <button onClick={() => completeEnv(r)} disabled={!!completing} className="text-slate-500 hover:text-emerald-400 disabled:opacity-50 flex items-center gap-1 text-xs" title="Finish with the signatures already collected and issue the Certificate of Completion">{completing === r.token ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} {completing === r.token ? "Completing…" : "Complete as signed"}</button>

@@ -23,7 +23,7 @@
 //   npm run verify:esign-load
 import { readFileSync } from "fs";
 
-const PAGE = "app/esign/page.tsx";
+const PAGE = process.env.ESIGN_PAGE || "app/esign/page.tsx";   // override only to prove the guard fails on a broken copy
 
 // Blank out COMMENTS while preserving offsets, so the prose in this file's own comments
 // — which necessarily quotes both the broken shape and the empty-state copy — can never
@@ -109,6 +109,18 @@ chk(/onClick=\{\s*\(\)\s*=>\s*\{?\s*setTries\(0\);\s*load\(\);?\s*\}?\s*\}/.test
 chk(/<iframe/.test(code), "documents render inline on the page (not download-only)");
 chk(/docUrl\s*\(/.test(code) && /doc=\$\{/.test(raw), "the viewer points at the envelope PDF route");
 chk(/doc:\s*"cert"/.test(raw), "the Certificate of Completion is reachable from the list");
+
+// 7. OPENING A DOCUMENT MUST BRING IT INTO VIEW. Ramon, 2026-09-15: "It's not letting me download
+//    or [click] the certificate." It was opening — 1,451px above the top of the screen, because the
+//    viewer renders above a list of 35 and the 3545 Winthrop VOM row sits far down it. The viewer
+//    container must hold the ref, and an effect keyed on `viewing` must scroll it into view.
+chk(/ref=\{viewerRef\}/.test(code) && /useEffect\(\s*\(\)\s*=>\s*\{[^}]*viewerRef\.current\?\.scrollIntoView\([^)]*\)[^}]*\}\s*,\s*\[\s*viewing\s*\]\s*\)/.test(code),
+  "opening a document scrolls the viewer into view (ref on the viewer + effect keyed on `viewing`)");
+
+// 8. A certificate must be downloadable from its own row, never only from inside the viewer.
+const rows = code.indexOf("reqs.map(");
+chk(rows >= 0 && /<a\s+href=\{docUrl\(\{\s*token:\s*r\.token,\s*doc:\s*"cert"\s*\}\)\}\s+download\b/.test(code.slice(rows)),
+  "each envelope row has a direct download link for its Certificate of Completion");
 
 console.log(failed ? `\n${failed} check(s) FAILED\n` : "\nAll checks passed.\n");
 process.exit(failed ? 1 : 0);
