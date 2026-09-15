@@ -15,7 +15,7 @@
 import { readFileSync } from "fs";
 import {
   labelFor, fromVision, mayRelabel, checkAgainstSlot, kindsExpectedBySlot,
-  identifyFromText, KINDS, categoryFor, UNKNOWN, type Identification,
+  identifyFromText, identifyDocument, KINDS, categoryFor, UNKNOWN, type Identification,
 } from "../lib/docIdentify";
 
 let bad = 0;
@@ -165,5 +165,79 @@ try {
   chk(/verify-doc-identify|verify:doc-identify/.test(hook), "this guard RUNS in the pre-commit hook");
 } catch (e) { chk(false, `section threw: ${e instanceof Error ? e.message : e}`); }
 
+(async () => {
+console.log("\n7. AN EARNEST-MONEY RECEIPT IS A DOCUMENT WE KNOW — FF-202607-8421, 2026-09-14");
+// A borrower uploaded a phone screenshot of an escrow company's "RECEIPT OF FUNDS WIRED IN"
+// ($15,000, earnest money: yes). It came back "not identified" — correctly, because the taxonomy
+// had no kind for it and the prompt forbids picking the nearest-sounding one. A purchase file's
+// EMD is asset evidence the lender asks for on every purchase; it must be nameable.
+try {
+  const EMD_LABEL = "EMD receipt — Lakeside Escrow — 2026-09-12 — $15,000.00";
+  chk(KINDS.includes("emd_receipt" as any), "emd_receipt is in the taxonomy");
+  chk(categoryFor("emd_receipt" as any) === "Assets", "an EMD receipt files itself under Assets");
+  // The model's own name for the figure is ignored: "amount wired" / "wire amount" / "deposit"
+  // for three copies of one receipt would print three different labels (rule 1).
+  chk(labelFor("emd_receipt" as any, { issuer: "Lakeside Escrow", documentDate: "2026-09-12", keyAmount: 15000, keyAmountLabel: "amount wired" })
+      === EMD_LABEL, "label: escrow company, date received, amount — built by code");
+
+  // The vision call itself, with fetch stubbed — no network, no borrower file.
+  const FILE = "Screenshot_20990101_000000_Samsung_Notes_EMD.jpg";
+  const reply = { kind: "emd_receipt", confidence: "high", legible: true,
+    evidence: ["masthead: RECEIPT OF FUNDS WIRED IN", "Earnest Money: Yes"],
+    issuer: "Lakeside Escrow", documentDate: "2026-09-12", keyAmount: 15000, keyAmountLabel: "wire amount", accountLast4: "0000" };
+  const realFetch = globalThis.fetch;
+  let sent: any = null;
+  globalThis.fetch = (async (_u: any, init: any) => {
+    sent = JSON.parse(String(init?.body || "{}"));
+    return { ok: true, status: 200, json: async () => ({ content: [{ type: "tool_use", input: reply }] }) } as any;
+  }) as any;
+  let got: Identification;
+  try {
+    got = await identifyDocument({ buf: Buffer.from([0xff, 0xd8, 0xff, 0xe0]), fileName: FILE, mediaType: "image/jpeg", apiKey: "stub" });
+  } finally { globalThis.fetch = realFetch; }
+  chk(!!sent, "the stub actually received the vision request (otherwise every check below is vacuous)");
+  chk(String(sent?.system || "").includes("emd_receipt"), "the vision prompt lists emd_receipt among the kinds it may choose");
+  chk(/emd_receipt[^\n]*earnest/i.test(String(sent?.system || "")), "…and says what an emd_receipt IS, not just its slug");
+  const enumKinds: string[] = sent?.tools?.[0]?.input_schema?.properties?.kind?.enum || [];
+  chk(enumKinds.includes("emd_receipt"), "the tool schema's kind enum accepts emd_receipt");
+  const body = JSON.stringify(sent || {});
+  chk(!!sent && !body.includes(FILE) && !body.includes("Samsung_Notes_EMD"), "the FILENAME is not in the request the model sees");
+  chk(got.kind === "emd_receipt" && got.label === EMD_LABEL && got.category === "Assets",
+      `a model answer of emd_receipt survives normalisation and labels (got ${got.kind} / "${got.label}")`);
+
+  // The free text pass. An EMD receipt mentions a buyer, a seller and the close of escrow — four
+  // purchase-contract markers — and must still be called a receipt.
+  const RECEIPT = ("Lakeside Escrow, Inc. RECEIPT OF FUNDS WIRED IN Escrow No.: 000000-TT Date Received: 09/12/2026 "
+    + "Amount: $15,000.00 Earnest Money: Yes Originator: Example Bank acct ending 0000 Buyer: Test Buyer Seller: Test Seller "
+    + "Estimated close of escrow: 10/15/2026 Escrow Officer: Test Officer ").repeat(3);
+  chk(identifyFromText(RECEIPT)?.kind === "emd_receipt", `a text-layer EMD receipt identifies as emd_receipt (got ${identifyFromText(RECEIPT)?.kind})`);
+  // And the contract that CALLS for the deposit is still a contract.
+  const CONTRACT = ("RESIDENTIAL PURCHASE AGREEMENT AND JOINT ESCROW INSTRUCTIONS Buyer Seller Purchase Price $500,000 "
+    + "Earnest money deposit of $15,000 to be wired to escrow holder within 3 days. Escrow No. to be assigned. "
+    + "Close of Escrow shall occur 30 days after acceptance. ").repeat(4);
+  chk(identifyFromText(CONTRACT)?.kind === "purchase_contract", `a purchase contract that mentions the EMD is still a purchase contract (got ${identifyFromText(CONTRACT)?.kind})`);
+
+  // Slots. The live lender condition, verbatim from loan_documents.
+  const FUNDS = "Assets: Short funds to close and/or reserves. Document sufficient funds for the closing of this transaction.";
+  const emd = ident({ kind: "emd_receipt" as any, confidence: "high" });
+  chk(kindsExpectedBySlot("Earnest money deposit (EMD) — copy of wire receipt").includes("emd_receipt" as any), "an EMD checklist item expects an emd_receipt");
+  chk(kindsExpectedBySlot("EMD").includes("emd_receipt" as any), "…including one named just \"EMD\"");
+  chk(checkAgainstSlot(FUNDS, emd).verdict === "matches", "an EMD receipt satisfies the funds-to-close Assets condition");
+  // The expensive direction: that condition used to name no kind and could contradict nothing.
+  // Now that it names one, a bank statement or a gift letter filed there must not become a MISMATCH.
+  chk(checkAgainstSlot(FUNDS, ident({ kind: "bank_statement", confidence: "high" })).verdict === "matches",
+      "a BANK STATEMENT in the funds-to-close condition is not called a mismatch");
+  chk(checkAgainstSlot(FUNDS, ident({ kind: "gift_letter", confidence: "high" })).verdict === "matches",
+      "a GIFT LETTER in the funds-to-close condition is not called a mismatch");
+  chk(checkAgainstSlot(FUNDS, ident({ kind: "w2", confidence: "high" })).verdict === "mismatch",
+      "a W-2 in the funds-to-close condition IS a mismatch — the condition is not vacuous");
+  // A receipt does not satisfy the statements requirement: the lender still needs the account the
+  // deposit left from, so saying "matches" there would hide a missing document.
+  const inStatements = checkAgainstSlot("Bank statements — last 2 months", emd);
+  chk(inStatements.verdict === "mismatch" && /an EMD receipt/.test(inStatements.message),
+      `an EMD receipt in the bank-statement slot is a mismatch, and reads grammatically (${inStatements.verdict === "mismatch" ? inStatements.message : inStatements.verdict})`);
+} catch (e) { chk(false, `section threw: ${e instanceof Error ? e.message : e}`); }
+
 console.log(bad ? `\n${bad} FAILED\n` : "\nALL PASS\n");
 process.exit(bad ? 1 : 0);
+})();

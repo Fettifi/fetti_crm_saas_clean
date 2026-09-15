@@ -47,6 +47,7 @@ export type DocKind =
   // property / transaction
   | "appraisal" | "purchase_contract" | "homeowners_insurance" | "flood_certificate"
   | "title_commitment" | "closing_statement" | "property_tax_bill" | "hoa_statement"
+  | "emd_receipt"
   // loan / compliance
   | "loan_estimate" | "closing_disclosure" | "promissory_note" | "deed_of_trust"
   | "letter_of_explanation" | "gift_letter" | "borrower_authorization" | "voided_check"
@@ -116,6 +117,9 @@ const TAXONOMY: Record<Exclude<DocKind, "unknown">, { display: string; category:
   flood_certificate:     { display: "Flood certificate",            category: "Property" },
   title_commitment:      { display: "Title commitment",             category: "Property" },
   closing_statement:     { display: "Closing statement",            category: "Property" },
+  // An escrow/title company's receipt for the buyer's earnest money. Asset evidence, not a
+  // property document: it proves funds left the borrower, which is what the lender is checking.
+  emd_receipt:           { display: "EMD receipt",                  category: "Assets" },
   property_tax_bill:     { display: "Property tax bill",            category: "Property" },
   hoa_statement:         { display: "HOA statement",                category: "Property" },
   loan_estimate:         { display: "Loan Estimate",                category: "Disclosures" },
@@ -191,13 +195,16 @@ export function labelFor(kind: DocKind, d: IdentDetails = {}): string | null {
     const when = monthOf(d.periodEnd) || monthOf(d.periodStart) || monthOf(d.documentDate);
     if (when) parts.push(when);
   } else if ((kind === "credit_report" || kind === "ssa_award" || kind === "voe" || kind === "letter_of_explanation"
-    || kind === "gift_letter" || kind === "appraisal" || kind === "va_award") && d.documentDate) {
+    || kind === "gift_letter" || kind === "appraisal" || kind === "va_award" || kind === "emd_receipt") && d.documentDate) {
     parts.push(String(d.documentDate));
   }
 
   // The one figure that distinguishes this copy from another of the same form.
   const amt = usd(d.keyAmount);
-  if (amt) parts.push(d.keyAmountLabel ? `${d.keyAmountLabel} ${amt}` : amt);
+  // A receipt carries exactly one figure and the kind already names it. The model's own word for
+  // it ("amount wired", "wire amount", "deposit") would split three copies into three labels.
+  const AMOUNT_NAMED_BY_KIND: DocKind[] = ["emd_receipt"];
+  if (amt) parts.push(d.keyAmountLabel && !AMOUNT_NAMED_BY_KIND.includes(kind) ? `${d.keyAmountLabel} ${amt}` : amt);
 
   return parts.join(" — ");
 }
@@ -229,6 +236,17 @@ const TEXT_RULES: { kind: DocKind; need: number; markers: [string, RegExp][] }[]
     ["dwelling coverage", /\bcoverage\s+A\b|\bdwelling\b/i], ["premium", /\bannual\s+premium\b|\btotal\s+premium\b/i],
     ["deductible", /\bdeductible\b/i], ["named insured", /\bnamed\s+insured\b/i],
     ["mortgagee clause", /\bmortgagee\b|\bloss\s+payee\b/i],
+  ]},
+  // Ahead of the purchase contract, so a tie goes to the receipt: a receipt prints the buyer, the
+  // seller, "earnest money" and the close-of-escrow date — four contract markers — and before
+  // this rule existed a text-layer EMD receipt was confidently called a purchase contract.
+  { kind: "emd_receipt", need: 3, markers: [
+    ["receipt of funds", /\breceipt\s+(?:of|for)\s+(?:funds|deposit)\b|\bdeposit\s+receipt\b|\bfunds\s+received\b/i],
+    ["earnest money", /\bearnest\s+money\b|\bEMD\b|\bgood\s+faith\s+deposit\b/i],
+    ["escrow no", /\bescrow\s+(?:no|number)\b|\bescrow\s*#/i],
+    ["wired in", /\bwired\s+in\b|\bincoming\s+wire\b|\bwire\s+received\b/i],
+    ["originator", /\boriginator\b|\bremitter\b|\breceived\s+from\b/i],
+    ["date received", /\b(?:date|amount)\s+received\b/i],
   ]},
   { kind: "purchase_contract", need: 3, markers: [
     ["purchase agreement", /\bpurchase\s+(?:agreement|contract)\b|\bresidential\s+purchase\b/i],
@@ -352,8 +370,12 @@ Return your answer through the tool. Do NOT write a title, a name, or a summary 
 kind MUST be exactly one of:
 ${KINDS.join(" | ")}
 
+Kinds that are easy to confuse:
+• emd_receipt — an escrow or title company's receipt for the buyer's earnest money deposit (EMD) or other funds received into escrow: "Receipt of Funds", "Wired In", "Earnest Money", an escrow number, the sending bank. It is NOT the purchase contract that calls for the deposit, and NOT the bank statement the money left from.
+
 RULES — read them, they are the whole point of this task:
 • Judge ONLY by what is printed on the page. Ignore any filename, header, or label you are told the document was filed under; it is frequently wrong and is the reason you are being asked.
+• A photograph or phone screenshot of a document — shown in a PDF viewer, an email, a notes app — IS that document. Judge the document on the screen; ignore the phone's status bar and the app around it.
 • If the pages are not all the same document (e.g. a W-2 and a pay stub scanned into one PDF), set kind to the FIRST/primary document and list every distinct document you can see in containsMultiple.
 • If you cannot tell what it is, return kind "unknown". That is a correct and useful answer. Never pick the nearest-sounding kind to avoid saying unknown.
 • If the image is too dark, blurry, cropped or low-resolution to read, set legible=false and return kind "unknown" unless the TYPE is still unmistakable.
@@ -362,14 +384,14 @@ RULES — read them, they are the whole point of this task:
 
 FIELDS (fill only what is actually printed; null for everything else):
 • personName — the person the document is ABOUT, exactly as printed (employee, account holder, licensee, borrower).
-• issuer — the organisation that ISSUED it: employer on a W-2/stub, bank on a statement, insurer on a policy, agency on a licence or award, lender on a mortgage statement, appraiser's firm on an appraisal.
+• issuer — the organisation that ISSUED it: employer on a W-2/stub, bank on a statement, insurer on a policy, agency on a licence or award, lender on a mortgage statement, appraiser's firm on an appraisal, escrow or title company on an EMD receipt.
 • taxYear — for W-2 / 1099 / 1040 / K-1, the tax year printed on the form (NOT the year it was printed or scanned).
 • periodStart, periodEnd — YYYY-MM-DD, for anything covering a period: a pay period, a statement cycle.
-• documentDate — YYYY-MM-DD, for anything with a single date: a letter, an award, a contract, a report date.
+• documentDate — YYYY-MM-DD, for anything with a single date: a letter, an award, a contract, a report date, the date funds were received on an EMD receipt.
 • propertyAddress — ONLY the address of the real property the document is ABOUT (the subject of an appraisal, a purchase contract, a tax bill, a lease, a deed, an insurance policy). It is NOT the person's mailing or home address: a driver's licence, a W-2, a 1040 and a benefit letter all print where someone lives, and none of them is a property document. Leave it null on those.
 • state — the two-letter state for a driver's licence, a deed, or a state-issued document.
 • accountLast4 — last 4 of an account number if shown. NEVER return a full account number or a full SSN.
-• keyAmount + keyAmountLabel — the ONE printed figure that identifies this copy, with a name for it of AT MOST THREE WORDS (it is printed inside a document title, so "AGI" not "adjusted gross income (line 11)"). W-2 → box 1 wages, label "Box 1". Pay stub → gross pay this period, label "gross". Bank statement → ending balance, label "ending balance". SSA award → the monthly benefit, label "monthly". Appraisal → the appraised value, label "value". Purchase contract → the purchase price, label "price". 1040 → adjusted gross income, label "AGI". Leave null if the document has no such figure.
+• keyAmount + keyAmountLabel — the ONE printed figure that identifies this copy, with a name for it of AT MOST THREE WORDS (it is printed inside a document title, so "AGI" not "adjusted gross income (line 11)"). W-2 → box 1 wages, label "Box 1". Pay stub → gross pay this period, label "gross". Bank statement → ending balance, label "ending balance". SSA award → the monthly benefit, label "monthly". Appraisal → the appraised value, label "value". Purchase contract → the purchase price, label "price". 1040 → adjusted gross income, label "AGI". EMD receipt → the amount received, label "amount". Leave null if the document has no such figure.
 • pageCount — how many pages you were shown.
 
 Transcribe figures exactly as printed. Never round, never compute, never infer a figure that is not on the page.`;
@@ -542,6 +564,13 @@ const SLOT_WORDS: [DocKind, RegExp][] = [
   ["drivers_license", /\bdriver'?s?\s+licen[sc]e\b|\bphoto\s+id\b|\bgovernment-?issued\b|\bidentification\b/i],
   ["homeowners_insurance", /\bhomeowners?\s+insurance\b|\bhoi\b|\bhazard\s+insurance\b/i],
   ["purchase_contract", /\bpurchase\s+(?:contract|agreement)\b/i],
+  ["emd_receipt", /\bearnest\s+money\b|\bEMD\b|\bescrow\s+deposit\b|\bgood\s+faith\s+deposit\b|\b(?:deposit|wire)\s+receipt\b|\breceipt\s+(?:of|for)\s+(?:funds|deposit)\b/i],
+  // A lender's funds-to-close condition ("Assets: Short funds to close and/or reserves. Document
+  // sufficient funds…", live on a file 2026-09-14) is satisfied by ANY of these. It used to name
+  // no kind and so could contradict nothing; giving it only one would turn a bank statement filed
+  // there into a false mismatch, which is the expensive direction.
+  ...(["bank_statement", "emd_receipt", "gift_letter", "closing_statement"] as DocKind[])
+    .map((k): [DocKind, RegExp] => [k, /\bfunds\s+to\s+close\b|\bproof\s+of\s+funds\b|\bsufficient\s+funds\b/i]),
   ["appraisal", /\bappraisal\b/i],
   ["ssa_award", /\bsocial\s+security\b.*\b(?:award|letter)\b|\baward\s+letter\b/i],
   ["voe", /\bverification\s+of\s+employment\b|\bvoe\b/i],
@@ -565,7 +594,8 @@ function kindMentioned(k: DocKind, text: string): boolean {
 /** Which document kinds a checklist item named `slotName` is asking for. Empty = it doesn't say. */
 export function kindsExpectedBySlot(slotName: string): DocKind[] {
   const n = String(slotName || "");
-  return SLOT_WORDS.filter(([, re]) => re.test(n)).map(([k]) => k);
+  // A kind can be named by two rows (a funds-to-close condition that also says "bank statements").
+  return [...new Set(SLOT_WORDS.filter(([, re]) => re.test(n)).map(([k]) => k))];
 }
 
 export type SlotVerdict =
@@ -601,7 +631,7 @@ export function checkAgainstSlot(slotName: string, ident: Identification): SlotV
   if (!got) return { verdict: "not_identified", expected };
   return {
     verdict: "mismatch", expected, got: ident.kind,
-    message: `Filed under "${slotName}" (expects ${want}) but this document is a ${got}.`,
+    message: `Filed under "${slotName}" (expects ${want}) but this document is ${/^[AEIOU]/i.test(got) ? "an" : "a"} ${got}.`,
   };
 }
 
