@@ -34,6 +34,7 @@
 //     one it let in, which is how four Chase CARD statements entered an income calculation. So
 //     identification here is compared against the checklist slot the file was dropped into, and a
 //     contradiction is reported as a mismatch. It never silently renames a slot a human named.
+import sharp from "sharp";
 import { pdfText, isScan, looksLikeCreditReport, looksLikeIncomeDoc, looksLikeCreditCardStatement } from "@/lib/docContent";
 
 export type DocKind =
@@ -47,7 +48,7 @@ export type DocKind =
   // property / transaction
   | "appraisal" | "purchase_contract" | "homeowners_insurance" | "flood_certificate"
   | "title_commitment" | "closing_statement" | "property_tax_bill" | "hoa_statement"
-  | "emd_receipt"
+  | "emd_receipt" | "counter_offer"
   // loan / compliance
   | "loan_estimate" | "closing_disclosure" | "promissory_note" | "deed_of_trust"
   | "letter_of_explanation" | "gift_letter" | "borrower_authorization" | "voided_check"
@@ -120,6 +121,8 @@ const TAXONOMY: Record<Exclude<DocKind, "unknown">, { display: string; category:
   // An escrow/title company's receipt for the buyer's earnest money. Asset evidence, not a
   // property document: it proves funds left the borrower, which is what the lender is checking.
   emd_receipt:           { display: "EMD receipt",                  category: "Assets" },
+  // Changes some terms of a purchase contract; it is not the contract. See identifyFromText().
+  counter_offer:         { display: "Counter offer",                category: "Property" },
   property_tax_bill:     { display: "Property tax bill",            category: "Property" },
   hoa_statement:         { display: "HOA statement",                category: "Property" },
   loan_estimate:         { display: "Loan Estimate",                category: "Disclosures" },
@@ -180,11 +183,13 @@ export function labelFor(kind: DocKind, d: IdentDetails = {}): string | null {
   // Who or what it belongs to. On a tax return the issuer is always the IRS, which distinguishes
   // nothing and reads as noise ("Tax return (1040) 2025 — Department of the Treasury—Internal
   // Revenue Service — AGI $129,144.00"); the year and the AGI are what tell two returns apart.
-  const ISSUER_IS_NOISE: DocKind[] = ["1040", "k1"];
+  // Same for a counter offer: the "issuer" is the forms publisher or a brokerage; the property is what identifies it.
+  const ISSUER_IS_NOISE: DocKind[] = ["1040", "k1", "counter_offer"];
   if (d.issuer && !ISSUER_IS_NOISE.includes(kind)) parts.push(String(d.issuer).slice(0, 60));
   else if (d.propertyAddress && (kind === "appraisal" || kind === "purchase_contract" || kind === "property_tax_bill"
     || kind === "homeowners_insurance" || kind === "title_commitment" || kind === "deed_of_trust"
-    || kind === "hoa_statement" || kind === "lease" || kind === "comparable_rent_1007" || kind === "closing_statement")) {
+    || kind === "hoa_statement" || kind === "lease" || kind === "comparable_rent_1007" || kind === "closing_statement"
+    || kind === "counter_offer")) {
     parts.push(String(d.propertyAddress).slice(0, 60));
   }
 
@@ -195,7 +200,7 @@ export function labelFor(kind: DocKind, d: IdentDetails = {}): string | null {
     const when = monthOf(d.periodEnd) || monthOf(d.periodStart) || monthOf(d.documentDate);
     if (when) parts.push(when);
   } else if ((kind === "credit_report" || kind === "ssa_award" || kind === "voe" || kind === "letter_of_explanation"
-    || kind === "gift_letter" || kind === "appraisal" || kind === "va_award" || kind === "emd_receipt") && d.documentDate) {
+    || kind === "gift_letter" || kind === "appraisal" || kind === "va_award" || kind === "emd_receipt" || kind === "counter_offer") && d.documentDate) {
     parts.push(String(d.documentDate));
   }
 
@@ -319,6 +324,21 @@ const TEXT_RULES: { kind: DocKind; need: number; markers: [string, RegExp][] }[]
   ]},
 ];
 
+// A counter offer prints the buyer, the seller, the price and the deposit — every marker the
+// purchase-contract rule counts — so on FF-202607-8421 (2026-09-14) a C.A.R. Buyer Counter Offer
+// was called a purchase contract. It is recognised by its MASTHEAD instead, before the count runs,
+// unless the full agreement is inside the same file: an executed package (the contract, its
+// addenda and its counter offers) is the purchase contract, whichever page was scanned first.
+const COUNTER_OFFER_MASTHEAD = /\b(?:buyer|seller)(?:\s+multiple)?\s+counter\s*offer\b|\bcounter\s*offer\s+no\b/i;
+const FULL_AGREEMENT = /\bresidential\s+purchase\s+agreement\b|\bpurchase\s+agreement\s+and\s+joint\s+escrow\b|\bpurchase\s+and\s+sale\s+(?:agreement|contract)\b/gi;
+const COUNTER_OFFER_MARKERS: [string, RegExp][] = [
+  ["counter offer title", /\b(?:buyer|seller)(?:\s+multiple)?\s+counter\s*offer\b/i],
+  ["this is a counter offer", /\bthis\s+is\s+a\s+counter\s*offer\b/i],
+  ["c.a.r. form bco/sco/smco", /\bC\.?\s?A\.?\s?R\.?\s+Form\s+(?:BCO|SCO|SMCO|RCO)\b/i],
+  ["counter offer no", /\bcounter\s*offer\s+no\b/i],
+  ["acceptance of counter offer", /\bacceptance\s+of\s+(?:this\s+)?(?:\w+\s+){0,2}counter\s*offer\b/i],
+];
+
 /** The free pass. Returns null when the text answers nothing — never a guess. */
 export function identifyFromText(text: string): Identification | null {
   const t = String(text || "");
@@ -330,6 +350,11 @@ export function identifyFromText(text: string): Identification | null {
   if (credit.ok) return mk("credit_report", "text", credit.hits, credit.score >= 8 ? "high" : "medium");
   const card = looksLikeCreditCardStatement(t);
   if (card.ok) return mk("credit_card_statement", "text", card.hits, "high");
+
+  if (COUNTER_OFFER_MASTHEAD.test(t.slice(0, 400)) && (t.match(FULL_AGREEMENT) || []).length < 3) {
+    const hits = COUNTER_OFFER_MARKERS.filter(([, re]) => re.test(t)).map(([n]) => n);
+    if (hits.length >= 2) return mk("counter_offer", "text", hits, hits.length >= 3 ? "high" : "medium");
+  }
 
   let best: { kind: DocKind; hits: string[] } | null = null;
   for (const r of TEXT_RULES) {
@@ -372,6 +397,7 @@ ${KINDS.join(" | ")}
 
 Kinds that are easy to confuse:
 • emd_receipt — an escrow or title company's receipt for the buyer's earnest money deposit (EMD) or other funds received into escrow: "Receipt of Funds", "Wired In", "Earnest Money", an escrow number, the sending bank. It is NOT the purchase contract that calls for the deposit, and NOT the bank statement the money left from.
+• counter_offer — a buyer's or seller's counter offer to a purchase agreement (e.g. C.A.R. Form BCO / SCO / SMCO) that changes some of its terms. It is NOT the purchase contract itself. When one file holds the full purchase agreement AND its counter offers, kind is purchase_contract and each counter offer goes in containsMultiple.
 
 RULES — read them, they are the whole point of this task:
 • Judge ONLY by what is printed on the page. Ignore any filename, header, or label you are told the document was filed under; it is frequently wrong and is the reason you are being asked.
@@ -387,14 +413,81 @@ FIELDS (fill only what is actually printed; null for everything else):
 • issuer — the organisation that ISSUED it: employer on a W-2/stub, bank on a statement, insurer on a policy, agency on a licence or award, lender on a mortgage statement, appraiser's firm on an appraisal, escrow or title company on an EMD receipt.
 • taxYear — for W-2 / 1099 / 1040 / K-1, the tax year printed on the form (NOT the year it was printed or scanned).
 • periodStart, periodEnd — YYYY-MM-DD, for anything covering a period: a pay period, a statement cycle.
-• documentDate — YYYY-MM-DD, for anything with a single date: a letter, an award, a contract, a report date, the date funds were received on an EMD receipt.
-• propertyAddress — ONLY the address of the real property the document is ABOUT (the subject of an appraisal, a purchase contract, a tax bill, a lease, a deed, an insurance policy). It is NOT the person's mailing or home address: a driver's licence, a W-2, a 1040 and a benefit letter all print where someone lives, and none of them is a property document. Leave it null on those.
+• documentDate — YYYY-MM-DD, for anything with a single date: a letter, an award, a contract, a report date, the date of a counter offer, the date funds were received on an EMD receipt.
+• propertyAddress — ONLY the address of the real property the document is ABOUT (the subject of an appraisal, a purchase contract or counter offer, a tax bill, a lease, a deed, an insurance policy). It is NOT the person's mailing or home address: a driver's licence, a W-2, a 1040 and a benefit letter all print where someone lives, and none of them is a property document. Leave it null on those.
 • state — the two-letter state for a driver's licence, a deed, or a state-issued document.
 • accountLast4 — last 4 of an account number if shown. NEVER return a full account number or a full SSN.
 • keyAmount + keyAmountLabel — the ONE printed figure that identifies this copy, with a name for it of AT MOST THREE WORDS (it is printed inside a document title, so "AGI" not "adjusted gross income (line 11)"). W-2 → box 1 wages, label "Box 1". Pay stub → gross pay this period, label "gross". Bank statement → ending balance, label "ending balance". SSA award → the monthly benefit, label "monthly". Appraisal → the appraised value, label "value". Purchase contract → the purchase price, label "price". 1040 → adjusted gross income, label "AGI". EMD receipt → the amount received, label "amount". Leave null if the document has no such figure.
 • pageCount — how many pages you were shown.
 
 Transcribe figures exactly as printed. Never round, never compute, never infer a figure that is not on the page.`;
+
+// ── IMAGES THE API ACCEPTS, AT A SIZE THE MODEL CAN READ ─────────────────────────────────────
+// FF-202607-8421, 2026-09-14: two bank-statement screenshots (1440×8036, 1440×8152) came back
+// "vision error 400 — image dimensions exceed max allowed size: 8000 pixels". A scrolled
+// banking-app screenshot, the most ordinary thing a borrower sends, could not be read at all.
+// Shrinking it to fit is not the fix: the model downsizes again to its native limit, and a
+// 1440×8152 page arrives ~455px wide, where statement text is unreadable. So a TALL image is cut
+// into overlapping slices, each within the native limit, sent in order top to bottom. An image
+// that is not tall and not oversized is sent exactly as uploaded — that path already reads well.
+// Limits from platform.claude.com/docs/en/build-with-claude/vision (read 2026-09-14).
+const API_MAX_PX = 8000;            // per image; rejected above it
+const API_MAX_FULL_SIZE_IMAGES = 20; // above this every image in the request is capped at 2000px
+const NATIVE_LONG_EDGE = 2576;      // high-resolution tier (Claude 4.7+): downsized above this…
+const NATIVE_PATCHES = 4784;        // …or above this many 28×28-px visual tokens
+const PATCH = 28;
+const SLICE_WIDTH_MAX = 1568;
+const SLICE_OVERLAP = 120;          // a line cut at one boundary is whole in the neighbouring slice
+const TALL_RATIO = 3;               // taller than 3:1 is sliced; the 1440×3120 EMD screenshot (2.2:1) is not
+
+type VisionImage = { data: string; mediaType: string };
+const imageBlock = (p: VisionImage) => ({ type: "image", source: { type: "base64", media_type: p.mediaType, data: p.data } });
+
+/** The image(s) to send for one uploaded image. Never throws; an undecodable image goes as uploaded. */
+export async function visionImages(buf: Buffer, mediaType: string): Promise<VisionImage[]> {
+  const asUploaded: VisionImage[] = [{ data: buf.toString("base64"), mediaType }];
+  const meta = await sharp(buf, { failOn: "none" }).metadata().catch(() => null);
+  if (!meta?.width || !meta?.height) return asUploaded;
+  const quarterTurn = (meta.orientation || 1) >= 5;   // EXIF 5–8: stored sideways
+  const W = quarterTurn ? meta.height : meta.width;
+  const H = quarterTurn ? meta.width : meta.height;
+  const tall = H / W > TALL_RATIO;
+  if (!tall && W <= API_MAX_PX && H <= API_MAX_PX) return asUploaded;
+
+  try {
+    const upright = sharp(buf, { failOn: "none" }).rotate();
+    if (!tall) {
+      const one = await upright.resize({ width: API_MAX_PX, height: API_MAX_PX, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 92 }).toBuffer();
+      return [{ data: one.toString("base64"), mediaType: "image/jpeg" }];
+    }
+    const sliceHeightAt = (w: number) => Math.min(NATIVE_LONG_EDGE, Math.floor(NATIVE_PATCHES / Math.ceil(w / PATCH)) * PATCH);
+    const slicesAt = (w: number) => {
+      const h = Math.round(H * (w / W)), s = sliceHeightAt(w);
+      return h <= s ? 1 : Math.ceil((h - SLICE_OVERLAP) / (s - SLICE_OVERLAP));
+    };
+    let width = Math.min(W, SLICE_WIDTH_MAX);
+    // Past 20 images the API caps every one at 2000px, so an absurd image is narrowed until 20 hold it.
+    while (slicesAt(width) > API_MAX_FULL_SIZE_IMAGES && width > 64) width = Math.floor(width * 0.9);
+
+    const { data, info } = await upright.resize({ width }).raw().toBuffer({ resolveWithObject: true });
+    const sliceH = sliceHeightAt(info.width);
+    const n = Math.min(API_MAX_FULL_SIZE_IMAGES,
+      info.height <= sliceH ? 1 : Math.ceil((info.height - SLICE_OVERLAP) / (sliceH - SLICE_OVERLAP)));
+    const step = n === 1 ? 0 : Math.ceil((info.height - sliceH) / (n - 1));
+    const lossless = mediaType !== "image/jpeg";   // don't add a lossy pass to a PNG screenshot
+    const out: VisionImage[] = [];
+    for (let i = 0; i < n; i++) {
+      const top = Math.min(i * step, Math.max(0, info.height - sliceH));
+      const piece = sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } })
+        .extract({ left: 0, top, width: info.width, height: Math.min(sliceH, info.height - top) });
+      const bytes = lossless ? await piece.png().toBuffer() : await piece.jpeg({ quality: 92 }).toBuffer();
+      out.push({ data: bytes.toString("base64"), mediaType: lossless ? "image/png" : "image/jpeg" });
+    }
+    return out;
+  } catch {
+    return asUploaded;
+  }
+}
 
 const VISION_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-8";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -406,9 +499,19 @@ export async function identifyWithVision(
   opts: { timeoutMs?: number } = {},
 ): Promise<Identification> {
   if (!apiKey) return UNKNOWN("no ANTHROPIC_API_KEY configured", "none");
-  const block = doc.mediaType === "application/pdf"
-    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: doc.buf.toString("base64") } }
-    : { type: "image", source: { type: "base64", media_type: doc.mediaType, data: doc.buf.toString("base64") } };
+  const ASK = "Identify this document. Fields only.";
+  let content: any[];
+  if (doc.mediaType === "application/pdf") {
+    content = [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: doc.buf.toString("base64") } }, { type: "text", text: ASK }];
+  } else {
+    const parts = await visionImages(doc.buf, doc.mediaType);
+    content = parts.length === 1
+      ? [imageBlock(parts[0]), { type: "text", text: ASK }]
+      : [
+          ...parts.flatMap((p, i) => [{ type: "text", text: `Slice ${i + 1} of ${parts.length}:` }, imageBlock(p)]),
+          { type: "text", text: `These ${parts.length} images are overlapping slices, top to bottom, of ONE tall image (a scrolled screenshot or a long photo) — a single page of one document. ${ASK}` },
+        ];
+  }
 
   let transient = 0;
   for (let attempt = 0; attempt < 6; attempt++) {
@@ -424,7 +527,7 @@ export async function identifyWithVision(
           // NOTE: the filename is deliberately NOT supplied. Telling the model what the file was
           // called is how you get a driver's licence confirmed as a W-2 — the one failure this
           // whole file exists to prevent.
-          messages: [{ role: "user", content: [block, { type: "text", text: "Identify this document. Fields only." }] }],
+          messages: [{ role: "user", content }],
           tools: [{
             name: "return_identification",
             description: "Return what this document is, plus the few printed facts that identify this copy.",
@@ -564,6 +667,9 @@ const SLOT_WORDS: [DocKind, RegExp][] = [
   ["drivers_license", /\bdriver'?s?\s+licen[sc]e\b|\bphoto\s+id\b|\bgovernment-?issued\b|\bidentification\b/i],
   ["homeowners_insurance", /\bhomeowners?\s+insurance\b|\bhoi\b|\bhazard\s+insurance\b/i],
   ["purchase_contract", /\bpurchase\s+(?:contract|agreement)\b/i],
+  // A lender's "purchase contract" means the executed contract WITH its counter offers, so a
+  // counter offer filed there is part of the requirement, not a document in the wrong slot.
+  ["counter_offer", /\bpurchase\s+(?:contract|agreement)\b|\bcounter\s*-?\s*offers?\b/i],
   ["emd_receipt", /\bearnest\s+money\b|\bEMD\b|\bescrow\s+deposit\b|\bgood\s+faith\s+deposit\b|\b(?:deposit|wire)\s+receipt\b|\breceipt\s+(?:of|for)\s+(?:funds|deposit)\b/i],
   // A lender's funds-to-close condition ("Assets: Short funds to close and/or reserves. Document
   // sufficient funds…", live on a file 2026-09-14) is satisfied by ANY of these. It used to name

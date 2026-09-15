@@ -15,7 +15,7 @@
 import { readFileSync } from "fs";
 import {
   labelFor, fromVision, mayRelabel, checkAgainstSlot, kindsExpectedBySlot,
-  identifyFromText, identifyDocument, KINDS, categoryFor, UNKNOWN, type Identification,
+  identifyFromText, identifyDocument, KINDS, categoryFor, UNKNOWN, IDENTIFY_SYSTEM, type Identification,
 } from "../lib/docIdentify";
 
 let bad = 0;
@@ -236,6 +236,93 @@ try {
   const inStatements = checkAgainstSlot("Bank statements — last 2 months", emd);
   chk(inStatements.verdict === "mismatch" && /an EMD receipt/.test(inStatements.message),
       `an EMD receipt in the bank-statement slot is a mismatch, and reads grammatically (${inStatements.verdict === "mismatch" ? inStatements.message : inStatements.verdict})`);
+} catch (e) { chk(false, `section threw: ${e instanceof Error ? e.message : e}`); }
+
+console.log("\n8. A COUNTER OFFER IS NOT THE CONTRACT — FF-202607-8421, 2026-09-14");
+// A C.A.R. Buyer Counter Offer prints the buyer, the seller, the purchase price and the deposit —
+// four purchase-contract markers — so the text pass called it a purchase contract, and two
+// uploads of it were about to be renamed "Purchase contract". The executed contract package on
+// the same file (30 pages: addenda, the full agreement, a seller counter offer, the DocuSign
+// certificate) IS the purchase contract and must stay one.
+try {
+  const BCO = ("BUYER COUNTER OFFER No. 1 (C.A.R. Form BCO, Revised 6/26) Date 08/20/2026 This is a counter offer to the Seller Counter Offer No. 1, "
+    + "on property known as 123 Example St, Exampletown, CA 90000 between Test Buyer (Buyer) and Test Seller (Seller). "
+    + "1. TERMS: Purchase price to be $500,000. Initial deposit increased to $15,000. All other terms remain the same. "
+    + "2. EXPIRATION: This Buyer Counter Offer shall be deemed revoked unless signed by Seller. 3. ACCEPTANCE OF THIS BUYER COUNTER OFFER. ").repeat(2);
+  chk(identifyFromText(BCO)?.kind === "counter_offer", `a buyer counter offer's text identifies as counter_offer (got ${identifyFromText(BCO)?.kind})`);
+  const SMCO = "SELLER MULTIPLE COUNTER OFFER No. 1 (C.A.R. Form SMCO, Revised 6/26) This is a counter offer to the Purchase Agreement. Buyer Seller. Acceptance of this Seller Multiple Counter Offer. ";
+  chk(identifyFromText(SMCO.repeat(3))?.kind === "counter_offer", `a counter offer that REFERS to the purchase agreement is still a counter offer (got ${identifyFromText(SMCO.repeat(3))?.kind})`);
+  const RPA = "CALIFORNIA RESIDENTIAL PURCHASE AGREEMENT AND JOINT ESCROW INSTRUCTIONS Buyer Seller Purchase Price $500,000 Initial deposit $15,000 Close of Escrow 30 days after acceptance. ";
+  chk(identifyFromText(RPA.repeat(4) + SMCO)?.kind === "purchase_contract", "an executed package with its counter offer at the back is the purchase contract");
+  chk(identifyFromText(SMCO + RPA.repeat(4))?.kind === "purchase_contract", "…and so is one whose counter offer was scanned in FIRST — the full agreement inside decides");
+  chk(categoryFor("counter_offer" as any) === "Property", "a counter offer files under Property");
+  chk(labelFor("counter_offer" as any, { issuer: "California Association of REALTORS", propertyAddress: "123 Example St, Exampletown, CA 90000", documentDate: "2026-08-20" })
+      === "Counter offer — 123 Example St, Exampletown, CA 90000 — 2026-08-20", "label: the property and the date — never the forms publisher");
+  chk(KINDS.includes("counter_offer" as any) && /counter_offer[^\n]*NOT the purchase contract/i.test(IDENTIFY_SYSTEM),
+      "the vision prompt lists counter_offer and says it is not the purchase contract");
+  const co = ident({ kind: "counter_offer" as any, confidence: "high" });
+  chk(checkAgainstSlot("Purchase contract", co).verdict === "matches", "a counter offer filed under the purchase-contract requirement is part of it, not a mismatch");
+  chk(checkAgainstSlot("Purchase contract", ident({ kind: "purchase_contract", confidence: "high" })).verdict === "matches", "…and the contract itself still matches there");
+  chk(checkAgainstSlot("W-2s — last 2 years", co).verdict === "mismatch", "a counter offer in the W-2 slot is a mismatch");
+  chk(kindsExpectedBySlot("Counter offer #2 — signed").includes("counter_offer" as any), "a counter-offer checklist item expects a counter_offer");
+} catch (e) { chk(false, `section threw: ${e instanceof Error ? e.message : e}`); }
+
+console.log("\n9. A TALL SCREENSHOT IS STILL A DOCUMENT WE CAN READ — FF-202607-8421, 2026-09-14");
+// Two bank-statement screenshots (1440×8036, 1440×8152) came back "vision error 400: image
+// dimensions exceed max allowed size: 8000 pixels" — a scrolled banking-app screenshot, the most
+// ordinary thing a borrower sends, could not be read at all. Checked from the request itself and
+// from the PIXELS of what was sent, with fetch stubbed: no network, no borrower file.
+try {
+  const sharp = (await import("sharp")).default;
+  const FILE2 = "Screenshot_20990101_000000_Samsung_Notes_TALL.jpg";
+  // White page, a blue band across the very top and a red band across the very bottom.
+  const page = (w: number, h: number) => sharp({ create: { width: w, height: h, channels: 3, background: { r: 255, g: 255, b: 255 } } })
+    .composite([
+      { input: { create: { width: w, height: 60, channels: 3, background: { r: 0, g: 0, b: 255 } } }, top: 0, left: 0 },
+      { input: { create: { width: w, height: 60, channels: 3, background: { r: 255, g: 0, b: 0 } } }, top: h - 60, left: 0 },
+    ]).jpeg({ quality: 90 }).toBuffer();
+  const send = async (buf: Buffer) => {
+    const realFetch = globalThis.fetch;
+    let body: any = null;
+    globalThis.fetch = (async (_u: any, init: any) => {
+      body = JSON.parse(String(init?.body || "{}"));
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: "tool_use", input: { kind: "bank_statement", confidence: "high", legible: true, evidence: [] } }] }) } as any;
+    }) as any;
+    try { await identifyDocument({ buf, fileName: FILE2, mediaType: "image/jpeg", apiKey: "stub" }); } finally { globalThis.fetch = realFetch; }
+    const images: any[] = (body?.messages?.[0]?.content || []).filter((b: any) => b?.type === "image");
+    const dims = await Promise.all(images.map((b) => sharp(Buffer.from(b.source.data, "base64")).metadata()));
+    return { body, images, dims };
+  };
+  const rgbAt = async (b: any, where: "top" | "bottom") => {
+    const buf = Buffer.from(b.source.data, "base64");
+    const m = await sharp(buf).metadata();
+    const raw = await sharp(buf).extract({ left: 2, top: where === "top" ? 10 : m.height! - 20, width: 10, height: 5 }).raw().toBuffer();
+    return [raw[0], raw[1], raw[2]];
+  };
+
+  const tall = await send(await page(1440, 8152));   // the live case's exact size
+  chk(!!tall.body, "the stub received the request (otherwise every check below is vacuous)");
+  chk(tall.images.length > 1, `a 1440×8152 screenshot is sent in slices, not as one image the API rejects (${tall.images.length} image blocks)`);
+  chk(tall.dims.every((m) => m.width! <= 8000 && m.height! <= 8000), "no image sent exceeds the API's 8000px hard limit");
+  chk(tall.dims.every((m) => Math.max(m.width!, m.height!) <= 2576 && Math.ceil(m.width! / 28) * Math.ceil(m.height! / 28) <= 4784),
+      `every slice fits the model's native resolution — 2576px long edge, 4784 28px patches — so none is shrunk into illegibility (${tall.dims.map((m) => `${m.width}×${m.height}`).join(", ")})`);
+  chk(tall.dims.every((m) => m.width! >= 1000), "the slices keep the screenshot's width, which is what keeps the text readable");
+  chk(tall.images.length <= 20, "at most 20 images — above that the API caps every image at 2000px");
+  const top = tall.images.length ? await rgbAt(tall.images[0], "top") : [0, 0, 0];
+  const bottom = tall.images.length ? await rgbAt(tall.images[tall.images.length - 1], "bottom") : [0, 0, 0];
+  chk(top[2] > 200 && top[0] < 80, `the first slice starts at the top of the screenshot (rgb ${top})`);
+  chk(bottom[0] > 200 && bottom[2] < 80, `the last slice reaches the bottom of the screenshot (rgb ${bottom})`);
+  chk(!!tall.body && !JSON.stringify(tall.body).includes(FILE2) && !JSON.stringify(tall.body).includes("Samsung_Notes_TALL"), "…and the filename is still not sent");
+
+  const extreme = await send(await page(200, 60000));
+  chk(extreme.images.length >= 1 && extreme.images.length <= 20 && extreme.dims.every((m) => m.width! <= 8000 && m.height! <= 8000),
+      `an absurdly tall image still produces a request the API accepts (${extreme.images.length} images)`);
+
+  // The EMD receipt screenshot (1440×3120) was read perfectly as one image. It must not change.
+  const NORMAL = await page(1440, 3120);
+  const normal = await send(NORMAL);
+  chk(normal.images.length === 1 && normal.images[0]?.source?.data === NORMAL.toString("base64"),
+      "an image that already reads well is sent exactly as uploaded — one block, byte-identical");
 } catch (e) { chk(false, `section threw: ${e instanceof Error ? e.message : e}`); }
 
 console.log(bad ? `\n${bad} FAILED\n` : "\nALL PASS\n");
