@@ -4,12 +4,12 @@
 // signing order, drop each signer's fields (color-coded) onto the live document,
 // and send. Tracks per-signer status; void anytime before completion.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, FileUp, Send, Link2, ExternalLink, FileSignature, Plus, Trash2, Ban, Download, Eye, X, RefreshCw, AlertTriangle, PenLine } from "lucide-react";
+import { Loader2, FileUp, Send, Link2, ExternalLink, FileSignature, Plus, Trash2, Ban, Download, Eye, X, RefreshCw, AlertTriangle, PenLine, CheckCircle2 } from "lucide-react";
 import PdfDoc, { EsignField, EsignFieldType } from "@/components/PdfDoc";
 import { BRAND } from "@/lib/brand";
 
 type Recipient = { id: string; name: string; email: string; phone: string; order: number };
-type Req = { token: string; title: string; status: string; created_at: string; has_signed?: boolean; has_cert?: boolean; recipients: { name: string; email?: string | null; order: number; status: string; delivery?: string | null }[] };
+type Req = { token: string; title: string; status: string; created_at: string; has_signed?: boolean; has_cert?: boolean; closed_by_sender?: { at: string; not_signed: string[] } | null; recipients: { name: string; email?: string | null; order: number; status: string; delivery?: string | null }[] };
 
 const TOOLS: [EsignFieldType, string][] = [["signature", "✍️ Signature"], ["initials", "🅸 Initials"], ["date", "📅 Date"], ["name", "🅽 Name"], ["text", "📝 Text box"]];
 const COLORS = ["#0ea5e9", "#f59e0b", "#a855f7", "#ef4444", "#14b8a6"];
@@ -78,6 +78,8 @@ export default function EsignPage() {
   const [viewing, setViewing] = useState<{ token: string; title: string; doc: "signed" | "cert" | "source" } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // Envelope token whose "Complete as signed" request is in flight — one click, one completion.
+  const [completing, setCompleting] = useState<string | null>(null);
   const pdfRef = useRef<HTMLInputElement>(null);
 
   function acceptDrop(e: React.DragEvent) {
@@ -302,6 +304,44 @@ export default function EsignPage() {
     await load();
   }
 
+  // COMPLETE AS SIGNED — finish an envelope with the signatures already collected.
+  //
+  // Ramon and Kelly Dorsey signed the 3545 Winthrop VOM on 8/26; the third recipient signed with his
+  // own DocuSign instead, so the envelope sat "in progress" and no certificate could ever issue for
+  // the two signatures that did happen. This closes it on purpose: everyone who did not sign prints
+  // NOT SIGNED on the certificate, their links stop working, and the note typed here prints as the
+  // sender's. The confirm step names both lists so nobody is marked by accident.
+  async function completeEnv(r: Req) {
+    const sorted = [...(r.recipients || [])].sort((a, b) => a.order - b.order);
+    const signed = sorted.filter((x) => x.status === "signed").map((x) => x.name);
+    const unsigned = sorted.filter((x) => x.status !== "signed").map((x) => x.name);
+    if (!signed.length) { alert("Nobody has signed this envelope yet, so there is nothing to certify."); return; }
+    const note = prompt(
+      `Complete "${r.title}" with the signatures collected?\n\n` +
+      `Signed: ${signed.join(", ")}\n` +
+      `Marked NOT SIGNED: ${unsigned.join(", ") || "nobody"}\n\n` +
+      `Their links can no longer sign, decline, or open the documents, and the Certificate of Completion says exactly this.\n` +
+      `Note for the certificate (optional; it prints as your note, and nothing prints if you leave it blank):`,
+      "",
+    );
+    if (note === null || completing) return;
+    setCompleting(r.token);
+    try {
+      const res = await fetch(`/api/esign/requests/${r.token}/complete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: note }) });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) { alert((j && j.error) || `Couldn't complete it (HTTP ${res.status}).`); await load(); return; }
+      // Completed, but something after the save needs attention (a failed loan-file filing, an
+      // integrity mismatch). Said out loud rather than buried in a server log.
+      if (j?.warning) alert(j.warning);
+      await load();
+      setViewing({ token: r.token, title: r.title, doc: "cert" });
+    } catch {
+      alert("Network error — refresh to see whether it completed before trying again.");
+    } finally {
+      setCompleting(null);
+    }
+  }
+
   const badge = (s: string) => s === "completed" ? "bg-emerald-500/20 text-emerald-300" : s === "in_progress" ? "bg-sky-500/20 text-sky-300" : s === "declined" || s === "voided" ? "bg-red-500/20 text-red-300" : "bg-slate-700/60 text-slate-300";
 
   return (
@@ -476,16 +516,19 @@ export default function EsignPage() {
                   <div className="font-medium truncate">{r.title}</div>
                   <div className="text-xs text-slate-500 flex flex-wrap gap-x-2">
                     {(r.recipients || []).sort((a, b) => a.order - b.order).map((x) => (
-                      <span key={x.order}>{x.order}. {x.name}{x.email ? ` <${x.email}>` : ""} <span className={x.status === "signed" ? "text-emerald-400" : x.status === "declined" ? "text-red-400" : "text-slate-500"}>· {x.status}</span>{x.delivery === "bounced" ? <span className="text-red-400 font-semibold"> · ✕ delivery failed</span> : x.delivery === "delivered" ? <span className="text-emerald-400"> · ✓ delivered</span> : null}</span>
+                      <span key={x.order}>{x.order}. {x.name}{x.email ? ` <${x.email}>` : ""} <span className={x.status === "signed" ? "text-emerald-400" : x.status === "declined" ? "text-red-400" : x.status === "not_signed" ? "text-amber-400" : "text-slate-500"}>· {x.status.replace("_", " ")}</span>{x.delivery === "bounced" ? <span className="text-red-400 font-semibold"> · ✕ delivery failed</span> : x.delivery === "delivered" ? <span className="text-emerald-400"> · ✓ delivered</span> : null}</span>
                     ))}
                     <span>· {new Date(r.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${badge(r.status)}`}>{r.status.replace("_", " ")}</span>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.closed_by_sender ? "bg-amber-500/20 text-amber-300" : badge(r.status)}`} title={r.closed_by_sender ? `Completed by sender. Not signed: ${r.closed_by_sender.not_signed.join(", ")}` : undefined}>{r.closed_by_sender ? `completed · ${(r.recipients || []).filter((x) => x.status === "signed").length} of ${(r.recipients || []).length} signed` : r.status.replace("_", " ")}</span>
                   {r.has_signed && <button onClick={() => setViewing({ token: r.token, title: r.title, doc: "signed" })} className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center gap-1" title="View the signed PDF on this page"><Eye className="w-3.5 h-3.5" /> Signed</button>}
                   {r.has_cert && <button onClick={() => setViewing({ token: r.token, title: r.title, doc: "cert" })} className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1" title="View the Certificate of Completion on this page"><Eye className="w-3.5 h-3.5" /> Certificate</button>}
                   {!r.has_signed && <button onClick={() => setViewing({ token: r.token, title: r.title, doc: "source" })} className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 flex items-center gap-1" title="View the document that was sent"><Eye className="w-3.5 h-3.5" /> Document</button>}
+                  {(r.status === "sent" || r.status === "in_progress") && (r.recipients || []).some((x) => x.status === "signed") && (
+                    <button onClick={() => completeEnv(r)} disabled={!!completing} className="text-slate-500 hover:text-emerald-400 disabled:opacity-50 flex items-center gap-1 text-xs" title="Finish with the signatures already collected and issue the Certificate of Completion">{completing === r.token ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} {completing === r.token ? "Completing…" : "Complete as signed"}</button>
+                  )}
                   {(r.status !== "voided" && r.status !== "declined" && r.status !== "completed") && (
                     <button onClick={() => voidEnv(r.token)} className="text-slate-500 hover:text-red-400 flex items-center gap-1 text-xs" title="Void envelope"><Ban className="w-3.5 h-3.5" /> Void</button>
                   )}

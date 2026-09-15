@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     recipients: (r.recipients || []).map((x) => ({ name: x.name, email: x.email || null, order: x.order, status: x.status, delivery: x.delivery || null })),
     has_signed: !!r.signed_path,
     has_cert: !!r.cert_path,
+    closed_by_sender: r.closed_by_sender ? { at: r.closed_by_sender.at, not_signed: r.closed_by_sender.not_signed } : null,
   }));
   return NextResponse.json({ requests: items });
 }

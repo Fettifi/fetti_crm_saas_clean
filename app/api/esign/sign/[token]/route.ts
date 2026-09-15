@@ -8,12 +8,18 @@ import { logActivity } from "@/lib/activity";
 import { maybeAdvanceStage } from "@/lib/los";
 import { sendSignRequest } from "@/lib/notify/docRequest";
 import { notifyTeam } from "@/lib/notify/leadAlert";
-import { ESIGN_BUCKET, EsignField, EsignRequest, activeRecipient, envelopeComplete, getByRecipientToken, recipientView, saveRequest } from "@/lib/esign";
+import { ESIGN_BUCKET, EsignField, activeRecipient, getByRecipientToken, mutateRequest, recipientView, saveRequestIfUnchanged } from "@/lib/esign";
+import { buildCertificate } from "@/lib/esignCertificate";
 
 // Public signer endpoint — [token] is a RECIPIENT token.
 //   GET  -> this recipient's view (marks "viewed" when it's their turn)
 //   POST { signatureDataUrl, typedName, consent } -> stamp THIS recipient's
 //         fields, route to the next signer, or complete + Certificate of Completion.
+//
+// Every write here is compare-and-set against the envelope version this request read (see
+// saveRequestIfUnchanged in lib/esign.ts). A signature that loses a race — to the sender completing
+// or voiding, or to another write — changes nothing: its uploaded files are deleted and it answers
+// 409 before anyone is emailed, anything is filed, or a stage moves.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -26,19 +32,33 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   const { token } = await params;
   const res = await getByRecipientToken(token);
   if (!res) return NextResponse.json({ error: "This signing link is invalid or has expired." }, { status: 404 });
-  const { env, recipient } = res;
+  let { env, recipient } = res;
   const active = activeRecipient(env);
   if (active?.id === recipient.id && (recipient.status === "sent" || recipient.status === "pending")) {
     const ip = clientIp(req); const ua = (req.headers.get("user-agent") || "").slice(0, 180);
-    recipient.status = "viewed"; recipient.viewedAt = new Date().toISOString();
-    env.events = [...(env.events || []), { type: "viewed", at: recipient.viewedAt, ip, ua, detail: `${recipient.name} opened the document` }];
-    await saveRequest(env);
-    // DocuSign-style "viewed (unsigned)" alert to the loan team — fired once, on first open.
-    notifyTeam(
-      `📄 Viewed — not yet signed: ${env.title}`,
-      `${recipient.name}${recipient.email ? ` <${recipient.email}>` : ""} opened "${env.title}" at ${recipient.viewedAt} (IP ${ip}).\nThey have NOT signed yet.`
-    ).catch(() => {});
-    await logActivity({ entity_type: "esign", entity_id: env.token, loan_file_id: env.loan_file_id || undefined, actor: "signer", action: "esign.viewed", detail: { recipient: recipient.name, title: env.title } }).catch(() => {});
+    const at = new Date().toISOString();
+    const rid = recipient.id;
+    // Re-checked against the fresh row: marking "viewed" must never land on top of a signature or a
+    // completion that happened after this request read the envelope.
+    const out = await mutateRequest(env.token, (fresh) => {
+      const r = (fresh.recipients || []).find((x) => x.id === rid);
+      if (!r || activeRecipient(fresh)?.id !== rid || (r.status !== "sent" && r.status !== "pending")) return false;
+      r.status = "viewed"; r.viewedAt = at;
+      fresh.events = [...(fresh.events || []), { type: "viewed", at, ip, ua, detail: `${r.name} opened the document` }];
+      return true;
+    }).catch(() => null);
+    if (out) {
+      env = out.env;
+      recipient = (env.recipients || []).find((x) => x.id === rid) || recipient;
+    }
+    if (out?.applied) {
+      // DocuSign-style "viewed (unsigned)" alert to the loan team — fired once, on first open.
+      notifyTeam(
+        `📄 Viewed — not yet signed: ${env.title}`,
+        `${recipient.name}${recipient.email ? ` <${recipient.email}>` : ""} opened "${env.title}" at ${at} (IP ${ip}).\nThey have NOT signed yet.`
+      ).catch(() => {});
+      await logActivity({ entity_type: "esign", entity_id: env.token, loan_file_id: env.loan_file_id || undefined, actor: "signer", action: "esign.viewed", detail: { recipient: recipient.name, title: env.title } }).catch(() => {});
+    }
   }
   return NextResponse.json(recipientView(env, recipient));
 }
@@ -48,9 +68,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     const { token } = await params;
     const res = await getByRecipientToken(token);
     if (!res) return NextResponse.json({ error: "Invalid or expired signing link." }, { status: 404 });
-    const { env, recipient } = res;
+    const { env, recipient, version } = res;
     if (env.status === "voided") return NextResponse.json({ error: "This envelope was voided by the sender." }, { status: 409 });
     if (env.status === "declined") return NextResponse.json({ error: "This envelope was declined." }, { status: 409 });
+    // Completed includes an envelope the sender finished with the signatures already collected: its
+    // certificate is issued, and a late signature must not change the document it certifies.
+    if (env.status === "completed") return NextResponse.json({ error: "This document has already been completed. No further signatures are needed." }, { status: 409 });
     if (recipient.status === "signed") return NextResponse.json({ error: "You already signed this document." }, { status: 409 });
     if (activeRecipient(env)?.id !== recipient.id) {
       const a = activeRecipient(env);
@@ -136,24 +159,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       }
     }
     const updated = await pdf.save();
-    const signed_path = `esign/${env.token}/signed.pdf`;
-    await supabaseAdmin.storage.from(ESIGN_BUCKET).upload(signed_path, Buffer.from(updated), { contentType: "application/pdf", upsert: true });
+    // A NEW object per signing attempt, never an overwrite. The previous signed copy — which a
+    // certificate may already hash — stays byte-for-byte what it was, and a losing attempt only
+    // ever has its own file to clean up.
+    const signed_path = `esign/${env.token}/signed-${now.getTime()}.pdf`;
+    const { error: sUpErr } = await supabaseAdmin.storage.from(ESIGN_BUCKET).upload(signed_path, Buffer.from(updated), { contentType: "application/pdf", upsert: false });
+    if (sUpErr) throw new Error("Could not save the signed document.");
     env.signed_path = signed_path;
 
     recipient.status = "signed"; recipient.signedAt = now.toISOString(); recipient.ip = ip; recipient.ua = ua; recipient.typedName = typedName;
     env.events = [...(env.events || []), { type: "signed", at: now.toISOString(), ip, ua, detail: `Signed by ${recipient.name}` }];
 
+    const lostRace = async (paths: string[]) => {
+      await supabaseAdmin.storage.from(ESIGN_BUCKET).remove(paths).catch(() => {});
+      return NextResponse.json({ error: "This document changed while you were signing — please reload the page to see where it stands." }, { status: 409 });
+    };
+
     const next = activeRecipient(env);
     const origin = req.nextUrl.origin;
     if (next) {
-      // Route to the next signer.
+      // Route to the next signer — but only once this signature is safely the envelope of record.
       next.status = "sent";
       env.status = "in_progress";
-      await saveRequest(env);
+      if (!(await saveRequestIfUnchanged(env, version))) return lostRace([signed_path]);
       try {
         await sendSignRequest({ to_name: next.name, to_email: next.email, to_phone: next.phone, link: `${origin}/sign/${next.token}`, title: env.title });
-        env.events.push({ type: "routed", at: new Date().toISOString(), detail: `Routed to next signer: ${next.name}` });
-        await saveRequest(env);
+        const routedAt = new Date().toISOString();
+        await mutateRequest(env.token, (fresh) => {
+          if (fresh.status !== "in_progress") return false;
+          fresh.events = [...(fresh.events || []), { type: "routed", at: routedAt, detail: `Routed to next signer: ${next.name}` }];
+          return true;
+        });
       } catch { /* */ }
       return NextResponse.json({ ok: true, signed: true, completed: false, next: next.name });
     }
@@ -163,11 +199,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     env.status = "completed";
     env.signed_hash = finalHash;
     const certBytes = await buildCertificate(env, finalHash);
-    const cert_path = `esign/${env.token}/certificate.pdf`;
-    await supabaseAdmin.storage.from(ESIGN_BUCKET).upload(cert_path, Buffer.from(certBytes), { contentType: "application/pdf", upsert: true });
+    const cert_path = `esign/${env.token}/certificate-${now.getTime()}.pdf`;
+    const { error: cUpErr } = await supabaseAdmin.storage.from(ESIGN_BUCKET).upload(cert_path, Buffer.from(certBytes), { contentType: "application/pdf", upsert: false });
+    if (cUpErr) { await supabaseAdmin.storage.from(ESIGN_BUCKET).remove([signed_path]).catch(() => {}); throw new Error("Could not save the certificate."); }
     env.cert_path = cert_path;
     env.events.push({ type: "completed", at: new Date().toISOString(), detail: "All signers completed" });
-    await saveRequest(env);
+    if (!(await saveRequestIfUnchanged(env, version))) return lostRace([signed_path, cert_path]);
 
     if (env.loan_file_id) {
       await supabaseAdmin.from("loan_documents").insert([
@@ -183,46 +220,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     console.error("[esign/sign] error:", e);
     return NextResponse.json({ error: e?.message || "Signing failed." }, { status: 500 });
   }
-}
-
-async function buildCertificate(env: EsignRequest, signedHash: string): Promise<Uint8Array> {
-  const doc = await PDFDocument.create();
-  const page = doc.addPage([612, 792]);
-  const helv = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const ink = rgb(0.09, 0.11, 0.15), muted = rgb(0.42, 0.45, 0.5), line = rgb(0.85, 0.87, 0.9);
-  let y = 744;
-  const T = (t: string, o: { b?: boolean; size?: number; color?: any; x?: number } = {}) => page.drawText(t, { x: o.x ?? 54, y, size: o.size || 10, font: o.b ? bold : helv, color: o.color || ink });
-  const rule = () => page.drawLine({ start: { x: 54, y: y + 6 }, end: { x: 558, y: y + 6 }, thickness: 0.5, color: line });
-  const fmt = (iso?: string) => { if (!iso) return "—"; try { return new Date(iso).toUTCString(); } catch { return iso; } };
-
-  T("Certificate of Completion", { b: true, size: 18 }); y -= 14;
-  T("Fetti Financial Services LLC · Electronic Signature Audit Trail", { size: 9, color: muted }); y -= 22; rule(); y -= 8;
-  T("Document", { b: true }); T(env.title, { x: 170 }); y -= 16;
-  T("Reference ID", { b: true }); T(env.token, { x: 170, size: 9, color: muted }); y -= 16;
-  T("Status", { b: true }); T("Completed", { x: 170, color: rgb(0.05, 0.5, 0.3) }); y -= 16;
-  y -= 6; rule(); y -= 14;
-
-  T("Signers", { b: true, size: 12 }); y -= 18;
-  for (const r of [...(env.recipients || [])].sort((a, b) => a.order - b.order)) {
-    T(`${r.order}. ${r.name}`, { b: true, size: 10 }); T(r.status.toUpperCase(), { x: 470, size: 9, color: r.status === "signed" ? rgb(0.05, 0.5, 0.3) : muted }); y -= 12;
-    if (r.email) { T(r.email, { x: 66, size: 8, color: muted }); y -= 11; }
-    T(`Signed: ${fmt(r.signedAt)}${r.ip ? `  ·  IP ${r.ip}` : ""}`, { x: 66, size: 8, color: muted }); y -= 11;
-    if (r.ua) { T(r.ua.slice(0, 80), { x: 66, size: 7, color: muted }); y -= 11; }
-    y -= 4;
-  }
-  y -= 6; rule(); y -= 14;
-
-  T("Event history", { b: true, size: 12 }); y -= 16;
-  for (const ev of env.events || []) {
-    T(`• ${ev.type.toUpperCase()}`, { b: true, size: 9 }); T(fmt(ev.at), { x: 170, size: 9 }); y -= 11;
-    if (ev.detail) { T(ev.detail, { x: 66, size: 8, color: muted }); y -= 11; }
-    if (y < 120) break;
-  }
-  y = Math.max(y, 96); rule(); y -= 14;
-  const consent = "Consent: Each signer agreed to conduct this transaction electronically. Their electronic signatures are legally binding and equivalent to handwritten signatures under the U.S. ESIGN Act and applicable UETA.";
-  let buf = ""; for (const w of consent.split(" ")) { if ((buf + " " + w).length > 100) { page.drawText(buf, { x: 54, y, size: 8, font: helv, color: muted }); y -= 11; buf = w; } else buf = buf ? buf + " " + w : w; }
-  if (buf) { page.drawText(buf, { x: 54, y, size: 8, font: helv, color: muted }); y -= 14; }
-  page.drawText(`Document integrity (SHA-256 of signed PDF): ${signedHash}`, { x: 54, y, size: 7, font: helv, color: muted });
-  return doc.save();
 }

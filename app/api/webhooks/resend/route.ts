@@ -10,7 +10,7 @@
 //   RESEND_WEBHOOK_SECRET. Public route (Resend calls it) — verified by signature.
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { listRequests, saveRequest } from "@/lib/esign";
+import { listRequests, mutateRequest } from "@/lib/esign";
 import { logActivity } from "@/lib/activity";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { senderFrom } from "@/lib/notify/mailFrom";
@@ -114,31 +114,40 @@ export async function POST(req: NextRequest) {
   if (!/^Please sign:/i.test(String(evt?.data?.subject || ""))) return NextResponse.json({ ok: true });
 
   try {
+    // The list read only finds WHICH envelopes this address belongs to. The write itself is a
+    // compare-and-set against the fresh row (mutateRequest): the alerts below await network calls,
+    // and saving the stale list copy afterwards could silently reopen an envelope that was signed,
+    // voided or completed by the sender in the meantime.
     const reqs = await listRequests();
-    for (const env of reqs) {
-      if (env.status === "completed" || env.status === "voided") continue;
-      let changed = false;
-      for (const rc of env.recipients || []) {
-        if (rc.email && emails.includes(rc.email.toLowerCase().trim())) {
+    const matches = (rc: { email?: string | null }) => !!rc.email && emails.includes(rc.email.toLowerCase().trim());
+    for (const listed of reqs) {
+      if (listed.status === "completed" || listed.status === "voided") continue;
+      if (!(listed.recipients || []).some(matches)) continue;
+      const hit: { name: string; email: string }[] = [];
+      const out = await mutateRequest(listed.token, (env) => {
+        hit.length = 0;
+        if (env.status === "completed" || env.status === "voided") return false;
+        for (const rc of env.recipients || []) {
+          if (!matches(rc)) continue;
           // Don't downgrade a confirmed delivery back to "sent"; bounce/complaint always wins.
           if (rc.delivery === "bounced" && delivery === "delivered") continue;
           rc.delivery = delivery;
           rc.deliveryAt = new Date().toISOString();
-          changed = true;
-          env.events = env.events || [];
-          env.events.push({ type: `email_${delivery}`, at: rc.deliveryAt, detail: `${rc.name} <${rc.email}> — email ${delivery}` });
-          if (delivery === "bounced" || delivery === "complained") {
-            await logActivity({
-              entity_type: "loan_file", entity_id: env.loan_file_id || env.token,
-              loan_file_id: env.loan_file_id || null, lead_id: env.lead_id || null,
-              actor: "system", action: "esign.delivery_failed",
-              detail: { title: env.title, signer: rc.name, email: rc.email, type: delivery },
-            }).catch(() => {});
-            await alertBounce(env, rc.name, rc.email, delivery);
-          }
+          env.events = [...(env.events || []), { type: `email_${delivery}`, at: rc.deliveryAt, detail: `${rc.name} <${rc.email}> — email ${delivery}` }];
+          hit.push({ name: rc.name, email: String(rc.email) });
         }
+        return hit.length > 0;
+      }).catch((e) => { console.error("[resend webhook] envelope update", listed.token, e); return null; });
+      if (!out?.applied || (delivery !== "bounced" && delivery !== "complained")) continue;
+      for (const h of hit) {
+        await logActivity({
+          entity_type: "loan_file", entity_id: out.env.loan_file_id || out.env.token,
+          loan_file_id: out.env.loan_file_id || null, lead_id: out.env.lead_id || null,
+          actor: "system", action: "esign.delivery_failed",
+          detail: { title: out.env.title, signer: h.name, email: h.email, type: delivery },
+        }).catch(() => {});
+        await alertBounce(out.env, h.name, h.email, delivery);
       }
-      if (changed) { env.updated_at = new Date().toISOString(); await saveRequest(env); }
     }
   } catch (e) { console.error("[resend webhook]", e); }
   return NextResponse.json({ ok: true });

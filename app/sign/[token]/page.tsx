@@ -10,6 +10,7 @@ import PdfDoc, { EsignField } from "@/components/PdfDoc";
 type Meta = {
   title: string; signer_name: string; status: string; envelopeStatus: string;
   signed: boolean; declined: boolean; voided: boolean; yourTurn: boolean;
+  closedBySender?: boolean;
   waitingFor: string | null; fields: (EsignField & { mine: boolean })[];
 };
 
@@ -129,12 +130,16 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
   if (done) return <Shell meta={meta}><div className="mt-6 bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center">
     <Check className="w-10 h-10 text-emerald-600 mx-auto" />
     <h2 className="text-xl font-bold mt-2">Thank you — you've signed!</h2>
-    <p className="text-slate-600 text-sm mt-1">{completed ? "All signers are complete. The signed copy was sent to your Fetti loan team." : "We'll route it to the next signer and notify your loan team when everyone has signed."}</p>
+    <p className="text-slate-600 text-sm mt-1">{completed ? (meta.closedBySender ? "The sender completed this document with the signatures collected. The signed copy was sent to your Fetti loan team." : "All signers are complete. The signed copy was sent to your Fetti loan team.") : "We'll route it to the next signer and notify your loan team when everyone has signed."}</p>
     {completed && <div className="flex items-center justify-center gap-4 mt-4">
       <a href={`/api/esign/sign/${token}/pdf`} target="_blank" rel="noreferrer" className="text-sm font-semibold text-emerald-700 underline">View signed document</a>
       <a href={`/api/esign/sign/${token}/pdf?doc=cert`} target="_blank" rel="noreferrer" className="text-sm font-semibold text-sky-700 underline">Certificate of Completion</a>
     </div>}
   </div></Shell>;
+  // The sender finished this envelope with the signatures already collected. Say that plainly and
+  // neutrally: whether this person's signature is legally needed is not something this page knows,
+  // so it must not tell a counterparty that it isn't.
+  if (meta.closedBySender && !meta.signed) return <Shell meta={meta}><Box icon={<Clock className="w-10 h-10 text-slate-400 mx-auto" />} title="This envelope is closed" sub="The sender completed this envelope without a signature from you here. Please contact the sender with any questions." /></Shell>;
   if (!meta.yourTurn) return <Shell meta={meta}><Box icon={<Clock className="w-10 h-10 text-amber-500 mx-auto" />} title="Almost your turn" sub={meta.waitingFor ? `Waiting on ${meta.waitingFor} to sign first. You'll get a fresh link when it's your turn.` : "This envelope isn't active for you right now."} /></Shell>;
 
   return (

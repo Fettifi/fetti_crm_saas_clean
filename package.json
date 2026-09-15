@@ -77,6 +77,7 @@
     "verify:doc-dragout": "tsx scripts/verify-doc-dragout.ts",
     "verify:outlook-attach": "tsx scripts/verify-outlook-attach.ts",
     "verify:esign-load": "tsx scripts/verify-esign-load.ts",
+    "verify:esign-complete": "tsx --conditions=react-server scripts/verify-esign-complete-as-signed.ts",
     "verify:seo": "tsx scripts/verify-seo.ts",
     "verify:los-back": "tsx scripts/verify-los-back.ts",
     "verify:outlook-send": "tsx scripts/verify-outlook-send.ts",
