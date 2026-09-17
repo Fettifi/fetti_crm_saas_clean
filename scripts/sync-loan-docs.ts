@@ -48,6 +48,7 @@ import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync, readdirSy
 import { join, dirname, basename, extname } from "path";
 import { homedir } from "os";
 import { safe, loanFolderName } from "../lib/docNaming";
+import { planSupersededMoves, applySupersededMoves, REPLACED_DIR } from "../lib/mirrorSuperseded";
 
 const ROOT = process.env.FETTI_DOCS_ROOT || join(homedir(), "Fetti Loan Files");
 const BUCKET = "loan-docs";
@@ -231,39 +232,33 @@ function pushSafeName(name: string): string {
     wrote++;
   }
 
-  // ── LABEL WHAT THE CRM HAS REPLACED ─────────────────────────────────────────────────────
+  // ── MOVE WHAT THE CRM HAS REPLACED OUT OF THE FOLDER A PORTAL BROWSES ──────────────────────
   // Converting or shrinking a document gives it a NEW storage_path, so the sync pulls the new
-  // file and the OLD local copy stays (this sync never deletes). The folder then holds
-  // "Government-issued photo ID — 20260722_110053.jpg" at 2.87 MB beside the .pdf at 0.58 MB,
-  // and the wrong one gets uploaded. Rename the superseded copy rather than delete it.
-  //
-  // "This storage_path is no longer live" is NOT enough on its own: a dead entry's `file` is
-  // usually the very path the download above just overwrote with the NEW version (same
-  // checklist-derived name, new bytes). Selecting on the dead key alone would rename the
-  // CURRENT file as superseded — it tried to, on a live Wells Fargo statement and a live tax
-  // return. A file is superseded only when NO live document maps onto it.
-  const liveFiles = new Set(
-    (docs || []).map((d: any) => manifest[d.storage_path]?.file).filter(Boolean) as string[],
-  );
-  const livePaths = new Set((docs || []).map((d: any) => d.storage_path));
+  // file and the OLD local copy stays (this sync never deletes). It used to be renamed
+  // "— original" IN PLACE, which still put a dead JPEG between the live PDFs in every upload
+  // dialog: Ramon, 2026-09-17, uploading Magali and Milton's IDs, "my LOS shows it as a PDF …
+  // through the portal it is still showing JPEG." Replaced copies now move into
+  // `_Replaced originals — not in LOS/` inside the borrower folder — kept, never deleted, never
+  // pushed (the push reads top-level files only). The rule for WHICH files are replaced, and
+  // why a dead storage_path alone is not enough, lives with the code in lib/mirrorSuperseded.ts.
+  const livePaths = new Set<string>((docs || []).map((d: any) => String(d.storage_path)));
+  const plan = planSupersededMoves({ root: ROOT, manifest, livePaths, exists: existsSync });
   let labelled = 0;
-  for (const [key, v] of Object.entries(manifest) as [string, any][]) {
-    if (livePaths.has(key) || !v?.file || !existsSync(v.file) || liveFiles.has(v.file)) continue;
-    const ext = extname(v.file), stem = basename(v.file, ext);
-    if (/ — original( \(\d+\))?$/.test(stem)) continue;      // already labelled
-    let dest = join(dirname(v.file), `${stem} — original${ext}`);
-    for (let i = 2; existsSync(dest); i++) dest = join(dirname(v.file), `${stem} — original (${i})${ext}`);
-    if (DRY) { console.log(`  would label  ${basename(v.file)} -> ${basename(dest)}`); labelled++; continue; }
-    try {
-      renameSync(v.file, dest);
-      manifest[key] = { file: dest, bytes: v.bytes };   // lockstep, or the push side re-uploads it
-      labelled++;
-      console.log(`  labelled  ${basename(dest)}`);
-    } catch { /* a file we cannot rename is left exactly as it is */ }
+  if (DRY) {
+    for (const m of plan) console.log(`  would move  ${m.from.replace(homedir(), "~")}  ->  ${REPLACED_DIR}/${basename(m.to)}`);
+    labelled = plan.length;
+  } else {
+    const { moved, failed: stuck } = applySupersededMoves(plan, manifest, {
+      mkdir: (d) => mkdirSync(d, { recursive: true }),
+      rename: (a, b) => renameSync(a, b),
+    });
+    for (const m of moved) console.log(`  moved replaced copy  ${basename(dirname(m.from))}/${basename(m.from)}  ->  ${REPLACED_DIR}/`);
+    for (const f of stuck) console.warn(`  could not move  ${f.move.from} — ${f.error} (left in place)`);
+    labelled = moved.length;
   }
 
   if (!DRY) { mkdirSync(ROOT, { recursive: true }); writeFileSync(MANIFEST, JSON.stringify(manifest, null, 1)); }
-  console.log(`\n${DRY ? "DRY RUN — " : ""}${wrote} written · ${renamed} renamed · ${skipped} already current · ${failed} failed · ${orphaned} with no loan file${labelled ? ` · ${labelled} superseded copy(ies) labelled` : ""}`);
+  console.log(`\n${DRY ? "DRY RUN — " : ""}${wrote} written · ${renamed} renamed · ${skipped} already current · ${failed} failed · ${orphaned} with no loan file${labelled ? ` · ${labelled} replaced cop${labelled === 1 ? "y" : "ies"} moved to ${REPLACED_DIR}` : ""}`);
 
   // ── PUSH ────────────────────────────────────────────────────────────────────────────────────
   let pushed = 0, pushFailed = 0, pushSkipped = 0, conflicts = 0;

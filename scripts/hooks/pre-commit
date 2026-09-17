@@ -139,6 +139,16 @@ if printf '%s\n' "$CHANGED" | grep -q -e 'sync-loan-docs' -e 'verify-mirror-name
     echo "FAIL"; FAILED="$FAILED verify:mirror-names"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
 fi
+# The folder a portal's upload dialog browses must hold what the LOS holds. A converted ID left its
+# JPEG beside the new PDF (renamed "— original"), and Ramon kept being offered the JPEG while
+# uploading Magali and Milton's IDs (2026-09-17). Replaced copies now move to a subfolder.
+if printf '%s\n' "$CHANGED" | grep -q -e 'sync-loan-docs' -e 'mirrorSuperseded' -e 'verify-mirror-superseded' -e 'docNaming'; then
+  printf "   %-24s " "verify:mirror-superseded"
+  OUT=$(npm run --silent verify:mirror-superseded 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:mirror-superseded"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
 
 if [ -n "$ANYTS" ]; then
   printf "   %-24s " "verify:urla-fidelity"
