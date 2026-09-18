@@ -1,11 +1,11 @@
 {
-  "logicVersion": "2026-09-11-stub-variability-within-year-and-full-periods-only",
-  "pinnedAt": "2026-09-12T16:36:01.686Z",
+  "logicVersion": "2026-09-17-bank-statement-unnumbered-statement-merges-into-its-account",
+  "pinnedAt": "2026-09-18T00:01:01.326Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "dd4fb442cc9d16ed",
+    "app/api/los/files/[id]/verify-income/route.ts": "3a4413c7e2ce41b9",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankReplay.ts": "bbb61927f654be5a",
-    "lib/income/bankStatement.ts": "4302f2fdd78e85c9",
+    "lib/income/bankStatement.ts": "7a41ebb112027ea8",
     "lib/income/benefitRules.ts": "1f3305b92769f546",
     "lib/income/combineBankStatement.ts": "43f917108941029d",
     "lib/income/contested.ts": "4bef5f41ecf107eb",

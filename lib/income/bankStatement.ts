@@ -69,7 +69,10 @@ export function collectAccounts(reads: DocRead[]): Map<string, { label: string; 
     // into two, and the fragment's months got divided by the window as a second account.
     const instStem = (bs.institution || "bank").toLowerCase().replace(/[^a-z]/g, "").slice(0, 4) || "bank";
     const last4 = (bs.accountLast4 || "").replace(/\D/g, "").slice(-4);
-    const key = last4 ? `${instStem}|${last4}` : `${(bs.institution || "bank").toLowerCase().trim()}|?`;
+    // A statement whose last-4 the reader did not capture parks under `<stem>|?` and is merged
+    // below when the bank has exactly one numbered account. Keyed on the STEM, not the printed
+    // name, so "Navy Federal" and "Navy Federal Credit Union" land in the same holding pen.
+    const key = last4 ? `${instStem}|${last4}` : `${instStem}|?`;
     if (!accounts.has(key)) accounts.set(key, {
       label: [bs.institution || "Bank", bs.accountLast4 ? `…${bs.accountLast4}` : ""].filter(Boolean).join(" "),
       holder: bs.accountHolder || r.personName || null,
@@ -95,6 +98,33 @@ export function collectAccounts(reads: DocRead[]): Map<string, { label: string; 
       if (!prev || row.total > prev.total) acct.months.set(mk, row);
     }
   }
+  // A STATEMENT WITH NO LAST-4 IS STILL THE SAME ACCOUNT.
+  //
+  // Natasha Oiye, 2026-09-17: three of her 21 Navy Federal PDFs came back without an account
+  // number, so they formed a second "Navy Federal" account holding exactly the months the first
+  // one was missing. The worksheet then ran TWO lines off ONE checking account — a 12-month
+  // average and a 3-month average — added them together, and each bucket reported the other's
+  // months as "missing", which would have asked her for statements she had already sent.
+  //
+  // Merge the unnumbered pen into the numbered account ONLY when the bank has exactly one, which
+  // is the case that cannot be wrong. Two numbered accounts at the same bank means the statement
+  // could belong to either, so it stays separate and says so — a silent guess there would move a
+  // borrower's income by attributing deposits to the wrong account.
+  for (const [key, pen] of [...accounts]) {
+    if (!key.endsWith("|?")) continue;
+    const stem = key.slice(0, -2);
+    const numbered = [...accounts.keys()].filter((k) => k !== key && k.startsWith(`${stem}|`) && !k.endsWith("|?"));
+    if (numbered.length !== 1) continue;                 // ambiguous (or nothing to merge into)
+    const target = accounts.get(numbered[0])!;
+    for (const [mk, row] of pen.months) {
+      const prev = target.months.get(mk);
+      if (!prev || row.total > prev.total) target.months.set(mk, row);   // same dedupe rule; never sums a month twice
+    }
+    if (pen.type === "business") target.type = "business";
+    target.holder = target.holder || pen.holder;
+    accounts.delete(key);
+  }
+
   const out = new Map<string, { label: string; holder: string | null; type: "personal" | "business"; months: MonthRow[] }>();
   for (const [k, a] of accounts) out.set(k, { label: a.label, holder: a.holder, type: a.type, months: [...a.months.values()].sort((x, y) => x.monthKey.localeCompare(y.monthKey)) });
   return out;

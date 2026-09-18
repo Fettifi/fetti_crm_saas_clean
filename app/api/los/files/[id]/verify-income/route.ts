@@ -95,7 +95,7 @@ const STUB_PRIORITY_WINDOW = 8;
 // So `--no-reroll` was NOT available here and was not claimed: that escape is for changes that
 // cannot move any number, and this one moves a real borrower's by $8,408. A number the engine no
 // longer reproduces must not keep being served, so the cache key moves with the math.
-const LOGIC_VERSION = "2026-09-11-stub-variability-within-year-and-full-periods-only";
+const LOGIC_VERSION = "2026-09-17-bank-statement-unnumbered-statement-merges-into-its-account";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" stays GENERIC — a Chase/Wells file is rarely named "bank
 // statement" — but it is no longer BARE, because "a non-income statement is harmless" (what this
