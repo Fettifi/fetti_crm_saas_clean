@@ -7,6 +7,7 @@
 // retrying through the SAME AI paths, and PAGING the owner (SMS+email) when it
 // can't respond, so a failure is never quiet. Idempotent: answered = skipped.
 import "server-only";
+import { alertOwnerSms } from "@/lib/phoneMessages";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { markConciergeReply, expertiseFor } from "@/lib/markConcierge";
 import { getLeadMessagesForAI, countRecentOutbound, sendSms, logComms } from "@/lib/comms";
@@ -29,15 +30,7 @@ async function pageOwner(text: string) {
   // configured), record a watchdog.page_failed row so a silent double-failure — the one
   // thing that must never be quiet — is at least auditable.
   let smsOk = false, emailOk = false;
-  const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_FROM, to = process.env.LEAD_NOTIFY_SMS_TO;
-  if (sid && tok && from && to) {
-    try {
-      const b = new URLSearchParams({ To: to, From: from, Body: text.slice(0, 1200) });
-      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: b.toString() });
-      smsOk = r.ok;
-      if (!r.ok) console.error("[watchdog] pageOwner SMS non-2xx:", r.status);
-    } catch (e: any) { console.error("[watchdog] pageOwner SMS failed:", e?.message); }
-  }
+  smsOk = await alertOwnerSms(text.slice(0, 1200));   // the one owner-SMS primitive (lib/phoneMessages)
   const key = process.env.RESEND_API_KEY, eto = process.env.LEAD_NOTIFY_EMAIL_TO, efrom = process.env.LEAD_NOTIFY_EMAIL_FROM;
   if (key && eto && efrom) {
     try {
@@ -49,7 +42,7 @@ async function pageOwner(text: string) {
   if (!smsOk && !emailOk) {
     console.error("[watchdog] pageOwner: BOTH channels failed — owner not paged:", text.slice(0, 200));
     try {
-      await logActivity({ entity_type: "system", entity_id: "watchdog", actor: "system", action: "watchdog.page_failed", detail: { text: text.slice(0, 400), smsConfigured: !!(sid && tok && from && to), emailConfigured: !!(key && eto && efrom) } });
+      await logActivity({ entity_type: "system", entity_id: "watchdog", actor: "system", action: "watchdog.page_failed", detail: { text: text.slice(0, 400), smsConfigured: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM && process.env.LEAD_NOTIFY_SMS_TO), emailConfigured: !!(key && eto && efrom) } });
     } catch { /* audit is best-effort, but we already logged to console above */ }
   }
 }

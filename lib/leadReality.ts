@@ -68,6 +68,12 @@ export function leadReality(input: {
   // HARD: Twilio told us the phone is not a real, dialable number. Nothing to work.
   if (lookup && lookup.valid === false) return invalid("Phone number is invalid or unreachable");
 
+  // A LEAD RAMON RELEASED IS REAL. promoteQuarantined stamps `resolution: "promoted"` and
+  // restores the stage but leaves the original verdict/band on the record, so this read kept
+  // answering "suspect" for every released lead — the drip skipped them and the inbox badged a
+  // borrower he had personally vouched for. The human decision outranks the model's band.
+  if (shield && shield.resolution === "promoted") return real(`Released from Lead Shield by ${shield.resolved_by || "the owner"}`);
+
   // Authoritative Shield verdict (the common, post-intake case).
   if (shield && shield.band) {
     const band = String(shield.band);

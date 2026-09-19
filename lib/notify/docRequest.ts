@@ -197,7 +197,7 @@ export type SignSend = {
   link: string; title: string; lo_name?: string | null;
   leadId?: string | null; loanFileId?: string | null;
 };
-async function emailSign(r: SignSend): Promise<boolean> {
+async function emailSign(r: SignSend): Promise<string | false> {
   // Same gate as the doc-request leg — a suppressed address is suppressed on every leg.
   if (!(await emailGate(r as any))) return false;
   const key = process.env.RESEND_API_KEY;
@@ -218,7 +218,10 @@ async function emailSign(r: SignSend): Promise<boolean> {
   });
   const j = await res.json().catch(() => ({} as any));
   if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "email", direction: "outbound", type: "esign_request", subject: `Please sign: ${r.title}`, body: `E-signature request: ${r.title} — ${r.link}`, to: r.to_email, actor: "lo", providerId: j?.id }).catch(() => {});
-  return res.ok;
+  // Resend's message id is what a delivery/bounce webhook event carries (data.email_id). Handing
+  // it back lets the envelope pin the event to THIS send instead of to every envelope that
+  // happens to know the address.
+  return res.ok ? String(j?.id || "sent") : false;
 }
 async function smsSign(r: SignSend): Promise<boolean> {
   // Third hand-rolled POST. Three of the 15 unconsented deliveries came from this one.
@@ -231,13 +234,14 @@ async function smsSign(r: SignSend): Promise<boolean> {
   return res.ok;
 }
 /** Send an e-signature request over every configured channel. Never throws. */
-export async function sendSignRequest(r: SignSend): Promise<{ sent: string[] }> {
+export async function sendSignRequest(r: SignSend): Promise<{ sent: string[]; emailId?: string | null }> {
   const sent: string[] = [];
+  let emailId: string | null = null;
   await Promise.all([
-    emailSign(r).then((ok) => { if (ok) sent.push("email"); }).catch((e) => console.warn("[sign] email", e)),
+    emailSign(r).then((id) => { if (id) { sent.push("email"); emailId = id === "sent" ? null : id; } }).catch((e) => console.warn("[sign] email", e)),
     smsSign(r).then((ok) => { if (ok) sent.push("sms"); }).catch((e) => console.warn("[sign] sms", e)),
   ]);
-  return { sent };
+  return { sent, emailId };
 }
 
 /** Send a document request over every configured channel. Never throws. */

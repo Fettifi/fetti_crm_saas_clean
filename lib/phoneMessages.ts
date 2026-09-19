@@ -91,12 +91,23 @@ export async function setMessageStatus(id: string, status: "new" | "handled"): P
 // Shared owner-SMS alert for phone messages. SMS is the reliable leg (email failed
 // silently once), so BOTH the realtime ingest path and the turn-based fallback must use
 // it — neither may regress to email/webhook-only. Best-effort; logs rejections loudly.
-export async function alertOwnerSms(text: string): Promise<void> {
+//
+// THE ONE OWNER-ALERT SENDER. Every text to Ramon's own phone goes through here; borrower texts
+// go through lib/comms.sendSms with its consent, quiet-hours and STOP gates. Four other files
+// used to carry their own copy of this POST, which is how verify:sms-consent's "no sender
+// bypasses the gate" could stay green while it only ever looked at eight named files. The `To`
+// is pinned to LEAD_NOTIFY_SMS_TO and the guard asserts exactly that. Returns whether Twilio
+// accepted it, so a caller that must know (the watchdog pager) can.
+export async function alertOwnerSms(text: string): Promise<boolean> {
   const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN, smsFrom = process.env.TWILIO_FROM, smsTo = process.env.LEAD_NOTIFY_SMS_TO;
-  if (!(sid && tok && smsFrom && smsTo)) return;
+  if (!(sid && tok && smsFrom && smsTo)) return false;
   try {
-    const body = new URLSearchParams({ To: smsTo, From: smsFrom, Body: text.slice(0, 1500) });
+    // Twilio rejects bodies over 1,600 characters (error 21617); the weekly competitor digest
+    // failed every Monday on exactly that. Cut, and say so.
+    const cut = text.length > 1500 ? text.slice(0, 1480) + "… [cut]" : text;
+    const body = new URLSearchParams({ To: smsTo, From: smsFrom, Body: cut });
     const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() });
     if (!r.ok) console.error("[phoneMessages] owner alert SMS rejected:", r.status);
-  } catch (e: any) { console.error("[phoneMessages] owner alert SMS failed:", e?.message); }
+    return r.ok;
+  } catch (e: any) { console.error("[phoneMessages] owner alert SMS failed:", e?.message); return false; }
 }

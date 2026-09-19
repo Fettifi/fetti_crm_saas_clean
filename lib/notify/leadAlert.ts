@@ -10,6 +10,7 @@
 //   - Voice page       (Tier-1 only) Penny calls Ramon's cell "press 1 to connect" —
 //                      gated by app_settings HOTLEAD_VOICE_PAGE=on (default off)
 import { pageOwnerHotLead } from "@/lib/hotLead";
+import { alertOwnerSms } from "@/lib/phoneMessages";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { isSyntheticLead } from "@/lib/synthetic";
 
@@ -107,21 +108,8 @@ async function viaResend(l: LeadAlert) {
 }
 
 async function viaTwilio(l: LeadAlert) {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM;
-  const to = process.env.LEAD_NOTIFY_SMS_TO;
-  if (!sid || !token || !from || !to) return;
-  const body = new URLSearchParams({ To: to, From: from, Body: summarize(l) });
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: body.toString(),
-  });
-  await assertOk(res, "sms");
+  if (!process.env.LEAD_NOTIFY_SMS_TO) return;
+  if (!(await alertOwnerSms(summarize(l)))) throw new Error("sms: owner alert rejected by Twilio");
 }
 
 /** Generic team alert (e-sign viewed, etc.) — same channels/recipients as the lead
@@ -138,9 +126,7 @@ export async function notifyTeam(subject: string, body: string): Promise<{ sent:
       await assertOk(res, "email");
     }],
     ["sms", !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM && process.env.LEAD_NOTIFY_SMS_TO), async () => {
-      const b = new URLSearchParams({ To: process.env.LEAD_NOTIFY_SMS_TO!, From: process.env.TWILIO_FROM!, Body: text });
-      const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: b.toString() });
-      await assertOk(res, "sms");
+      if (!(await alertOwnerSms(text))) throw new Error("sms: owner alert rejected by Twilio");
     }],
   ];
   const sent: string[] = [];

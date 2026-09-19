@@ -1,5 +1,5 @@
 {
-  "logicVersion": "2026-09-17-bank-statement-unnumbered-statement-merges-into-its-account",
+  "logicVersion": "2026-09-18-bank-merge-holder-institution-and-recompute-from-stored-facts",
   "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re)lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
   "files": {
     "c3473ce9-7bdb-4882-8a7b-bbd1a30a86d3": {
@@ -527,7 +527,7 @@
         "ebed102b-7b19-455a-a92c-2c666f7ef4e5|Bank statements — last 2 months — additional",
         "f3f0a339-0c26-48ab-8557-c717fc79fb9d|Bank statements — last 2 months — additional"
       ],
-      "cachedIncome": 21106
+      "cachedIncome": 17763
     },
     "e8579877-0e59-43a7-9b05-ff02606c00e0": {
       "file": "FF-202609-7039",
@@ -659,6 +659,14 @@
       "to": 7364,
       "acceptedAt": "2026-09-12T16:35:14.523Z",
       "reason": "Re-extraction, not the engine. The 2026-09-11 LOGIC_VERSION bump invalidated every cache; she re-verified 09-11 16:52 UTC, 22 min after it shipped, and the AI re-read her 24 US Bank statements. PROVED the engine is not implicated: her file is bank_statement, combineBankStatement suppresses the standard result entirely (perturbing it by +$50,000 leaves the total at $7,364), so the 09-11 stub-variability change cannot reach her number. Which deposit month moved CANNOT be named: the per-month rows were never persisted. That hole is closed in this commit (lib/income/bankReplay.ts) — her next verify becomes replayable."
+    },
+    {
+      "file": "FF-202609-1582",
+      "borrower": "Natasha Oiye",
+      "from": 21106,
+      "to": 17763,
+      "acceptedAt": "2026-09-19T05:06:45.641Z",
+      "reason": "LO settled $17,763 on 2026-09-17 after the unnumbered-NFCU-statement merge fix (50c4f06): three NFCU statements carrying no account last-4 were being run as a SECOND account, inflating the worksheet to $21,106. Documents unchanged. Note the engine's own QC still flags a cross-account double-count between NFCU x9906 and Chase x8983 on this file, so the figure is settled for pre-approval, not cleared for underwriting."
     }
   ]
 }

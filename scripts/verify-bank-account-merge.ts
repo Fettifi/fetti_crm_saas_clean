@@ -76,12 +76,44 @@ const read = (institution: string, accountLast4: string | null, months: any[], e
   ck("an overlapping month is kept once, never summed", d.months.length === 1 && d.months[0].total === 9000,
     `${d.months.length} month(s), total ${d.months[0]?.total}`);
 
+  // ── the merge must prove SAME ACCOUNT, not just same bank ──
+  const cob = collectAccounts([
+    read("Navy Federal Credit Union", "9906", [month("2026-02-15", 8000)], { accountHolder: "NATASHA OIYE" }),
+    read("Navy Federal", null, [month("2026-03-15", 1250)], { accountHolder: "JOHN OIYE" }),
+  ]);
+  ck("a co-borrower's unnumbered statement is NOT filed under borrower 1's account", cob.size === 2, `${cob.size} account(s)`);
+  const initial = collectAccounts([
+    read("Navy Federal Credit Union", "9906", [month("2026-02-15", 8000)], { accountHolder: "NATASHA A OIYE" }),
+    read("Navy Federal", null, [month("2026-03-15", 8000)], { accountHolder: "Natasha Oiye" }),
+  ]);
+  ck("a middle initial is not a different person — still one account", initial.size === 1, `${initial.size}`);
+  const biz = collectAccounts([
+    read("Chase", "8983", [month("2026-02-15", 8000)], { accountType: "personal" }),
+    read("Chase", null, [month("2026-03-15", 9000)], { accountType: "business" }),
+  ]);
+  ck("a BUSINESS statement is not folded into a PERSONAL account", biz.size === 2 && [...biz.values()].every((a) => a.months.length === 1), `${biz.size}`);
+  const stem = collectAccounts([
+    read("Bank of the West", "5678", [month("2026-02-15", 8000)]),
+    read("Bank of America", null, [month("2026-03-15", 5000)]),
+  ]);
+  ck("'Bank of America' does not merge into 'Bank of the West' on a shared 4-letter stem", stem.size === 2, `${stem.size}`);
+  const spelled2 = collectAccounts([
+    read("Navy Federal Credit Union", "9906", [month("2026-02-15", 8000)]),
+    read("Navy Federal", null, [month("2026-03-15", 8000)]),
+  ]);
+  ck("'Navy Federal' and 'Navy Federal Credit Union' are the same bank for the merge", spelled2.size === 1, `${spelled2.size}`);
+  const nullInst = collectAccounts([
+    read("Bank of America", "1234", [month("2026-02-15", 8000)]),
+    read("", null, [month("2026-03-15", 8000)]),
+  ]);
+  ck("a statement with NO bank name is not merged into anything", nullInst.size === 2, `${nullInst.size}`);
+
   // ── two different banks with no last-4 must not collapse into each other ──
   const banks = collectAccounts([
-    read("Navy Federal", null, [month("2026-04-15", 4000)]),
-    read("Chase", null, [month("2026-04-15", 4000)]),
+    read("Bank of America", null, [month("2026-04-15", 4000)]),
+    read("Bank of the West", null, [month("2026-04-15", 4000)]),
   ]);
-  ck("different banks stay separate when neither has a last-4", banks.size === 2, `${banks.size}`);
+  ck("different banks stay separate when neither has a last-4 (even with a shared stem)", banks.size === 2, `${banks.size}`);
 
   console.log(fail ? `\n❌ ${fail} check(s) failed\n` : "\n✅ ALL PASS — one account, one line, and nothing asked for twice\n");
   process.exit(fail ? 1 : 0);

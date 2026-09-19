@@ -150,6 +150,27 @@ export async function POST(req: NextRequest) {
       { type: "date", page: 1, xPct: 0.12, yPct: 0.865, wPct: 0.16, hPct: 0.032, recipientId: recipients[0].id },
     ];
     // any unassigned field defaults to the first recipient
+    // THE FIELD IS A FRACTION, NOT A PERCENT, AND ITS NAME SAYS OTHERWISE.
+    //
+    // 2026-09-18: a letter of explanation went out with xPct 12.4 / yPct 65.7 / wPct 41 / hPct 4 —
+    // percentages, which is exactly what a key called "xPct" invites. The stamper clamps to
+    // [0,0.98] / [0.05,0.6] / [0.02,0.2], so every value silently pinned to its maximum and the
+    // signature was drawn at x 599-967, y 835-876 on a 612x792 page: entirely off the canvas. The
+    // borrower signed, the envelope completed, the certificate issued, and the document showed a
+    // blank signature line. Nothing anywhere said no. Silent clamping turned my unit error into a
+    // document that looked executed and was not.
+    //
+    // Refuse it at the door instead. A value > 1 is never a legitimate fraction of a page.
+    const badUnits = fields.filter((f: any) =>
+      (["xPct", "yPct", "wPct", "hPct"] as const).some((k) => Number((f as any)[k]) > 1));
+    if (badUnits.length) {
+      const one = badUnits[0] as any;
+      return NextResponse.json({
+        error: `Field coordinates are fractions of the page (0-1), not percentages. ` +
+          `${badUnits.length} field(s) are out of range - e.g. {xPct:${one.xPct}, yPct:${one.yPct}, ` +
+          `wPct:${one.wPct}, hPct:${one.hPct}}. Divide by 100: xPct 12.4 should be 0.124.`,
+      }, { status: 400 });
+    }
     fields = fields.map((f) => ({ ...f, recipientId: f.recipientId || recipients[0].id }));
 
     const now = new Date().toISOString();
@@ -185,8 +206,9 @@ export async function POST(req: NextRequest) {
       first.delivery = "self";
       env.events!.push({ type: "sent", at: new Date().toISOString(), detail: `Self-signed envelope — opened directly by ${first.name}, no delivery` });
     } else {
-      ({ sent } = await sendSignRequest({ to_name: first.name, to_email: first.email, to_phone: first.phone, link: `${origin}/sign/${first.token}`, title }));
-      if (sent.includes("email")) first.delivery = "sent"; // pending delivery confirmation; the Resend webhook flips to delivered/bounced
+      let emailId: string | null | undefined;
+      ({ sent, emailId } = await sendSignRequest({ to_name: first.name, to_email: first.email, to_phone: first.phone, link: `${origin}/sign/${first.token}`, title }));
+      if (sent.includes("email")) { first.delivery = "sent"; first.emailId = emailId || null; } // pending delivery confirmation; the Resend webhook flips to delivered/bounced
       env.events!.push({ type: "sent", at: new Date().toISOString(), detail: sent.length ? `Sent to ${first.name} via ${sent.join(" + ")}` : `Link created for ${first.name} (manual delivery)` });
     }
     await saveRequest(env);

@@ -31,8 +31,14 @@ export async function POST(req: NextRequest) {
     // Signing key comes from env OR app_settings — the admin registration endpoint
     // (/api/admin/calendly-webhook) generates + stores it at subscription time.
     const key = await cfg("CALENDLY_WEBHOOK_SIGNING_KEY");
-    const signed = !!key && verify(req.headers.get("calendly-webhook-signature"), raw, key);
-    if (key && !signed) {
+    // FAIL CLOSED. With no signing key configured this route used to accept any POST, and an
+    // unsigned body whose email matched a lead could release that lead from Lead Shield
+    // quarantine and stamp it Engaged — a spammer promoting themselves by posting their own
+    // address. No key means no subscription was ever registered (/api/admin/calendly-webhook
+    // mints and stores it), so a request here is not Calendly's. Same shape as email-inbound.
+    if (!key) return NextResponse.json({ error: "calendly webhook not configured" }, { status: 503 });
+    const signed = verify(req.headers.get("calendly-webhook-signature"), raw, key);
+    if (!signed) {
       return NextResponse.json({ error: "bad signature" }, { status: 401 });
     }
     const body = JSON.parse(raw || "{}");

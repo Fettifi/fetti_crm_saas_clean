@@ -52,6 +52,25 @@ type MonthRow = {
   large: { amount: number; description?: string | null }[];
 };
 
+// The bank as an identity: lower-case, legal-form words dropped ("National Association", "N.A.",
+// "Federal Credit Union", "FCU", "Bank" …), punctuation gone. "Navy Federal" and "Navy Federal
+// Credit Union" become one name; "Bank of America" and "Bank of the West" stay two.
+export function bankName(institution?: string | null): string {
+  return String(institution || "bank").toLowerCase()
+    .replace(/\b(national association|n\.?a\.?|credit union|fcu|f\.?s\.?b\.?|inc\.?|llc|corp\.?|company|co\.?|the)\b/g, " ")
+    .replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim() || "bank";
+}
+// Two printed holders are the same person when first and last names agree — "NATASHA A OIYE"
+// on one bank and "Natasha Oiye" on another is one borrower, a middle initial is not a second
+// account holder. One token on either side compares against the other's surname.
+export function sameHolder(a?: string | null, b?: string | null): boolean {
+  const tok = (h?: string | null) => String(h || "").toLowerCase().replace(/[^a-z ]/g, " ").split(/\s+/).filter(Boolean);
+  const x = tok(a), y = tok(b);
+  if (!x.length || !y.length) return true;                       // nothing printed to disagree with
+  if (x.length === 1 || y.length === 1) return x[x.length - 1] === y[y.length - 1];
+  return x[0] === y[0] && x[x.length - 1] === y[y.length - 1];
+}
+
 function monthKeyOf(iso?: string | null): string | null {
   const m = String(iso || "").match(/^(\d{4})-(\d{2})/);
   return m ? `${m[1]}-${m[2]}` : null;
@@ -60,7 +79,7 @@ function monthKeyOf(iso?: string | null): string | null {
 // Group every statement-month by account; dedupe repeated months (same month uploaded twice —
 // e.g. overlapping "last 2 months" uploads) keeping the row with the most detail.
 export function collectAccounts(reads: DocRead[]): Map<string, { label: string; holder: string | null; type: "personal" | "business"; months: MonthRow[] }> {
-  const accounts = new Map<string, { label: string; holder: string | null; type: "personal" | "business"; months: Map<string, MonthRow> }>();
+  const accounts = new Map<string, { label: string; holder: string | null; type: "personal" | "business"; typeStated: boolean; institution: string; months: Map<string, MonthRow> }>();
   for (const r of reads) {
     const bs = r.bankStatement; if (!bs || !Array.isArray(bs.months) || !bs.months.length) continue;
     // Account key: the LAST-4 is the identity; the institution enters only as a short STEM,
@@ -69,18 +88,23 @@ export function collectAccounts(reads: DocRead[]): Map<string, { label: string; 
     // into two, and the fragment's months got divided by the window as a second account.
     const instStem = (bs.institution || "bank").toLowerCase().replace(/[^a-z]/g, "").slice(0, 4) || "bank";
     const last4 = (bs.accountLast4 || "").replace(/\D/g, "").slice(-4);
-    // A statement whose last-4 the reader did not capture parks under `<stem>|?` and is merged
-    // below when the bank has exactly one numbered account. Keyed on the STEM, not the printed
-    // name, so "Navy Federal" and "Navy Federal Credit Union" land in the same holding pen.
-    const key = last4 ? `${instStem}|${last4}` : `${instStem}|?`;
+    // A statement whose last-4 the reader did not capture parks under `?|<bank name>` and is
+    // merged below when that SAME bank has exactly one numbered account. The pen is keyed on the
+    // normalised bank NAME, not the 4-letter stem: "Bank of America" and "Bank of the West" share
+    // the stem "bank", and a stem-keyed pen collapsed two different banks' statements into one.
+    const instName = bankName(bs.institution);
+    const key = last4 ? `${instStem}|${last4}` : `?|${instName}`;
     if (!accounts.has(key)) accounts.set(key, {
       label: [bs.institution || "Bank", bs.accountLast4 ? `…${bs.accountLast4}` : ""].filter(Boolean).join(" "),
       holder: bs.accountHolder || r.personName || null,
       type: bs.accountType === "business" ? "business" : "personal",
+      typeStated: bs.accountType === "business" || bs.accountType === "personal",
+      institution: instName,
       months: new Map(),
     });
     const acct = accounts.get(key)!;
     if (bs.accountType === "business") acct.type = "business";   // any business signal wins (conservative: factor applies)
+    if (bs.accountType === "business" || bs.accountType === "personal") acct.typeStated = true;
     for (const m of bs.months) {
       const mk = monthKeyOf(m.periodEnd) || monthKeyOf(m.periodStart); if (!mk) continue;
       const total = num(m.totalDeposits) ?? 0;
@@ -110,18 +134,26 @@ export function collectAccounts(reads: DocRead[]): Map<string, { label: string; 
   // is the case that cannot be wrong. Two numbered accounts at the same bank means the statement
   // could belong to either, so it stays separate and says so — a silent guess there would move a
   // borrower's income by attributing deposits to the wrong account.
+  //
+  // And it merges only into an account that is provably the SAME account, not merely the same
+  // bank: the holder printed on the unnumbered statement must be the numbered account's holder
+  // (a co-borrower's Navy Federal statement is a different account and a different person —
+  // merging it filed his deposits under her), and a statement that says BUSINESS must not be
+  // folded into a PERSONAL account (that flips the whole account to the business factor and
+  // halves it). Anything that cannot be proven stays a separate line and keeps its own flags.
   for (const [key, pen] of [...accounts]) {
-    if (!key.endsWith("|?")) continue;
-    const stem = key.slice(0, -2);
-    const numbered = [...accounts.keys()].filter((k) => k !== key && k.startsWith(`${stem}|`) && !k.endsWith("|?"));
+    if (!key.startsWith("?|")) continue;
+    const numbered = [...accounts.entries()].filter(([k, a]) => k !== key && !k.startsWith("?|") && a.institution === pen.institution);
     if (numbered.length !== 1) continue;                 // ambiguous (or nothing to merge into)
-    const target = accounts.get(numbered[0])!;
+    const [targetKey, target] = numbered[0];
+    if (!sameHolder(pen.holder, target.holder)) continue;                                                   // a different person
+    if (pen.typeStated && target.typeStated && pen.type !== target.type) continue;                       // business vs personal
     for (const [mk, row] of pen.months) {
       const prev = target.months.get(mk);
       if (!prev || row.total > prev.total) target.months.set(mk, row);   // same dedupe rule; never sums a month twice
     }
-    if (pen.type === "business") target.type = "business";
     target.holder = target.holder || pen.holder;
+    accounts.set(targetKey, target);
     accounts.delete(key);
   }
 

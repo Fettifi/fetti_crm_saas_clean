@@ -9,6 +9,7 @@
 //   email.bounced, email.complained). Copy the signing secret into Vercel env as
 //   RESEND_WEBHOOK_SECRET. Public route (Resend calls it) — verified by signature.
 import { NextRequest, NextResponse } from "next/server";
+import { alertOwnerSms } from "@/lib/phoneMessages";
 import crypto from "crypto";
 import { listRequests, mutateRequest } from "@/lib/esign";
 import { logActivity } from "@/lib/activity";
@@ -54,7 +55,11 @@ async function alertBounce(env: any, name: string, email: string, kind: string) 
 export async function POST(req: NextRequest) {
   const body = await req.text();
   const secret = process.env.RESEND_WEBHOOK_SECRET;
-  if (secret && !verify(secret, req.headers, body)) {
+  // FAIL CLOSED: an unset secret used to mean "accept everything", so this route's safety
+  // depended on an env var happening to be present. Without the secret nothing here can be
+  // trusted — a forged bounce flips a live signer to "delivery failed" and pages the team.
+  if (!secret) return NextResponse.json({ error: "webhook secret not configured" }, { status: 503 });
+  if (!verify(secret, req.headers, body)) {
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
   let evt: any; try { evt = JSON.parse(body); } catch { return NextResponse.json({ ok: true }); }
@@ -84,11 +89,7 @@ export async function POST(req: NextRequest) {
         }
         if (delivery === "bounced" || delivery === "complained") {
           const subj = String(evt?.data?.subject || "").slice(0, 80);
-          const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN, sfrom = process.env.TWILIO_FROM, sto = process.env.LEAD_NOTIFY_SMS_TO;
-          if (sid && tok && sfrom && sto) {
-            const b = new URLSearchParams({ To: sto, From: sfrom, Body: `⚠️ Email ${delivery}: "${subj}" to ${emails[0]} — resend or call them.` });
-            await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" }, body: b.toString() }).catch(() => {});
-          }
+          await alertOwnerSms(`⚠️ Email ${delivery}: "${subj}" to ${emails[0]} — resend or call them.`);
         }
       }
     } catch (e) { console.error("[resend webhook] receipt stamp failed:", e); }
@@ -119,7 +120,19 @@ export async function POST(req: NextRequest) {
     // and saving the stale list copy afterwards could silently reopen an envelope that was signed,
     // voided or completed by the sender in the meantime.
     const reqs = await listRequests();
-    const matches = (rc: { email?: string | null }) => !!rc.email && emails.includes(rc.email.toLowerCase().trim());
+    // ATTRIBUTE THE EVENT TO THE EMAIL THAT WAS SENT, NOT TO EVERY ENVELOPE THAT KNOWS THE
+    // ADDRESS. Matching on address alone stamped `email_delivered` onto every open envelope a
+    // recipient appeared in — including recipients still `pending` (never routed) and envelopes
+    // whose email this event was not about — and the Certificate of Completion then printed
+    // deliveries that never happened (8 of 37 envelopes carried more deliveries than sends).
+    // When the send recorded Resend's message id on the recipient, that id is the match; a
+    // recipient that has not been sent anything can never be "delivered".
+    const emailId = String(evt?.data?.email_id || "").trim();
+    const matches = (rc: { email?: string | null; status?: string; emailId?: string | null }) => {
+      if (rc.status === "pending" || rc.status === "not_signed") return false;
+      if (emailId && rc.emailId) return rc.emailId === emailId;
+      return !!rc.email && emails.includes(rc.email.toLowerCase().trim());
+    };
     for (const listed of reqs) {
       if (listed.status === "completed" || listed.status === "voided") continue;
       if (!(listed.recipients || []).some(matches)) continue;

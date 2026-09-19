@@ -9,4 +9,7 @@ if [ -s "$HOME/.nvm/nvm.sh" ]; then
   . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1
   nvm use default >/dev/null 2>&1
 fi
-exec npx tsx scripts/scan-agent.ts
+# --conditions=react-server: lib/pdfCompress.ts imports "server-only", which throws on a plain
+# Node resolution. Without the flag the agent died every 30 s (36,084 crashes by 2026-09-17) and
+# :3401 stayed up only because of a copy someone had started by hand.
+exec npx tsx --conditions=react-server scripts/scan-agent.ts

@@ -130,18 +130,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const { email, phone } = borrowerContact(lead, loanFile, i);
       if (!email && !phone) return NextResponse.json({ error: "No email or mobile on file for this borrower." }, { status: 422 });
       const who = a.borrowerName?.split(" ")[0] || "there";
+      // sendSignRequest reads `to_email` / `to_phone` (lib/notify/docRequest.ts SignSend). This
+      // branch passed `email` / `phone`, so both legs returned false, `sent` was always empty,
+      // and the LO got "Couldn't reach the borrower" every time — the re-ask path had never
+      // delivered a single message (0 card_auth.cvv_requested rows with a channel). The link is
+      // now returned on failure too, so the LO can hand it over by other means.
       const sent = await sendSignRequest({
-        email, phone,
-        subject: `Confirming the security code for your card ending ${a.last4 || ""}`,
-        body: `Hi ${who} — we're processing the payment you authorized on your Fetti loan file. To run it we need to confirm the 3-digit security code on the back of your card. It takes a few seconds: ${link}`,
-        link,
-      } as any).catch((e: any) => ({ sent: [], error: e?.message }));
+        to_name: a.borrowerName || who, to_email: email, to_phone: phone, link,
+        title: `Security code for your card ending ${a.last4 || ""}`,
+        leadId: lead.id, loanFileId: id,
+      }).catch((e: any) => ({ sent: [] as string[], error: e?.message }));
       await logActivity({
         entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: lead.id, actor: "lo",
         action: "card_auth.cvv_requested", detail: { borrowerIndex: i, last4: a.last4, to: (sent as any)?.sent || [] },
       }).catch(() => {});
       const to = (sent as any)?.sent || [];
-      if (!to.length) return NextResponse.json({ error: "Couldn't reach the borrower to ask for the code." }, { status: 502 });
+      if (!to.length) return NextResponse.json({ error: "Couldn't reach the borrower to ask for the code — send them this link yourself.", link }, { status: 502 });
       return NextResponse.json({ ok: true, sentTo: to, link });
     }
 

@@ -83,13 +83,31 @@ function pushSafeName(name: string): string {
   // "(3)" the next time, its size stopped matching, and it re-downloaded on every single pass.
   // Deterministic order keeps each document's local NAME stable run to run, which is what the
   // manifest below is keyed against.
-  const { data: docs, error: dErr } = await supabaseAdmin
-    .from("loan_documents")
-    .select("id, loan_file_id, name, file_name, storage_path, size_bytes")
-    .not("storage_path", "is", null)
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true });
-  if (dErr) throw new Error("loan_documents: " + dErr.message);
+  // PAGED, AND COUNTED. PostgREST answers at most 1000 rows per request and says nothing about
+  // the rest. With 526 documents today and ~150 added a month, a single select would have gone
+  // quiet around December: the NEWEST documents (ascending order) would fall off the end, stop
+  // mirroring, and — worse — a file Ramon dropped in and pushed would on the very next run no
+  // longer be "live", and the mover would file it under "not in LOS" while it sat in the LOS.
+  // So: page until a short page, then compare to the server's own count and REFUSE to run the
+  // move phase on a set that does not add up. A truncated view of the LOS is not a view.
+  const docs: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error: dErr } = await supabaseAdmin
+      .from("loan_documents")
+      .select("id, loan_file_id, name, file_name, storage_path, size_bytes")
+      .not("storage_path", "is", null)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (dErr) throw new Error("loan_documents: " + dErr.message);
+    docs.push(...(page || []));
+    if (!page || page.length < 1000) break;
+  }
+  const { count: docCount, error: cErr } = await supabaseAdmin
+    .from("loan_documents").select("id", { count: "exact", head: true }).not("storage_path", "is", null);
+  if (cErr) throw new Error("loan_documents count: " + cErr.message);
+  const liveSetComplete = docCount != null && docs.length === docCount && docs.length > 0;
+  if (!liveSetComplete) console.error(`  LIVE SET INCOMPLETE — read ${docs.length} document(s), the LOS holds ${docCount}; the replaced-copy move is skipped this run.`);
 
   // What we have already pulled down, by storage path — our own record, not the CRM's.
   const MANIFEST = join(ROOT, ".fetti-sync.json");
@@ -242,7 +260,9 @@ function pushSafeName(name: string): string {
   // pushed (the push reads top-level files only). The rule for WHICH files are replaced, and
   // why a dead storage_path alone is not enough, lives with the code in lib/mirrorSuperseded.ts.
   const livePaths = new Set<string>((docs || []).map((d: any) => String(d.storage_path)));
-  const plan = planSupersededMoves({ root: ROOT, manifest, livePaths, exists: existsSync });
+  const plan = liveSetComplete
+    ? planSupersededMoves({ root: ROOT, manifest, livePaths, exists: existsSync, sizeOf: (p) => { try { return statSync(p).size; } catch { return -1; } } })
+    : [];
   let labelled = 0;
   if (DRY) {
     for (const m of plan) console.log(`  would move  ${m.from.replace(homedir(), "~")}  ->  ${REPLACED_DIR}/${basename(m.to)}`);

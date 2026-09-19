@@ -45,24 +45,31 @@ function countFiles(dir: string): number {
   const labelled = f("Pay stubs — last 30 days — original.jpeg");
   const labelled2 = f("Pay stubs — last 30 days — original (2).jpeg");
   const overwritten = f("W-2s — last 2 years.pdf");       // dead key AND live key point here
+  const resaved = f("Bank statement — June.pdf");          // dead path, but Ramon saved NEW bytes over it
   const deeper = join(b, "my own subfolder", "old scan.pdf"); writeFileSync(deeper, "x");
   mkdirSync(join(b, REPLACED_DIR));
   writeFileSync(join(b, REPLACED_DIR, "Pay stubs — last 30 days — original.jpeg"), "already there");
 
+  // Manifest bytes are what the sync wrote; the scratch files hold their own name, so the byte
+  // counts below are the real sizes — except D7, which deliberately disagrees with the disk.
+  const sz = (p: string) => statSync(p).size;
   const manifest: Record<string, ManifestEntry> = {
-    "L1": { file: livePdf, bytes: 1 },
-    "D1": { file: deadJpg, bytes: 1 },
-    "D2": { file: labelled, bytes: 1 },
-    "D3": { file: labelled2, bytes: 1 },
-    "D4": { file: overwritten, bytes: 1 },    // the 2026-08-20 trap
-    "L4": { file: overwritten, bytes: 2 },
-    "D5": { file: deeper, bytes: 1 },
+    "L1": { file: livePdf, bytes: sz(livePdf) },
+    "D1": { file: deadJpg, bytes: sz(deadJpg) },
+    "D2": { file: labelled, bytes: sz(labelled) },
+    "D3": { file: labelled2, bytes: sz(labelled2) },
+    "D4": { file: overwritten, bytes: 1 },    // the 2026-08-20 trap: dead key on a path the live key now owns
+    "L4": { file: overwritten, bytes: sz(overwritten) },
+    "D5": { file: deeper, bytes: sz(deeper) },
     "D6": { file: join(b, "gone.pdf"), bytes: 1 },
+    "D7": { file: resaved, bytes: 999 },      // manifest remembers 999 bytes; the file on disk is not that
   };
   const livePaths = new Set(["L1", "L4"]);
   const before = countFiles(root);
-  const plan = planSupersededMoves({ root, manifest, livePaths, exists: existsSync });
+  const sizeOf = (p: string) => { try { return statSync(p).size; } catch { return -1; } };
+  const plan = planSupersededMoves({ root, manifest, livePaths, exists: existsSync, sizeOf });
   const from = new Set(plan.map((m) => m.from));
+  ck("a file whose bytes no longer match the manifest (Ramon re-saved it) is left alone", !from.has(resaved));
 
   ck("a replaced JPEG is selected", from.has(deadJpg));
   ck("an already-labelled '— original' copy is selected", from.has(labelled) && from.has(labelled2));
@@ -80,11 +87,11 @@ function countFiles(dir: string): number {
   ck("every planned move happened", moved.length === plan.length && failed.length === 0, `${moved.length}/${plan.length}`);
   ck("NOTHING was deleted", countFiles(root) === before, `${before} files before, ${countFiles(root)} after`);
   const top = readdirSync(b).filter((e) => statSync(join(b, e)).isFile()).sort();
-  ck("the top level now holds exactly the live files", JSON.stringify(top) === JSON.stringify(["Government-issued photo ID.pdf", "W-2s — last 2 years.pdf"]), top.join(" | "));
+  ck("the top level now holds exactly the live files plus the re-saved one", JSON.stringify(top) === JSON.stringify(["Bank statement — June.pdf", "Government-issued photo ID.pdf", "W-2s — last 2 years.pdf"]), top.join(" | "));
   ck("the manifest follows every moved file (the push side must not see it as new)",
     Object.entries(manifest).every(([, v]) => existsSync(v.file) || v.file.endsWith("gone.pdf")));
   ck("the pre-existing replaced copy kept its bytes", readFileSync(join(b, REPLACED_DIR, "Pay stubs — last 30 days — original.jpeg"), "utf8") === "already there");
-  const again = planSupersededMoves({ root, manifest, livePaths, exists: existsSync });
+  const again = planSupersededMoves({ root, manifest, livePaths, exists: existsSync, sizeOf });
   ck("a second run moves nothing", again.length === 0, `${again.length} planned`);
   rmSync(root, { recursive: true, force: true });
 
@@ -92,7 +99,8 @@ function countFiles(dir: string): number {
   console.log("\n── sync-loan-docs.ts uses this code ──");
   const src = readFileSync("scripts/sync-loan-docs.ts", "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");   // a comment is not wiring
-  ck("calls planSupersededMoves with the live storage paths", /planSupersededMoves\(\s*\{[^}]*livePaths[^}]*\}\s*\)/.test(src));
+  ck("calls planSupersededMoves with the live storage paths", /planSupersededMoves\(\s*\{[\s\S]{0,200}?livePaths/.test(src));
+  ck("refuses to plan a move when the live set does not match the LOS count", /liveSetComplete\s*\?\s*planSupersededMoves/.test(src) && /docs\.length === docCount/.test(src));
   ck("calls applySupersededMoves on the real manifest", /applySupersededMoves\(\s*plan\s*,\s*manifest\s*,/.test(src));
   ck("no in-place '— original' rename survives in the script", !/— original\$\{ext\}/.test(src));
 
@@ -103,8 +111,14 @@ function countFiles(dir: string): number {
   const MANIFEST = join(ROOT, ".fetti-sync.json");
   ck("the mirror manifest exists", existsSync(MANIFEST));
   const real: Record<string, ManifestEntry> = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, "utf8")) : {};
-  const docs = await rows<any>("verify:mirror-superseded",
-    supabaseAdmin.from("loan_documents").select("storage_path").not("storage_path", "is", null) as any, { minRows: 1 });
+  const docs: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const page = await rows<any>("verify:mirror-superseded",
+      supabaseAdmin.from("loan_documents").select("storage_path").not("storage_path", "is", null).order("id").range(from, from + 999) as any);
+    docs.push(...page); if (page.length < 1000) break;
+  }
+  const { count: docCount } = await supabaseAdmin.from("loan_documents").select("id", { count: "exact", head: true }).not("storage_path", "is", null);
+  ck("the live document set was read in full (paged past PostgREST's 1000-row cap)", docCount != null && docs.length === docCount && docs.length > 0, `${docs.length} read, ${docCount} in the LOS`);
   const live = new Set(docs.map((d) => String(d.storage_path)));
   const liveFiles = new Set(Object.entries(real).filter(([k]) => live.has(k)).map(([, v]) => v.file));
   const deadTop: string[] = [];

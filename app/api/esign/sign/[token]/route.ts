@@ -183,11 +183,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       env.status = "in_progress";
       if (!(await saveRequestIfUnchanged(env, version))) return lostRace([signed_path]);
       try {
-        await sendSignRequest({ to_name: next.name, to_email: next.email, to_phone: next.phone, link: `${origin}/sign/${next.token}`, title: env.title });
+        const routed = await sendSignRequest({ to_name: next.name, to_email: next.email, to_phone: next.phone, link: `${origin}/sign/${next.token}`, title: env.title });
         const routedAt = new Date().toISOString();
+        // Record what ACTUALLY left: the delivery state and Resend id land on the fresh row (the
+        // local `env` was already saved above), and the event says which channels carried the
+        // link — "routed" used to be written even when nothing was sent.
         await mutateRequest(env.token, (fresh) => {
           if (fresh.status !== "in_progress") return false;
-          fresh.events = [...(fresh.events || []), { type: "routed", at: routedAt, detail: `Routed to next signer: ${next.name}` }];
+          const rc = (fresh.recipients || []).find((x) => x.id === next.id);
+          if (rc && routed.sent.includes("email")) { rc.delivery = "sent"; rc.emailId = routed.emailId || null; }
+          const how = routed.sent.length ? `via ${routed.sent.join(" + ")}` : "link created — NOT delivered (no channel reached the signer)";
+          fresh.events = [...(fresh.events || []), { type: "routed", at: routedAt, detail: `Routed to next signer: ${next.name} ${how}` }];
           return true;
         });
       } catch { /* */ }

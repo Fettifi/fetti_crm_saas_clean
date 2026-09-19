@@ -12,6 +12,7 @@
 // configured. They return the provider message id so delivery status can be
 // correlated later (Twilio StatusCallback -> /api/sms/status).
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { isOwnNumber } from "./ownNumbers";
 import { cfg } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
 import { unsubUrl } from "@/lib/notify/emailCopy";
@@ -160,6 +161,9 @@ export async function sendSms(
     const toNorm = normalizePhone(to);
     if (!sid || !token || !from) return { ok: false, detail: "twilio not configured" };
     if (!toNorm) return { ok: false, detail: "no recipient phone" };
+    // Never text ourselves: the message bounces straight back into /api/sms/inbound as a
+    // stranger's reply (lib/ownNumbers.ts). Permanent — retrying cannot make it a person.
+    if (isOwnNumber(toNorm)) return { ok: false, permanent: true, detail: "recipient is one of our own numbers — refused" };
     // TCPA quiet hours, enforced HERE so no call site can forget it (see lib/quietHours.ts).
     // `deferred: true` marks a hold — the caller should retry later, NOT treat it as a
     // delivery failure and page a human.

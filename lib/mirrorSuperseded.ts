@@ -40,8 +40,9 @@ export function planSupersededMoves(args: {
   manifest: Record<string, ManifestEntry>;
   livePaths: Set<string>;           // storage_paths of documents the LOS holds right now
   exists: (p: string) => boolean;
+  sizeOf?: (p: string) => number;   // bytes on disk; when given, a file that no longer matches the manifest stays put
 }): SupersededMove[] {
-  const { manifest, livePaths, exists } = args;
+  const { manifest, livePaths, exists, sizeOf } = args;
   const root = resolve(args.root);
   // Every file a LIVE document is mirrored to. Anything in here stays exactly where it is.
   const liveFiles = new Set<string>();
@@ -51,6 +52,9 @@ export function planSupersededMoves(args: {
   const claimed = new Set<string>();   // destinations already chosen in this plan
   for (const [key, v] of Object.entries(manifest)) {
     if (livePaths.has(key) || !v?.file || liveFiles.has(v.file) || !exists(v.file)) continue;
+    // The bytes must be the bytes this sync wrote. A file Ramon saved over a dead manifest path
+    // (same name, new content) is HIS document, not a replaced copy, and stays where he put it.
+    if (sizeOf && typeof v.bytes === "number" && sizeOf(v.file) !== v.bytes) continue;
     const folder = dirname(v.file);
     // Only a file sitting directly in a borrower folder — the level a picker shows and the push
     // reads. Anything deeper (already moved, or a subfolder Ramon made) is left alone.

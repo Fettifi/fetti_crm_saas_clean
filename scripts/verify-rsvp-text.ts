@@ -11,6 +11,7 @@
 import "./_env";
 import crypto from "crypto";
 import { listRsvps, removeRsvp, last10 } from "../lib/rsvp";
+import { supabaseAdmin } from "../lib/supabaseAdminClient";
 
 const BASE = process.env.RSVP_BASE || "https://app.fettifi.com";
 const TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
@@ -121,6 +122,25 @@ const onList = async (phone: string) => (await listRsvps()).find((x) => last10(x
   const left = after.filter((x) => PROBES.concat(["5550101999", "5550101998"]).includes(last10(x.phone)));
   ck(`all ${mine.length} probe(s) removed`, left.length === 0, left.map((x) => x.name).join(", "));
   ck("the real guest list is untouched", after.length === before.length, `${before.length} → ${after.length}`);
+
+  // THE MORTGAGE LANE CREATES LEADS, AND THIS SCRIPT NEVER DELETED THEM. Six fictional 555
+  // leads sat at the top of Ramon's task list for two weeks, re-alerted on every 2-hourly
+  // watcher run (5,000+ activity rows, "🔥 Hot reply" pages). A probe that leaves a lead behind
+  // has tested the funnel by polluting it. Remove every lead the probes made — and their
+  // activity and hot-reply tasks — then read back and assert zero remain.
+  console.log("\nlead cleanup:");
+  const probeLast10 = PROBES.concat(["5550101999", "5550101998"]);
+  const sb: any = supabaseAdmin;
+  const { data: leads } = await sb.from("leads").select("id,phone").or(probeLast10.map((p) => `phone.ilike.%${p}`).join(","));
+  const ids: string[] = (leads || []).filter((l: any) => probeLast10.includes(last10(l.phone))).map((l: any) => l.id);
+  if (ids.length) {
+    await sb.from("activity_log").delete().in("lead_id", ids);
+    await sb.from("org_tasks").delete().or(ids.map((i) => `dedup_key.ilike.hotreply:${i.replace(/-/g, "")}%`).join(","));
+    await sb.from("leads").delete().in("id", ids);
+  }
+  const { data: remain } = await sb.from("leads").select("id,phone").or(probeLast10.map((p) => `phone.ilike.%${p}`).join(","));
+  const stillThere = (remain || []).filter((l: any) => probeLast10.includes(last10(l.phone)));
+  ck(`every lead the probes created is gone (${ids.length} removed)`, stillThere.length === 0, stillThere.map((l: any) => l.id).join(", "));
 
   console.log(fail ? `\n❌ ${fail} check(s) failed\n` : `\n✅ ALL PASSED — a guest can text ${"RSVP"} and land on the list\n`);
   process.exit(fail ? 1 : 0);

@@ -1,9 +1,10 @@
 {
- "savedAt": null,
+ "savedAt": "2026-09-19T05:06:55.306Z",
  "files": {
   "FF-202606-3544": {
    "file": "FF-202606-3544",
    "loanType": "fha",
+   "method": "standard",
    "qualifying": 11784,
    "shipped": 11784,
    "perBorrower": {
@@ -16,6 +17,7 @@
   "FF-202606-4509": {
    "file": "FF-202606-4509",
    "loanType": "conventional",
+   "method": "standard",
    "qualifying": 13580,
    "shipped": 13580,
    "perBorrower": {
@@ -28,6 +30,7 @@
   "FF-202606-5223": {
    "file": "FF-202606-5223",
    "loanType": "conventional",
+   "method": "standard",
    "qualifying": 20653,
    "shipped": 20653,
    "perBorrower": {
@@ -39,6 +42,7 @@
   "FF-202607-1321": {
    "file": "FF-202607-1321",
    "loanType": "conventional",
+   "method": "standard",
    "qualifying": 0,
    "shipped": 0,
    "perBorrower": {},
@@ -48,6 +52,7 @@
   "FF-202607-6280": {
    "file": "FF-202607-6280",
    "loanType": "conventional",
+   "method": "standard",
    "qualifying": 8627,
    "shipped": 8627,
    "perBorrower": {
@@ -59,6 +64,7 @@
   "FF-202607-8421": {
    "file": "FF-202607-8421",
    "loanType": "fha",
+   "method": "standard",
    "qualifying": 19753,
    "shipped": 19753,
    "perBorrower": {
@@ -71,6 +77,7 @@
   "FF-202607-9927": {
    "file": "FF-202607-9927",
    "loanType": "conventional",
+   "method": "standard",
    "qualifying": 8923,
    "shipped": 8923,
    "perBorrower": {
@@ -93,13 +100,14 @@
   "FF-202608-2600": {
    "file": "FF-202608-2600",
    "loanType": "fha",
+   "method": "standard",
    "qualifying": 10414,
    "shipped": 10414,
    "perBorrower": {
     "1": 10414
    },
-   "factCount": 13,
-   "factsHash": "6c7435ec1eb6b3ff"
+   "factCount": 12,
+   "factsHash": "ad0bf8a930bd63ee"
   },
   "FF-202608-5944": {
    "file": "FF-202608-5944",
@@ -115,6 +123,7 @@
   "FF-202608-6901": {
    "file": "FF-202608-6901",
    "loanType": "conventional",
+   "method": "standard",
    "qualifying": 4874,
    "shipped": 4874,
    "perBorrower": {
@@ -122,6 +131,20 @@
    },
    "factCount": 10,
    "factsHash": "93c7a078e6905e1a"
+  },
+  "FF-202609-1582": {
+   "file": "FF-202609-1582",
+   "loanType": "conventional",
+   "method": "bank_statement",
+   "qualifying": 17763,
+   "shipped": 17763,
+   "perBorrower": {
+    "1": 17763
+   },
+   "factCount": 38,
+   "factsHash": "f99e61795f1557d9",
+   "bankMonthCount": 41,
+   "bankHash": "ba0c00859f3accec"
   }
  }
 }

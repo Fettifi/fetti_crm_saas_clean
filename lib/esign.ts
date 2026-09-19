@@ -30,6 +30,7 @@ export type Recipient = {
   // delivery in the audit trail that never happened.
   delivery?: "sent" | "delivered" | "bounced" | "complained" | "self";
   deliveryAt?: string;
+  emailId?: string | null;    // Resend message id of the signing email, so a webhook event is pinned to THIS send
   viewedAt?: string; signedAt?: string; ip?: string; ua?: string; typedName?: string; declineReason?: string;
 };
 

@@ -67,9 +67,15 @@ async function snapshot(): Promise<Snapshot> {
 
   const { data: files, error: fe } = await sb.from("loan_files").select("id, file_number, borrower_name");
   if (fe) throw new Error(`loan_files: ${fe.message}`);
-  const { data: docs, error: de } = await sb
-    .from("loan_documents").select("id, loan_file_id, name, category, file_name, storage_path");
-  if (de) throw new Error(`loan_documents: ${de.message}`);
+  // Paged past PostgREST's 1000-row cap: a single select silently drops the NEWEST documents,
+  // which are exactly the ones that change a file's income candidate set.
+  const docs: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error: de } = await sb
+      .from("loan_documents").select("id, loan_file_id, name, category, file_name, storage_path").order("id").range(from, from + 999);
+    if (de) throw new Error(`loan_documents: ${de.message}`);
+    docs.push(...(page || [])); if (!page || page.length < 1000) break;
+  }
   const { data: cached, error: ce } = await sb
     .from("app_settings").select("key, value").like("key", "los_income_verify:%");
   if (ce) throw new Error(`app_settings: ${ce.message}`);

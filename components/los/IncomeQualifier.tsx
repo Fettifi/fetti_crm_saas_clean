@@ -97,6 +97,10 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
   type AddedLine = { label: string; monthly: number; basis: string; borrower: number };
   const [addedLines, setAddedLines] = useState<AddedLine[]>([]);
   const [reviewLoaded, setReviewLoaded] = useState(false);
+  // Server-side notices from /income-review: the restored worksheet was replaced by a newer read,
+  // or the current engine no longer reproduces the restored figure from the file's own facts.
+  const [refreshNote, setRefreshNote] = useState<any>(null);
+  const [driftNote, setDriftNote] = useState<any>(null);
   const [reviewSaved, setReviewSaved] = useState<null | "saving" | "saved">(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Direct overrides — the underwriter can ALWAYS type the qualifying income / gross
@@ -314,7 +318,7 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
         }),
       });
       const j = await r.json();
-      if (!r.ok) { setVerifyErr(j?.error || "Verification failed."); setVerified(null); } else { setVerified(j); setLineBorrower({}); setLineIncluded({}); setExcluded(new Set()); setFlagDecisions({}); setFlagNotes({}); setQcAck({}); setQcAckReason(""); incomeEditedRef.current = false; setIncomeInput(""); }
+      if (!r.ok) { setVerifyErr(j?.error || "Verification failed."); setVerified(null); } else { setVerified(j); setRefreshNote(null); setDriftNote(null); setLineBorrower({}); setLineIncluded({}); setExcluded(new Set()); setFlagDecisions({}); setFlagNotes({}); setQcAck({}); setQcAckReason(""); incomeEditedRef.current = false; setIncomeInput(""); }
     } catch (e: any) { setVerifyErr(e?.message || "Verification failed."); } finally { setVerifying(false); }
   }
   const fmtWhen = (iso?: string) => { if (!iso) return ""; try { return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); } catch { return ""; } };
@@ -386,6 +390,8 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
       const rv = j?.review;
       if (rv && typeof rv === "object") {
         if (rv.verified) setVerified(rv.verified);
+        setRefreshNote(rv.verifiedRefreshed || null);
+        setDriftNote(rv.incomeDrift && rv.incomeDrift.drifted ? rv.incomeDrift : null);
         if (rv.flagDecisions) setFlagDecisions(rv.flagDecisions);
         if (rv.flagNotes) setFlagNotes(rv.flagNotes);
         // Restore the acknowledgement by MATCHING TEXT, not by index. `contestedAck.findings`
@@ -705,6 +711,24 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
                 <span>🔒 Locked to the documents on file{verified.verifiedAt ? ` · verified ${fmtWhen(verified.verifiedAt)}` : ""} — stays the same unless the docs change.</span>
                 <button onClick={() => verifyIncome(true)} disabled={verifying} className="text-emerald-400 hover:underline disabled:opacity-50">↻ re-read documents</button>
               </div>
+              {/* THE ENGINE MOVED UNDER A SETTLED READ. A LOGIC_VERSION bump used to reach this
+                  screen only after a paid re-read nobody triggered; the route now recomputes
+                  from the stored facts on the next Verify income, and says so here. */}
+              {verified.recomputed && (
+                <div className="mt-1.5 text-[11px] text-sky-300 bg-sky-950/25 border border-sky-800/40 rounded-lg px-2 py-1.5">
+                  ♻️ Recomputed under the current income engine from the document facts read {verified.recomputed.readAt ? fmtWhen(verified.recomputed.readAt) : "earlier"} — previously ${Math.round(Number(verified.recomputed.previousIncome) || 0).toLocaleString()}/mo. No document was re-read; QC findings are from that read.
+                </div>
+              )}
+              {refreshNote && (
+                <div className="mt-1.5 text-[11px] text-sky-300 bg-sky-950/25 border border-sky-800/40 rounded-lg px-2 py-1.5">
+                  🔄 This worksheet was replaced by a newer read ({refreshNote.to ? fmtWhen(refreshNote.to) : "now"}): ${Number(refreshNote.previousIncome || 0).toLocaleString()}/mo → ${Number(refreshNote.income || 0).toLocaleString()}/mo.{refreshNote.droppedChoices ? " Line and flag choices made on the old worksheet were cleared — review the lines below." : ""}
+                </div>
+              )}
+              {driftNote && (
+                <div className="mt-1.5 text-[11px] text-amber-300 bg-amber-950/25 border border-amber-800/40 rounded-lg px-2 py-1.5">
+                  ⚠️ This read predates the current income engine: the same document facts now give ${Number(driftNote.recomputed || 0).toLocaleString()}/mo (shown: ${Number(driftNote.shipped || 0).toLocaleString()}/mo). Click <span className="font-semibold">Verify income</span> to recompute — no documents are re-read.
+                </div>
+              )}
               {/* A DOCUMENT COUNTED BECAUSE WE READ IT, NOT BECAUSE OF ITS NAME. These are the
                   ones every earlier run of this file silently left out — say so, because
                   otherwise the income just quietly changed. */}

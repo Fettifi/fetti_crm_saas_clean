@@ -55,6 +55,13 @@ console.log(`\nSHIELD VERDICT — a pass is a finding\n`);
   chk(r.level === "real", `a clean band yields level "real" (got "${r.level}")`);
 
   // And the tiers below it still work.
+  // A LEAD RAMON RELEASED IS REAL. promoteQuarantined leaves band/verdict on the record and
+  // stamps resolution:"promoted"; reading only the band kept every released lead "suspect", so
+  // the drip skipped it and the inbox badged it ⚠ (3 live leads, 2026-09-17).
+  chk(leadReality({ raw: { shield: { ...cleanShield, band: "gray", verdict: "quarantine", resolution: "promoted", resolved_by: "ramon" } }, name: "x", email: "x@y.com", phone: "5615550134" }).level === "real",
+    "a lead released from quarantine by a human reads as REAL, whatever its original band");
+  chk(leadReality({ raw: { shield: { ...cleanShield, band: "gray", verdict: "quarantine", resolution: "dismissed" } }, name: "x", email: "x@y.com", phone: "5615550134" }).level === "suspect",
+    "…but a DISMISSED quarantine is not a release and stays suspect");
   chk(leadReality({ raw: { shield: { ...cleanShield, band: "gray", verdict: "quarantine" } }, name: "x", email: "x@y.com", phone: "5615550134" }).level === "suspect",
     "a gray band is still suspect");
   chk(leadReality({ raw: { shield: { ...cleanShield, band: "junk" } }, name: "x", email: "x@y.com", phone: "5615550134" }).level === "invalid",

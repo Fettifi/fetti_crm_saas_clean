@@ -13,7 +13,8 @@
 //
 //   npx tsx scripts/verify-sms-consent.ts
 import { smsAllowed, canSms, messagingAllowed, withStopLine, STOP_LINE, isRevocation } from "../lib/smsConsent";
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
+import { join } from "path";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -64,27 +65,46 @@ chk(withStopLine(`already says STOP somewhere`) === "already says STOP somewhere
 //      being undone by the next new sender: three separate hand-rolled POSTs in one file were
 //      how 16 texts reached handsets with none of lib/comms.sendSms's gates. The send primitive
 //      is the only place allowed to talk to the Messages API.
-const ALLOWED = new Set(["lib/comms.ts"]);
-const SEND_PATHS = [
-  "lib/notify/docRequest.ts",
-  "lib/notify/leadResponder.ts",
-  "lib/nurture.ts",
-  "lib/markConcierge.ts",
-  "app/api/conversations/route.ts",
-  "app/api/cron/comms-reconcile/route.ts",
-  "app/api/voice/bridge/route.ts",
-  "app/api/sms/inbound/route.ts",
-];
-for (const f of SEND_PATHS) {
-  let src = "";
-  try { src = readFileSync(f, "utf8"); } catch { continue; }
+//
+// THE WHOLE TREE, NOT A LIST. The first version checked eight named files and skipped any that
+// were missing — so a raw POST in a NEW file, or a rename of a listed one, sailed through with
+// the same green "no sender bypasses the gate" line. A guard enumerating the places it knows
+// about is a guard that expires silently (guard-hardcoded-to-known-clients). Now every .ts/.tsx
+// under lib/ and app/ is read. Owner alerts to Ramon's own phone (LEAD_NOTIFY_SMS_TO) are the one
+// permitted exception outside lib/comms.ts, and a file gets it only if its `To:` is literally
+// that env var — a borrower number can never ride on that exemption.
+const ALLOWED = new Set(["lib/comms.ts", "lib/phoneMessages.ts"]);
+{
+  // lib/phoneMessages.alertOwnerSms is the one sender outside sendSms, and it may ONLY address
+  // Ramon's own phone. Assert the pin on the source: the `To` must be the LEAD_NOTIFY_SMS_TO env
+  // var, read into a local and used verbatim, and nothing else in that file may POST a message.
+  const pm = readFileSync("lib/phoneMessages.ts", "utf8");
+  chk(/smsTo = process\.env\.LEAD_NOTIFY_SMS_TO/.test(pm) && /To: smsTo/.test(pm), "lib/phoneMessages.ts pins its Twilio `To` to process.env.LEAD_NOTIFY_SMS_TO — an owner alert can never reach a borrower");
+  chk((pm.match(/api\.twilio\.com[^\n`]*Messages\.json(?!\?)/g) || []).length === 1, "lib/phoneMessages.ts holds exactly one Twilio POST (alertOwnerSms)");
+}
+function walk(dir: string): string[] {
+  const out: string[] = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) { if (!/^(node_modules|\.next|\.claude)$/.test(e.name)) out.push(...walk(p)); }
+    else if (/\.(ts|tsx)$/.test(e.name)) out.push(p);
+  }
+  return out;
+}
+const tree = [...walk("lib"), ...walk("app")];
+chk(tree.length > 200, `the sweep actually read the tree (${tree.length} files) — not a vacuous walk`);
+let rawSenders = 0;
+for (const f of tree) {
+  const src = readFileSync(f, "utf8");
   // A SEND POSTs to the bare Messages.json endpoint; a LIST READ carries a query string.
   // Flagging both would make the reconciliation cron — whose whole job is to READ the
   // provider ledger — unable to do it.
   const hits = (src.match(/api\.twilio\.com[^\n`]*Messages\.json(?!\?)/g) || []).length;
-  chk(ALLOWED.has(f) || hits === 0,
-    `${f} does not POST to Twilio directly — it must go through sendSms, which holds the consent, quiet-hours and STOP gates${hits ? ` (${hits} raw POST(s) found)` : ""}`);
+  if (!hits || ALLOWED.has(f)) continue;
+  rawSenders++;
+  chk(false, `${f} POSTs to Twilio directly (${hits}) — every borrower text goes through sendSms (consent, quiet-hours, STOP) and every owner alert through alertOwnerSms`);
 }
+chk(rawSenders === 0, `no file outside lib/comms.ts and lib/phoneMessages.ts talks to the Twilio Messages API (${tree.length} files swept)`);
 
 // ── 6. A KEYWORD MUST NOT RESURRECT A REVOKED CONSENT, AND MUST NOT FIRE FOR A KNOWN LEAD.
 //    The opt-in branch ran BEFORE the lead lookup, and its keyword list is

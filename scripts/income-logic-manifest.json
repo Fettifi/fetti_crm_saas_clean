@@ -1,11 +1,11 @@
 {
-  "logicVersion": "2026-09-17-bank-statement-unnumbered-statement-merges-into-its-account",
-  "pinnedAt": "2026-09-18T00:01:01.326Z",
+  "logicVersion": "2026-09-18-bank-merge-holder-institution-and-recompute-from-stored-facts",
+  "pinnedAt": "2026-09-19T05:06:33.500Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "3a4413c7e2ce41b9",
+    "app/api/los/files/[id]/verify-income/route.ts": "6072dfc4f5ff649f",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankReplay.ts": "bbb61927f654be5a",
-    "lib/income/bankStatement.ts": "7a41ebb112027ea8",
+    "lib/income/bankStatement.ts": "6ab317b2e7088d12",
     "lib/income/benefitRules.ts": "1f3305b92769f546",
     "lib/income/combineBankStatement.ts": "43f917108941029d",
     "lib/income/contested.ts": "4bef5f41ecf107eb",
@@ -14,6 +14,7 @@
     "lib/income/overrideExemplars.ts": "d33ed7c3fa074035",
     "lib/income/programs.ts": "3ef831cba44f1919",
     "lib/income/readDocument.ts": "e0380964e130461f",
+    "lib/income/recomputeFromFacts.ts": "7529ce08279b5aa3",
     "lib/income/rentalIncome.ts": "134ed0667752a05a",
     "lib/income/selectMethod.ts": "73532ce57baaba19",
     "lib/income/verifyWorksheet.ts": "25a83dafe34daa81"

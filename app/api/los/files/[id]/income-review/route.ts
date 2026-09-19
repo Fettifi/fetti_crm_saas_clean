@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { getSetting, setSetting } from "@/lib/settings";
 import { logActivity } from "@/lib/activity";
+import { incomeDriftState } from "@/lib/income/driftGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,38 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const raw = await getSetting(keyFor(id));
   let review: any = null;
   try { review = raw ? JSON.parse(raw) : null; } catch { review = null; }
+  if (review && typeof review === "object") {
+    // THE SCREEN RESTORES ITS OWN SNAPSHOT, NOT THE LATEST READ. The review blob embeds the
+    // `verified` result it was saved with; the verify cache (los_income_verify) is written by
+    // every verify. When the cache is NEWER — a re-verify through the API, or a recompute after
+    // an engine change — this screen kept showing the older worksheet (2026-09-17: Natasha
+    // Oiye's review carried the $21,106 three-line read under an override of $17,763 while the
+    // cache held the corrected two-line $17,763). Overlay the newer read, drop the choices that
+    // were keyed to the old worksheet's row positions, and say so.
+    try {
+      const envRaw = await getSetting(`los_income_verify:${id}`);
+      const env = envRaw ? JSON.parse(envRaw) : null;
+      const oldAt = review.verified?.verifiedAt ? Date.parse(review.verified.verifiedAt) : 0;
+      if (env?.payload && env.verifiedAt && review.verified && Date.parse(env.verifiedAt) > oldAt) {
+        const previousChoices = { lineIncluded: review.lineIncluded || {}, lineBorrower: review.lineBorrower || {}, flagDecisions: review.flagDecisions || {}, flagNotes: review.flagNotes || {} };
+        const dropped = Object.values(previousChoices).some((o: any) => o && Object.keys(o).length > 0);
+        review.verifiedRefreshed = {
+          from: review.verified.verifiedAt || null, to: env.verifiedAt,
+          previousIncome: Math.round(Number(review.verified.qualifyingMonthlyIncome) || 0),
+          income: Math.round(Number(env.payload.qualifyingMonthlyIncome) || 0),
+          droppedChoices: dropped,
+        };
+        review.verified = { ...env.payload, verifiedAt: env.verifiedAt, cached: true };
+        // Row-position choices belong to the worksheet they were made on. Borrower exclusions,
+        // added lines, the income override and the text-matched QC acknowledgement carry over.
+        review.lineIncluded = {}; review.lineBorrower = {}; review.flagDecisions = {}; review.flagNotes = {};
+        if (dropped) await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, actor: "system", action: "income.review_refreshed", detail: { ...review.verifiedRefreshed, previousChoices } }).catch(() => {});
+      }
+    } catch { /* the review still loads without the overlay */ }
+    // Is the number this screen shows one the current engine still reproduces from the file's
+    // own facts? Names shipped vs recomputed so the LO can see a stale read before trusting it.
+    try { review.incomeDrift = await incomeDriftState(id); } catch { /* advisory */ }
+  }
   return NextResponse.json({ review });
 }
 

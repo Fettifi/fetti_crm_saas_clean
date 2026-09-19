@@ -9,6 +9,7 @@ import { logActivity } from "@/lib/activity";
 import { markConciergeReply, extractConversationFacts, handoffSignal, expertiseFor } from "@/lib/markConcierge";
 import { cfg } from "@/lib/settings";
 import { phoneMatchForms } from "@/lib/phone";
+import { isOwnNumber } from "@/lib/ownNumbers";
 import { magicApplyLink } from "@/lib/magicLink";
 import { automationPaused } from "@/lib/automationGate";
 import { isRevocation } from "@/lib/smsConsent";
@@ -56,6 +57,15 @@ export async function POST(req: NextRequest) {
     const body = String(params["Body"] || "").trim();
     const digits = from.replace(/\D/g, "").slice(-10);
     const msgSid = String(params["MessageSid"] || ""); // Twilio's unique id for THIS inbound — used for retry idempotency
+
+    // LOOPBACK, before ANY branch: a text FROM one of our own numbers is our own outbound
+    // reflected back (2026-08-24: an RSVP confirmation came in this way and every path below
+    // treated it as a stranger — lead, callback task, first-touch drip aimed at ourselves).
+    // Record it and answer Twilio with an empty response; nothing here is a person to work.
+    if (digits && isOwnNumber(digits)) {
+      try { await logActivity({ entity_type: "sms", entity_id: digits.slice(-4), actor: "system", action: "sms.loopback_dropped", detail: { from, text: body.slice(0, 200), msgSid } }); } catch { /* */ }
+      return new NextResponse("<Response></Response>", { status: 200, headers: { "Content-Type": "text/xml" } });
+    }
 
     // IDEMPOTENCY (before ANY branch): Twilio redelivers this webhook if our response
     // is slow, and EVERY path below has an unguarded side effect on retry — the owner

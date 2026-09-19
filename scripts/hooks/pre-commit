@@ -154,6 +154,37 @@ fi
 # The folder a portal's upload dialog browses must hold what the LOS holds. A converted ID left its
 # JPEG beside the new PDF (renamed "— original"), and Ramon kept being offered the JPEG while
 # uploading Magali and Milton's IDs (2026-09-17). Replaced copies now move to a subfolder.
+# An inbound webhook with no secret configured must refuse, not accept. The Calendly route accepted
+# unsigned POSTs and could release a quarantined lead; the card-auth re-ask leg passed the wrong
+# field names and had never sent a message (2026-09-17 system check).
+if printf '%s\n' "$CHANGED" | grep -q -e 'api/calendly' -e 'api/webhooks/' -e 'card-auth/route' -e 'notify/docRequest' -e 'verify-webhooks-fail-closed'; then
+  printf "   %-24s " "verify:webhooks-fail-closed"
+  OUT=$(npm run --silent verify:webhooks-fail-closed 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:webhooks-fail-closed"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+# A LOGIC_VERSION bump used to take effect only when somebody paid for a re-read; three live files
+# shipped figures four engine versions stale. The route now recomputes from the stored facts.
+if printf '%s\n' "$CHANGED" | grep -q -e 'recomputeFromFacts' -e 'verify-income/route' -e 'verify-income-recompute' -e 'income/driftGate'; then
+  printf "   %-24s " "verify:income-recompute"
+  OUT=$(npm run --silent verify:income-recompute 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:income-recompute"; printf '%s\n' "$OUT" | grep -v 'Supabase Admin' | sed 's/^/      /'
+  fi
+fi
+
+# A text FROM our own Twilio number is our outbound reflected back, not a stranger; the inbound
+# route filed one as a lead and queued a drip at ourselves (2026-08-24, found 2026-09-17).
+if printf '%s\n' "$CHANGED" | grep -q -e 'api/sms/inbound' -e 'lib/comms.ts' -e 'ownNumbers' -e 'verify-own-number-loopback'; then
+  printf "   %-24s " "verify:own-number-loopback"
+  OUT=$(npm run --silent verify:own-number-loopback 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:own-number-loopback"; printf '%s\n' "$OUT" | grep -v 'Supabase Admin' | sed 's/^/      /'
+  fi
+fi
+
 if printf '%s\n' "$CHANGED" | grep -q -e 'sync-loan-docs' -e 'mirrorSuperseded' -e 'verify-mirror-superseded' -e 'docNaming'; then
   printf "   %-24s " "verify:mirror-superseded"
   OUT=$(npm run --silent verify:mirror-superseded 2>&1)

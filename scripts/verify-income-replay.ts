@@ -276,7 +276,7 @@ type Row = { file: string; loanType: string; method: string; facts: DocFact[]; b
     // Keys sorted so a re-save is a diff of the NUMBERS, not of row order. The unsorted version
     // produced churn that moved real entries around in every commit and made a genuine change
     // hard to see in review.
-    const lean = Object.fromEntries(Object.entries(now)
+    const lean: Record<string, any> = Object.fromEntries(Object.entries(now)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => [k, {
         file: v.file, loanType: v.loanType, method: v.method,
@@ -284,8 +284,23 @@ type Row = { file: string; loanType: string; method: string; facts: DocFact[]; b
         factCount: v.facts.length, factsHash: factsHash(v.facts),
         ...(v.bank ? { bankMonthCount: v.bank.reads.reduce((s, r) => s + (r.bankStatement?.months?.length || 0), 0), bankHash: bankHash(v.bank) } : {}),
       }]));
-    writeFileSync(SNAP, JSON.stringify({ savedAt: null, files: lean }, null, 1) + "\n");
-    console.log(`  ${existsSync(SNAP) && !save ? "No snapshot existed — created" : "Snapshot saved"}: ${count} file(s)\n`);
+    // A PENDING FILE KEEPS ITS OLD ENTRY. Pending files are excluded from `now` (their number is
+    // not settled under the current logic), and this writer used to serialise `now` alone — so
+    // every --save after a LOGIC_VERSION bump silently DROPPED each file still awaiting a re-read
+    // (2026-09-17: a save would have removed Barron and Osborne from the corpus while adding one
+    // file, and the run would have printed "Snapshot saved"). Carry the previous entry forward,
+    // unchanged, so the file stays covered and re-enters on the numbers once it is re-read.
+    let carried = 0;
+    if (existsSync(SNAP)) {
+      const prevFiles: Record<string, any> = JSON.parse(readFileSync(SNAP, "utf8")).files || {};
+      const pendingNumbers = new Set(pendingReread.map((l) => l.split(":")[0]));
+      for (const [k, v] of Object.entries(prevFiles)) {
+        if (!(k in lean) && pendingNumbers.has(k)) { lean[k] = v; carried++; }
+      }
+    }
+    const sorted = Object.fromEntries(Object.entries(lean).sort(([a], [b]) => a.localeCompare(b)));
+    writeFileSync(SNAP, JSON.stringify({ savedAt: new Date().toISOString(), files: sorted }, null, 1) + "\n");
+    console.log(`  ${existsSync(SNAP) && !save ? "No snapshot existed — created" : "Snapshot saved"}: ${count} file(s) replayed` + (carried ? ` + ${carried} pending file(s) carried forward from the previous snapshot` : "") + `\n`);
     process.exit(0);
   }
 

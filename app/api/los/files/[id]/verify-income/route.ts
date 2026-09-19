@@ -17,6 +17,7 @@ import { compressPdfIfNeeded } from "@/lib/pdfCompress";
 import { selectIncomeMethod } from "@/lib/income/selectMethod";
 import { computeQualifyingIncome, assignBorrowers, makeBorrowerResolver, type DocFact } from "@/lib/income/docFacts";
 import { bankFactsFrom, replayBankStatement, type BankFactsUsed } from "@/lib/income/bankReplay";
+import { recomputeDecision, recomputeFromStoredPayload, recomputedFlags } from "@/lib/income/recomputeFromFacts";
 import { compute1099Income, computePnlIncome, computeAssetDepletion, type AltDocResult } from "@/lib/income/altDoc";
 import { readDocumentsPooled, toDocFacts, type DocRead } from "@/lib/income/readDocument";
 import { computeRentalIncome, isRentalDoc, type RentalResult } from "@/lib/income/rentalIncome";
@@ -95,7 +96,7 @@ const STUB_PRIORITY_WINDOW = 8;
 // So `--no-reroll` was NOT available here and was not claimed: that escape is for changes that
 // cannot move any number, and this one moves a real borrower's by $8,408. A number the engine no
 // longer reproduces must not keep being served, so the cache key moves with the math.
-const LOGIC_VERSION = "2026-09-17-bank-statement-unnumbered-statement-merges-into-its-account";
+const LOGIC_VERSION = "2026-09-18-bank-merge-holder-institution-and-recompute-from-stored-facts";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" stays GENERIC — a Chase/Wells file is rarely named "bank
 // statement" — but it is no longer BARE, because "a non-income statement is harmless" (what this
@@ -380,15 +381,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // result for the same set — so a file whose documents haven't changed always shows the
     // same income. Adding/replacing/removing a document changes the fingerprint and re-reads.
     const CACHE_KEY = `los_income_verify:${id}`;
-    const fingerprint = crypto.createHash("sha1").update(
-      LOGIC_VERSION + " " + applicants + " " + loanType + " " + method + " " + (expenseFactor ?? "") + " " + (depletionDivisor ?? "") + " " +
-      candidates.map((d: any) => `${d.id}|${d.storage_path || ""}|${d.size_bytes ?? ""}|${d.status || ""}`).sort().join("\n")
-    ).digest("hex");
+    // Two keys: the document key (who is on the loan, the programme, the exact income doc-set)
+    // and the cache key, which is that plus the logic. A miss on the cache key with a hit on
+    // the document key means only the logic moved — see the RECOMPUTE block below.
+    const sha1 = (v: string) => crypto.createHash("sha1").update(v).digest("hex");
+    const DOCS_INPUT = applicants + " " + loanType + " " + method + " " + (expenseFactor ?? "") + " " + (depletionDivisor ?? "") + " " +
+      candidates.map((d: any) => `${d.id}|${d.storage_path || ""}|${d.size_bytes ?? ""}|${d.status || ""}`).sort().join("\n");
+    const fingerprint = sha1(LOGIC_VERSION + " " + DOCS_INPUT);
+    const docsKey = sha1(DOCS_INPUT);
+    let envelope: any = null;   // the earlier read, whatever key it was written under
     if (!force) {
       const cachedRaw = await getSetting(CACHE_KEY);
       if (cachedRaw) {
         try {
           const cached = JSON.parse(cachedRaw);
+          envelope = cached;
           if (cached?.fingerprint === fingerprint && cached?.payload) {
             // The veteran advisory is metadata-derived, so it is layered onto the cached
             // payload rather than baked into the fingerprint — it can appear without
@@ -403,6 +410,42 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             return NextResponse.json({ ...payload, cached: true, verifiedAt: cached.verifiedAt || null });
           }
         } catch { /* corrupt cache — fall through to a fresh read */ }
+      }
+    }
+
+    // ── RECOMPUTE ON A LOGIC-ONLY MISS ────────────────────────────────────────────
+    // The documents are the same and only LOGIC_VERSION moved: run the current engine over the
+    // facts the earlier read stored (lib/income/recomputeFromFacts.ts) instead of paying for a
+    // non-deterministic re-read that, measured, nobody ever triggered — three live files were
+    // shipping figures four engine versions old. The result is the same number the replay guard
+    // and the drift gate compute, shipped with a notice and the date of the read it came from.
+    {
+      const decision = recomputeDecision({ force, envelope, fingerprint, docsKey, rest: DOCS_INPUT, sha1 });
+      const rc = decision.action === "recompute" ? recomputeFromStoredPayload(envelope.payload) : null;
+      if (rc && decision.action === "recompute") {
+        const prev = envelope.payload;
+        const prevQ = Math.round(Number(prev.qualifyingMonthlyIncome) || 0);
+        const readAt = String(envelope.verifiedAt || "");
+        const money = (v: number) => `$${Math.round(v).toLocaleString()}/mo`;
+        const notice = {
+          text: `Recomputed under the current income engine from the document facts stored at the ${readAt.slice(0, 10) || "earlier"} read — no document was re-read: qualifying income ${money(prevQ)} → ${money(rc.qualifyingMonthlyIncome)}. QC findings below are from that earlier read; ↻ re-read documents refreshes them.`,
+          addBackMonthly: 0, borrower: 1 as 1 | 2,
+        };
+        const flags = recomputedFlags(prev.report?.flags || [], rc.flags, notice);
+        const result = { monthlyTotal: rc.qualifyingMonthlyIncome, annualTotal: rc.qualifyingMonthlyIncome * 12, lines: rc.breakdown.map((l) => ({ label: l.label, basis: l.basis, monthly: l.monthly })), warnings: [] as string[], derivedDebts: 0 };
+        const payload = {
+          ...prev,
+          perBorrowerMonthly: rc.perBorrowerMonthly, qualifyingMonthlyIncome: rc.qualifyingMonthlyIncome, breakdown: rc.breakdown, result, bankCoverage: rc.bankCoverage,
+          report: { ...(prev.report || {}), flags },
+          recomputed: { readAt, previousIncome: prevQ, logicVersion: LOGIC_VERSION, by: decision.sameDocsBy },
+        };
+        const verifiedAt = new Date().toISOString();
+        await setSetting(CACHE_KEY, JSON.stringify({ fingerprint, docsKey, logicVersion: LOGIC_VERSION, verifiedAt, payload })).catch(() => {});
+        await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, actor: "system", action: "income.recomputed", detail: { from: prevQ, to: rc.qualifyingMonthlyIncome, readAt, logicVersion: LOGIC_VERSION, by: decision.sameDocsBy } }).catch(() => {});
+        const vaCounted = rc.breakdown.filter((l) => /veterans affairs/i.test(String(l.label || ""))).reduce((sum, l) => sum + (Number(l.monthly) || 0), 0);
+        const vf = veteranFlag((docs || []) as any[], loanType, vaCounted);
+        const out = vf ? { ...payload, flags: [...((payload as any).flags || []), vf] } : payload;
+        return NextResponse.json({ ...out, cached: false, recomputed: true, verifiedAt });
       }
     }
 
@@ -800,7 +843,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       dscrRent: effectiveMethod === "dscr" && rental?.monthlyGrossRent ? rental.monthlyGrossRent : null,
       rentalUnits: rental?.units || null };
     const verifiedAt = new Date().toISOString();
-    await setSetting(CACHE_KEY, JSON.stringify({ fingerprint, verifiedAt, payload })).catch(() => {});
+    await setSetting(CACHE_KEY, JSON.stringify({ fingerprint, docsKey, logicVersion: LOGIC_VERSION, verifiedAt, payload })).catch(() => {});
     const vaCounted = (computed.breakdown || [])
       .filter((l: any) => /veterans affairs/i.test(String(l.label || "")))
       .reduce((sum: number, l: any) => sum + (Number(l.monthly) || 0), 0);
