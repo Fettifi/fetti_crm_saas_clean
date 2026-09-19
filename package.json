@@ -104,6 +104,7 @@
     "verify:income-recompute": "tsx --conditions=react-server scripts/verify-income-recompute.ts",
     "verify:esign-field-units": "tsx --conditions=react-server scripts/verify-esign-field-units.ts",
     "verify:hook-wired": "tsx scripts/verify-hook-wired.ts",
+    "verify:model-pin": "tsx scripts/verify-model-pin.ts",
     "verify:urla-fidelity": "tsx --conditions=react-server scripts/verify-urla-fidelity.ts",
     "verify:borrower-authorization": "tsx --conditions=react-server scripts/verify-borrower-authorization.ts",
     "verify:script-conditions": "tsx scripts/verify-script-conditions.ts",

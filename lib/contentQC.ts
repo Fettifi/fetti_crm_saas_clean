@@ -17,7 +17,9 @@ import "server-only";
 import sharp from "sharp";
 import { cfg } from "@/lib/settings";
 
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-opus-4-8";
+// Reads ANTHROPIC_MODEL first — the name the other 20 call sites use. CLAUDE_MODEL is kept as a
+// fallback so an existing Vercel value keeps working, but it is no longer the only way in.
+const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || "claude-opus-4-8";
 
 export type QCResult = { pass: boolean; severity: "ok" | "warn" | "fail"; issues: string[]; notes: string; ran: boolean };
 const ok = (notes: string): QCResult => ({ pass: true, severity: "ok", issues: [], notes, ran: false });

@@ -8,7 +8,10 @@
 // degraded behavior (template first touch, canned chat line, human task alert).
 import { cfg } from "@/lib/settings";
 
-const CLAUDE_MODEL = "claude-opus-4-8";
+// ONE KNOB, OR IT IS NOT A KNOB. 19 call sites read ANTHROPIC_MODEL; this one read nothing, so
+// bumping the model in Vercel moved every AI path EXCEPT the borrower-facing one — Mark's chat,
+// the first-touch nurture and the hot-lead reply would have quietly stayed on the old model.
+const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-8";
 const GEMINI_MODEL = "gemini-2.5-pro";
 
 export type ClaudeMsg = { role: "user" | "assistant"; content: string };
