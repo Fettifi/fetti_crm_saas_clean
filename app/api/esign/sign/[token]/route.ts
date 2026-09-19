@@ -137,6 +137,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         ...clean,
       ];
     }
+    // NOTHING MAY BE STAMPED OFF THE PAGE.
+    //
+    // 2026-09-18, Magali Lopez Villafuerte's parking letter of explanation: the envelope completed,
+    // the recipient showed `signed`, the certificate counted it — and the signed PDF came out with an
+    // empty signature line. The field carried percentages (12.4, 65.7) where this code reads
+    // FRACTIONS, so pdf-lib drew the signature image thousands of points past the edge of the paper.
+    // Nothing threw. A borrower document that is blank where the signature belongs is worse than a
+    // signature that fails, because everything downstream — the file listing, the certificate, the
+    // lender upload — reports it as executed. That letter sat in the loan's upload folder ready to go
+    // to an underwriter.
+    //
+    // The ingest route now rejects coordinates greater than 1 (verify:esign-field-units holds it), so
+    // a violation here means something else produced an off-page placement. Refuse it rather than
+    // write a blank instrument.
+    const offPage: string[] = [];
+    for (const f of mine) {
+      const pg = pages[Math.min(Math.max((f.page || 1) - 1, 0), pages.length - 1)];
+      const { width: pw, height: ph } = pg.getSize();
+      const bw = (f.wPct || 0.2) * pw, bh = (f.hPct || 0.04) * ph;
+      const x = (f.xPct || 0) * pw;
+      const yBottom = ph - (f.yPct || 0) * ph - bh;
+      // A hair of overhang is normal from rounding; being wholly or mostly outside is not.
+      if (x + bw < 1 || x > pw - 1 || yBottom + bh < 1 || yBottom > ph - 1) {
+        offPage.push(`${f.type}@p${f.page || 1} x=${x.toFixed(0)} y=${yBottom.toFixed(0)} of ${pw.toFixed(0)}x${ph.toFixed(0)}`);
+      }
+    }
+    if (offPage.length) {
+      console.error("[esign] refusing to stamp off-page fields", env.token, recipient.id, offPage);
+      await logActivity({ entity_type: "esign", entity_id: env.token, loan_file_id: env.loan_file_id || undefined, actor: "system", action: "esign.offpage_refused", detail: { title: env.title, signer: recipient.name, fields: offPage } }).catch(() => {});
+      return NextResponse.json({ error: "We can't place your signature on this document correctly. Nothing was signed — please contact us and we'll send a corrected copy." }, { status: 422 });
+    }
+
     for (const f of mine) {
       const pg = pages[Math.min(Math.max((f.page || 1) - 1, 0), pages.length - 1)];
       const { width: pw, height: ph } = pg.getSize();

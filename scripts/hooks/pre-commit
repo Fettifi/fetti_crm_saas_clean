@@ -258,7 +258,7 @@ if [ -n "$GUARDMETA" ]; then
   fi
 fi
 
-for PAIR in "$OUTL:verify:outlook-attach" "$OUTL:verify:outlook-send" "$DRAG:verify:doc-dragout" "$DRAG:verify:los-back" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules" "$ESGN:verify:esign-load" "$ESGN:verify:esign-mobile" "$ESGN:verify:esign-complete" "$ESGN:verify:esign-field-units" "$SEO:verify:seo" "$SEO:verify:noindex" "$INCOV:verify:income-contested" "$INCOV:verify:income-drift-gate" "$INCOV:verify:income-payload" "$IMGPDF:verify:image-pdf"; do
+for PAIR in "$OUTL:verify:outlook-attach" "$OUTL:verify:outlook-send" "$DRAG:verify:doc-dragout" "$DRAG:verify:los-back" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules" "$ESGN:verify:esign-load" "$ESGN:verify:esign-mobile" "$ESGN:verify:esign-complete" "$ESGN:verify:esign-field-units" "$ESGN:verify:esign-offpage-refusal" "$SEO:verify:seo" "$SEO:verify:noindex" "$INCOV:verify:income-contested" "$INCOV:verify:income-drift-gate" "$INCOV:verify:income-payload" "$IMGPDF:verify:image-pdf"; do
   TRIG=${PAIR%%:*}; G=${PAIR#*:}
   [ -z "$TRIG" ] && continue
   printf "   %-24s " "$G"
