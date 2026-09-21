@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   const items = reqs.map((r) => ({
     token: r.token, title: r.title, signer_name: r.signer_name, status: r.status,
     loan_file_id: r.loan_file_id, created_at: r.created_at,
-    recipients: (r.recipients || []).map((x) => ({ name: x.name, email: x.email || null, order: x.order, status: x.status, delivery: x.delivery || null })),
+    recipients: (r.recipients || []).map((x) => ({ name: x.name, email: x.email || null, order: x.order, status: x.status, delivery: x.delivery || null, remindedAt: x.remindedAt || null, reminderCount: x.reminderCount || 0 })),
     has_signed: !!r.signed_path,
     has_cert: !!r.cert_path,
     closed_by_sender: r.closed_by_sender ? { at: r.closed_by_sender.at, not_signed: r.closed_by_sender.not_signed } : null,

@@ -47,6 +47,20 @@ ck("Recipient declares remindedAt and reminderCount", /remindedAt\?: string/.tes
 
 // It must sit under the auth-gated prefix — a public reminder endpoint would let anyone spray a
 // borrower's signing link by guessing envelope tokens.
+// THE FEATURE IS THE BUTTON, NOT THE ROUTE.
+// Shipped 2026-09-21: this endpoint went live, passed every check above, and the sender screen
+// never changed — so from the only place Ramon ever looks, the e-sign system was not fixed. A
+// reminder he cannot send is not a capability. These checks fail the commit if the route and the
+// control ever drift apart again.
+const ui = strip("app/esign/page.tsx");
+ck("the sender screen calls the remind endpoint", /\/remind\$\{force \? "\?force=1" : ""\}/.test(ui) || /\/remind/.test(ui));
+ck("…from a control a human can click", /onClick=\{\(\) => remindEnv\(r\)\}/.test(ui));
+ck("…and the control is rendered on live envelopes", /status === "sent" \|\| r\.status === "in_progress"/.test(ui));
+ck("a rate-limited reminder offers the override instead of dead-ending", /force=1/.test(ui) && /res\.status === 429/.test(ui));
+ck("a refusal hands the signing link back to the sender", /clipboard\.writeText\(j\.link\)/.test(ui));
+const listApi = strip("app/api/esign/requests/route.ts");
+ck("the list API exposes the reminder state the row shows", /remindedAt/.test(listApi) && /reminderCount/.test(listApi));
+
 const proxy = readFileSync("proxy.ts", "utf8");
 ck("/api/esign/requests is auth-gated by the proxy", /api\/esign\/requests/.test(proxy));
 

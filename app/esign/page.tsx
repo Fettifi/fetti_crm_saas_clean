@@ -4,12 +4,12 @@
 // signing order, drop each signer's fields (color-coded) onto the live document,
 // and send. Tracks per-signer status; void anytime before completion.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, FileUp, Send, Link2, ExternalLink, FileSignature, Plus, Trash2, Ban, Download, Eye, X, RefreshCw, AlertTriangle, PenLine, CheckCircle2 } from "lucide-react";
+import { Loader2, FileUp, Send, Link2, ExternalLink, FileSignature, Plus, Trash2, Ban, Download, Eye, X, RefreshCw, AlertTriangle, PenLine, CheckCircle2, BellRing } from "lucide-react";
 import PdfDoc, { EsignField, EsignFieldType } from "@/components/PdfDoc";
 import { BRAND } from "@/lib/brand";
 
 type Recipient = { id: string; name: string; email: string; phone: string; order: number };
-type Req = { token: string; title: string; status: string; created_at: string; has_signed?: boolean; has_cert?: boolean; closed_by_sender?: { at: string; not_signed: string[] } | null; recipients: { name: string; email?: string | null; order: number; status: string; delivery?: string | null }[] };
+type Req = { token: string; title: string; status: string; created_at: string; has_signed?: boolean; has_cert?: boolean; closed_by_sender?: { at: string; not_signed: string[] } | null; recipients: { name: string; email?: string | null; order: number; status: string; delivery?: string | null; remindedAt?: string | null; reminderCount?: number }[] };
 
 const TOOLS: [EsignFieldType, string][] = [["signature", "✍️ Signature"], ["initials", "🅸 Initials"], ["date", "📅 Date"], ["name", "🅽 Name"], ["text", "📝 Text box"]];
 const COLORS = ["#0ea5e9", "#f59e0b", "#a855f7", "#ef4444", "#14b8a6"];
@@ -80,6 +80,7 @@ export default function EsignPage() {
   const [confirming, setConfirming] = useState(false);
   // Envelope token whose "Complete as signed" request is in flight — one click, one completion.
   const [completing, setCompleting] = useState<string | null>(null);
+  const [reminding, setReminding] = useState<string | null>(null);
   const pdfRef = useRef<HTMLInputElement>(null);
   // The document viewer renders ABOVE the envelope list. Ramon clicked Certificate on the 3545
   // Winthrop VOM, far down a list of 35, and "nothing happened": the certificate had opened 1,451px
@@ -307,6 +308,39 @@ export default function EsignPage() {
     setSending(false);
   }
 
+  // REMIND — re-send the SAME link to whoever the envelope is waiting on.
+  //
+  // The endpoint shipped on 2026-09-21 and this button did not, which meant the feature existed
+  // only for someone with a terminal: from this screen a borrower who lost the email still left
+  // exactly two options, void a live envelope and rebuild it, or read a signing URL down the
+  // phone. An API without a control is not a fixed system.
+  //
+  // Every refusal from the route hands back that signer's link, so a dead end is never the
+  // outcome — worst case the link lands on the clipboard and Ramon sends it himself. The 4-hour
+  // rate limit is a guard against a double-click, not against Ramon, so it offers the override.
+  async function remindEnv(r: Req, force = false) {
+    setReminding(r.token);
+    try {
+      const res = await fetch(`/api/esign/requests/${r.token}/remind${force ? "?force=1" : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const j = await res.json().catch(() => null);
+      if (res.ok) {
+        setMsg({ text: `Reminder sent to ${j?.signer || "the signer"} via ${j?.via || "email"}.` });
+        await load();
+        return;
+      }
+      const why = (j && j.error) || `Couldn't send the reminder (HTTP ${res.status}).`;
+      if (res.status === 429 && confirm(`${why}\n\nSend it anyway?`)) { await remindEnv(r, true); return; }
+      if (j?.link && confirm(`${why}\n\nCopy their signing link so you can send it yourself?`)) {
+        try { await navigator.clipboard.writeText(j.link); setMsg({ text: `Signing link copied — ${j.link}` }); }
+        catch { setMsg({ text: `Their signing link: ${j.link}` }); }
+      } else setMsg({ text: why });
+    } catch {
+      setMsg({ text: "Network error — refresh to see whether the reminder went out before trying again." });
+    } finally {
+      setReminding(null);
+    }
+  }
+
   async function voidEnv(token: string) {
     if (!confirm("Void this envelope? Signers can no longer sign it.")) return;
     await fetch(`/api/esign/requests/${token}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -350,6 +384,16 @@ export default function EsignPage() {
       setCompleting(null);
     }
   }
+
+  // Label only. The server's activeRecipient() is the authority on whose turn it is; this exists
+  // so the tooltip can name them, and it deliberately stops at a decline the same way.
+  const waitingOn = (r: Req) => {
+    for (const x of [...(r.recipients || [])].sort((a, b) => a.order - b.order)) {
+      if (x.status === "declined") return null;
+      if (x.status !== "signed") return x.name;
+    }
+    return null;
+  };
 
   const badge = (s: string) => s === "completed" ? "bg-emerald-500/20 text-emerald-300" : s === "in_progress" ? "bg-sky-500/20 text-sky-300" : s === "declined" || s === "voided" ? "bg-red-500/20 text-red-300" : "bg-slate-700/60 text-slate-300";
 
@@ -525,7 +569,7 @@ export default function EsignPage() {
                   <div className="font-medium truncate">{r.title}</div>
                   <div className="text-xs text-slate-500 flex flex-wrap gap-x-2">
                     {(r.recipients || []).sort((a, b) => a.order - b.order).map((x) => (
-                      <span key={x.order}>{x.order}. {x.name}{x.email ? ` <${x.email}>` : ""} <span className={x.status === "signed" ? "text-emerald-400" : x.status === "declined" ? "text-red-400" : x.status === "not_signed" ? "text-amber-400" : "text-slate-500"}>· {x.status.replace("_", " ")}</span>{x.delivery === "bounced" ? <span className="text-red-400 font-semibold"> · ✕ delivery failed</span> : x.delivery === "delivered" ? <span className="text-emerald-400"> · ✓ delivered</span> : null}</span>
+                      <span key={x.order}>{x.order}. {x.name}{x.email ? ` <${x.email}>` : ""} <span className={x.status === "signed" ? "text-emerald-400" : x.status === "declined" ? "text-red-400" : x.status === "not_signed" ? "text-amber-400" : "text-slate-500"}>· {x.status.replace("_", " ")}</span>{x.delivery === "bounced" ? <span className="text-red-400 font-semibold"> · ✕ delivery failed</span> : x.delivery === "delivered" ? <span className="text-emerald-400"> · ✓ delivered</span> : null}{x.reminderCount ? <span className="text-sky-400" title={x.remindedAt ? `Last reminded ${new Date(x.remindedAt).toLocaleString()}` : undefined}> · 🔔 reminded {x.reminderCount}×</span> : null}</span>
                     ))}
                     <span>· {new Date(r.created_at).toLocaleDateString()}</span>
                   </div>
@@ -539,6 +583,9 @@ export default function EsignPage() {
                   {!r.has_signed && <button onClick={() => setViewing({ token: r.token, title: r.title, doc: "source" })} className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 flex items-center gap-1" title="View the document that was sent"><Eye className="w-3.5 h-3.5" /> Document</button>}
                   {(r.status === "sent" || r.status === "in_progress") && (r.recipients || []).some((x) => x.status === "signed") && (
                     <button onClick={() => completeEnv(r)} disabled={!!completing} className="text-slate-500 hover:text-emerald-400 disabled:opacity-50 flex items-center gap-1 text-xs" title="Finish with the signatures already collected and issue the Certificate of Completion">{completing === r.token ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} {completing === r.token ? "Completing…" : "Complete as signed"}</button>
+                  )}
+                  {(r.status === "sent" || r.status === "in_progress") && (r.recipients || []).some((x) => x.status !== "signed" && x.status !== "declined") && (
+                    <button onClick={() => remindEnv(r)} disabled={!!reminding} className="text-slate-500 hover:text-sky-300 disabled:opacity-50 flex items-center gap-1 text-xs" title={`Re-send the same signing link to ${waitingOn(r) || "whoever it is waiting on"} — nothing is voided and no signature is touched`}>{reminding === r.token ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BellRing className="w-3.5 h-3.5" />} {reminding === r.token ? "Sending…" : "Remind"}</button>
                   )}
                   {(r.status !== "voided" && r.status !== "declined" && r.status !== "completed") && (
                     <button onClick={() => voidEnv(r.token)} className="text-slate-500 hover:text-red-400 flex items-center gap-1 text-xs" title="Void envelope"><Ban className="w-3.5 h-3.5" /> Void</button>
