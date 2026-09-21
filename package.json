@@ -102,6 +102,7 @@
     "verify:income-recompute": "tsx --conditions=react-server scripts/verify-income-recompute.ts",
     "verify:esign-field-units": "tsx --conditions=react-server scripts/verify-esign-field-units.ts",
     "verify:esign-offpage-refusal": "tsx --conditions=react-server scripts/verify-esign-offpage-refusal.ts",
+    "verify:esign-remind": "tsx --conditions=react-server scripts/verify-esign-remind.ts",
     "verify:penny-intake": "tsx --conditions=react-server scripts/verify-penny-intake.ts",
     "verify:hook-wired": "tsx scripts/verify-hook-wired.ts",
     "verify:model-pin": "tsx scripts/verify-model-pin.ts",

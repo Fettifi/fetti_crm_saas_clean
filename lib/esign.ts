@@ -32,6 +32,10 @@ export type Recipient = {
   deliveryAt?: string;
   emailId?: string | null;    // Resend message id of the signing email, so a webhook event is pinned to THIS send
   viewedAt?: string; signedAt?: string; ip?: string; ua?: string; typedName?: string; declineReason?: string;
+  // Nudges. Recorded so the audit trail shows a link was re-sent rather than implying the
+  // signer ignored one email for a week, and so a double-clicked button cannot email a
+  // borrower twice in a minute.
+  remindedAt?: string; reminderCount?: number;
 };
 
 export type EsignRequest = {
