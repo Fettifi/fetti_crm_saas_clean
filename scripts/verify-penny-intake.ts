@@ -38,6 +38,11 @@ ck("it does NOT hand the model a competing example greeting",
   !/how can I help today\?"\)/.test(knownBlock) && !/e\.g\.\s*"…/.test(knownBlock));
 ck("it tells the model not to greet twice", /do NOT greet a second time/i.test(knownBlock));
 ck("the generic opening is still there for unknown callers", /who am I speaking with/i.test(src));
+// The personalised greeting is a RACE against the CRM lookup, and losing it is silent.
+// Measured 2026-09-21: median 987ms, peak ~1.9s. Anything under 2s loses roughly a third
+// of calls to a generic greeting with no error anywhere.
+const budget = Number((src.match(/AbortSignal\.timeout\((\d+)\)[^)]*\)?\s*,?\s*\n?\s*\}\);\s*\n\s*const j = await r\.json/) || [])[1] || (src.match(/CRM_LOOKUP_URL[\s\S]{0,400}?AbortSignal\.timeout\((\d+)\)/) || [])[1] || 0);
+ck("the CRM lookup is given at least 2s to answer", budget >= 2000, `budget ${budget}ms — median measured 987ms, peak 1893ms`);
 
 // ── 2. Never invent a detail.
 ck("the intake doctrine forbids inventing a detail", /NEVER INVENT A DETAIL/.test(src));
