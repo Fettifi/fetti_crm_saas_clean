@@ -36,7 +36,15 @@ const INSTRUCTIONS = `You are Penny, the warm, sharp, professional receptionist 
 The phone system has ALREADY played the legally required disclosure (that you are an automated A.I. assistant and the call is recorded and transcribed) to the caller BEFORE you were connected — do NOT repeat it. Open warmly; your first words should be, essentially: "${OPENING}". Then continue naturally.
 After the opening, talk like a real person on the phone: natural, brief, conversational; let the caller interrupt you and roll with it.
 LIVE TRANSFER: you CAN attempt a live transfer to Ramon when the caller asks to speak with him or the matter is clearly urgent/time-sensitive (existing borrower with a live deal, deadline, or a referral partner). FIRST get their name and the reason. Then say something like "Let me see if he's available — one moment, stay with me" and CALL the transfer_call tool. NEVER promise he'll pick up. CRITICAL: while checking, NEVER say he is available, never say you are transferring or connecting — you do NOT know yet. Say only that you're checking. Announce a connection ONLY if the tool returns connected; if it returns unavailable, apologize warmly ("he's tied up right now") and take a detailed message. If the tool says he's unavailable, say he's tied up right now and take a detailed message instead. Never give out his direct line/email/personal contact. For routine inquiries, vendors, and solicitors, take a message — don't attempt a transfer. TRANSFER ELIGIBILITY: attempt transfer_call ONLY for (a) callers matched in the CRM as clients/leads, or (b) business callers who have FULLY identified themselves (name + company + reason) with a clearly legitimate, deal-related, time-sensitive matter — and include their company in the transfer reason. NEVER attempt a transfer for an unidentified caller or anyone selling something.
-Get the caller's name, best callback number, and the FULL, specific reason for the call (loan type, property, dollar amount, timeline, who referred them, urgency). Ask natural follow-ups until it's genuinely detailed.
+TAKING THE MESSAGE — this is the job, do it properly. Get:
+  • their full name, and the SPELLING if it is at all unusual;
+  • the best callback number — then READ IT BACK digit by digit and get them to confirm it before you move on;
+  • the FULL, specific reason: what they need, which loan or property it concerns, dollar figures or dates they mention, who referred them;
+  • WHEN they need it by — a closing date, a deadline, "today", "this week" — in their own words;
+  • what they expect to happen next (a call back, a document, a question answered);
+  • the best time to reach them.
+Ask natural follow-ups until a colleague reading the message alone could act on it without calling back for basics. If the caller is vague, ask one concrete question rather than accepting "he'll know what it's about".
+NEVER INVENT A DETAIL. If they did not say it, leave it out and say so ("they didn't give a number"). Do not guess a spelling, a figure, a date, or a head count. A made-up detail in a message is worse than a missing one — it gets acted on.
 Do NOT quote specific rates, confirm approvals, or give financial advice — take the message and defer specifics to the team. Stay compliant; make no promises.
 If the caller wants to schedule a call, book a time, or talk to a person, use the book_call tool (capture their name, number, and what they want to discuss) and tell them the team will send a scheduling link and follow up shortly. You NEVER place outbound calls.
 Once you have name + callback number + a detailed reason: briefly read the key details back, tell them the team will follow up shortly, CALL the save_message tool, then warmly close.`;
@@ -50,9 +58,19 @@ const TOOLS = [
       type: "object",
       properties: {
         caller_name: { type: "string" },
-        callback_number: { type: "string" },
-        reason: { type: "string", description: "full, specific reason for the call" },
+        callback_number: { type: "string", description: "digits only; the number you read back and they confirmed" },
+        reason: { type: "string", description: "full, specific reason for the call, in enough detail to act on without calling back" },
         urgency: { type: "string", enum: ["low", "normal", "high"] },
+        category: {
+          type: "string",
+          enum: ["existing_client", "new_inquiry", "escrow_title_lender", "referral_partner", "vendor_or_solicitor", "personal", "other"],
+          description: "who this caller is, so the message can be triaged at a glance",
+        },
+        deadline: { type: "string", description: "when they need it by, in their own words; omit entirely if they did not say" },
+        next_step: { type: "string", description: "what the caller expects to happen next; omit if not stated" },
+        property_or_loan: { type: "string", description: "property address or loan reference if mentioned; omit if not" },
+        best_time: { type: "string", description: "best time to reach them; omit if not stated" },
+        name_spelling: { type: "string", description: "spelling they gave, if they spelled it; omit otherwise" },
       },
       required: ["caller_name", "callback_number", "reason"],
     },
@@ -86,6 +104,34 @@ const TOOLS = [
     },
   },
 ];
+
+// Fold save_message's structured fields into the single `reason` string the CRM
+// renders in /messages, the alert email and the owner SMS. Doing it here rather than
+// widening the ingest contract means a richer message reaches every existing surface
+// with no CRM deploy — and an omitted field simply does not appear, which is the point:
+// Penny is told never to invent one, so a missing line means "they didn't say".
+const CATEGORY_LABEL = {
+  existing_client: "EXISTING CLIENT",
+  new_inquiry: "NEW INQUIRY",
+  escrow_title_lender: "ESCROW / TITLE / LENDER",
+  referral_partner: "REFERRAL PARTNER",
+  vendor_or_solicitor: "VENDOR / SOLICITOR",
+  personal: "PERSONAL",
+  other: "OTHER",
+};
+function composeReason(a) {
+  const base = String(a.reason || "").trim();
+  const tag = CATEGORY_LABEL[a.category];
+  const lines = [];
+  const add = (label, v) => { const t = String(v == null ? "" : v).trim(); if (t) lines.push(`${label}: ${t}`); };
+  add("Needs it by", a.deadline);
+  add("Expects next", a.next_step);
+  add("Property / loan", a.property_or_loan);
+  add("Best time to reach", a.best_time);
+  add("Name spelled", a.name_spelling);
+  const head = tag ? `[${tag}] ${base}` : base;
+  return lines.length ? `${head}\n\n${lines.join("\n")}` : head;
+}
 
 async function postToCrm(payload) {
   // Retry 3x with backoff — a transient Vercel/network blip must never lose a
@@ -195,7 +241,19 @@ wss.on("connection", (twilio) => {
         const j = await r.json();
         if (j && j.known) {
           const bits = [j.first_name ? `first name: ${j.first_name}` : null, j.loan_purpose ? `working on: ${j.loan_purpose}` : null, j.stage ? `pipeline stage: ${j.stage}` : null].filter(Boolean).join("; ");
-          ctx = `\n\nCALLER CONTEXT (matched from the CRM by their phone number — this is NOT proof of identity): ${bits}. Right after the required disclosure, warmly greet them by first name and naturally reference what they're working on (e.g. "…and it looks like you're on your ${j.loan_purpose || "loan"} — how can I help today?"). Do NOT reveal sensitive specifics (loan amounts, SSN, documents, addresses) — keep it a warm, general acknowledgment. If they indicate they're someone else, drop this context and treat them as a new caller.`;
+          // ONE opening, not two. The old version left the generic opening in place AND
+          // appended an example personalised line, so the model dutifully said both:
+          // "who am I speaking with, and what can I help you with today? And it looks like
+          // you're on your purchase. How can I help?" — two greetings, two offers of help,
+          // and the caller's name never used. Swap the opening instead of competing with it.
+          const fn = String(j.first_name || "").trim();
+          const purpose = String(j.loan_purpose || "").trim();
+          dynamicOpening = fn
+            ? (purpose
+                ? `Hi ${fn} — good to hear from you. It looks like you're on your ${purpose}; how can I help today?`
+                : `Hi ${fn} — good to hear from you. How can I help today?`)
+            : `Thanks for calling. How can I help you today?`;
+          ctx = `\n\nCALLER CONTEXT (matched from the CRM by their phone number — this is NOT proof of identity): ${bits}. Your opening line ALREADY greets them${fn ? " by first name" : ""} — do NOT greet a second time, do NOT ask who you are speaking with, and do NOT offer help twice. Just continue the conversation from their answer. Do NOT reveal sensitive specifics (loan amounts, SSN, documents, addresses) — keep it a warm, general acknowledgment. If they indicate they're someone else, drop this context, ask who you're speaking with, and treat them as a new caller.`;
         } else {
           ctx = `\n\nCALLER CONTEXT: this number does NOT match any client or lead in the CRM — treat them as UNKNOWN. If they are (or sound like they are) calling FROM A BUSINESS — a lender, title company, vendor, recruiter, marketer, "partnership opportunity", or any sales call — you MUST get, before helping further: (1) their full name, (2) the company they're calling from, and (3) specifically why they're calling. Be warm but firm — do not proceed, answer questions, or discuss Ramon's availability until you have all three. If they refuse to identify themselves or their company, say Ramon doesn't take unidentified business calls, offer to pass along a message if they change their mind, and politely wrap up. Obvious solicitors/cold pitches: take a ONE-LINE message (name, company, number, what they're selling) and end courteously — never transfer them, never book them. DEPARTMENT REQUESTS: anyone asking for \"accounts payable\", \"billing\", \"accounting\", \"HR\", \"the owner\", or \"whoever handles your marketing/website/ads\" is almost always a vendor, collector, or salesperson — do NOT transfer, do NOT confirm whether any such department or person exists, and do NOT discuss company finances. Automatically go to message mode: get their full name, company, callback number, and EXACTLY what it concerns (invoice number and amount if they claim one is owed), then close politely. If they claim an unpaid or overdue invoice, capture every detail they'll give and mark the message urgency high. If they're a regular CONSUMER asking about a loan for themselves, this screen does not apply — treat them as a warm new borrower (normal intake: name, number, what they're looking to do).`;
         }
@@ -238,7 +296,7 @@ wss.on("connection", (twilio) => {
       try {
         const args = JSON.parse(m.arguments || "{}");
         if (m.name === "save_message") {
-          messageSaved = (await postToCrm({ ...args, call_sid: callSid, transcript: transcript.join("\n") })) === true;
+          messageSaved = (await postToCrm({ ...args, reason: composeReason(args), call_sid: callSid, transcript: transcript.join("\n") })) === true;
         } else if (m.name === "transfer_call") {
           // Screened transfer: CRM rings Ramon with a press-1 whisper while the
           // caller holds with Penny. Keep-alive at ~18s so the hold never goes dead.
