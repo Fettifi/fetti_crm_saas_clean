@@ -22,8 +22,6 @@ import { execSync } from "child_process";
 // Manual by DECLARATION, not by omission. Each entry needs a reason, and the reason has to be about
 // why a commit hook is the wrong place to run it — never "it was failing" or "it is slow to type".
 const MANUAL: Record<string, string> = {
-  "verify:rsvp-text": "SENDS REAL SMS through the live inbound webhook. Must never run unattended.",
-  "verify:rsvp-line": "drives the live RSVP voice/SMS line end to end. Real messages to real numbers.",
   "verify:dns": "calls the GoDaddy API over the network; run by hand when DNS records change.",
   "verify:photos": "reads the private guest-photo bucket over the network; not a code invariant.",
   "verify:card-statement": "scans every stored document in the live database (>100s). Run by hand.",

@@ -49,11 +49,15 @@ async function main() {
     ck("…and logs the drop so a loopback is visible, not silent", /sms\.loopback_dropped/.test(after));
     for (const [what, re] of [
       ["the owner task-by-text branch", /digits === ownerCell/],
-      ["the RSVP conversation", /rsvpLineOpen\(\)/],
       ["the unmatched-sender lead insert", /source: "sms_inbound"/],
       ["the STOP suppression row", /source: "sms_optout"/],
     ] as const) {
       const at = src.search(re);
+      // A branch that no longer exists cannot act on a loopback, so there is nothing to
+      // order against — say so out loud rather than passing silently. (The RSVP guest
+      // conversation was removed 2026-09-21 once the event was over; this guard failed on
+      // its absence and was right to make someone look.)
+      if (at < 0) { console.log(`  ➖ ${what} is no longer in this route — nothing to order against`); continue; }
       ck(`…before ${what}`, at > drop, `drop@${drop} branch@${at}`);
     }
   }

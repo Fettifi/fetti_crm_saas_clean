@@ -15,9 +15,6 @@
 // Matching is by PHONE, normalized to last-10. A guest who calls twice must not appear
 // twice, and "Mike" on Tuesday and "Michael" on Friday from the same number are one guest.
 import { getSettingRow, casSetting, getSetting } from "./settings";
-// The head-count parser is a pure function and lives in lib/rsvpFromCall so its guard can run
-// without a database — a check that quietly reads a mock client is a check that proves nothing.
-export { parsePartyReply } from "./rsvpFromCall";
 
 export const EVENT_KEY = "rsvp:vow-renewal-2026";
 // NOT hard-coded with a name I was never told. The first draft of this file invented a

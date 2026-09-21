@@ -103,6 +103,7 @@ IMGPDF=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/imageToPdf' -e 'to-pdf/route
 DRAG=$(printf '%s\n' "$CHANGED" | grep -F -e 'los/[id]/page.tsx' -e 'verify-doc-dragout')
 CARD=$(printf '%s\n' "$CHANGED" | grep -F -e 'cardAuth' -e 'card-auth' -e 'CardAuthPanel' -e 'verify-card-auth')
 ESGN=$(printf '%s\n' "$CHANGED" | grep -F -e 'app/esign' -e 'app/sign' -e 'api/esign' -e 'lib/esign' -e 'verify-esign-load')
+PENNY=$(printf '%s\n' "$CHANGED" | grep -F -e 'voice-realtime/server.js' -e 'api/voice/incoming' -e 'api/voice/ingest' -e 'verify-penny-intake')
 SEO=$(printf '%s\n' "$CHANGED" | grep -F -e 'app/lending' -e 'app/sitemap' -e 'lib/seoIndexable' -e 'lib/lendingDeepContent' -e 'lib/lendingProducts' -e 'lib/lendingMatrix' -e 'verify-seo')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
 [ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && [ -z "$NMLS" ] && [ -z "$GUARDMETA" ] && [ -z "$RENT" ] && [ -z "$LTV" ] && [ -z "$BIZ" ] && [ -z "$GOV" ] && [ -z "$ANYTS" ] && [ -z "$CARD" ] && [ -z "$DRAG" ] && [ -z "$OUTL" ] && exit 0
@@ -258,7 +259,7 @@ if [ -n "$GUARDMETA" ]; then
   fi
 fi
 
-for PAIR in "$OUTL:verify:outlook-attach" "$OUTL:verify:outlook-send" "$DRAG:verify:doc-dragout" "$DRAG:verify:los-back" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules" "$ESGN:verify:esign-load" "$ESGN:verify:esign-mobile" "$ESGN:verify:esign-complete" "$ESGN:verify:esign-field-units" "$ESGN:verify:esign-offpage-refusal" "$SEO:verify:seo" "$SEO:verify:noindex" "$INCOV:verify:income-contested" "$INCOV:verify:income-drift-gate" "$INCOV:verify:income-payload" "$IMGPDF:verify:image-pdf"; do
+for PAIR in "$OUTL:verify:outlook-attach" "$OUTL:verify:outlook-send" "$DRAG:verify:doc-dragout" "$DRAG:verify:los-back" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules" "$ESGN:verify:esign-load" "$ESGN:verify:esign-mobile" "$ESGN:verify:esign-complete" "$ESGN:verify:esign-field-units" "$ESGN:verify:esign-offpage-refusal" "$PENNY:verify:penny-intake" "$SEO:verify:seo" "$SEO:verify:noindex" "$INCOV:verify:income-contested" "$INCOV:verify:income-drift-gate" "$INCOV:verify:income-payload" "$IMGPDF:verify:image-pdf"; do
   TRIG=${PAIR%%:*}; G=${PAIR#*:}
   [ -z "$TRIG" ] && continue
   printf "   %-24s " "$G"
@@ -511,7 +512,7 @@ if [ -n "$ANYTS" ]; then
   for G in verify:sms-consent verify:disclosure verify:twilio-sig verify:1003 verify:currency-input verify:model-pin \
            verify:synthetic verify:caller-name verify:persona verify:patterns verify:reply-paths \
            verify:flag-action verify:leadscore verify:desk-lien verify:column-map \
-           verify:automation-status verify:stalled verify:stale-files verify:rsvp-call; do
+           verify:automation-status verify:stalled verify:stale-files; do
     printf "   %-24s " "$G"
     OUT=$(npm run --silent "$G" 2>&1)
     if [ $? -eq 0 ]; then echo "PASS"; else

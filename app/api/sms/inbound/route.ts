@@ -13,9 +13,6 @@ import { isOwnNumber } from "@/lib/ownNumbers";
 import { magicApplyLink } from "@/lib/magicLink";
 import { automationPaused } from "@/lib/automationGate";
 import { isRevocation } from "@/lib/smsConsent";
-import { findByPhone, eventLabel, EVENT_DATE, upsertRsvp, rsvpLineOpen } from "@/lib/rsvp";
-import { partyConfirmation, firstNameOf } from "@/lib/rsvpFromCall";
-import { parseRsvpText, parseFollowUp, askCount, askCountFirst, askNameAfterCount, declineReply, NAME_PENDING, isNamePending } from "@/lib/rsvpSms";
 
 export const dynamic = "force-dynamic";
 // inbound-reply auto-promote may replay the full pipeline (after Twilio ACK)
@@ -100,91 +97,6 @@ export async function POST(req: NextRequest) {
       const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       const xml = `<Response><Message>✅ ${label} added: "${esc(title.slice(0, 80))}"</Message></Response>`;
       return new NextResponse(xml, { status: 200, headers: { "Content-Type": "text/xml" } });
-    }
-
-    // ——— THE GUEST CONVERSATION: TEXT THE CODE, THEN ANSWER ONE QUESTION AT A TIME ———
-    //
-    // 2026-09-06, Ramon: "make a way can text code to confirm and then get message and reply
-    // with how many in your party." The first cut asked for a name AND a head count in one
-    // reply; a text that asks two things gets one answered. So each message asks exactly one
-    // thing, and THE HEAD COUNT COMES FIRST because it is the number that feeds the caterer.
-    //
-    //   RSVP                -> "How many in your party?"  -> "3" -> "And the name?" -> done
-    //   RSVP Jane Doe       -> "How many, Jane?"          -> "3" -> done
-    //   RSVP Jane Doe 3     -> confirmed on the spot
-    //   RSVP no             -> a regret, recorded, never chased
-    //
-    // THE HAZARD THIS IS BUILT AROUND: /api/sms/inbound is a MORTGAGE funnel. Before this a
-    // guest texting "RSVP" fell through to the lead paths — filed as a lead, stamped with a
-    // campaign, sent marketing. A guest is not a lead. This runs ahead of every lead path,
-    // answers inline over Twilio's own response, and never touches the leads table.
-    if (digits && rsvpLineOpen()) {
-      const label = await eventLabel();
-      const intent = parseRsvpText(body);
-
-      // (A) THE KEYWORD — starts, or restarts, an RSVP.
-      if (intent.isRsvp) {
-        if (intent.declined) {
-          await upsertRsvp({ name: intent.name || NAME_PENDING, phone: digits, party: 1, status: "no", source: "sms" });
-          try { await logActivity({ entity_type: "rsvp", entity_id: digits.slice(-4), actor: "consumer", action: "rsvp.sms_declined", detail: { from, text: body.slice(0, 200) } }); } catch { /* */ }
-          return xmlReply(declineReply(label));
-        }
-        // A name we were not given is NEVER invented — the row is parked under a placeholder
-        // until they say it. `upsertRsvp` refuses an empty name, which is what keeps a blank
-        // guest off the caterer's count.
-        const named = intent.name || NAME_PENDING;
-        const knowCount = intent.party != null;
-        const { rsvp } = await upsertRsvp({
-          name: named, phone: digits, party: intent.party ?? 1, status: "yes", source: "sms",
-          party_pending: !knowCount,
-        });
-        try { await logActivity({ entity_type: "rsvp", entity_id: rsvp.id, actor: "consumer", action: "rsvp.sms_started", detail: { from, name: named, party: intent.party, text: body.slice(0, 200) } }); } catch { /* */ }
-        if (!knowCount) return xmlReply(isNamePending(named) ? askCountFirst(label, EVENT_DATE) : askCount(firstNameOf(named)));
-        if (isNamePending(named)) return xmlReply(askNameAfterCount(rsvp.party));
-        return xmlReply(partyConfirmation(firstNameOf(named), rsvp.party, label, EVENT_DATE));
-      }
-
-      // (B) A GUEST WE ARE MID-CONVERSATION WITH — they are answering us, so no keyword is
-      // required. Reached ONLY when this number is on the list and something is still
-      // outstanding, so a finished guest (or anyone else) texting "2" is untouched and falls
-      // through to the funnel exactly as before. A declined guest is never re-opened here.
-      const open = digits ? await findByPhone(digits) : null;
-      const needCount = !!open && open.status !== "no" && !!open.party_pending;
-      const needName = !!open && open.status !== "no" && isNamePending(open.name);
-      if (open && (needCount || needName)) {
-        const fu = parseFollowUp(body, needName);
-
-        if (needCount && fu.party != null) {
-          const { rsvp } = await upsertRsvp({
-            name: fu.name || open.name, phone: digits, party: fu.party, status: "yes", source: "sms", party_pending: false,
-          });
-          try { await logActivity({ entity_type: "rsvp", entity_id: rsvp.id, actor: "consumer", action: "rsvp.party_set", detail: { from, party: rsvp.party, text: body.slice(0, 200) } }); } catch { /* */ }
-          return xmlReply(isNamePending(rsvp.name)
-            ? askNameAfterCount(rsvp.party)
-            : partyConfirmation(firstNameOf(rsvp.name), rsvp.party, label, EVENT_DATE));
-        }
-
-        // They answered with a NAME — either the question we asked, or ahead of the count.
-        if (needName && fu.name) {
-          const { rsvp } = await upsertRsvp({
-            name: fu.name, phone: digits, party: fu.party ?? open.party, status: "yes", source: "sms",
-            party_pending: needCount && fu.party == null,
-          });
-          try { await logActivity({ entity_type: "rsvp", entity_id: rsvp.id, actor: "consumer", action: "rsvp.sms_named", detail: { from, name: fu.name, party: fu.party, text: body.slice(0, 200) } }); } catch { /* */ }
-          return xmlReply(rsvp.party_pending
-            ? askCount(firstNameOf(fu.name))
-            : partyConfirmation(firstNameOf(fu.name), rsvp.party, label, EVENT_DATE));
-        }
-
-        // Unparseable. Ask once more, then stop — a loop of "sorry, a number please" is worse
-        // than a list entry Ramon fixes by hand. Rate-limited per number.
-        const askAgain = await rateLimit(`rsvp${needCount ? "party" : "name"}:${digits}`, 1, 86400);
-        try { await logActivity({ entity_type: "rsvp", entity_id: open.id, actor: "consumer", action: "rsvp.reply_unparsed", detail: { from, needed: needCount ? "party" : "name", text: body.slice(0, 200) } }); } catch { /* */ }
-        if (!askAgain) return xmlReply("Thanks! Ramon will follow up to confirm your details.");
-        return xmlReply(needCount
-          ? "Sorry — just a number is perfect (like 2), and I'll get you on the list."
-          : `Thanks! What name should we put on the list for ${label}?`);
-      }
     }
 
     // Keyword opt-in (e.g. "Text DEAL to ..." from The Lot). Because the viewer
