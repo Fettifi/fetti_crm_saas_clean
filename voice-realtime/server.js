@@ -236,7 +236,13 @@ wss.on("connection", (twilio) => {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${VOICE_INGEST_TOKEN}` },
           body: JSON.stringify({ phone: caller }),
-          signal: AbortSignal.timeout(1200),
+          // 2.5s, not 1.2s. MEASURED 2026-09-21: /api/voice/lookup runs a median 987ms and
+          // peaks near 1.9s on a Vercel cold start, so a 1200ms budget lost the race on roughly
+          // a third of calls — and a lost race is silent: Penny just greets generically and
+          // nobody knows she had the caller's name. That is why she greeted Shakira by name one
+          // day and not the next. The caller has just sat through an ~8s spoken disclosure, so a
+          // little more headroom here is cheaper than a stranger's greeting to a live borrower.
+          signal: AbortSignal.timeout(2500),
         });
         const j = await r.json();
         if (j && j.known) {
