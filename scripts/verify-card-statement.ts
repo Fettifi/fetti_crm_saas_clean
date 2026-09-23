@@ -80,19 +80,23 @@ async function main() {
   // HALF 1 — the classifier, over the real corpus.
   const src = routeSource();
   const m = src.match(/const INCOME_RE = (\/.*\/i);/);
-  if (!m) { console.error("verify:card-statement: could not read INCOME_RE from the route."); process.exit(1); }
+  const nv = src.match(/const NEVER_INCOME_RE = (\/.*\/i);/);
+  if (!m || !nv) { console.error("verify:card-statement: could not read INCOME_RE / NEVER_INCOME_RE from the route."); process.exit(1); }
   // eslint-disable-next-line no-eval
   const INCOME_RE = eval(m[1]) as RegExp;
+  // eslint-disable-next-line no-eval
+  const NEVER_INCOME_RE = eval(nv[1]) as RegExp;
 
   const { data: docs, error: de } = await sb
     .from("loan_documents").select("id, loan_file_id, name, category, file_name, storage_path");
   if (de) { console.error(`verify:card-statement: loan_documents — ${de.message}`); process.exit(1); }
 
-  const candidates = (docs || []).filter(
-    (d: any) => d.storage_path &&
-      (String(d.category || "").toLowerCase() === "income" || INCOME_RE.test(`${d.name || ""} ${d.file_name || ""} ${d.category || ""}`)) &&
-      /\.pdf$/i.test(d.file_name || d.storage_path || ""),
-  ) as any[];
+  const candidates = (docs || []).filter((d: any) => {
+    if (!d.storage_path || !/\.pdf$/i.test(d.file_name || d.storage_path || "")) return false;
+    const s = `${d.name || ""} ${d.file_name || ""} ${d.category || ""}`;
+    if (NEVER_INCOME_RE.test(s)) return false;   // matches the route's predicate, added 2026-09-23
+    return String(d.category || "").toLowerCase() === "income" || INCOME_RE.test(s);
+  }) as any[];
 
   if (!candidates.length) {
     console.error("verify:card-statement: ZERO income-candidate PDFs in the database. This guard measures real documents; with none it asserts nothing. Refusing to pass.");

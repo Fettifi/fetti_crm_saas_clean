@@ -1,8 +1,8 @@
 {
   "logicVersion": "2026-09-18-bank-merge-holder-institution-and-recompute-from-stored-facts",
-  "pinnedAt": "2026-09-19T05:06:33.500Z",
+  "pinnedAt": "2026-09-23T17:00:17.248Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "6072dfc4f5ff649f",
+    "app/api/los/files/[id]/verify-income/route.ts": "557cdd4d29584eb7",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankReplay.ts": "bbb61927f654be5a",
     "lib/income/bankStatement.ts": "6ab317b2e7088d12",
@@ -64,6 +64,14 @@
         "app/api/los/files/[id]/verify-income/route.ts",
         "lib/income/bankReplay.ts",
         "+lib/income/bankReplay.ts"
+      ]
+    },
+    {
+      "at": "2026-09-23T17:00:17.248Z",
+      "logicVersion": "2026-09-18-bank-merge-holder-institution-and-recompute-from-stored-facts",
+      "reason": "Candidate SELECTION only: (?<!re)lease no longer matches the word Please (our e-sign titles), and NEVER_INCOME_RE keeps our own internal/not-for-submission worksheets out of the read. Checked against all 36 live files / 718 documents: exactly 3 documents are dropped (2 e-sign parking-charge artifacts on FF-202607-8421, 1 Fetti internal worksheet on FF-202608-2047) and every one of them is a NEW upload absent from every baselined candidate set — zero files lose an already-baselined candidate, so no cached qualifying income can move. Both files already have a re-read pending from unrelated new documents; this only keeps three wrong-KIND documents out of it.",
+      "files": [
+        "app/api/los/files/[id]/verify-income/route.ts"
       ]
     }
   ]

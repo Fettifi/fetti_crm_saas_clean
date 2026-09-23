@@ -1,6 +1,7 @@
 {
   "logicVersion": "2026-09-18-bank-merge-holder-institution-and-recompute-from-stored-facts",
-  "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re)lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
+  "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re|p)lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
+  "neverIncomeRe": "\\binternal\\b[\\s_.-]*(?:worksheet|draft|memo)|not[\\s_.-]*for[\\s_.-]*submission|\\bdo[\\s_.-]*not[\\s_.-]*(?:submit|send)\\b",
   "files": {
     "c3473ce9-7bdb-4882-8a7b-bbd1a30a86d3": {
       "file": "FF-202606-2956",
@@ -285,14 +286,20 @@
       "candidates": [
         "052f7ec3-7bb7-47b7-a2f9-9b5e4e8f1347|Bank statements — last 2 months — additional — additional",
         "2ab7da7f-a8f4-42fb-b210-d6dc529d059c|Bank statements — last 2 months — additional",
+        "3f219af0-6d88-4d1e-9e0a-c044236e969a|Bank statement — Fidelity Brokerage Services LLC — September 2026 — ending balance $0.00",
+        "40db0e80-b5b3-4edd-b6ce-70c59abb969b|Bank statement — JPMorgan Chase Bank, N.A. — September 2026 — ending balance $40,486.54",
         "432a8d18-3fff-4b09-a4a5-e5c41964d071|W-2s — last 2 years",
+        "683d0ff2-478b-4067-8f72-0c243fc0879e|1099-R 2026 — Fidelity (FMR LLC) — USI 401(K) Plan — gross amount $71,964.23",
         "6973188f-db75-493a-ba9d-3d19dbd03cac|two recent paystub",
+        "6b098172-8802-40fa-b177-e609e32ab850|1099-R 2026 — FMR LLC (Fidelity) - Baldwin Group 401(k) — Gross Amount $34,259.79",
+        "6f3292c3-d7eb-4b46-9200-9315b9ed253b|Bank statement — JPMorgan Chase Bank, N.A. — September 2026 — ending balance $67,190.36",
         "78a543a9-bc39-4771-87e2-d121c2ea979b|W-2s — last 2 years — additional",
         "7f78074a-345c-43e2-9abb-90a66b135830|two recent paystub — additional",
         "7fb6e381-1bd2-4c5e-9933-6eff689a9332|Recent paystub",
-        "8abf9e8d-22af-4370-8030-bac3e1bd6fc5|Fidelity_NetBenefits_-_Statement_Details.PDF",
+        "8abf9e8d-22af-4370-8030-bac3e1bd6fc5|Bank statement — Fidelity Brokerage Services LLC — September 2026 — ending balance $0.00",
         "90809e3f-f4b7-4243-ab36-6ca18cd9f10e|2025 w2",
         "b8e135b6-69f1-45e0-adfc-cd92f44db482|tax return 2024",
+        "c7c4236e-e7b4-4300-b707-54cbf3f64d07|Bank statement — JPMorgan Chase Bank, N.A. — September 2026 — ending balance $67,190.36",
         "c7f930eb-95c9-4ce6-9654-560e94e2f589|Tax returns — last 2 years — additional",
         "cbc0a8d6-95c9-45f0-8617-40abd899e41c|tax return 2025",
         "d3ac1b8c-8d38-4176-af38-f775ab80273d|Bank statements — last 2 months",
@@ -384,7 +391,9 @@
       "borrower": "Lucki Long",
       "candidates": [
         "1c3e3fbf-d03b-4db0-9e16-1a6fd87fe790|W-2s — last 2 years — additional",
+        "1ffa9ec9-641e-4781-a13c-eeb08754a1eb|COND_1259_-_LAUSD_pay_stubs_Dec_2025_through_Aug_2026_12_statements.pdf",
         "3df02580-4c25-4fc9-b3d0-e3dc0572a5a7|Bank statements — last 2 months",
+        "46c0b55d-c585-4c7b-b80c-4c9547ccfd00|COND_1259_-_Twelve-month_earnings_breakdown_-_Lucki_N._Long.pdf",
         "72c9a77a-dc46-4745-b6dc-45b738e9c084|Bank statements — last 2 months — additional",
         "84a296cf-918d-4929-bc0b-5ed60d483da2|Paystub_000000.pdf",
         "8a66cd10-a598-410a-8dbd-61e0bde6102a|Bank statements — last 2 months — additional",
@@ -393,7 +402,8 @@
         "a0bd9935-1de7-4fe3-8d4b-15a2c4cef41d|Paystub_202412.pdf",
         "b081a83e-db56-48ef-a47d-239729ae7895|W-2s — last 2 years",
         "b81357a6-e5e1-4087-9072-1e95b3054e20|Paystub_202512.pdf",
-        "ea701fce-672c-47c8-bf2b-f93fa887ffa8|Pay stubs — last 30 days"
+        "ea701fce-672c-47c8-bf2b-f93fa887ffa8|Pay stubs — last 30 days",
+        "ee786444-d9e6-47bb-92ff-8a37bc78b981|COND_1259_-_LAUSD_pay_stubs_Dec_2023_through_Jun_2026_30_statements.pdf"
       ],
       "cachedIncome": 17633
     },

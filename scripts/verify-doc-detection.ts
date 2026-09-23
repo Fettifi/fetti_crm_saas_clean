@@ -149,6 +149,16 @@ const TAXRET = `Form 1040 U.S. Individual Income Tax Return  Schedule C  Schedul
     "Release_Letter_-_Matacorp_Holdings_LLC-_3545_Winthrop.pdf",  // the real one, off a live file
     "Lien Release.pdf", "Release of Liability.pdf", "Released_Deed_of_Trust.pdf",
     "Maintenance Agreement.pdf", "HVAC_maintenance_records.pdf",
+    // 2026-09-23, the same defect one letter over, off Magali Lopez Villafuerte
+    // (FF-202607-8421, live FHA, settled income $19,753): `(?<!re)lease` matches the "lease"
+    // inside "P-lease", and our OWN e-sign flow titles every artifact "Please re-sign — …".
+    // Two e-sign records about a monthly PARKING CHARGE were sitting in her income candidate
+    // set as leases. Nothing downstream can remove a name-matched document, so it would have
+    // gone to the reader as rental evidence.
+    "Certificate of Completion: Please re-sign - Letter of Explanation, monthly parking charge (20353 Gault St)",
+    "Signed: Please re-sign - Letter of Explanation, monthly parking charge (20353 Gault St)",
+    "Please re-sign - Borrower Authorization.pdf",
+    "Please sign and return.pdf",
   ]) chk(!incomeRe.test(n), `"${n}" is not an income document`);
 
   // AND THE EXCLUSION MUST NOT COST A REAL ONE. A word-boundary fix (\blease) looks right and
@@ -208,6 +218,47 @@ const TAXRET = `Form 1040 U.S. Individual Income Tax Return  Schedule C  Schedul
     ["Lease agreement or market rent estimate (Form 1007) — additional", "Rental_Increase_4235_Anthony_.pdf"],
   ] as [string, string][])
     chk(incomeRe.test(`${nm} ${fn} Property`), `"${fn}" still qualifies via its checklist name`);
+
+  // ── OUR OWN WORK PRODUCT IS NOT EVIDENCE ABOUT THE BORROWER (2026-09-23) ────────────────
+  //
+  // Lucki Long (FF-202608-2047), income under active UWM escalation: her candidate set had
+  // "INTERNAL_worksheet_-_twelve-month_earnings_breakdown_-_…-_not_for_submission_as_drafted.pdf"
+  // in it, admitted on `earnings`. A Fetti draft that says in its own text that it states no
+  // qualifying figure, being read BACK by the engine as evidence of her income.
+  console.log("\nour own internal work product never enters the income read:");
+  const neverRe = eval(
+    readFileSync("app/api/los/files/[id]/verify-income/route.ts", "utf8")
+      .match(/const NEVER_INCOME_RE = (\/.*\/i);/)![1]) as RegExp;
+  for (const n of [
+    "INTERNAL_worksheet_-_twelve-month_earnings_breakdown_-_2026-09-19_-_not_for_submission_as_drafted.pdf",  // the real one
+    "Internal draft - income summary.pdf",
+    "earnings recap - DO NOT SUBMIT.pdf",
+    "internal memo - qualifying income.pdf",
+  ]) chk(neverRe.test(n), `"${n.slice(0, 60)}…" is excluded from the income read`);
+
+  // AND IT MUST NOT COST A REAL ONE. Understating income is the worse direction, and a
+  // borrower's employer does not care what we call our drafts.
+  console.log("\nwhile no document a borrower, employer, bank or agency produces is excluded:");
+  for (const n of [
+    "COND_1259_-_LAUSD_pay_stubs_Dec_2025_through_Aug_2026_12_statements.pdf",  // real, off Lucki Long
+    "Bank statements — last 2 months", "W-2 2025.pdf", "Chase_Statement.pdf",
+    "3545_Winthrop_lease.pdf", "SSA award letter.pdf",
+    "Internal Revenue Service - tax return transcript 2025.pdf",  // "Internal" alone must not exclude
+  ]) chk(!neverRe.test(n), `"${n.slice(0, 60)}" is NOT excluded`);
+
+  // The exclusion has to hold on BOTH selection paths. Excluding a document by name and then
+  // letting the content pass add it back is worse than not excluding it — the worksheet is
+  // full of earnings figures, so looksLikeIncomeDoc() says yes.
+  // Assert on the STATEMENT, not on the file. The first version of this check counted
+  // occurrences of NEVER_INCOME_RE anywhere in the route and passed with the content-path
+  // filter deleted — the occurrence inside isIncomeCandidate satisfied it. Vacuous, and found
+  // only by deleting the filter on purpose and watching the guard stay green.
+  const candidatePredicate = inc.match(/const isIncomeCandidate[\s\S]*?\n};/)?.[0] ?? "";
+  chk(/NEVER_INCOME_RE\.test/.test(candidatePredicate),
+    "the NAME path refuses our own work product (inside isIncomeCandidate itself)");
+  const unnamedStmt = inc.match(/const unnamed = [\s\S]*?\);/)?.[0] ?? "";
+  chk(unnamedStmt !== "" && /NEVER_INCOME_RE\.test/.test(unnamedStmt),
+    "the CONTENT path refuses it too, in the `unnamed` filter, before any download");
 
   console.log("\nhe can also rename a document:");
   const docs = code("app/api/los/files/[id]/docs/route.ts");

@@ -137,7 +137,43 @@ const LOGIC_VERSION = "2026-09-18-bank-merge-holder-institution-and-recompute-fr
 // only ADDS — so this pattern is the single chokepoint. `\blease` is NOT the fix: `_` is a
 // word character, so it would drop the real "3545_Winthrop_lease.pdf". verify:doc-detection
 // asserts both directions.
-const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re)lease|rent[\s_.-]*roll|rental[\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\s_.-]*rent|dd.?214|certificate[\s_.-]*of[\s_.-]*eligibility|\bcoe\b/i;
+//
+// 2026-09-23: the SAME defect, one letter over. The previous `(?<!re)lease` matches the "lease" inside
+// "P-lease", and our own e-sign flow names its artifacts "Please re-sign — <document>". So on
+// Magali Lopez Villafuerte (FF-202607-8421, live FHA) the income candidate set had picked up
+//   "Certificate of Completion: Please re-sign - Letter of Explanation, monthly parking charge"
+//   "Signed: Please re-sign - Letter of Explanation, monthly parking charge"
+// — two e-sign artifacts about a PARKING CHARGE, handed to the income reader as leases, on a
+// file whose settled income is $19,753. Caught by verify:income going red on the doc-set
+// change, not by anything noticing the documents were the wrong KIND.
+// The exclusion must not cost "Sublease agreement.pdf", so it is `p`, not a word boundary.
+const INCOME_RE = /w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\s_.-]*of[\s_.-]*employment|employment[\s_.-]*(?:letter|verification)|tax[\s_.-]*return|1099|1040|schedule\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re|p)lease|rent[\s_.-]*roll|rental[\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\s_.-]*rent|dd.?214|certificate[\s_.-]*of[\s_.-]*eligibility|\bcoe\b/i;
+
+// ── OUR OWN WORK PRODUCT IS NOT EVIDENCE ABOUT THE BORROWER ──────────────────────────────
+//
+// Found 2026-09-23 on Lucki Long (FF-202608-2047, live, income under active UWM escalation
+// CR 49009569). Her income candidate set had picked up
+//   "INTERNAL_worksheet_-_twelve-month_earnings_breakdown_-_2026-09-19_-_not_for_submission_as_drafted.pdf"
+// on the word `earnings`. That document is OURS, not the employer's: it is a Fetti draft whose
+// own text says "we state no qualifying income figure here" and cautions against reading the
+// pay as a monthly stream. Feeding it back to the income reader closes a loop — the engine
+// would derive a borrower's income from our own prose about her income, and a figure we wrote
+// down while thinking out loud becomes an input to the number we ship.
+//
+// This is the same shape as the +$4,091 "variable pay" error: nothing was lying, the wrong
+// KIND of document was in the read. Narrow on purpose — only documents that say in their own
+// name that they are internal or not for submission. No employer, bank or agency ever names a
+// document this way, so this can never cost a real one.
+const NEVER_INCOME_RE = /\binternal\b[\s_.-]*(?:worksheet|draft|memo)|not[\s_.-]*for[\s_.-]*submission|\bdo[\s_.-]*not[\s_.-]*(?:submit|send)\b/i;
+
+/** The ONE income-candidate predicate. The route and every guard that reproduces the candidate
+ *  set must ask this exact question, or a guard starts modelling a selection production no
+ *  longer performs. */
+const isIncomeCandidate = (d: any): boolean => {
+  const s = `${d?.name || ""} ${d?.file_name || ""} ${d?.category || ""}`;
+  if (NEVER_INCOME_RE.test(s)) return false;
+  return String(d?.category || "").toLowerCase() === "income" || INCOME_RE.test(s);
+};
 
 // ── VETERAN DETECTION, FROM METADATA ONLY ────────────────────────────────────────────────
 // Ramon, 2026-08-01: read the DD-214 and the certificate of eligibility on veteran files.
@@ -343,11 +379,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // PDFs the names did NOT pick up and ADDS any that read as income. Local text extraction and
     // a regex — no model call. A document that reads as a credit report is never added.
     const nameMatched = ((docs || []) as any[])
-      .filter((d: any) => d.storage_path && (String(d.category || "").toLowerCase() === "income" || INCOME_RE.test(`${d.name || ""} ${d.file_name || ""} ${d.category || ""}`)));
+      .filter((d: any) => d.storage_path && isIncomeCandidate(d));
     const picked = new Set(nameMatched.map((d: any) => d.id));
     const byContent: any[] = [];
+    // NEVER_INCOME_RE has to hold on BOTH paths. Excluding our own internal worksheet by name
+    // and then letting the content pass add it back would be worse than not excluding it at
+    // all — that document is full of earnings figures, so `looksLikeIncomeDoc` says yes.
     const unnamed = ((docs || []) as any[]).filter(
-      (d: any) => d.storage_path && !picked.has(d.id) && /\.pdf$/i.test(d.file_name || d.storage_path || ""));
+      (d: any) => d.storage_path && !picked.has(d.id) && /\.pdf$/i.test(d.file_name || d.storage_path || "")
+        && !NEVER_INCOME_RE.test(`${d.name || ""} ${d.file_name || ""} ${d.category || ""}`));
     await Promise.all(unnamed.slice(0, 40).map(async (d: any) => {
       try {
         const { data: blob } = await supabaseAdmin.storage.from(BUCKET).download(d.storage_path);

@@ -45,25 +45,30 @@ function env(): Record<string, string> {
 }
 
 /** Read the LIVE regex and version out of the route, so this can never test a stale copy. */
-function routeConstants(): { incomeRe: RegExp; logicVersion: string } {
+function routeConstants(): { incomeRe: RegExp; neverIncomeRe: RegExp; logicVersion: string } {
   const src = readFileSync(path.join(process.cwd(), ROUTE), "utf8");
   const re = src.match(/const INCOME_RE = (\/.*\/i);/);
+  const nv = src.match(/const NEVER_INCOME_RE = (\/.*\/i);/);
   const lv = src.match(/const LOGIC_VERSION = "([^"]+)";/);
-  if (!re || !lv) throw new Error("could not read INCOME_RE / LOGIC_VERSION from the route — did it get renamed?");
+  // NEVER_INCOME_RE is required, not optional. Defaulting it to "matches nothing" when the
+  // route no longer has it would leave this guard quietly reproducing a DIFFERENT candidate
+  // set than production — the one failure mode this whole script exists to make impossible.
+  if (!re || !nv || !lv) throw new Error("could not read INCOME_RE / NEVER_INCOME_RE / LOGIC_VERSION from the route — did one get renamed?");
   // eslint-disable-next-line no-eval
-  return { incomeRe: eval(re[1]) as RegExp, logicVersion: lv[1] };
+  return { incomeRe: eval(re[1]) as RegExp, neverIncomeRe: eval(nv[1]) as RegExp, logicVersion: lv[1] };
 }
 
 type Snapshot = {
   logicVersion: string;
   incomeRe: string;
+  neverIncomeRe?: string;
   files: Record<string, { file: string; borrower: string; candidates: string[]; cachedIncome: number | null }>;
 };
 
 async function snapshot(): Promise<Snapshot> {
   const e = env();
   const sb = createClient(e.NEXT_PUBLIC_SUPABASE_URL, e.SUPABASE_SERVICE_ROLE_KEY);
-  const { incomeRe, logicVersion } = routeConstants();
+  const { incomeRe, neverIncomeRe, logicVersion } = routeConstants();
 
   const { data: files, error: fe } = await sb.from("loan_files").select("id, file_number, borrower_name");
   if (fe) throw new Error(`loan_files: ${fe.message}`);
@@ -89,12 +94,14 @@ async function snapshot(): Promise<Snapshot> {
 
   // EXACTLY the route's own predicate. If the route changes how it selects, this must change
   // with it — and the diff will show up as every file moving at once, which is the signal.
-  const isIncomeDoc = (d: any) =>
-    !!d.storage_path &&
-    (String(d.category || "").toLowerCase() === "income" ||
-      incomeRe.test(`${d.name || ""} ${d.file_name || ""} ${d.category || ""}`));
+  const isIncomeDoc = (d: any) => {
+    if (!d.storage_path) return false;
+    const s = `${d.name || ""} ${d.file_name || ""} ${d.category || ""}`;
+    if (neverIncomeRe.test(s)) return false;   // our own internal work product — added 2026-09-23
+    return String(d.category || "").toLowerCase() === "income" || incomeRe.test(s);
+  };
 
-  const out: Snapshot = { logicVersion, incomeRe: incomeRe.source, files: {} };
+  const out: Snapshot = { logicVersion, incomeRe: incomeRe.source, neverIncomeRe: neverIncomeRe.source, files: {} };
   for (const f of (files || []) as any[]) {
     const candidates = (docs || [])
       .filter((d: any) => d.loan_file_id === f.id && isIncomeDoc(d))
@@ -193,6 +200,9 @@ async function main() {
   }
   if (base.incomeRe !== now.incomeRe) {
     notes.push("INCOME_RE changed — per-file candidate diffs below show the real blast radius.");
+  }
+  if (base.neverIncomeRe !== now.neverIncomeRe) {
+    notes.push("NEVER_INCOME_RE changed — documents are being excluded from the income read; check the removals below.");
   }
 
   for (const [id, b] of Object.entries(base.files)) {
