@@ -146,15 +146,30 @@ function main() {
         `that did not happen.`);
       process.exit(1);
     }
+    const stampedAt = new Date().toISOString();
     const next: Manifest = {
       logicVersion: version,
-      pinnedAt: new Date().toISOString(),
+      // pinnedAt RECORDS WHEN THIS LOGIC_VERSION WAS PINNED — the moment the cache key last moved.
+      // It is NOT "when this file was last written", and the difference is not cosmetic:
+      // verify:income-replay divides the corpus on it (its line 210) and EXEMPTS from the drift
+      // check every file verified before it, on the reasoning that such a file has not yet been
+      // read under the current logic.
+      //
+      // A repin that does not move LOGIC_VERSION invalidates no cached number — LOGIC_VERSION is
+      // half the cache key and it did not change — so files verified before it HAVE been read
+      // under the current logic. Stamping `now` here swept them into "pending", where a real
+      // drift prints as an advisory line under a PASS. It happened six times between 2026-08-19
+      // and 2026-09-23; the last one moved an unchanged version's pin forward four days.
+      // verify:income-pin-date holds this invariant against the manifest's own git history.
+      pinnedAt: versionMoved ? stampedAt : (base.pinnedAt || stampedAt),
       files: now,
       noRerollClaims: base.noRerollClaims || [],
     };
     if (noReroll) {
       next.noRerollClaims!.push({
-        at: next.pinnedAt, logicVersion: version, reason,
+        // WHEN THE CLAIM WAS MADE, which is not when the version was pinned — this is the one
+        // date on a no-reroll repin that genuinely is "now".
+        at: stampedAt, logicVersion: version, reason,
         files: [...changed, ...added.map((f) => `+${f}`), ...removed.map((f) => `-${f}`)],
       });
     }

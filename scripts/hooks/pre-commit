@@ -436,6 +436,19 @@ if [ -n "$WATCHED" ] && [ -f .env.local ]; then
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:income-logic"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
+  # AND THE DATE THAT GUARD PINS, BECAUSE IT IS AN EXEMPTION WINDOW.
+  #
+  # verify:income-replay exempts from its drift check every file verified before pinnedAt, on the
+  # reasoning that such a file has not been read under the current logic yet. verify-income-logic
+  # stamped pinnedAt=now on every repin — including --no-reroll repins, whose premise is that
+  # LOGIC_VERSION did NOT move and no cache was invalidated. Six of those between 2026-08-19 and
+  # 2026-09-23 walked the window forward over settled files, where a real drift prints as an
+  # advisory line under a PASS. Needs no database.
+  printf "   %-18s " "verify:income-pin-date"
+  OUT=$(npm run --silent verify:income-pin-date 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:income-pin-date"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
   printf "   %-18s " "verify:benefit-income"
   OUT=$(npm run --silent verify:benefit-income 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
