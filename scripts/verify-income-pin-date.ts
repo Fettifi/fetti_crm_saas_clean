@@ -36,6 +36,16 @@
 // EQUAL THE pinnedAt RECORDED WHEN THE CURRENT logicVersion FIRST APPEARED. Re-hashing engine files
 // or recording a no-reroll claim does not re-pin a version that did not move.
 //
+// 2026-09-25 autopilot — THE DIRECTION. The first cut of the regression check below flagged ANY
+// pinnedAt change on an unchanged version. The remediation commit 7277a40 moved the pin BACK,
+// 09-23 -> 09-19, which is the fix itself — and the guard, committed in that same commit, counted
+// it as a fresh violation and went red on the very next run against a correct tree. It had never
+// been run after the commit existed: the pre-commit hook runs before the commit it is checking,
+// so the walk could not yet see it. It is wired into that hook, so it would have blocked every
+// income-path commit from here on, and the escape from a guard that can never be green is
+// --no-verify. Advancing the pin widens the exemption and forgives unexamined drift; moving it
+// back only turns exempted files into checked ones. Only an advance is a regression.
+//
 //   npm run verify:income-pin-date
 //   PIN_GUARD_MANIFEST=<path>   read the manifest from elsewhere (used to prove this fails)
 import { readFileSync, existsSync } from "fs";
@@ -79,7 +89,8 @@ try {
 }
 
 let firstPin = "", firstHash = "", firstDate = "";
-const movedWithoutBump: string[] = [];
+const advanced: string[] = [];   // pin moved FORWARD with no version bump — the defect
+const narrowed: string[] = [];   // pin moved BACK with no version bump — the remediation
 let prevVersion = "", prevPinned = "";
 for (const h of hashes) {
   let m: any;
@@ -88,7 +99,17 @@ for (const h of hashes) {
   const v = String(m.logicVersion || ""), p = String(m.pinnedAt || "");
   const d = execSync(`git log -1 --format=%ad --date=short ${h}`, { encoding: "utf8" }).trim();
   if (prevVersion && v === prevVersion && p !== prevPinned) {
-    movedWithoutBump.push(`${h.slice(0, 7)}  ${d}   pinnedAt ${prevPinned.slice(0, 10)} -> ${p.slice(0, 10)}   version unchanged ("${v}")`);
+    const line = `${h.slice(0, 7)}  ${d}   pinnedAt ${prevPinned.slice(0, 10)} -> ${p.slice(0, 10)}   version unchanged ("${v}")`;
+    // DIRECTION IS THE WHOLE INVARIANT, and the first cut of this check was blind to it.
+    // ADVANCING the pin forgives drift nobody looked at — that is the defect. Moving it BACK
+    // shrinks the exemption and can only turn exempted files into checked ones, which is the
+    // safe direction and is exactly what the remediation commit did. Counting both as the same
+    // event made this guard go red on its own fix, permanently, on a correct tree: a guard that
+    // can never be green is retired by whoever hits it, with --no-verify.
+    const from = Date.parse(prevPinned), to = Date.parse(p);
+    // An unparseable date is not evidence of safety — flag it with the advances.
+    if (Number.isFinite(from) && Number.isFinite(to) && to < from) narrowed.push(line);
+    else advanced.push(line);
   }
   if (v === curVersion && !firstPin) { firstPin = p; firstHash = h.slice(0, 7); firstDate = d; }
   prevVersion = v; prevPinned = p;
@@ -111,20 +132,24 @@ if (!firstPin) {
         `verify:income-replay's drift check.\n       Restore pinnedAt to ${firstPin} in ${TRACKED}.`);
 }
 
-// 2. THE REGRESSION CHECK. The writer must never do this again. History already contains the five
-// instances catalogued above; this asserts that no NEW one has been added since the fix landed.
+// 2. THE REGRESSION CHECK. The writer must never do this again. History already contains the six
+// instances catalogued above; this asserts that no NEW *advance* has been added since the fix
+// landed. A narrowing is not a regression — see the direction note in the walk above.
 const FIXED_AT = "2026-09-24";   // the commit that made pinnedAt carry forward on a no-bump repin
-const fresh = movedWithoutBump.filter((l) => {
-  const d = l.match(/\s(\d{4}-\d{2}-\d{2})\s/);
-  return d ? d[1] >= FIXED_AT : false;
-});
+const dateOf = (l: string) => (l.match(/\s(\d{4}-\d{2}-\d{2})\s/) || [])[1] || "";
+const fresh = advanced.filter((l) => dateOf(l) >= FIXED_AT);
 ck(`no repin since ${FIXED_AT} advanced pinnedAt without moving LOGIC_VERSION`,
   fresh.length === 0,
-  fresh.length ? fresh.join("\n       ") : `${movedWithoutBump.length} historical instance(s), all before the fix`);
+  fresh.length ? fresh.join("\n       ") : `${advanced.length} historical advance(s), all before the fix` +
+    (narrowed.length ? `; ${narrowed.length} narrowing(s), which are corrections` : ""));
 
-if (movedWithoutBump.length) {
-  console.log(`\n  Historical record — ${movedWithoutBump.length} repin(s) moved the pin with no version bump:`);
-  for (const l of movedWithoutBump) console.log(`     ${l}`);
+if (advanced.length) {
+  console.log(`\n  Historical record — ${advanced.length} repin(s) ADVANCED the pin with no version bump:`);
+  for (const l of advanced) console.log(`     ${l}`);
+}
+if (narrowed.length) {
+  console.log(`\n  ${narrowed.length} repin(s) moved the pin BACK with no version bump — corrections, not defects:`);
+  for (const l of narrowed) console.log(`     ${l}`);
 }
 
 console.log(fail ? `\nFAIL — ${fail} check(s) red.\n` : `\nPASS — the pin is the date the current LOGIC_VERSION was given.\n`);
