@@ -83,7 +83,13 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
   center("ESTIMATED MONTHLY PAYMENT", 14, bold); cur += 24;
   const who = d.borrowerName ? `Prepared for ${d.borrowerName}. ` : "";
   para(`${who}Here is an estimate of the monthly payment for this property, including principal, interest, taxes, insurance, and any mortgage insurance or HOA dues.`, 10.5);
-  if (d.address || d.state) { cur += 4; text(`Subject property: ${[d.address, d.state].filter(Boolean).join(", ")}`, 10, bold, SLATE); cur += 20; } else cur += 8;
+  // THE STATE IS ONLY A FALLBACK, NEVER AN APPEND. A real address already carries it, so the
+  // unconditional join printed "10331 Lindley Ave #150, Porter Ranch, CA 91326, CA" on a
+  // borrower- and agent-facing document. Append it only when the address does not already
+  // name that state as its own token (word-bounded — "CA" must not match "Calabasas").
+  const addrHasState = !!(d.address && d.state && new RegExp(`\\b${d.state.replace(/[^A-Za-z]/g, "")}\\b`, "i").test(d.address));
+  const subject = [d.address, addrHasState ? null : d.state].filter(Boolean).join(", ");
+  if (subject) { cur += 4; text(`Subject property: ${subject}`, 10, bold, SLATE); cur += 20; } else cur += 8;
 
   // The loan
   text("THE LOAN", 9, bold, EMERALD); cur += 16;
