@@ -15,6 +15,11 @@
 // under session.audio.*; audio events are response.output_audio*.
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
+// PENNY'S BRAIN, FINALLY CONNECTED. 2026-10-06: lib/voice/mortgageKB.ts — 33 sections, 30 FAQs,
+// built from Ramon's licensed Mortgage Educators textbook and compliance-verified — was referenced
+// ZERO times here. Her instructions named no product, no credit threshold and no state, so every
+// mortgage question became a message instead of an answer. Regenerate with build-kb.mjs.
+import { CORE_PRODUCTS, CORE_LAW, kbContextFor } from "./mortgageKB.js";
 
 const PORT = process.env.PORT || 8080;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -47,7 +52,18 @@ Ask natural follow-ups until a colleague reading the message alone could act on 
 NEVER INVENT A DETAIL. If they did not say it, leave it out and say so ("they didn't give a number"). Do not guess a spelling, a figure, a date, or a head count. A made-up detail in a message is worse than a missing one — it gets acted on.
 Do NOT quote specific rates, confirm approvals, or give financial advice — take the message and defer specifics to the team. Stay compliant; make no promises.
 If the caller wants to schedule a call, book a time, or talk to a person, use the book_call tool (capture their name, number, and what they want to discuss) and tell them the team will send a scheduling link and follow up shortly. You NEVER place outbound calls.
-Once you have name + callback number + a detailed reason: briefly read the key details back, tell them the team will follow up shortly, CALL the save_message tool, then warmly close.`;
+Once you have name + callback number + a detailed reason: briefly read the key details back, tell them the team will follow up shortly, CALL the save_message tool, then warmly close.
+
+YOU KNOW THIS BUSINESS — ACT LIKE IT. A caller asking "do you do FHA?", "what credit score do I need?", "can I buy with 3% down?", "what's a DSCR loan?" or "do you lend in Nevada?" deserves a real, confident answer from a receptionist at a mortgage brokerage, not a message. Answer those in your own warm, spoken words from the reference below. Keep it to two or three sentences — this is a phone call, not a lecture — then move the conversation forward: ask what they are trying to do, and get the message or the booking.
+If the question is deeper or more specific than the reference below, CALL the lookup_knowledge tool with their question and answer from what it returns. Use it rather than guessing; use it rather than deflecting.
+HARD LIMITS THAT DO NOT BEND, even when you know the answer: never quote a specific interest rate, APR, monthly payment, points, or term. Never say someone is approved, qualified, or declined. Never give financial, tax or legal advice. Never state a figure for a specific person's file. Those are the team's to give, and you say so warmly: "I don't want to quote you a number that moves — let me have someone give you real figures today."
+Equal Housing Opportunity: every borrower is welcome. Never discourage anyone, and never suggest a product is unavailable to them because of who they are.
+
+=== REFERENCE: PRODUCTS, QUALIFYING & PROCESS ===
+${CORE_PRODUCTS}
+
+=== REFERENCE: LAW, DISCLOSURES & COMPLIANCE ===
+${CORE_LAW}`;
 
 const TOOLS = [
   {
@@ -87,6 +103,18 @@ const TOOLS = [
         callback_number: { type: "string" },
       },
       required: ["caller_name", "reason"],
+    },
+  },
+  {
+    type: "function",
+    name: "lookup_knowledge",
+    description: "Look up Fetti's mortgage reference material to answer a caller's question about loan programs, qualifying, the process, costs, or rules. Use this whenever a caller asks something specific you are not certain about — it is always better than guessing and always better than deflecting. Never use it to look up a specific person's file; it holds general knowledge only.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "The caller's question, in their own words as closely as possible." },
+      },
+      required: ["question"],
     },
   },
   {
@@ -272,7 +300,24 @@ wss.on("connection", (twilio) => {
       instructions: (dynamicOpening ? INSTRUCTIONS.split(OPENING).join(dynamicOpening) : INSTRUCTIONS) + ctx,
       output_modalities: ["audio"],
       audio: {
-        input: { format: { type: "audio/pcmu" }, turn_detection: { type: "server_vad" }, transcription: { model: "whisper-1" } },
+        // TURN-TAKING IS WHAT MAKES HER FEEL HUMAN OR NOT, and every parameter here was previously
+        // left at its default — a decision nobody made. Her own instructions have callers reading
+        // out a callback number and SPELLING a surname, and people pause mid-string while they
+        // recall or check. At the ~500ms default, server VAD treats that pause as end-of-turn and
+        // Penny starts talking over them. Being interrupted mid-number is the single most
+        // un-human thing a phone agent does, and it also corrupts the one field the message
+        // depends on. 800ms costs a barely perceptible beat and stops her cutting people off.
+        // Tunable without a code change: FETTI_VAD_SILENCE_MS / FETTI_VAD_THRESHOLD.
+        input: {
+          format: { type: "audio/pcmu" },
+          turn_detection: {
+            type: "server_vad",
+            silence_duration_ms: Number(process.env.FETTI_VAD_SILENCE_MS || 800),
+            prefix_padding_ms: Number(process.env.FETTI_VAD_PREFIX_MS || 300),
+            threshold: Number(process.env.FETTI_VAD_THRESHOLD || 0.5),
+          },
+          transcription: { model: "whisper-1" },
+        },
         output: { format: { type: "audio/pcmu" }, voice: VOICE },
       },
       tools: TOOLS, tool_choice: "auto",
@@ -338,6 +383,16 @@ wss.on("connection", (twilio) => {
           return; // CRITICAL: never fall through to the shared {"ok":true} output below —
                   // a duplicate SUCCESS result for the same call_id made Penny announce
                   // a transfer that had just been DECLINED (live-test bug 2026-07-08).
+        } else if (m.name === "lookup_knowledge") {
+          // Answer in-call from the compliance-verified reference. Returning a miss is NOT a
+          // failure state — it must steer her to offer a callback rather than invent a figure,
+          // which is the one thing worse than not knowing. [[no-fake-engagement]]
+          const found = kbContextFor(args.question || "", 2);
+          oai.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: m.call_id,
+            output: JSON.stringify({ knowledge: found ||
+              "NO SPECIFIC REFERENCE FOUND. Say plainly that you want to get it right rather than guess, offer to have the team answer it today, and take the message. Do NOT invent a figure, a threshold, or a rule." }) } }));
+          oai.send(JSON.stringify({ type: "response.create" }));
+          return;
         } else if (m.name === "book_call") {
           await postToCrm({
             caller_name: args.caller_name, callback_number: args.callback_number,
