@@ -177,13 +177,34 @@ function parseDeclarations(role: any): Partial<UrlaDeclarations> {
   const d = role?.BORROWER?.DECLARATION?.DECLARATION_DETAIL || {};
   const out: Partial<UrlaDeclarations> = {};
   const set = (k: keyof UrlaDeclarations, v: any) => { const yn = ynFromBool(v); if (yn) out[k] = yn; };
-  set("bankruptcyPast7Years", d.BankruptcyIndicator);
-  set("foreclosurePast7Years", d.PriorPropertyForeclosureCompletedIndicator);
-  set("outstandingJudgments", d.OutstandingJudgmentsIndicator);
-  set("partyToLawsuit", d.PartyToLawsuitIndicator);
-  set("borrowingDownPayment", d.UndisclosedBorrowedFundsIndicator);
+  // All fifteen of URLA Section 5. This read SIX of them until 2026-10-07, mirroring the same
+  // blind spot in lib/mismo.ts's exporter — which is exactly why neither was noticed: a file
+  // round-tripped through our own import/export looked lossless because both ends dropped the
+  // same nine elements. A lender's MISMO arriving with a disclosed PACE lien, a federal-debt
+  // delinquency or a short sale silently lost it here.
+  set("declaredBankruptcy", d.BankruptcyIndicator);                                   // 5b(8)
+  set("bankruptcyPast7Years", d.BankruptcyIndicator);                                 // legacy combined field
+  set("propertyForeclosed", d.PriorPropertyForeclosureCompletedIndicator);            // 5b(7)
+  set("foreclosurePast7Years", d.PriorPropertyForeclosureCompletedIndicator);         // legacy combined field
+  set("outstandingJudgments", d.OutstandingJudgmentsIndicator);                       // 5b(2)
+  set("partyToLawsuit", d.PartyToLawsuitIndicator);                                   // 5b(4)
+  set("delinquentOnFederalDebt", d.PresentlyDelinquentIndicator);                     // 5b(3)
+  set("coSignerOnUndisclosedDebt", d.UndisclosedComakerOfNoteIndicator);              // 5b(1)
+  set("conveyedTitleInLieu", d.PriorPropertyDeedInLieuConveyedIndicator);             // 5b(5)
+  set("preForeclosureOrShortSale", d.PriorPropertyShortSaleCompletedIndicator);       // 5b(6)
+  set("propertySubjectToLien", d.PropertyProposedCleanEnergyLienIndicator);           // 5a(7) PACE
+  set("relationshipWithSeller", d.SpecialBorrowerSellerRelationshipIndicator);        // 5a(3)
+  set("undisclosedBorrowedFunds", d.UndisclosedBorrowedFundsIndicator);               // 5a(4)
+  set("borrowingDownPayment", d.UndisclosedBorrowedFundsIndicator);                   // legacy narrower field
+  set("applyingNewCredit", d.UndisclosedCreditApplicationIndicator);                  // 5a(6)
+  set("applyingOtherMortgage", d.UndisclosedMortgageApplicationIndicator);            // 5a(5)
+  const chapters = ["7", "11", "12", "13"].filter((c) =>
+    ynFromBool((d as any)[`BankruptcyChapter${{ "7": "Seven", "11": "Eleven", "12": "Twelve", "13": "Thirteen" }[c]}Indicator`]) === "Yes");
+  if (chapters.length) out.bankruptcyChapters = chapters.join(",");
   const occ = ynFromText(d.IntentToOccupyType);
   if (occ) out.intendToOccupyAsPrimary = occ;
+  const prior = ynFromText(d.HomeownerPastThreeYearsType);                            // 5a(2)
+  if (prior) out.priorOwnershipLast3Years = prior;
   return out;
 }
 

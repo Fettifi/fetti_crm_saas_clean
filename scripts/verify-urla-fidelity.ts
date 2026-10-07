@@ -26,7 +26,7 @@
 //   npm run verify:urla-fidelity
 import "./_env";
 import { readFileSync } from "fs";
-import { assembleUrla, computeLoanMetrics } from "../lib/urla";
+import { assembleUrla, computeLoanMetrics, urlaCompleteness } from "../lib/urla";
 
 let fail = 0;
 const ck = (n: string, c: boolean, d = "") => { if (!c) fail++; console.log(`  ${c ? "✅" : "❌"} ${n}${d ? ` — ${d}` : ""}`); };
@@ -124,6 +124,21 @@ const wizardLead = (over: Record<string, unknown> = {}) => ({
   const wiz = code("app/apply/form/page.tsx");
   ck("the wizard asks the borrower's HOME address (lib/credit.ts refuses a credit order without it)",
      /id: "current_address"/.test(wiz));
+  // ASKING IS NOT CARRYING, AND THIS GUARD PROVED ONLY THE FIRST HALF.
+  // 2026-10-07: `current_address` was fed into this file's own fixture at the top of this block
+  // and never asserted on the way out. lib/urla.ts read it seeded-only, the apply route never
+  // writes raw.urla, so EVERY wizard borrower's home address died in leads.raw — while this
+  // suite stayed green on the regex above. The borrower typed it, lib/credit.ts then refused the
+  // pull for "Current address", and the MISMO shipped with no RESIDENCE block. Assert the VALUE
+  // arrives, not that the question exists. [[a-mechanism-must-be-proven-to-fire]]
+  ck("…and that answer actually REACHES the 1003 — street, city, state and ZIP",
+     full.borrowers?.[0]?.currentAddress?.street === "123 Main St"
+     && full.borrowers?.[0]?.currentAddress?.city === "Los Angeles"
+     && full.borrowers?.[0]?.currentAddress?.state === "CA"
+     && full.borrowers?.[0]?.currentAddress?.zip === "90045",
+     JSON.stringify(full.borrowers?.[0]?.currentAddress));
+  ck("…and it is not reported missing by the credit-readiness gate",
+     !urlaCompleteness(full).missing.includes("Current address"));
   ck("the wizard asks for monthly debt payments (28 of 32 files had a back-end DTI = front-end)",
      /id: "monthly_debt_payments"/.test(wiz));
   // MEMBERSHIP, NOT ADJACENCY. This asserted `!== "checklist" && q.optional` and broke the

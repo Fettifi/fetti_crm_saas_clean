@@ -80,8 +80,21 @@ const FLOWS: Record<string, Q[]> = {
       { value: "Second Home", label: "It's a second / vacation home", emoji: "🌴" },
       { value: "Investor", label: "No. It's an investment", emoji: "📈", hint: "Rental income property" },
     ] },
-    { id: "military", kind: "select", prompt: "Are you a veteran or active military?", sub: "You may qualify for a $0-down VA loan.", options: [
-      { value: "yes", label: "Yes", emoji: "🎖️" }, { value: "no", label: "No", emoji: "🙂" },
+    // ── ONE MILITARY QUESTION, ONE KEY, ONE VALUE SPACE. This asked {yes,no} under the key
+    //    `military`, and the URLA Section 7 step re-asked the same thing later under the SAME
+    //    key with {no,veteran,active,surviving_spouse}. The later answer overwrote this one, so
+    //    product()'s `military === "yes"` went FALSE the moment a veteran answered Section 7
+    //    honestly: a VA-eligible borrower was routed off VA onto Conventional and buildPayload
+    //    shipped that as loan_purpose — a veteran downgraded by the form, not by a guideline.
+    //    Distinct key, and the URLA value space here so this routing answer IS the Section 7
+    //    answer (appSteps() stops re-asking; militaryService() resolves whichever one fired —
+    //    the same two-key/one-resolver shape occupancy already uses). surviving_spouse is kept
+    //    because an eligible surviving spouse carries VA entitlement, which {yes,no} cannot say.
+    { id: "military_service", kind: "select", prompt: "Have you or your spouse served in the military?", sub: "It can qualify you for a $0-down VA loan — often the best terms available.", options: [
+      { value: "no", label: "No", emoji: "🙂" },
+      { value: "veteran", label: "Yes — I served, not currently", emoji: "🎖️" },
+      { value: "active", label: "Yes — currently serving", emoji: "🎖️" },
+      { value: "surviving_spouse", label: "I'm the surviving spouse of a service member" },
     ] },
     { id: "firsttime", kind: "select", prompt: "Is this your first home purchase?", options: [
       { value: "yes", label: "Yes. First time", emoji: "✨" }, { value: "no", label: "I've owned before", emoji: "🔑" },
@@ -91,6 +104,14 @@ const FLOWS: Record<string, Q[]> = {
       { value: "3to10", label: "3-10%", hint: "Assistance programs may help" }, { value: "10to20", label: "10-20%" }, { value: "20p", label: "20%+" },
     ] },
     { id: "property_value", kind: "number", prompt: "About what price range?", sub: "A rough number is fine.", placeholder: "Home price ($)" },
+    // ── URLA 4a, THE AMOUNT REQUESTED. Only flip, equity and business ever asked for it, so buy
+    //    and refi — the two biggest consumer lanes — produced a 1003 with a BLANK BaseLoanAmount:
+    //    lib/urla.ts takes loan.amount from lead.loan_amount_requested and there was nothing to
+    //    take, so the loan the file was for had no size on it. Price minus down payment is NOT a
+    //    substitute: `down` is a BRACKET ("3-10%"), and a figure we computed is a figure the
+    //    borrower never stated — on a signed application that is a fabricated number, not a
+    //    convenience. Ask it, every flow, right after the value it hangs off.
+    { id: "loan_amount_requested", kind: "number", prompt: "And how much do you need to borrow?", sub: "Roughly your price less the cash you're putting down. A round number is fine — we confirm it when we price your loan.", placeholder: "Loan amount ($)" },
   ],
   refi: [
     { id: "refi_goal", kind: "select", prompt: "What's the goal of your refinance?", options: [
@@ -107,6 +128,9 @@ const FLOWS: Record<string, Q[]> = {
       { value: "Investor", label: "Investment property", emoji: "📈" },
     ] },
     { id: "property_value", kind: "number", prompt: "What's the home worth today?", placeholder: "Estimated value ($)" },
+    // URLA 4a — see the buy flow. A refinancer knows their payoff, but the amount REQUESTED is
+    // that payoff plus whatever cash they're taking, and only they can state it.
+    { id: "loan_amount_requested", kind: "number", prompt: "How much do you need the new loan to be?", sub: "Enough to pay off what you owe today, plus any cash you're taking out. A round number is fine.", placeholder: "New loan amount ($)" },
   ],
   invest: [
     { id: "invest_action", kind: "select", prompt: "Buying a new one or refinancing one you own?", options: [
@@ -119,6 +143,9 @@ const FLOWS: Record<string, Q[]> = {
       { value: "SFR", label: "Single-family" }, { value: "2-4 Unit", label: "2-4 units" }, { value: "Multifamily", label: "5+ units" }, { value: "Condo", label: "Condo / townhome" },
     ] },
     { id: "property_value", kind: "number", prompt: "Roughly what's the purchase price or value?", placeholder: "Price / value ($)" },
+    // URLA 4a — see the buy flow. Blank on every investor 1003 the wizard produced, which is the
+    // same file whose whole underwrite is loan amount against the property's rent.
+    { id: "loan_amount_requested", kind: "number", prompt: "How much are you looking to borrow?", sub: "Your price or payoff less the cash you're bringing in. A round number is fine.", placeholder: "Loan amount ($)" },
   ],
   flip: [
     { id: "flip_type", kind: "select", prompt: "What's the project?", options: [
@@ -129,7 +156,15 @@ const FLOWS: Record<string, Q[]> = {
       { value: "0", label: "This is my first", emoji: "🌱" }, { value: "1-4", label: "A few (1-4)", emoji: "👍" }, { value: "5+", label: "I'm seasoned (5+)", emoji: "🚀" },
     ] },
     { id: "property_value", kind: "number", prompt: "Purchase price of the property?", placeholder: "Purchase price ($)" },
-    { id: "loan_amount_requested", kind: "number", prompt: "Estimated rehab / build budget?", sub: "Ballpark is fine.", placeholder: "Rehab budget ($)" },
+    // ── THE KEY MEANT SOMETHING ELSE HERE, AND IT STILL REACHED URLA 4a. This question asked
+    //    for the REHAB BUDGET and stored it in `loan_amount_requested`, which lib/urla.ts turns
+    //    straight into loan.amount / BaseLoanAmount — so every fix-and-flip 1003 told an
+    //    underwriter the loan was the size of the rehab, not the size of the loan. A flip loan is
+    //    normally purchase plus rehab, so the figure was not merely imprecise, it was a different
+    //    quantity under a name that promised this one. The budget keeps its own name; the amount
+    //    requested is asked, because deriving purchase + rehab for them would invent their number.
+    { id: "rehab_budget", kind: "number", prompt: "Estimated rehab / build budget?", sub: "Ballpark is fine.", placeholder: "Rehab budget ($)" },
+    { id: "loan_amount_requested", kind: "number", prompt: "And how much do you need to borrow in total?", sub: "Purchase and rehab together, or whatever portion you need financed. A round number is fine.", placeholder: "Total loan amount ($)" },
   ],
   equity: [
     { id: "equity_occupancy", kind: "select", prompt: "Is this your home or a rental you own?", options: [
@@ -139,7 +174,14 @@ const FLOWS: Record<string, Q[]> = {
       { value: "HELOC", label: "A line of credit (HELOC)", emoji: "💳" }, { value: "Home Equity Loan", label: "A lump sum", emoji: "💰" }, { value: "unsure", label: "Whichever is best", emoji: "🤔" },
     ] },
     { id: "property_value", kind: "number", prompt: "What's your home worth?", placeholder: "Home value ($)" },
-    { id: "loan_amount_requested", kind: "number", prompt: "About how much do you owe on it?", placeholder: "Mortgage balance ($)" },
+    // ── SAME DEFECT AS THE FLIP FLOW'S REHAB BUDGET. "How much do you owe on it?" was stored in
+    //    `loan_amount_requested`, so every HELOC and home-equity 1003 reported the borrower's
+    //    EXISTING FIRST-MORTGAGE BALANCE as the amount they were applying for — a number that is
+    //    typically several times the actual draw, on the field a lender sizes the deal from. The
+    //    balance is what we need for equity, so it keeps its own name and still feeds the
+    //    low-equity coaching beat; the amount requested is a separate question, and asked.
+    { id: "existing_mortgage_balance", kind: "number", prompt: "About how much do you owe on it?", placeholder: "Mortgage balance ($)" },
+    { id: "loan_amount_requested", kind: "number", prompt: "And how much would you like to borrow?", sub: "For a line of credit, the limit you want available. A round number is fine.", placeholder: "Amount requested ($)" },
   ],
   business: [
     { id: "biz_type", kind: "select", prompt: "What kind of financing?", options: [
@@ -155,11 +197,24 @@ const FLOWS: Record<string, Q[]> = {
       { value: "yes", label: "Yes", emoji: "✅" }, { value: "no", label: "Not yet", emoji: "🙂" },
     ] },
     { id: "property_value", kind: "number", prompt: "What's your home worth?", placeholder: "Home value ($)" },
+    // URLA 4a — see the buy flow. A HECM's principal limit is set by age, value and rates, so we
+    // will not know the final figure here; the application still has to carry the amount the
+    // borrower ASKED for, and we do not get to invent that on their behalf.
+    { id: "loan_amount_requested", kind: "number", prompt: "About how much are you hoping to access?", sub: "Any mortgage still on the home is paid off first out of the proceeds. The final figure depends on your age, your home's value and rates — we'll run it exactly. A round number is fine.", placeholder: "Amount you're hoping to access ($)" },
   ],
 };
 
 const CONSUMER_GOALS = ["buy", "refi", "equity", "reverse"];
 const CREDIT_Q: Q = { id: "credit", kind: "select", prompt: "Roughly, how's your credit?", sub: "An estimate is fine. No credit pull to get started.", options: CREDIT };
+
+// The buy flow's down-payment brackets in the words a human reads. `down` is the answer that
+// picks FHA over Conventional inside product() — and it was then THROWN AWAY: not a payload key,
+// not even a line in the notes blob. So the file told an underwriter it was an FHA Purchase while
+// holding nothing that said why, and no downstream consumer could tell a 3%-down borrower from a
+// 25%-down one. A bracket is all the borrower gave, so a bracket is what we record.
+const DOWN_LABELS: Record<string, string> = {
+  lt3: "Little to none", "3to10": "3-10%", "10to20": "10-20%", "20p": "20%+",
+};
 
 // ---- Objection handling -----------------------------------------------------
 // When a borrower picks an answer that often makes people feel disqualified, we
@@ -203,8 +258,12 @@ const DEFAULT_REBUTTALS: Record<string, string> = {
 // to the specific door already open to them and the rebuttal lands far harder.
 // (A learned config override, if present, still wins over this.)
 function lowDownMessage(a: Answers): string {
-  if (a.military === "yes")
-    return "Here's the good news: as a veteran you may qualify for a $0-down VA loan. Little to put down is exactly who this is built for. Let's confirm what you've earned. 🎖️";
+  // Reads the resolver, not `a.military === "yes"` — a surviving spouse and an active-duty
+  // service member both carry entitlement, and the old equality test saw neither.
+  if (vaEligible(a))
+    return militaryService(a) === "surviving_spouse"
+      ? "Here's the good news: as the surviving spouse of a service member you may hold VA entitlement of your own — and a VA loan can be $0 down. Little to put down is exactly who this is built for. Let's confirm what you're entitled to. 🎖️"
+      : "Here's the good news: as a veteran you may qualify for a $0-down VA loan. Little to put down is exactly who this is built for. Let's confirm what you've earned. 🎖️";
   if (a.firsttime === "yes")
     return "First-time buyers get the most help here. Conventional loans go as low as 3% down, down payment assistance grants can cover much of the rest, and a gift from family can fund the whole thing. Little saved is a starting line, not a wall. Let's keep going. 🙌";
   return "Little to put down? That's one of the easiest things to solve. FHA needs just 3.5%, that down payment can come entirely from a family gift, and assistance programs can cover much of the rest. Let's find the program that fits you. 🙌";
@@ -268,14 +327,27 @@ function detectObstacle(id: string, value: string, a: Answers): string | null {
   if (id === "credit" && value === "640") return "building_credit";
   if (id === "down" && value === "lt3") return "low_down";
   if (id === "employment_status" && value === "Self-Employed") return "self_employed";
-  if (id === "bk_fc" && value === "yes") return "past_bk_fc";
+  // The 7-year bankruptcy/foreclosure beat used to hang off `bk_fc`, the duplicate ask that is
+  // now gone. It hangs off the Section 5 checklist that replaced it — the one that maps to URLA
+  // 5l/5m. "none" is a clean history and must not be coached as a problem.
+  if (id === "decl_property_events" && /bankruptcy|foreclosure|short_sale|deed_in_lieu/.test(value)) return "past_bk_fc";
   if (id === "experience" && value === "0") return "first_flip";
   // DSCR investor picking "Not rented yet" is the biggest first-DSCR stall — reassure
   // that market rent (not a signed lease) qualifies the loan, and keep them moving.
   if (id === "rental_type" && value === "none") return "dscr_not_rented";
   if (id === "age62" && value === "no") return "not_62";
-  // Low-equity refinance/equity: owe >= 85% of value.
-  if (id === "loan_amount_requested" && a.property_value && Number(value) >= 0.85 * Number(a.property_value)) return "high_balance";
+  // Low equity: owe >= 85% of value. The beat talks about what the borrower OWES, so it has to
+  // read a balance — on the equity flow that is now its own key, because this used to read
+  // `loan_amount_requested` back when that question asked for the mortgage balance.
+  const lowEquity = a.property_value && Number(value) >= 0.85 * Number(a.property_value);
+  if (id === "existing_mortgage_balance" && lowEquity) return "high_balance";
+  // On a refinance the amount requested IS the payoff plus cash out, so it stands in for the
+  // balance. A PURCHASE must never reach this: now that buy, flip, invest-purchase and reverse
+  // ask URLA 4a, an ordinary FHA purchase at 96.5% LTV would otherwise be told it "owes a lot
+  // relative to the value" — coaching a borrower about equity in a house they do not own yet,
+  // on the last screen before we ask for their contact details.
+  const refinancing = a.goal === "refi" || a.invest_action === "refi" || a.invest_action === "cashout";
+  if (id === "loan_amount_requested" && refinancing && lowEquity) return "high_balance";
   return null;
 }
 
@@ -304,6 +376,23 @@ function isConsumer(a: Answers): boolean {
   return CONSUMER_GOALS.includes(a.goal) && !isInvestment(a);
 }
 
+// ---- Military service: one answer, from whichever end of the wizard asked it --------------
+// Same two-key / one-resolver shape as effectiveOccupancy(). The buy flow asks at qualify time
+// because the answer picks the product; every other flow asks it in the URLA Section 7 block.
+// Only ONE of the two is ever asked — appSteps() drops Section 7 once military_service is
+// answered — so this never has to choose between conflicting answers. Choosing between them is
+// precisely the bug it replaces: both questions wrote `military` and the later, richer answer
+// overwrote the earlier one that product() was built to read.
+function militaryService(a: Answers): string {
+  return a.military_service || a.military || "";
+}
+// VA eligibility: anyone who ever served, plus an eligible surviving spouse. The old test was
+// `a.military === "yes"` — a value the Section 7 question cannot produce, so once Section 7 ran
+// the test was false for every veteran who answered it.
+function vaEligible(a: Answers): boolean {
+  return /^(veteran|active|surviving_spouse)$/.test(militaryService(a));
+}
+
 // Map answers -> a specific product from the Fetti catalog. Occupancy leads.
 function product(a: Answers): string {
   const g = a.goal;
@@ -312,7 +401,7 @@ function product(a: Answers): string {
   if (g === "buy") {
     if (investor) return a.rental_type === "str" ? "Short-Term Rental (Airbnb) DSCR" : "DSCR Purchase";
     let base: string;
-    if (a.military === "yes") base = "VA Purchase";
+    if (vaEligible(a)) base = "VA Purchase";
     else if (a.down === "lt3") base = "FHA Purchase";
     else if (big) base = "Jumbo Purchase";
     else if (a.firsttime === "yes") base = "First-Time Homebuyer (Conventional)";
@@ -363,8 +452,10 @@ function isBizCredit(a: Answers): boolean {
 function appSteps(a: Answers): Q[] {
   const purchase = a.goal === "buy" || a.invest_action === "purchase" || a.goal === "flip";
   const consumer = isConsumer(a);
-  // DSCR loans qualify on the PROPERTY's rental income, not the borrower's. So
-  // we never ask for personal employment/income. We ask projected rent instead.
+  // DSCR loans qualify on the PROPERTY's rental income, not the borrower's. So this flag — and
+  // only this flag — decides whether we skip personal employment/income. It used to decide the
+  // RENT question too, which is why rent was missing from every investor file whose product name
+  // happened not to contain "dscr"; rent is now keyed to occupancy (rentQualifies, below).
   const dscr = product(a).toLowerCase().includes("dscr");
   const steps: Q[] = [];
   // Borrower (URLA §1)
@@ -437,10 +528,7 @@ function appSteps(a: Answers): Q[] {
   steps.push({ id: "years_at_address", kind: "select", prompt: "How long at your current place?", options: [
     { value: "<2", label: "Less than 2 years" }, { value: "2+", label: "2+ years" },
   ] });
-  if (dscr) {
-    // DSCR = no personal-income docs. Qualify on the property's cash flow.
-    steps.push({ id: "rent_income", kind: "number", prompt: "What's the expected monthly rent?", sub: "This is what qualifies a DSCR loan. No pay stubs or tax returns needed. A market estimate is fine.", placeholder: "Monthly rent ($)", optional: true });
-  } else {
+  if (!dscr) {
     // Employment & income (URLA §1c / §1d)
     steps.push({ id: "employment_status", kind: "select", prompt: "How do you earn your income?", options: [
       { value: "Employed", label: "Employed (W-2)", emoji: "💼" }, { value: "Self-Employed", label: "Self-employed / business owner", emoji: "🧑‍💻" },
@@ -453,6 +541,27 @@ function appSteps(a: Answers): Q[] {
     ] });
     steps.push({ id: "monthly_income", kind: "number", prompt: "About what's your monthly income, before taxes?", sub: "Best estimate. We verify later.", placeholder: "Gross monthly income ($)", optional: true });
     steps.push({ id: "other_income", kind: "number", prompt: "Any other monthly income?", sub: "Rentals, side business, support, etc. Skip if none.", placeholder: "Other monthly income ($)", optional: true });
+  }
+  // ── EXPECTED RENT IS THE QUALIFYING INCOME, SO IT IS NOT DSCR-ONLY AND IT IS NOT OPTIONAL.
+  //    This hung off product(a).includes("dscr") — a PRODUCT NAME — so "Multi-Family Investor
+  //    Financing", an "Investment HELOC" and a rehab-to-rent file were never asked, though all
+  //    three are investor occupancy and all three are sized on the property's rent. And where it
+  //    WAS asked it carried optional:true, so the borrower could Skip past it: lib/urla.ts reads
+  //    expectedMonthlyRentalIncome from this answer and computeLoanMetrics() feeds it straight
+  //    into gross rent, so a skip hands the underwriter a DSCR of zero on the one number the
+  //    whole file turns on. Occupancy decides it now, not a string match on a product name.
+  //    Two deliberate exclusions, both because "investor" there is not a rental statement:
+  //    business/commercial never asks occupancy at all (so isInvestment() is reading
+  //    effectiveOccupancy()'s DEFAULT, not the borrower) and is underwritten on a rent roll
+  //    rather than one expected-rent figure; and flip/ground-up/bridge exit by SALE — only
+  //    "Rehab" (rehab to rent) is held and rented.
+  const rentQualifies = isInvestment(a) && a.goal !== "business" && !(a.goal === "flip" && a.flip_type !== "Rehab");
+  if (rentQualifies) {
+    steps.push({ id: "rent_income", kind: "number", prompt: "What's the expected monthly rent?",
+      sub: dscr
+        ? "This is what qualifies a DSCR loan — no pay stubs or tax returns needed. A market estimate is fine; the appraiser's rent schedule confirms it."
+        : "The rent this property brings in is what sizes an investment loan. A market estimate is fine; the appraiser's rent schedule confirms it.",
+      placeholder: "Monthly rent ($)" });
   }
   // Assets (URLA §2)
   steps.push({ id: "liquid_assets", kind: "number", prompt: "Roughly how much do you have saved or invested?", sub: "Checking, savings, 401k/IRA. Helps us show what you qualify for.", placeholder: "Total assets ($)", optional: true });
@@ -475,10 +584,16 @@ function appSteps(a: Answers): Q[] {
   if (isBizCredit(a)) {
     steps.push({ id: "liquid_assets", kind: "number", prompt: "Roughly how much does the business hold in cash or reserves?", sub: "Best estimate. Helps show staying power.", placeholder: "Business cash / reserves ($)", optional: true });
   }
-  // Declarations (URLA §5. The most material ones, asked gently)
-  steps.push({ id: "bk_fc", kind: "select", prompt: "In the last 7 years, any bankruptcy or foreclosure?", sub: "Totally fine either way. It just shapes your options.", options: [
-    { value: "no", label: "Nope, all good", emoji: "✅" }, { value: "yes", label: "Yes, within 7 years" },
-  ] });
+  // ── THE 7-YEAR QUESTION IS ASKED ONCE NOW. A `bk_fc` select sat here asking "any bankruptcy
+  //    or foreclosure?" and the decl_property_events checklist asked the same seven years again
+  //    further down — and the two answers landed in DIFFERENT fields on the same form:
+  //    lib/urla.ts builds bankruptcyPast7Years / foreclosurePast7Years from this one and
+  //    declaredBankruptcy / propertyForeclosed from the checklist, so one signed 1003 could read
+  //    No on 5l and Yes on 5m. The checklist is the survivor: it is what maps to URLA 5l/5m and
+  //    it keeps bankruptcy, foreclosure, short sale and deed-in-lieu as four separate
+  //    declarations instead of collapsing them into one yes. buildPayload() renders the legacy
+  //    bk_fc field FROM that single answer, so the 7-year history still reaches the fields that
+  //    read it and the two can no longer disagree.
   // Co-borrower details (URLA borrower #2). Only when they said yes above. The
   // prompts personalize once the name is captured (appSteps rebuilds per answer).
   if (a.has_coborrower === "yes") {
@@ -594,14 +709,20 @@ function appSteps(a: Answers): Q[] {
       options: [{ value: "no", label: "No — arm's length" }, { value: "yes", label: "Yes — family or business relationship" }] });
   }
   if (!isBizCredit(a)) {
-    steps.push({ id: "military", kind: "select", prompt: "Have you or your spouse served in the military?",
-      sub: "It can qualify you for a VA loan — often the best terms available.",
-      options: [
-        { value: "no", label: "No" },
-        { value: "veteran", label: "Yes — I served, not currently" },
-        { value: "active", label: "Yes — currently serving" },
-        { value: "surviving_spouse", label: "I'm the surviving spouse of a service member" },
-      ] });
+    // Section 7 (military service). SKIPPED when the buy flow already asked it under
+    // `military_service` — identical question, identical value space, and asking a veteran the
+    // same thing twice is exactly how the two answers came to live in one key and contradict.
+    // militaryService() resolves whichever of the two actually fired.
+    if (!a.military_service) {
+      steps.push({ id: "military", kind: "select", prompt: "Have you or your spouse served in the military?",
+        sub: "It can qualify you for a VA loan — often the best terms available.",
+        options: [
+          { value: "no", label: "No" },
+          { value: "veteran", label: "Yes — I served, not currently" },
+          { value: "active", label: "Yes — currently serving" },
+          { value: "surviving_spouse", label: "I'm the surviving spouse of a service member" },
+        ] });
+    }
     // REG B 12 CFR 1002.13 — the creditor MUST REQUEST this on a dwelling-secured application
     // and must record a refusal. "I'd rather not say" is a real, recorded answer, not a skip.
     steps.push({ id: "demo_ethnicity", kind: "select", prompt: "How do you identify? (1 of 3)",
@@ -849,6 +970,14 @@ export default function ApplyWizard() {
     // DSCR qualifies on property cash flow. Never report borrower personal income.
     const monthly = !dscr && a.monthly_income ? Number(a.monthly_income) : undefined;
     const propType = a.prop_type || (a.goal === "buy" ? "Residential" : undefined);
+    // ONE SOURCE FOR THE 7-YEAR HISTORY. The duplicate `bk_fc` question is gone, but lib/urla.ts
+    // still fills the legacy bankruptcyPast7Years / foreclosurePast7Years from the
+    // "BK/Foreclosure 7yr" notes label — so render that label FROM the Section 5 checklist the
+    // borrower actually answered, which makes a contradiction between the two impossible. An
+    // UNANSWERED checklist leaves this undefined: "nobody was asked" must not arrive downstream
+    // as a clean "no", which is how a declaration gets asserted that the borrower never made.
+    const events = a.decl_property_events || "";
+    const bkFc = events ? (/bankruptcy|foreclosure|short_sale|deed_in_lieu/.test(events) ? "yes" : "no") : undefined;
     // A readable 1003 summary that updates on the lead (notes survives dedup-merge).
     const lines: string[] = [`Product: ${p}`, `Goal: ${a.goal}`, `Occupancy: ${occ || "n/a"} (${isInvestment(a) ? "INVESTMENT, all 50 states" : "consumer, FL/MI/CA"})`];
     if (dscr) lines.push("Qualification: DSCR (property cash flow, no personal income)");
@@ -859,9 +988,15 @@ export default function ApplyWizard() {
     add("Yrs in field", a.years_employed); add("Gross monthly income", monthly ? `$${monthly}` : undefined);
     add("Projected monthly rent", a.rent_income && `$${a.rent_income}`);
     add("Other monthly income", !dscr && a.other_income ? `$${a.other_income}` : undefined); add("Liquid assets", a.liquid_assets && `$${a.liquid_assets}`);
+    // "Down payment" is the answer that selected FHA over Conventional and it appeared NOWHERE —
+    // this line and down_payment_range below are both new. Labelled as a range, never as money.
+    add("Down payment", a.down ? (DOWN_LABELS[a.down] || a.down) : undefined);
     add("Down pmt source", a.down_payment_source); add("Down payment assistance", a.dpa === "yes" ? "INTERESTED" : undefined); add("Owns other RE", a.own_other_property);
-    add("BK/Foreclosure 7yr", a.bk_fc); add("Property address", a.property_address);
-    add("VA/Military", a.military); add("First-time buyer", a.firsttime); add("Rental type", a.rental_type); add("Experience", a.experience);
+    add("BK/Foreclosure 7yr", bkFc); add("Property address", a.property_address);
+    add("VA/Military", militaryService(a) || undefined); add("First-time buyer", a.firsttime); add("Rental type", a.rental_type); add("Experience", a.experience);
+    add("Loan amount requested", a.loan_amount_requested && `$${a.loan_amount_requested}`);
+    add("Rehab / build budget", a.rehab_budget && `$${a.rehab_budget}`);
+    add("Existing mortgage balance", a.existing_mortgage_balance && `$${a.existing_mortgage_balance}`);
     // Co-borrower summary for the notes blob — name + income only, never SSN/DOB.
     const withCo = a.has_coborrower === "yes" && !!a.co_full_name;
     if (withCo) lines.push(`Co-borrower: ${a.co_full_name}${a.co_monthly_income ? ` ($${a.co_monthly_income}/mo income)` : ""}`);
@@ -899,6 +1034,19 @@ export default function ApplyWizard() {
       years_at_address: a.years_at_address || undefined,
       monthly_income: a.monthly_income || undefined,
       other_income: a.other_income || undefined,
+      // The same defect, two more fields. `down` picked the PROGRAM and then evaporated, and the
+      // expected rent — the only qualifying income an investor file has — reached lib/urla.ts
+      // solely through the "Projected monthly rent" notes label, i.e. by regex over prose.
+      // down_payment_range is named as a RANGE on purpose: `down_payment` is dollars everywhere
+      // downstream (lib/preapprovalFields, lib/closingCosts), so a bracket sent under that name
+      // would read as a $3 down payment in a cash-to-close calc.
+      down_payment_range: a.down || undefined,
+      rent_income: a.rent_income || undefined,
+      // Split out of `loan_amount_requested`, which used to carry whichever of these three
+      // quantities the flow happened to ask for. Each now travels under its own name, so URLA 4a
+      // gets the amount requested and these two stop impersonating it.
+      rehab_budget: a.rehab_budget || undefined,
+      existing_mortgage_balance: a.existing_mortgage_balance || undefined,
       current_address: a.current_address || undefined,
       months_at_address: a.months_at_address || undefined,
       monthly_debt_payments: a.monthly_debt_payments || undefined,
@@ -909,7 +1057,10 @@ export default function ApplyWizard() {
       decl_property_events: a.decl_property_events || undefined,
       decl_bankruptcy_chapter: a.decl_bankruptcy_chapter || undefined,
       decl_seller_relationship: a.decl_seller_relationship || undefined,
-      military: a.military || undefined,
+      // Resolved, not read off one key: the buy flow answers `military_service` and every other
+      // flow answers `military`, and lib/urla.ts Section 7 reads exactly this value space
+      // ({veteran,active,surviving_spouse,no}) off raw.military.
+      military: militaryService(a) || undefined,
       demo_ethnicity: a.demo_ethnicity || undefined,
       demo_sex: a.demo_sex || undefined,
       demo_race: a.demo_race || undefined,
@@ -945,7 +1096,8 @@ export default function ApplyWizard() {
       use_of_proceeds: a.use_of_proceeds || undefined,
       ownership_pct: a.ownership_pct ? Number(a.ownership_pct) : undefined,
       existing_biz_debt: a.existing_biz_debt || undefined,
-      bk_fc: a.bk_fc || undefined,
+      // Derived from the Section 5 checklist, never from its own question — see `bkFc` above.
+      bk_fc: bkFc,
       notes: lines.join(" · "),
       referrer: av("ref"),
       utm_source: av("utm_source"),

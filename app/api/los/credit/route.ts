@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { assembleUrla } from "@/lib/urla";
 import { readyForCredit, credcoConfigured, credcoCreds, buildCreditRequestXml, parseCreditResponse, CREDCO_ENV } from "@/lib/credit";
 import { getCardAuths, type CardAuth } from "@/lib/cardAuth";
+import { hasAuthorization } from "@/lib/borrowerAuthorization";
 import { cfg } from "@/lib/settings";
 
 // Credco tri-merge pull. Auth-gated via the /api/los matcher.
@@ -49,6 +50,44 @@ export async function POST(req: NextRequest) {
         error: "No authorized card on file — a credit report is a real cost. Send the card authorization first (Card authorization panel), then pull.",
         needsCardAuth: true,
       }, { status: 402 });
+    }
+
+    // ── AND WHO CONSENTED. 2026-10-06, Ramon, on the Jackson Metoyer file: "If anything, you made
+    //    this mistake by not having a borrower's authorization built into the LOS." He is right.
+    //    This route gated the pull on the CARD authorization — who PAYS — and never once asked
+    //    whether the borrower had actually consented to the inquiry. lib/borrowerAuthorization.ts
+    //    already exported hasAuthorization(); nothing called it here.
+    //
+    //    What that cost: 82609059 was pulled 2026-09-02 and the written authorization was not
+    //    signed until 09-17/09-21. The lender rejected the condition three times ("required w/in
+    //    compliance 9/2") and the file is still fighting it a month later, with a rate lock running.
+    //
+    //    FCRA 1681b(a)(3)(A)/(F) permits a pull for a consumer-INITIATED credit transaction, and a
+    //    verbal authorization given in person is valid — so this must NOT hard-block the legitimate
+    //    in-office case. It demands a RECORD instead: either a signed authorization on file, or an
+    //    explicit attestation of the verbal one, captured BEFORE the pull rather than reconstructed
+    //    after it. A contemporaneous record is the whole difference between documentation and a
+    //    scramble. [[borrower-authorization-required]]
+    //    `resolve()` only reads query params, so the request body is still unread here. A POST may
+    //    carry none at all, so this must never throw on an empty or non-JSON body — a gate that
+    //    500s is a gate that gets removed.
+    let reqBody: any = {};
+    try { reqBody = (await req.json()) || {}; } catch { reqBody = {}; }
+    const rawLead: any = (lead as any)?.raw && typeof (lead as any).raw === "object" ? (lead as any).raw : {};
+    const written = rawLead.borrower_authorization;
+    const verbal = reqBody?.verbal_authorization;
+    const verbalOk = !!(verbal && typeof verbal === "object" &&
+                        String(verbal.obtained_by || "").trim() &&
+                        String(verbal.obtained_at || "").trim() &&
+                        String(verbal.how || "").trim());
+    if (!hasAuthorization(written) && !verbalOk) {
+      return NextResponse.json({
+        error: "No borrower credit authorization on file. A credit report may only be pulled with the borrower's permission — " +
+               "card authorization covers who PAYS, not who CONSENTED. Either have them sign the Borrower's Certification " +
+               "and Authorization, or record the verbal authorization you took (who took it, when, and how) so the file shows " +
+               "consent existed BEFORE the inquiry, not after it.",
+        needsBorrowerAuthorization: true,
+      }, { status: 412 });
     }
 
     const creds = await credcoCreds();

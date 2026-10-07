@@ -209,6 +209,36 @@ function parseNotes(notes?: string): Record<string, string> {
   return out;
 }
 
+// A BIRTH DATE IS A KEYED FIELD, NOT A SENTENCE. MISMO 3.4 BorrowerBirthDate and the Credco
+// request (lib/credit.ts:98 writes that same element) are both CCYY-MM-DD. The wizard DISPLAYS
+// MM/DD/YYYY and normalises at submit, so the discrete key it sends is already ISO — but
+// assembleUrla read the NOTES PROSE ("· DOB: 11/05/1986 ·"), which is the borrower's raw
+// keystrokes, so the date that actually left this building was MM/DD/YYYY. A lender's parser
+// reads 11/05/1986 as 5 November or as 11 May depending on locale, and a bureau will not match a
+// borrower on a transposed birth date — it comes back a no-hit, and the LO re-pulls (another hard
+// inquiry on a real borrower's file) chasing a bug that was ours.
+//
+// An unparseable or impossible value returns undefined rather than being passed through:
+// urlaCompleteness then reports "Date of birth" and lib/credit.ts:28 refuses the order, which is
+// the honest outcome. A malformed DOB that merely LOOKS present is how a file reaches a bureau.
+function isoDate(v?: unknown): string | undefined {
+  if (v === null || v === undefined) return undefined;
+  const t = String(v).trim();
+  if (!t) return undefined;
+  let y: number, m: number, d: number;
+  const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);   // ISO, with or without a time part
+  const us = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);    // MM/DD/YYYY as typed
+  if (iso) { y = +iso[1]; m = +iso[2]; d = +iso[3]; }
+  else if (us) { m = +us[1]; d = +us[2]; y = +us[3]; }
+  else return undefined;
+  // Round-trip through UTC so 02/30 and 13/01 are rejected instead of silently rolling over into
+  // March / the next year — a rolled-over date is a WRONG birth date, not an invalid one.
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return undefined;
+  if (y < 1900 || dt.getTime() > Date.now()) return undefined;        // a future birth date is a typo, not a fact
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
 function mapCitizenship(s?: string): string | undefined {
   if (!s) return undefined;
   const t = s.toLowerCase();
@@ -294,13 +324,30 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     // ENCRYPTED, so without decrypting it the 1003 showed the raw ciphertext ("jungle
     // numbers"). decryptField passes legacy plaintext through untouched.
     ssn: decryptField(seededBorrower.ssn) || decryptField(raw.ssn) || decryptField(n["ssn"]) || undefined,
-    dob: seededBorrower.dob || n["dob"] || undefined,
+    // Discrete key FIRST — the wizard sends `raw.dob` already ISO (app/apply/form/page.tsx
+    // ::dobISO) and the notes blob carries the same answer as PROSE in whatever format the
+    // borrower typed. Reading the prose was how MM/DD/YYYY reached MISMO and Credco. Every
+    // source is normalised, the staff editor's included: an LO who types 11/05/1986 into the
+    // 1003 screen is one keystroke from the same defect, and isoDate() drops what it cannot
+    // parse rather than exporting it.
+    dob: isoDate(seededBorrower.dob) || isoDate(raw.dob) || isoDate(n["dob"]) || undefined,
     citizenship: seededBorrower.citizenship || n["citizenship"] || undefined,
     maritalStatus: seededBorrower.maritalStatus || n["marital"] || undefined,
     dependentsCount: seededBorrower.dependentsCount ?? num(n["dependents"]),
     email: seededBorrower.email || lead?.email || undefined,
     cellPhone: seededBorrower.cellPhone || lead?.phone || undefined,
-    currentAddress: seededBorrower.currentAddress || undefined,
+    // THE WIZARD ASKS FOR THIS AND NOTHING READ IT. app/apply/form/page.tsx:557 pushes an
+    // unskippable `current_address` step ("Where do you live now?") and page.tsx:902 posts it,
+    // so every wizard application carries `raw.current_address` — but this line was seeded-only,
+    // and the apply route never writes `raw.urla`. So for EVERY borrower who typed their home
+    // address, currentAddress came back undefined. Two consequences, both of which Ramon hit:
+    //   • lib/credit.ts:29 refuses the credit order ("Complete these first: Current address"),
+    //     so the LO re-asks the borrower for an address they were REQUIRED to give.
+    //   • lib/mismo.ts:26 drops the whole block without a street, so the MISMO 3.4 file pulled
+    //     for the lender portal uploads with no borrower RESIDENCE and no mailing address.
+    // Every neighbouring field already had a raw/notes fallback; address was the one that did
+    // not. parseAddress() is the same parser used for property_address five lines further down.
+    currentAddress: seededBorrower.currentAddress || parseAddress(raw.current_address as string) || undefined,
     housingStatus: seededBorrower.housingStatus || (n["owns/rents"] ? (/(own)/i.test(n["owns/rents"]) ? "Own" : "Rent") : undefined),
     monthlyHousingExpense: seededBorrower.monthlyHousingExpense ?? num(n["current housing pmt"]),
     // A BUCKET IS NOT A MEASUREMENT. This read "<2" and returned 1, which lib/mismo.ts then
@@ -364,7 +411,9 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
       firstName: coFull.split(/\s+/)[0] || undefined,
       lastName: coFull.split(/\s+/).slice(1).join(" ") || undefined,
       ssn: decryptField(raw.co_ssn) || undefined,
-      dob: raw.co_dob || undefined,
+      // Borrower 2 goes through the SAME BorrowerBirthDate element in the same export loop, so a
+      // fix on the primary alone is half a fix — normalise here too.
+      dob: isoDate(raw.co_dob) || undefined,
       citizenship: raw.co_citizenship || undefined,
       email: raw.co_email || undefined,
       cellPhone: raw.co_phone || undefined,
@@ -389,6 +438,37 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
   if (!propAddr.state && lead?.state) propAddr.state = normalizeState(lead.state) || lead.state || undefined;
   if (!propAddr.zip && lead?.zip) propAddr.zip = String(lead.zip);
   const fileOccupancy = normalizeOccupancy(loanFile?.occupancy, loanFile?.product);
+
+  // The product/purpose string is read HERE, above the property block, because it decides more
+  // than the loan purpose: it decides what the wizard's one numeric answer MEANS on this flow.
+  const purposeStr = String(loanFile?.product || lead?.loan_purpose || "").toLowerCase();
+
+  // ── `loan_amount_requested` IS NOT ALWAYS A LOAN AMOUNT ───────────────────────────────────
+  // The intake wizard has exactly one money slot per flow and reuses that column for a
+  // DIFFERENT fact on two of them (app/apply/form/page.tsx):
+  //   • flip   — "Estimated rehab / build budget?"  → the REHAB BUDGET
+  //   • equity — "About how much do you owe on it?" → the EXISTING MORTGAGE BALANCE
+  // Assembled straight into `loan.amount`, both left here as the amount the borrower REQUESTED.
+  // A $70k rehab budget became a $70k loan on a $400k flip; a HELOC applicant's $280k payoff
+  // became the line they asked for. That number is not cosmetic — it is the MISMO NoteAmount, the
+  // LTV every box in the Underwriting Desk is sized against, and the figure a pre-approval letter
+  // prints. lib/leadScore.ts already carries this same warning about this same column.
+  // So each number goes to the field that MEANS it — both were sitting undefined, so the
+  // borrower's answer was being thrown away twice over — and `loan.amount` is left UNKNOWN:
+  // urlaCompleteness reports "Loan amount", the LO sets it in the 1003 screen, and that seeded
+  // value outranks everything here on the next assemble.
+  // Narrow on purpose: it fires only while the lead column still holds the wizard's own payload
+  // value (raw carries the submitted body), so a MISMO import, an LOS edit or a later correction
+  // is never second-guessed.
+  const requestedNumber = num(lead?.loan_amount_requested);
+  const wizardNumber = requestedNumber != null && num(raw.loan_amount_requested) === requestedNumber;
+  const rehabBudgetFlow = wizardNumber && /(fix\s*&?\s*n?\s*flip|\bflip\b|rehab|construction|ground.?up|bridge)/.test(purposeStr);
+  const payoffBalanceFlow = wizardNumber && /(heloc|home\s*equity)/.test(purposeStr);
+  const flowRehabBudget = rehabBudgetFlow && requestedNumber! > 0 ? requestedNumber : undefined;
+  // Only a balance they actually owe becomes a senior lien. "Nothing owed" is an answer, and a
+  // $0 lien block in the lender's file is a phantom, so it stays absent.
+  const flowPayoffBalance = payoffBalanceFlow && requestedNumber! > 0 ? requestedNumber : undefined;
+
   const property: UrlaProperty = {
     address: (propAddr.street || propAddr.city || propAddr.state || propAddr.zip) ? propAddr : undefined,
     propertyType: seeded.property?.propertyType || lead?.property_type || undefined,
@@ -412,7 +492,10 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
     // an unlabelled figure must not acquire a human author it never had.
     valueSource: seeded.property?.valueSource ?? "unknown",
     rentSource: seeded.property?.rentSource ?? "unknown",
-    rehabBudget: seeded.property?.rehabBudget ?? undefined,
+    // The flip flow's number lands HERE, where it is a true statement — the Underwriting Desk
+    // reads it (lib/underwritingDesk.ts:220 puts it in cash-in-deal and LTARV) and it is what the
+    // borrower was actually asked for.
+    rehabBudget: seeded.property?.rehabBudget ?? flowRehabBudget,
     mixedUse: seeded.property?.mixedUse || "",
     manufactured: seeded.property?.manufactured || "",
   };
@@ -425,7 +508,6 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
   // Same precedence as occupancy: the loan file's product is the worked record, the lead's
   // loan_purpose is the intake answer. Reading only the lead is what typed "DSCR Purchase"
   // files as FHA/Conventional and lost the investor signal downstream.
-  const purposeStr = String(loanFile?.product || lead?.loan_purpose || "").toLowerCase();
   const derivedPurpose =
     /cash[\s-]?out/.test(purposeStr) ? "CashOutRefinance" :
     purposeStr.includes("refi") ? "Refinance" :
@@ -438,24 +520,39 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
   const shortTerm = /(hard\s*money|hardmoney|bridge|flip|rehab|construction|fix\s*&?\s*n?\s*flip)/.test(purposeStr);
   const loan: UrlaLoan = {
     purpose: seeded.loan?.purpose || derivedPurpose,
-    amount: seeded.loan?.amount ?? num(lead?.loan_amount_requested),
+    // UNKNOWN beats confidently wrong. On the flip and equity flows the requested amount was
+    // never asked, so it is not answered here — see the flow note above the property block.
+    amount: seeded.loan?.amount ?? ((rehabBudgetFlow || payoffBalanceFlow) ? undefined : requestedNumber),
     loanType: seeded.loan?.loanType || (/(dscr|hard\s*money|hardmoney|bridge|flip|rehab|non-?qm|heloc|2nd|second)/.test(purposeStr) ? "Other" : purposeStr.includes("fha") ? "FHA" : "Conventional"),
     amortizationType: seeded.loan?.amortizationType || "Fixed",
     termMonths: seeded.loan?.termMonths || (shortTerm ? 12 : 360),
     noteRatePercent: seeded.loan?.noteRatePercent ?? undefined,
     productDescription: seeded.loan?.productDescription || lead?.loan_purpose || undefined,
     interestOnly: seeded.loan?.interestOnly ?? (shortTerm ? true : undefined),
-    lienPosition: seeded.loan?.lienPosition ?? undefined,
+    // A HELOC or home-equity loan behind a mortgage the borrower still owes on is a SECOND lien
+    // by definition, and lib/mismo.ts:152/182 reads this: with the senior balance below but no
+    // position here, the export would label both the subject loan and the senior lien FirstLien
+    // and contradict itself. Stated only when they reported a balance owed.
+    lienPosition: seeded.loan?.lienPosition ?? (flowPayoffBalance ? 2 : undefined),
     // Must survive assembleUrla, the single borrower chokepoint — a field dropped here is dropped
-    // from every downstream export.
-    existingLienBalance: seeded.loan?.existingLienBalance ?? undefined,
+    // from every downstream export. The equity flow's "how much do you owe" lands here, where it
+    // is the senior balance a junior loan is really sized against (CLTV), instead of masquerading
+    // as the amount requested.
+    existingLienBalance: seeded.loan?.existingLienBalance ?? flowPayoffBalance,
     existingLienMonthlyPayment: seeded.loan?.existingLienMonthlyPayment ?? undefined,
   };
 
   // ── SECTIONS 2 AND 3: THE REPEATING SCHEDULES ─────────────────────────────────────────
   // The wizard now collects these as rows. A row the BORROWER typed beats both the lump sum
   // and the notes blob; a seeded 1003 (staff editor / MISMO import) still outranks everything.
+  // The wizard stores repeater answers as a JSON STRING (Answers is Record<string,string>), so
+  // JSON.parse is the normal path. But an ALREADY-PARSED array arriving here — from a MISMO
+  // import, a jsonb column, or any caller that did its own parsing — hits String([{...}]) =
+  // "[object Object]", throws, and returns []. The borrower's entire debt schedule then vanishes
+  // with no error, which is the same silent-absence shape that let the missing <LIABILITIES>
+  // container go unnoticed for so long. Accept the array too.
   const rowsOf = (v: unknown): Record<string, string>[] => {
+    if (Array.isArray(v)) return v.filter((x) => x && typeof x === "object") as Record<string, string>[];
     try { const r = JSON.parse(String(v || "[]")); return Array.isArray(r) ? r.filter((x) => x && typeof x === "object") : []; }
     catch { return []; }
   };
@@ -530,10 +627,27 @@ function declFrom(raw: any, seeded?: UrlaDeclarations): Partial<UrlaDeclarations
 }
 
   const declarations: UrlaDeclarations = {
+    // EVERY SEEDED DECLARATION SURVIVES. This literal named eighteen of the twenty fields and
+    // declFrom() named fourteen, so 5a(2) priorOwnershipLast3Years and 5a(5) applyingOtherMortgage
+    // were named by NEITHER — a saved 1003 or a MISMO import carrying them (lib/mismoImport.ts:200
+    // and :207 parse both) lost them on the very next read of the file, which is why the two
+    // questions lib/urlaPdf.ts prints as A.1 and D.1 could never be answered on any file.
+    // Found by the declarations gauge below the moment it started counting all fifteen — the loss
+    // was invisible while the gauge looked at two fields. Spread FIRST: every key after this one
+    // already prefers its seeded value, so nothing below is overwritten by a stale snapshot.
+    ...(seeded.declarations || {}),
     bankruptcyPast7Years: seeded.declarations?.bankruptcyPast7Years || (n["bk/foreclosure 7yr"] ? (/no/i.test(n["bk/foreclosure 7yr"]) ? "No" : "Yes") : (lead?.bankruptcy_history ? "Yes" : "")),
     foreclosurePast7Years: seeded.declarations?.foreclosurePast7Years || (n["bk/foreclosure 7yr"] ? (/no/i.test(n["bk/foreclosure 7yr"]) ? "No" : "Yes") : ""),
     ownsOtherProperty: seeded.declarations?.ownsOtherProperty || (n["owns other re"] ? (/yes/i.test(n["owns other re"]) ? "Yes" : "No") : ""),
-    intendToOccupyAsPrimary: seeded.declarations?.intendToOccupyAsPrimary || (property.occupancy === "PrimaryResidence" ? "Yes" : "No"),
+    // 5a(1). A KNOWN occupancy answers this — an investment or second home IS a "No" to occupying
+    // as a primary residence, and PrimaryResidence is a "Yes". An UNKNOWN occupancy answers
+    // nothing: normalizeOccupancy returns undefined whenever neither the file nor the lead says
+    // anything (most leads carry no occupancy at all), and the `: "No"` on this ternary turned
+    // that silence into IntentToOccupyType = No on the lender's file — a Section 5 declaration the
+    // borrower never made, signed on their 1003. Same class as the fabricated twelve months, and
+    // worse in effect: 5a(1) is the question occupancy fraud is prosecuted on.
+    intendToOccupyAsPrimary: seeded.declarations?.intendToOccupyAsPrimary
+      || (property.occupancy ? (property.occupancy === "PrimaryResidence" ? "Yes" : "No") : ""),
     // ── SECTION 5, FROM THE BORROWER'S OWN ANSWERS ────────────────────────────────────────
     // The two checklist steps record every declaration EXPLICITLY. "none" is an answer, not an
     // absence: it means the borrower was asked and said No to each, which is what a lender
@@ -590,12 +704,17 @@ export function computeLoanMetrics(u: Urla) {
   const monthlyIncome = borrowerIncome; // subject investment rent qualifies via DSCR, not personal income (no double-count)
   const value = u.property?.presentValue || 0;
   const amount = u.loan?.amount || 0;
-  const ltv = value ? (amount / value) * 100 : undefined;
+  // NO AMOUNT MEANS NO RATIO. `amount || 0` fed a 0 straight through this division and reported
+  // "LTV 0%" — a ratio nobody could compute dressed up as a very safe loan. Both consumers
+  // (app/api/los/submit, app/los/[id]) already print "—" for null, so the gap now shows as a gap.
+  // This stopped being theoretical when loan.amount was correctly left UNKNOWN on the flip and
+  // equity flows above: every one of those files would otherwise read 0%.
+  const ltv = value && amount ? (amount / value) * 100 : undefined;
   // CLTV — the ratio a JUNIOR loan is actually sized against. Reporting LTV alone on a 2nd lien
   // understates the real exposure by the whole senior balance, which is the number the
   // Underwriting Desk itself binds on.
   const seniorLien = Math.max(0, Number(u.loan?.existingLienBalance) || 0);
-  const cltv = value ? ((amount + seniorLien) / value) * 100 : undefined;
+  const cltv = value && amount ? ((amount + seniorLien) / value) * 100 : undefined;
   const noteRate = u.loan?.noteRatePercent || 0;
   const qualRate = Math.max(noteRate, u.loan?.qualifyingRatePercent || 0); // qualify at the stress rate for ARMs
   const term = u.loan?.termMonths || 360;
@@ -641,9 +760,49 @@ export function computeLoanMetrics(u: Urla) {
   };
 }
 
+/** URLA SECTION 5 — ALL FIFTEEN QUESTIONS, in form order: [field, legacy fallback, § reference].
+ *
+ *  The gauge used to read TWO of these and call it "Declarations answered", one of them
+ *  `intendToOccupyAsPrimary`, which this file defaulted to "No" on every file — so the test was
+ *  effectively `bankruptcyPast7Years && true`, and the thirteen declarations it never looked at
+ *  could all be blank while the 1003 reported itself complete. That blindness is exactly how
+ *  eleven answers borrowers HAD given were lost in lib/mismo.ts for months without the number on
+ *  this screen ever moving. A gauge that cannot see the loss it exists to report is worse than no
+ *  gauge: it is a reason not to look.
+ *
+ *  The fallbacks mirror lib/mismo.ts's own: it feeds BankruptcyIndicator from
+ *  declaredBankruptcy || bankruptcyPast7Years and the foreclosure / borrowed-funds elements the
+ *  same way, so a pre-2026-09-09 lead's combined answer still reaches a lender. Counting the same
+ *  pairs keeps this measuring WHAT THE LENDER WILL RECEIVE rather than a stricter set of our own.
+ *  scripts/verify-mismo-declarations.ts maps each field to its MISMO element; keep the two lists
+ *  in step. */
+const SECTION_5_DECLARATIONS: [keyof UrlaDeclarations, keyof UrlaDeclarations | null, string][] = [
+  ["intendToOccupyAsPrimary",   null,                     "5a(1)"],
+  ["priorOwnershipLast3Years",  null,                     "5a(2)"],
+  ["relationshipWithSeller",    null,                     "5a(3)"],
+  ["undisclosedBorrowedFunds",  "borrowingDownPayment",   "5a(4)"],
+  ["applyingOtherMortgage",     null,                     "5a(5)"],
+  ["applyingNewCredit",         null,                     "5a(6)"],
+  ["propertySubjectToLien",     null,                     "5a(7)"],
+  ["coSignerOnUndisclosedDebt", null,                     "5b(1)"],
+  ["outstandingJudgments",      null,                     "5b(2)"],
+  ["delinquentOnFederalDebt",   null,                     "5b(3)"],
+  ["partyToLawsuit",            null,                     "5b(4)"],
+  ["conveyedTitleInLieu",       null,                     "5b(5)"],
+  ["preForeclosureOrShortSale", null,                     "5b(6)"],
+  ["propertyForeclosed",        "foreclosurePast7Years",  "5b(7)"],
+  ["declaredBankruptcy",        "bankruptcyPast7Years",   "5b(8)"],
+];
+
 // What's still required for a complete, importable 1003 / MISMO file.
 export function urlaCompleteness(u: Urla): { missing: string[]; present: string[]; pct: number } {
   const b = u.borrowers[0] || {};
+  // "" is UNANSWERED (assembleUrla never defaults a declaration to "No"), so truthiness is the
+  // right test here — and the unanswered § references go into the label so the LO is told WHICH
+  // questions are open instead of just that something is.
+  const dec = u.declarations || ({} as UrlaDeclarations);
+  const unanswered = SECTION_5_DECLARATIONS.filter(([k, legacy]) => !(dec[k] || (legacy && dec[legacy])));
+  const answered = SECTION_5_DECLARATIONS.length - unanswered.length;
   const checks: [string, boolean][] = [
     ["Borrower legal name", !!(b.firstName && b.lastName)],
     // NINE DIGITS OR IT IS NOT AN SSN. A truthy check counted "6789" — the last 4 — as a
@@ -662,7 +821,8 @@ export function urlaCompleteness(u: Urla): { missing: string[]; present: string[
     ["Loan purpose", !!u.loan.purpose],
     ["Subject property address", !!(u.property.address?.street || u.property.address?.city)],
     ["Property value", !!u.property.presentValue],
-    ["Declarations answered", !!(u.declarations.bankruptcyPast7Years && u.declarations.intendToOccupyAsPrimary)],
+    [`Declarations (URLA Section 5): ${answered} of ${SECTION_5_DECLARATIONS.length} answered${unanswered.length ? ` — open: ${unanswered.map(([, , ref]) => ref).join(", ")}` : ""}`,
+      unanswered.length === 0],
     ["HMDA demographics (ethnicity/race/sex or declined)", !!(u.demographics.providedVoluntarily === false || u.demographics.ethnicity || u.demographics.race || u.demographics.sex)],
     ["Loan originator + NMLS", !!(u.originator.name && u.originator.nmls)],
   ];

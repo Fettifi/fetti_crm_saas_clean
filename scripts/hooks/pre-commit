@@ -20,6 +20,38 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 CHANGED=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -z "$CHANGED" ] && exit 0
 
+# ── IMPORT INTEGRITY — UNCONDITIONAL, AND FIRST ─────────────────────────────────────────────
+# Every other branch below is scoped to the paths that can break one thing. This one is not
+# scoped, because what it catches is not about any one subsystem: a commit that imports a file
+# the commit does not contain. On 2026-10-04 the tree held nine files git had never been told
+# about, two of them load-bearing (lib/vaPropertyTax.ts, imported by lib/pricer.ts and the
+# closing-costs route; and a supabase migration). main itself was fine — the committed pricer.ts
+# does not import it yet — which is exactly why nothing was red and nothing would have been until
+# a deploy failed on Vercel, which builds from the commit and not from this Mac.
+# It runs before everything else because a tree whose imports do not resolve makes every guard
+# after it meaningless. Milliseconds: two git list commands and a regex.
+#
+# IT BLOCKS HERE, WITH ITS OWN exit 1, AND NOT VIA $FAILED. Two reasons, both found by reading
+# this file instead of assuming (and the first draft of this block got both wrong):
+#   • `FAILED=""` is initialised at line ~147, BELOW this point. Appending to $FAILED up here is
+#     erased a moment later — the guard would print FAIL and the commit would proceed.
+#   • line ~140 is an early `exit 0` when none of the scoped path matchers hit. $FAILED is only
+#     examined after it. So for a commit touching no watched path, a $FAILED-based guard never
+#     blocks at all — which is precisely the commit shape this check exists for (package.json
+#     alone, or a lone new lib file).
+# A guard that reports red and lets the commit through is worse than no guard: it is a green
+# light wearing a warning. [[a-mechanism-must-be-proven-to-fire]] [[guard-red-vs-guard-cannot-run]]
+if ! OUT=$(node "$REPO_ROOT/scripts/verify-import-integrity.mjs" 2>&1); then
+  echo ""
+  echo "── repo guard ────────────────────────────────────────────────"
+  printf "   %-24s FAIL\n" "verify:imports"
+  printf '%s\n' "$OUT" | sed 's/^/      /'
+  echo "   COMMIT BLOCKED — this commit imports a file the commit does not contain."
+  echo "   Vercel builds the COMMIT, not this working tree."
+  echo ""
+  exit 1
+fi
+
 # Only the paths that can move a borrower's qualifying income.
 INCOV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income.ts' -e 'lib/incomePdf' -e 'app/income/' -e 'IncomeQualifier' -e 'scripts/verify-income-overrides')
 WATCHED=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/' -e 'lib/income.ts' -e 'verify-income' -e 'verify-benefit-income' -e 'scripts/verify-employer-merge' -e 'scripts/verify-benefit-deposits' -e 'scripts/verify-income-stability')
@@ -44,6 +76,9 @@ PRICER=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/closingCosts' -e 'lib/pricer
 # lib/pricer.ts owns PITIA and mortgage insurance — the file where a VA borrower was being
 # quoted MI that does not exist on a VA loan.
 MI=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/pricer.ts' -e 'lib/underwritingDesk' -e 'scripts/verify-mi' -e 'scripts/verify-financed-fee')
+# The disabled-veteran property tax exemption spans the engine, the cost engine, both pricer API
+# routes and the borrower PDF, so ANY of them can break it — and the failure is silent money.
+DVTAX=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/vaPropertyTax' -e 'lib/pricer.ts' -e 'lib/closingCosts' -e 'lib/pricerPdf' -e 'app/api/pricer/' -e 'app/pricer/' -e 'scripts/verify-va-property-tax')
 # The portfolio grid's per-property actuals: an editor that stops short of the roll-up looks
 # fixed and is not.
 UW=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/underwrite/' -e 'UnderwriterApp' -e 'scripts/verify-underwrite' -e 'deal-analyzer' -e 'scripts/verify-deal-analyzer')
@@ -104,9 +139,26 @@ DRAG=$(printf '%s\n' "$CHANGED" | grep -F -e 'los/[id]/page.tsx' -e 'verify-doc-
 CARD=$(printf '%s\n' "$CHANGED" | grep -F -e 'cardAuth' -e 'card-auth' -e 'CardAuthPanel' -e 'verify-card-auth')
 ESGN=$(printf '%s\n' "$CHANGED" | grep -F -e 'app/esign' -e 'app/sign' -e 'api/esign' -e 'lib/esign' -e 'verify-esign-load')
 PENNY=$(printf '%s\n' "$CHANGED" | grep -F -e 'voice-realtime/server.js' -e 'api/voice/incoming' -e 'api/voice/ingest' -e 'verify-penny-intake')
+# Penny's KNOWLEDGE, separate trigger from her intake wiring. Added 2026-10-06 after lib/voice/
+# mortgageKB.ts was found referenced ZERO times by the bridge: she had been taking messages for
+# questions she should simply have answered, and nothing was red. Editing the TS source without
+# re-running build-kb.mjs is the same failure wearing a different hat, so the source is a trigger too.
+PENNYKB=$(printf '%s\n' "$CHANGED" | grep -F -e 'voice-realtime/server.js' -e 'voice-realtime/mortgageKB.js' -e 'lib/voice/mortgageKB.ts' -e 'verify-penny-kb')
 SEO=$(printf '%s\n' "$CHANGED" | grep -F -e 'app/lending' -e 'app/sitemap' -e 'lib/seoIndexable' -e 'lib/lendingDeepContent' -e 'lib/lendingProducts' -e 'lib/lendingMatrix' -e 'verify-seo')
 PAYLOAD_PRE=$(printf '%s\n' "$CHANGED" | grep -E '^(app|components)/.*\.(ts|tsx)$')
-[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && [ -z "$NMLS" ] && [ -z "$GUARDMETA" ] && [ -z "$RENT" ] && [ -z "$LTV" ] && [ -z "$BIZ" ] && [ -z "$GOV" ] && [ -z "$ANYTS" ] && [ -z "$CARD" ] && [ -z "$DRAG" ] && [ -z "$OUTL" ] && exit 0
+# Defined HERE, above the early exit, because the exit on the next line tests it. Defining it down beside
+# its runner block left it empty at the gate, so the gate still fired and the guard stayed dead.
+GRANTS=$(printf '%s\n' "$CHANGED" | grep -F -e 'supabase/migrations/' -e 'scripts/verify-supabase-grants')
+# THIS EARLY EXIT DECIDES WHETHER ANY GUARD RUNS AT ALL, so a filter missing from it is a guard that
+# CANNOT FIRE — which looks exactly like a guard that passed. $ANYTS matches any .ts/.tsx file, which is
+# why the .ts-gated filters below (COMMS, CRON, DOC, PA, SSN, PORTFOLIO…) survive: their own trigger
+# paths are TypeScript, so ANYTS is non-empty whenever they are.
+# $GRANTS is the exception and had to be added explicitly on 2026-09-27: it triggers on
+# supabase/migrations/*.sql, and a migration-only commit contains no .ts file at all, so the hook exited
+# here and verify:supabase-grants never ran. It was only caught by staging a .sql file and noticing the
+# hook printed ZERO bytes. [[guard-red-vs-guard-cannot-run]] [[a-mechanism-must-be-proven-to-fire]]
+# ADDING A GUARD WHOSE TRIGGER IS NOT A .ts PATH? ADD ITS VARIABLE TO THIS LINE OR IT IS DEAD.
+[ -z "$WATCHED" ] && [ -z "$AUTH" ] && [ -z "$PRICER" ] && [ -z "$MI" ] && [ -z "$UW" ] && [ -z "$INCOV" ] && [ -z "$AVM" ] && [ -z "$DOCS" ] && [ -z "$SHIELD" ] && [ -z "$PAYLOAD_PRE" ] && [ -z "$NMLS" ] && [ -z "$GUARDMETA" ] && [ -z "$RENT" ] && [ -z "$LTV" ] && [ -z "$BIZ" ] && [ -z "$GOV" ] && [ -z "$ANYTS" ] && [ -z "$CARD" ] && [ -z "$DRAG" ] && [ -z "$OUTL" ] && [ -z "$GRANTS" ] && exit 0
 
 echo ""
 echo "── repo guard ────────────────────────────────────────────────"
@@ -114,6 +166,45 @@ printf '%s\n' "$WATCHED" "$AUTH" "$PRICER" "$MI" "$UW" "$INCOV" "$AVM" "$DOCS" |
 echo ""
 
 FAILED=""
+
+# ── A NUL BYTE IN A SOURCE FILE MAKES IT UNREVIEWABLE, AND NOTHING SAYS SO ────────────────────
+# 2026-10-03: lib/preapprovalPdf.ts — the pre-approval letter renderer — carried ONE raw NUL
+# byte, inside the regex literal on the wrap() line (`/<NUL>/`, legal JavaScript, builds fine).
+# Two consequences, both silent and both serious:
+#   • git called it BINARY. `git diff` printed "Binary files a/… and b/… differ" and --stat said
+#     "Bin 14142 -> 16448 bytes". Every change to the document Fetti sends to listing agents was
+#     therefore UNREVIEWABLE in a diff, including in this hook's own staged view.
+#   • grep -I / ripgrep SKIP binary files. A repo-wide search for the importers of
+#     lib/officerIdentity returned five files and silently omitted preapprovalPdf.ts — the very
+#     renderer being audited. The search reported ABSENCE where the answer was "not searched".
+# So this runs on every commit, over the STAGED bytes, before anything expensive. It is ~10ms.
+# The fix is never to delete the line: write the escape (\0, \x00) instead of the raw byte.
+NULSRC=""
+printf '%s\n' "$CHANGED" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|json|md|css|scss|html|sh|sql|ya?ml|txt)$' > /tmp/.fetti-nulscan.$$ 2>/dev/null || true
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  n=$(git show ":$f" 2>/dev/null | LC_ALL=C tr -dc '\000' | wc -c | tr -d ' ')
+  [ "${n:-0}" -gt 0 ] && NULSRC="$NULSRC
+   $f ($n NUL byte(s))"
+done < /tmp/.fetti-nulscan.$$
+rm -f /tmp/.fetti-nulscan.$$
+if [ -n "$NULSRC" ]; then
+  echo ""
+  echo "──────────────────────────────────────────────────────────────"
+  echo "!! NUL BYTE IN STAGED SOURCE — git will call these BINARY:$NULSRC"
+  echo ""
+  echo "   A binary-looking source file cannot be diffed and is SKIPPED by grep -I and"
+  echo "   ripgrep. Review and codebase-wide search both go quietly blind on it."
+  echo "   Find it:   python3 -c \"b=open('<file>','rb').read(); print([i for i,c in enumerate(b) if c==0])\""
+  # printf, not echo: `echo` interprets backslash escapes in some /bin/sh builtins, and the first
+  # version of this very message printed "write the ESCAPE (  or  )" — advice with the advice
+  # removed. An error message is a deliverable; read what it actually prints.
+  printf '   Fix it:    write the ESCAPE (%s or %s) in place of the raw byte — same semantics,\n' '\0' '\x00'
+  echo "              plain ASCII file. Do not delete the line it is in."
+  echo "   To bypass deliberately:  git commit --no-verify"
+  echo "──────────────────────────────────────────────────────────────"
+  exit 1
+fi
 
 # Runs first alongside the guard-of-guards: a commit that cannot BUILD makes every check below
 # it academic. Compares imports against `git ls-files`, which is the only thing on this machine
@@ -194,11 +285,45 @@ if printf '%s\n' "$CHANGED" | grep -q -e 'sync-loan-docs' -e 'mirrorSuperseded' 
   fi
 fi
 
+# The push must dedupe on BYTES before names. A rename in ~/Fetti Loan Files otherwise creates a
+# duplicate document in a live loan file — it did, three times, on 2026-10-01.
+if printf '%s\n' "$CHANGED" | grep -q -e 'sync-loan-docs' -e 'verify-push-content-dedupe'; then
+  printf "   %-24s " "verify:push-content-dedupe"
+  OUT=$(npm run --silent verify:push-content-dedupe 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:push-content-dedupe"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$ANYTS" ]; then
   printf "   %-24s " "verify:urla-fidelity"
   OUT=$(npm run --silent verify:urla-fidelity 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:urla-fidelity"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+# Every declaration the borrower answers must reach the lender. The exporter emitted 8 of 15
+# and fed two of those from the WRONG field, so a disclosed bankruptcy, a completed foreclosure
+# and undisclosed borrowed funds all left here as "false" — a misstatement on a loan
+# application, not an omission. verify:urla-fidelity could not see it: it proves the wizard
+# CAPTURES and never calls the exporter. This runs the export and the round-trip.
+# The loan amount, the date of birth and the declarations gauge. Each was a number that looked
+# right and meant something else: the rehab budget exported as the requested loan amount, a DOB
+# reaching Credco as MM/DD/YYYY, and a completeness gauge that called declarations done on 2 of 15.
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:urla-amount-dob"
+  OUT=$(npm run --silent verify:urla-amount-dob 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:urla-amount-dob"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:mismo-decl"
+  OUT=$(npm run --silent verify:mismo-decl 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:mismo-decl"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
 fi
 
@@ -259,7 +384,7 @@ if [ -n "$GUARDMETA" ]; then
   fi
 fi
 
-for PAIR in "$OUTL:verify:outlook-attach" "$OUTL:verify:outlook-send" "$DRAG:verify:doc-dragout" "$DRAG:verify:los-back" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules" "$ESGN:verify:esign-load" "$ESGN:verify:esign-mobile" "$ESGN:verify:esign-complete" "$ESGN:verify:esign-field-units" "$ESGN:verify:esign-offpage-refusal" "$ESGN:verify:esign-remind" "$PENNY:verify:penny-intake" "$SEO:verify:seo" "$SEO:verify:noindex" "$INCOV:verify:income-contested" "$INCOV:verify:income-drift-gate" "$INCOV:verify:income-payload" "$IMGPDF:verify:image-pdf"; do
+for PAIR in "$OUTL:verify:outlook-attach" "$OUTL:verify:outlook-send" "$DRAG:verify:doc-dragout" "$DRAG:verify:los-back" "$CARD:verify:card-auth" "$RENT:verify:rental-income" "$LTV:verify:scenario-ltv" "$BIZ:verify:bizapp" "$GOV:verify:governor-rules" "$ESGN:verify:esign-load" "$ESGN:verify:esign-mobile" "$ESGN:verify:esign-complete" "$ESGN:verify:esign-field-units" "$ESGN:verify:esign-offpage-refusal" "$ESGN:verify:esign-remind" "$PENNY:verify:penny-intake" "$PENNYKB:verify:penny-kb" "$SEO:verify:seo" "$SEO:verify:noindex" "$INCOV:verify:income-contested" "$INCOV:verify:income-drift-gate" "$INCOV:verify:income-payload" "$IMGPDF:verify:image-pdf"; do
   TRIG=${PAIR%%:*}; G=${PAIR#*:}
   [ -z "$TRIG" ] && continue
   printf "   %-24s " "$G"
@@ -274,6 +399,33 @@ if [ -n "$SHIELD" ]; then
   OUT=$(npm run --silent verify:shield-verdict 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:shield-verdict"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+# THE PHONE IS THE BUSINESS, and nothing here guarded the file that watches it. lib/commsHealth.ts
+# was outside every filter above, so the low-balance alarm — the one check that turns a two-day
+# dead office line into a two-minute top-up — could be edited and committed with nothing run.
+COMMS=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/commsHealth' -e 'scripts/verify-comms-runway')
+if [ -n "$COMMS" ]; then
+  printf "   %-18s " "verify:comms-runway"
+  OUT=$(npm run --silent verify:comms-runway 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:comms-runway"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+# SUPABASE DATA API GRANTS. From 2026-10-30 Supabase stops auto-granting Data API access to new tables
+# in `public`, and "migrations count too" — a migration that creates a table without grants leaves it
+# unreachable on any rebuild (new project, preview branch, `supabase db reset`). Production keeps its
+# existing grants, so nothing looks wrong until someone rebuilds and gets a runtime permission-denied
+# nowhere near the cause. Gated on the migrations directory because that is the only place it can go
+# wrong. Found because the Supabase notice sat in mail quarantine, undelivered, for four days.
+# $GRANTS is defined near the top of this file, above the early-exit gate, because that gate tests it too.
+if [ -n "$GRANTS" ]; then
+  printf "   %-18s " "verify:supabase-grants"
+  OUT=$(npm run --silent verify:supabase-grants 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:supabase-grants"; printf '%s\n' "$OUT" | sed 's/^/      /'
   fi
 fi
 
@@ -386,6 +538,16 @@ fi
 
 if [ -n "$MI" ]; then
   for G in verify:mi verify:financed-fee; do
+    printf "   %-18s " "$G"
+    OUT=$(npm run --silent "$G" 2>&1)
+    if [ $? -eq 0 ]; then echo "PASS"; else
+      echo "FAIL"; FAILED="$FAILED $G"; printf '%s\n' "$OUT" | sed 's/^/      /'
+    fi
+  done
+fi
+
+if [ -n "$DVTAX" ]; then
+  for G in verify:va-property-tax; do
     printf "   %-18s " "$G"
     OUT=$(npm run --silent "$G" 2>&1)
     if [ $? -eq 0 ]; then echo "PASS"; else
@@ -584,6 +746,15 @@ if [ -n "$FAILED" ]; then
       echo "   A pricer failure means a manual figure no longer reaches the borrower's bottom"
       echo "   line, or the PDF no longer distinguishes a real quote from an estimate. Both are"
       echo "   how a good-faith estimate becomes a complaint. Read the named check."
+      ;;
+  esac
+  case "$FAILED" in
+    *verify:va-property-tax*)
+      echo "   The disabled-veteran property tax exemption is wrong in one direction or the other."
+      echo "   Too little and a 100%-disabled veteran is quoted taxes they do not owe, which shrinks"
+      echo "   what they qualify for. Too much and the loan is under-escrowed and they get a payment"
+      echo "   shock after closing. California REDUCES assessed value; Florida and Michigan zero the"
+      echo "   ad valorem bill only — non-ad-valorem assessments always survive."
       ;;
   esac
   case "$FAILED" in
