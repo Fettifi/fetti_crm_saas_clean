@@ -35,7 +35,24 @@ const CRM_TRANSFER_URL = process.env.CRM_TRANSFER_URL || "https://app.fettifi.co
 // media stream opens (see /api/voice/incoming + /api/voice/outbound/twiml) — so it can
 // never be skipped or reworded by the model. Penny therefore opens warmly here; she does
 // NOT repeat the disclosure.
-const OPENING = "So — who am I speaking with, and what can I help you with today?";
+// THE DISCLOSURE WINDOW SWALLOWS THE CALLER'S FIRST SENTENCE, AND NOTHING COULD DETECT IT.
+// 2026-10-07, proven on two live recorded calls to +1 866 493 3884, transcribed:
+//   Call 1 — the caller asks "do you do FHA loans with a 580 credit score?" eleven seconds in.
+//            Penny's reply: "So, who am I speaking with, and what can I help you with today?"
+//            The question was never heard. She talked straight past a real product question.
+//   Call 2 — identical question asked seventeen seconds in, after her opener:
+//            "Hi Alex. Yes, we absolutely do FHA loans. An FHA loan can work with a credit
+//             score of 580 or above. And it allows as little as 3.5% down." Perfect.
+// The difference is not the knowledge base — it is WHERE the audio went. app/api/voice/incoming
+// emits the SB 1001 / §632 disclosure as a Twilio <Say> that runs BEFORE <Connect><Stream>, on
+// purpose, so the model can never skip or reword the legal line. But until that <Connect> fires
+// there is NO media stream, so for ~11 seconds the caller is talking into nothing. The barge-in
+// handling below (input_audio_buffer.speech_started -> clear + response.cancel) cannot help:
+// there is no socket yet to barge into.
+// Moving the disclosure into the stream would hand a compliance line to an LLM — not acceptable.
+// So Penny's FIRST sentence now does the recovering: it tells the caller plainly that anything
+// said during the message was missed and asks for it again. A silent loss becomes a retry.
+const OPENING = "Thanks for waiting through that — if you said anything while it was playing, I missed it, so give it to me again. Who am I speaking with, and what can I help you with?";
 
 const INSTRUCTIONS = `You are Penny, the warm, sharp, professional receptionist and virtual assistant for Fetti Financial Services LLC (a licensed mortgage lender & broker, NMLS 2267023). California-cool, intelligent, smooth — never robotic. You are an automated A.I. assistant and must never claim to be human.
 The phone system has ALREADY played the legally required disclosure (that you are an automated A.I. assistant and the call is recorded and transcribed) to the caller BEFORE you were connected — do NOT repeat it. Open warmly; your first words should be, essentially: "${OPENING}". Then continue naturally.
