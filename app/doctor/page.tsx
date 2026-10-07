@@ -9,7 +9,13 @@ type Check = { name: string; ok: boolean; level: string; detail: string };
 type Repair = { name: string; detail: string };
 type Report = { status: string; checks: Check[]; repairs: Repair[]; created_at?: string };
 
-type Beat = { name: string; lastRun: string | null; ageHours: number | null; overdue: boolean; expectedHours: number };
+// The SAME type and the SAME classifier the cron uses — lib/continuity.ts is pure, so importing
+// it here pulls no server-only code into the bundle. This page used to declare its own local Beat
+// type that omitted `stalled` and `neverReported` entirely, and drew both of those states as a
+// calm grey dot reading "awaiting first run". A job that fires and fails on every single run
+// looked identical to one that had simply not been deployed yet.
+import { classifyContinuity, type Continuity } from "@/lib/continuity";
+type Beat = Continuity;
 
 export default function DoctorPage() {
   const [report, setReport] = useState<Report | null>(null);
@@ -54,15 +60,22 @@ export default function DoctorPage() {
             <div className="text-xs uppercase tracking-wide text-slate-500 mb-3">Continuity of compute · scheduled jobs</div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {continuity.map((b) => {
-                const state = b.overdue ? "overdue" : b.lastRun ? "alive" : "pending";
+                const v = classifyContinuity(b);
+                const dot = v.level === "critical" ? "bg-red-500 animate-pulse"
+                  : v.level === "warn" ? "bg-amber-400 animate-pulse" : "bg-emerald-400";
+                const text = v.level === "critical" ? "text-red-400" : v.level === "warn" ? "text-amber-400" : "text-slate-500";
+                // Short label for the tile; the full sentence is the tooltip, since these details
+                // name what to go and look at.
+                const label = b.stalled ? `⛔ stalled (firing, not completing)`
+                  : b.neverReported ? `⚠️ has NEVER reported`
+                  : b.overdue ? `⛔ overdue (${b.ageHours}h)`
+                  : `ran ${b.ageHours}h ago`;
                 return (
-                  <div key={b.name} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2">
-                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${state === "alive" ? "bg-emerald-400" : state === "overdue" ? "bg-red-500 animate-pulse" : "bg-slate-600"}`} />
+                  <div key={b.name} title={v.detail} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2">
+                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${dot}`} />
                     <div className="min-w-0">
                       <div className="text-sm font-medium truncate">{b.name}</div>
-                      <div className={`text-[11px] ${state === "overdue" ? "text-red-400" : "text-slate-500"}`}>
-                        {b.overdue ? `⛔ overdue (${b.ageHours}h)` : b.lastRun ? `ran ${b.ageHours}h ago` : "awaiting first run"}
-                      </div>
+                      <div className={`text-[11px] ${text}`}>{label}</div>
                     </div>
                   </div>
                 );

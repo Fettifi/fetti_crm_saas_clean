@@ -5,7 +5,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { generateBatch } from "@/lib/content";
 import { healMetaToken } from "@/lib/metaHeal";
-import { recordHeartbeat, checkContinuity, pingWatchdog, type Continuity } from "@/lib/heartbeat";
+import { recordHeartbeat, checkContinuity, classifyContinuity, pingWatchdog, type Continuity } from "@/lib/heartbeat";
 import { commsChecks } from "@/lib/commsHealth";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
@@ -95,16 +95,13 @@ export async function runDoctor(): Promise<{ status: string; checks: Check[]; re
   // stopped (Vercel outage, plan limit, bad deploy), flag it loudly here.
   try {
     continuity = await checkContinuity();
+    // One classifier, in lib/heartbeat.ts, so the verdict is pure and can be proven to fire.
+    // This loop used to carry the logic inline and shipped a bug: a job with no heartbeat was
+    // added as ok/info with "will populate on next run", which made a job that fails on its
+    // first run — and every run after — permanently green. See classifyContinuity.
     for (const c of continuity) {
-      // STALLED outranks every other state: the job IS firing but never finishing its
-      // work, which a plain "last ran" heartbeat reports as healthy. That false-green is
-      // exactly how the nurture lock bug ran unnoticed for 13 days — never soften it.
-      if (c.stalled) {
-        add(`cron:${c.name}`, false, "critical",
-          `⛔ STALLED — the route fired ${c.lastAttempt ? `at ${c.lastAttempt}` : "recently"} but the job has not COMPLETED${c.lastRun ? ` since ${c.lastRun} (${c.ageHours}h)` : " ever"}. It is erroring or bailing on a guard every run.`);
-      } else if (c.lastRun === null) add(`cron:${c.name}`, true, "info", "no heartbeat yet (will populate on next run)");
-      else add(`cron:${c.name}`, !c.overdue, c.overdue ? "critical" : "info",
-        c.overdue ? `⛔ OVERDUE — last ran ${c.ageHours}h ago (expected ≤${c.expectedHours}h). Compute may be stalled.` : `ran ${c.ageHours}h ago`);
+      const v = classifyContinuity(c);
+      add(`cron:${c.name}`, v.ok, v.level, v.detail);
     }
   } catch (e) { add("continuity_check", false, "warn", e instanceof Error ? e.message : "error"); }
 

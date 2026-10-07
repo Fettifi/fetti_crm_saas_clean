@@ -127,7 +127,10 @@ ANYTS=$(printf '%s\n' "$CHANGED" | grep -E '\.(ts|tsx)$')
 # read, because computeContinuity only iterates that map. It is the Twilio-ledger reconciliation,
 # so the unwatched job was the compliance control. Three earlier sweeps found this class BY HAND
 # (07-26, 07-29, 09-09); the fourth is a gate. Offline, no database, ~0.5s.
-CRON=$(printf '%s\n' "$CHANGED" | grep -F -e 'vercel.json' -e 'lib/heartbeat.ts' -e 'lib/doctor.ts' -e 'app/api/cron/' -e 'verify-cron-watched')
+# lib/continuity.ts holds CRON_EXPECTED and the verdict logic after the 2026-10-07 split, and
+# app/doctor/page.tsx is the second renderer of that verdict — both MUST be triggers, or the guard
+# that exists to stop these two drifting apart would not run on the file most likely to drift.
+CRON=$(printf '%s\n' "$CHANGED" | grep -F -e 'vercel.json' -e 'lib/heartbeat.ts' -e 'lib/continuity.ts' -e 'lib/doctor.ts' -e 'app/api/cron/' -e 'app/doctor/page.tsx' -e 'verify-cron-watched' -e 'verify-continuity-verdict')
 # WHO IS STILL LIVE. `status` is the Reg B disposition and stays "active" through funding;
 # `stage` is where the file actually is. Five places asked only `status`, so a stage="Closed"
 # file counted as live everywhere — and the bulk document chaser would have emailed AND texted
@@ -348,6 +351,15 @@ if [ -n "$CRON" ]; then
   OUT=$(npm run --silent verify:cron-watched 2>&1)
   if [ $? -eq 0 ]; then echo "PASS"; else
     echo "FAIL"; FAILED="$FAILED verify:cron-watched"; printf '%s\n' "$OUT" | grep -v 'Supabase Admin' | sed 's/^/      /'
+  fi
+  # THE OTHER HALF. cron-watched proves every scheduled job is WATCHED; this proves a watched row
+  # can actually go RED. A never-reported job was classified ok/info "will populate on next run"
+  # and overdue is false for never-run, so a job failing from its first run was structurally
+  # incapable of alarming — and the dashboard drew the same state as a calm grey dot. Offline, ~0.3s.
+  printf "   %-24s " "verify:continuity-verdict"
+  OUT=$(npm run --silent verify:continuity-verdict 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:continuity-verdict"; printf '%s\n' "$OUT" | grep -v 'Supabase Admin' | sed 's/^/      /'
   fi
 fi
 

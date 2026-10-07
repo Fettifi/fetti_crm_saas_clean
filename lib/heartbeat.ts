@@ -5,6 +5,9 @@
 // because the internal checks would be dead too.
 import { getSetting, setSetting } from "@/lib/settings";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+// The pure half lives in lib/continuity.ts so the client dashboard can share this exact verdict.
+import { computeContinuity, type Continuity } from "@/lib/continuity";
+export { CRON_EXPECTED, computeContinuity, classifyContinuity, type Continuity } from "@/lib/continuity";
 
 const KEY = "cron_heartbeats";
 // Invocations, recorded separately from SUCCESSES. A heartbeat means "this job did its
@@ -13,47 +16,6 @@ const KEY = "cron_heartbeats";
 // lock bug for 13 days (2026-07-13 → 07-26) while the doctor reported "healthy",
 // because the route recorded a heartbeat before the work ran and still returned 200.
 const ATTEMPT_KEY = "cron_attempts";
-
-// Max allowed age (seconds) before a job counts as overdue = cadence + grace.
-export const CRON_EXPECTED: Record<string, number> = {
-  nurture: 26 * 3600,        // daily
-  "wizard-learn": 26 * 3600, // daily
-  "org-learn": 26 * 3600,    // daily
-  content: 26 * 3600,        // daily
-  doctor: 8 * 3600,          // every 6h
-  heal: 2 * 3600,            // hourly
-  // High-frequency revenue pipes the watchdog was blind to. These die silently
-  // (Graph outage, plan limit, bad deploy) with no alert — now the doctor pages
-  // on staleness. Grace = several missed runs so ordinary Vercel-cron jitter
-  // never false-pages, while a truly dead pipe still surfaces within the hour.
-  "email-poll": 20 * 60,        // every 5m (inbound-reply pipe) — tolerate ~3 misses
-  "import-leads": 50 * 60,      // every 15m (safety-net lead importer) — tolerate ~2 misses
-  "publish-due": 50 * 60,       // every 15m (scheduled social publisher) — tolerate ~2 misses
-  "social-insights": 26 * 3600, // daily (content ROI ingest)
-  // Scheduled in vercel.json but previously UNWATCHED — if any of these died the
-  // doctor would never have noticed (2026-07-26 QC).
-  "dedupe-leads": 2 * 3600,      // every 30m — tolerate ~3 misses
-  "ad-factory": 26 * 3600,       // daily
-  "lead-digest": 26 * 3600,      // daily
-  "tiktok-reminder": 26 * 3600,  // daily
-  "competitor-watch": 26 * 3600, // daily
-  // Scheduled 2026-07-26 at Ramon's request; watched from the same day so they can never
-  // be "running" on paper while silently dead.
-  requalify: 26 * 3600,          // daily — rescoring only, no sends
-  "shield-sweep": 8 * 3600,      // every 6h + grace
-  "reengage-stale": 8 * 86400,   // weekly (Tue) + a day of grace
-  // Stalled-file watchdog (2026-07-29): the pipeline-movement blind spot. Watched from
-  // day one — a watchdog that dies silently is worse than no watchdog, because the
-  // quiet then reads as "no stalled files" instead of "nobody is looking".
-  "stale-files": 26 * 3600,      // daily
-  // Carrier-ledger reconciliation. Scheduled 2026-08-02, UNWATCHED until 2026-09-09: it had been
-  // stamping both an attempt and a heartbeat every day for five weeks and nothing read either row,
-  // because a job absent from THIS map is never evaluated by computeContinuity. It is the control
-  // that compares Twilio's message ledger to ours, so the unwatched job was the compliance
-  // watchdog — the sentence three entries up, applied to itself. verify:cron-watched now fails the
-  // build on any scheduled job that is missing here, in either direction.
-  "comms-reconcile": 26 * 3600,  // daily
-};
 
 // Per-job rows: each cron stamps ONLY its own key, so there is no shared cell to
 // contend on and nothing to clobber.
@@ -75,21 +37,45 @@ async function stamp(prefix: string, name: string): Promise<void> {
   try { await setSetting(prefix + name, new Date().toISOString()); } catch { /* telemetry must never block the job */ }
 }
 
-/** Read every per-job row under a prefix, falling back to the legacy shared blob. */
+/** Read every per-job row under a prefix. LIVE ROWS ONLY — see why below. */
 async function readStamps(prefix: string, legacyKey: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  // Legacy blob first so any pre-migration timestamps survive; per-job rows win.
-  try {
-    const raw = await getSetting(legacyKey);
-    if (raw) Object.assign(out, JSON.parse(raw) || {});
-  } catch { /* legacy is best-effort */ }
+  // THE LEGACY BLOB IS NOT MERGED IN HERE, BECAUSE MERGING IT TURNS AN ABSENCE INTO A FACT.
+  //
+  // 2026-10-07. The per-job `cron_hb:<name>` rows replaced the shared blob on 2026-07-26 and
+  // nothing has written the blob since; it is frozen with 11 names in it, each ~73 days old. This
+  // function used to read the blob FIRST and let live rows win. For a job that reports, that is
+  // harmless — the live row always wins, and today ALL 20 watched jobs have a live row 0.0–1.2
+  // days old, so the merge is currently masking nothing. The problem is what it does to a job that
+  // STOPS reporting: it would silently inherit its 73-day-old blob value and come back looking
+  // like a real, if old, heartbeat. "Has not reported since the migration" and "last ran on 26
+  // July" are different statements and only one of them would be true.
+  //
+  // It is also an active trap for whoever reads this system. Twice in one session the blob led me
+  // to the conclusion "every cron has been dead for 73 days" — a total-outage report, off a dead
+  // key, while all 20 jobs were stamping fine four hours earlier. A value that can only mislead,
+  // whether read by a function or a person, does not belong on the liveness path.
+  //
+  // So: live rows only. A job that has not stamped is ABSENT from the result, and
+  // computeContinuity turns that absence into `neverReported` instead of a plausible old date.
+  // The blob stays on disk and is exposed through readLegacyStamps(), labelled as history.
+  // [[a-mechanism-must-be-proven-to-fire]] [[absence-needs-an-exhaustive-read]]
+  void legacyKey;
   try {
     const { data } = await supabaseAdmin.from("app_settings").select("key, value").like("key", prefix + "%");
     for (const r of (data || []) as { key: string; value: string | null }[]) {
       if (r.value) out[r.key.slice(prefix.length)] = r.value;
     }
-  } catch { /* fall back to whatever the legacy blob had */ }
+  } catch { /* a read failure is an empty result, and an empty result now reads as "nothing reported" */ }
   return out;
+}
+
+/** The pre-migration blob, for history only. NEVER merge this into a liveness check. */
+export async function readLegacyStamps(which: "heartbeats" | "attempts" = "heartbeats"): Promise<Record<string, string>> {
+  try {
+    const raw = await getSetting(which === "heartbeats" ? KEY : ATTEMPT_KEY);
+    return raw ? (JSON.parse(raw) || {}) : {};
+  } catch { return {}; }
 }
 
 export async function recordHeartbeat(name: string): Promise<void> {
@@ -109,42 +95,6 @@ export async function getHeartbeats(): Promise<Record<string, string>> {
 
 export async function getAttempts(): Promise<Record<string, string>> {
   return readStamps(AT_PREFIX, ATTEMPT_KEY);
-}
-
-export type Continuity = {
-  name: string; lastRun: string | null; ageHours: number | null; overdue: boolean; expectedHours: number;
-  lastAttempt: string | null; stalled: boolean;   // stalled = firing on schedule but never completing
-};
-
-// Pure so the stall/overdue rules are unit-testable without touching the live
-// heartbeat rows (seeding those on a running system would corrupt real telemetry).
-export function computeContinuity(
-  hb: Record<string, string>,
-  at: Record<string, string>,
-  now: number,
-  expected: Record<string, number> = CRON_EXPECTED,
-): Continuity[] {
-  return Object.entries(expected).map(([name, maxAge]) => {
-    const last = hb[name] ? Date.parse(hb[name]) : NaN;
-    const hasRun = !isNaN(last);
-    const ageH = hasRun ? (now - last) / 3600000 : null;
-    const overdue = hasRun ? (now - last) / 1000 > maxAge : false; // never-run yet ≠ overdue
-    // STALLED: the route fired recently but the WORK hasn't completed within its
-    // expected window — a job silently bailing every run (bad lock, thrown error,
-    // guard clause) instead of one that stopped being scheduled.
-    const att = at[name] ? Date.parse(at[name]) : NaN;
-    const attemptedRecently = !isNaN(att) && (now - att) / 1000 <= maxAge;
-    const stalled = attemptedRecently && (!hasRun || (now - last) / 1000 > maxAge);
-    return {
-      name,
-      lastRun: hb[name] || null,
-      ageHours: ageH === null ? null : Math.round(ageH * 10) / 10,
-      overdue,
-      expectedHours: Math.round(maxAge / 3600),
-      lastAttempt: at[name] || null,
-      stalled,
-    };
-  });
 }
 
 export async function checkContinuity(): Promise<Continuity[]> {
