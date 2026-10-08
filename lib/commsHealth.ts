@@ -29,6 +29,87 @@ function basic(sid: string, tok: string) {
   return "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64");
 }
 
+// HOW LONG HAVE WE GOT — the number a threshold cannot tell you.
+//
+// 2026-09-26. The balance read $14.07 against a $15 floor, so this file said "below the floor".
+// True, and not a decision: it says nothing about WHEN the phone dies. Pulling 14 days of usage
+// turned it into "$1.63/day, empty about Oct 5" — which could then be set against a rate lock
+// expiring 10/02 and a closing on 09/28. A level tells you a state; only a rate gives a deadline.
+//
+// It also closes a real hole. A FIXED FLOOR IS BLIND TO THE BURN RATE: $20 against a $15 floor
+// reports healthy, but at $5/day that is four days from a busy signal on the office line. The
+// floor catches a slow drain and misses a fast one, which is the one that hurts.
+//
+// Best-effort only. If the usage API is unreachable this returns null and every balance check
+// below still fires exactly as it did before — a diagnostic must never be able to break the
+// alarm it is decorating.
+async function twilioBurn(sid: string, tok: string, days = 14):
+  Promise<{ perDay: number; worstDay: number; sampled: number } | null> {
+  try {
+    const r = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${sid}/Usage/Records/Daily.json?Category=totalprice&PageSize=${days}`,
+      { headers: { Authorization: basic(sid, tok) } });
+    if (!r.ok) return null;
+    const j: any = await r.json().catch(() => ({}));
+    const prices: number[] = (j?.usage_records || [])
+      .map((u: any) => Number(u?.price))
+      .filter((n: number) => isFinite(n) && n >= 0);
+    if (!prices.length) return null;
+    const total = prices.reduce((a, b) => a + b, 0);
+    const perDay = total / prices.length;
+    if (!(perDay > 0)) return null;          // a zero burn gives an infinite runway — say nothing
+    return { perDay, worstDay: Math.max(...prices), sampled: prices.length };
+  } catch { return null; }
+}
+
+export type Burn = { perDay: number; worstDay: number; sampled: number };
+
+// THE DECISION, SEPARATED FROM THE NETWORK, SO A GUARD CAN REACH IT.
+//
+// While it lived inline inside the fetch above, nothing could test it without live Twilio
+// credentials — so the branch that matters most (above the floor, nearly empty) could only
+// ever have been proven by waiting for it to happen in production. Pure in, pure out.
+export function balanceVerdict(
+  bal: number, floor: number, minDays: number, burn: Burn | null,
+): { ok: boolean; level: CommsCheck["level"]; detail: string } {
+  if (!isFinite(bal)) return { ok: false, level: "warn", detail: "could not read balance" };
+
+  const runway = bal > 0 && burn ? ` — ${runwayPhrase(bal, burn)}` : "";
+  const daysLeft = bal > 0 && burn ? bal / burn.perDay : Infinity;
+
+  // WHAT A ZERO BALANCE ACTUALLY BREAKS — corrected 2026-10-05, because this alert was telling Ramon
+  // something false every night. It said "the office line goes busy". The published office line,
+  // (424) 675-6295, is a **Spectrum** line and is not on Twilio at all — only three numbers are
+  // (866 493-3884, 920 754-3647, 858 879-3162) and the account holds no 424. A Twilio balance cannot
+  // make Spectrum go busy, and saying so sends the reader to the wrong bill: the office line dies if
+  // SPECTRUM …7741 is cut ($938.67, at Sequium), which is a different problem with a different fix.
+  // The real mechanism is one step removed and worth naming exactly: the 424 is *72-forwarded to the
+  // 866, so at zero the forward lands on a SUSPENDED Twilio number — callers stop reaching Mark even
+  // though Spectrum is fine — and the SMS pager (ping-ramon) stops, which on a signed-out-Outlook day
+  // is the only outbound channel left. [[ai-receptionist]] · [[twilio-suspension-busy-signal]]
+  if (bal <= 0) return { ok: false, level: "critical",
+    detail: `$${bal.toFixed(2)} — Twilio will suspend: the SMS pager stops and calls forwarded from the office line hit a dead number. Top up now.` };
+
+  if (bal < floor) return { ok: false, level: "warn",
+    detail: `$${bal.toFixed(2)} is below the $${floor} floor${runway} — top up before it suspends: at zero the SMS pager stops and office-line calls forwarded to the 866 stop reaching Mark (Spectrum itself is unaffected).` };
+
+  // ABOVE the floor and still nearly empty. A fixed floor cannot see this at all.
+  if (daysLeft < minDays) return { ok: false, level: "warn",
+    detail: `$${bal.toFixed(2)} clears the $${floor} floor but is only ~${Math.floor(daysLeft)} days of spend${runway} — a fixed floor cannot see a fast burn. Top up.` };
+
+  return { ok: true, level: "info", detail: `$${bal.toFixed(2)}${runway}` };
+}
+
+// "$1.63/day, ~8 days, empty ~2026-10-05 (~3 days at the worst recent day, $4.56)"
+function runwayPhrase(bal: number, burn: { perDay: number; worstDay: number; sampled: number }): string {
+  const days = bal / burn.perDay;
+  const empty = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+  const worst = burn.worstDay > burn.perDay
+    ? `, ~${Math.floor(bal / burn.worstDay)} days at the worst of the last ${burn.sampled} days ($${burn.worstDay.toFixed(2)})`
+    : "";
+  return `$${burn.perDay.toFixed(2)}/day over ${burn.sampled} days, ~${Math.floor(days)} days left, empty ~${empty}${worst}`;
+}
+
 export async function commsChecks(): Promise<CommsCheck[]> {
   const out: CommsCheck[] = [];
   const add = (name: string, ok: boolean, level: CommsCheck["level"], detail: string) => out.push({ name, ok, level, detail });
@@ -73,10 +154,11 @@ export async function commsChecks(): Promise<CommsCheck[]> {
     const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Balance.json`, { headers: { Authorization: basic(sid, tok) } });
     const j: any = await r.json().catch(() => ({}));
     const bal = Number(j?.balance);
-    if (!isFinite(bal)) add("twilio:balance", false, "warn", "could not read balance");
-    else if (bal <= 0) add("twilio:balance", false, "critical", `$${bal.toFixed(2)} — the account will be suspended and the phone will go BUSY. Top up now.`);
-    else if (bal < floor) add("twilio:balance", false, "warn", `$${bal.toFixed(2)} is below the $${floor} floor — top up before it suspends and the office line goes busy.`);
-    else add("twilio:balance", true, "info", `$${bal.toFixed(2)}`);
+    // Days of runway we refuse to be above, however healthy the absolute number looks.
+    const minDays = Number((await cfg("TWILIO_MIN_RUNWAY_DAYS")) || 10);
+    const burn = isFinite(bal) && bal > 0 ? await twilioBurn(sid, tok) : null;
+    const v = balanceVerdict(bal, floor, minDays, burn);
+    add("twilio:balance", v.ok, v.level, v.detail);
   } catch (e: any) { add("twilio:balance", false, "warn", e?.message || "error"); }
 
   // ── every number points at us ─────────────────────────────────────────────────────────────
