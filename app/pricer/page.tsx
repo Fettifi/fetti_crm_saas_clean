@@ -53,6 +53,13 @@ export default function PricerPage() {
   const [miOverride, setMiOverride] = useState("");        // the LO's real MI quote, $/mo
   const [vaExempt, setVaExempt] = useState(false);         // disabled-veteran funding-fee exemption
   const [vaFirstUse, setVaFirstUse] = useState(true);      // 2.15% first use vs 3.30% subsequent
+  // DISABLED-VETERAN PROPERTY TAX EXEMPTION — a DIFFERENT benefit from vaExempt above. That one
+  // waives a one-time closing fee; this one reduces the tax line every month for the life of the
+  // loan. Not gated on loanType: the exemption follows the veteran, so a disabled veteran on a
+  // conventional or FHA loan is entitled to it too.
+  const [dvGranted, setDvGranted] = useState(false);       // GRANTED by the assessor, not self-reported
+  const [dvTier, setDvTier] = useState<"basic" | "low_income">("basic");   // CA R&TC 205.5 tier
+  const [dvNonAdValorem, setDvNonAdValorem] = useState(""); // FL/MI: from the actual bill, $/yr
   const [borrowerName, setBorrowerName] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
 
@@ -113,6 +120,12 @@ export default function PricerPage() {
   const insEntered = insOverride.trim() !== "" && Number.isFinite(num(insOverride)) && num(insOverride) >= 0;
   const taxOver = taxEntered && taxBasis > 0;
   const insOver = insEntered && insBasis > 0;
+  // Same ENTERED-not-truthy rule: $0 of non-ad-valorem is a real answer (a parcel outside any CDD
+  // or special district), and it is the answer that lets the exemption apply in full.
+  const dvNavEntered = dvNonAdValorem.trim() !== "" && Number.isFinite(num(dvNonAdValorem)) && num(dvNonAdValorem) >= 0;
+  // The two-tier choice is California-only (R&TC 205.5 basic vs low-income); FL and MI are
+  // all-or-nothing, so offering a tier there would invent a distinction the statutes do not make.
+  const dvTierApplies = state === "CA";
   // Declared here because the effective tax rate below adopts the SERVER's resolved rate from
   // this response when the client's own location fetch came back empty.
   const [cc, setCc] = useState<any>(null);
@@ -134,13 +147,19 @@ export default function PricerPage() {
         termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI, loanType,
         miMonthlyOverride: miOverride.trim() !== "" && num(miOverride) >= 0 ? num(miOverride) : null,
         taxRatePct: taxRatePctEff, insRatePct: insRatePctEff,
+        dvExemptGranted: dvGranted, dvExemptTier: dvTier,
+        dvNonAdValoremAnnual: dvNavEntered ? num(dvNonAdValorem) : null,
+        taxIsActual: taxOver, purpose,
       }
     : {
         price: num(price), value: num(value) || undefined, down: num(down),
         termMonths: term, state: state || null, hoaMonthly: num(hoa), includePMI, loanType,
         miMonthlyOverride: miOverride.trim() !== "" && num(miOverride) >= 0 ? num(miOverride) : null,
         taxRatePct: taxRatePctEff, insRatePct: insRatePctEff,
-      }), [isRefi, refiLoan, price, value, down, term, state, hoa, includePMI, miOverride, loanType, taxRatePctEff, insRatePctEff]);
+        dvExemptGranted: dvGranted, dvExemptTier: dvTier,
+        dvNonAdValoremAnnual: dvNavEntered ? num(dvNonAdValorem) : null,
+        taxIsActual: taxOver, purpose,
+      }), [isRefi, refiLoan, price, value, down, term, state, hoa, includePMI, miOverride, loanType, taxRatePctEff, insRatePctEff, dvGranted, dvTier, dvNavEntered, dvNonAdValorem]);
 
   const pre = useMemo(() => estimatePITIA({ ...base, ratePct: 0 }), [base]);
   const credit = creditValueToFico(creditVal);
@@ -155,6 +174,20 @@ export default function PricerPage() {
   const rateOverrideValid = rateOverride && Number.isFinite(Number(overrideRate)) && Number(overrideRate) > 0 && Number(overrideRate) <= 30;
   const effRate = rateOverrideValid ? Number(overrideRate) : est.rate;
   const r = useMemo(() => estimatePITIA({ ...base, ratePct: effRate }), [base, effRate]);
+
+  /** WHAT THE EXEMPTION WOULD BE WORTH, so the prompt above can name a number instead of nagging.
+   *  Runs the real engine with the box ticked and diffs the tax line — never a rule of thumb. Comes
+   *  back 0 where the state is not modelled, or where FL/MI still need the non-ad-valorem figure,
+   *  and the prompt then falls back to its unquantified wording rather than claiming "$0/mo". */
+  const dvHint = useMemo(() => {
+    if (dvGranted || !String(loanType || "").startsWith("va")) return 0;
+    try {
+      const withIt: any = estimatePITIA({ ...base, ratePct: effRate, dvExemptGranted: true, dvExemptTier: state === "CA" ? "basic" : null } as any);
+      const d = (r.taxMonthly || 0) - (withIt.taxMonthly || 0);
+      return d > 1 ? d : 0;
+    } catch { return 0; }
+  }, [dvGranted, loanType, base, effRate, state, r.taxMonthly]);
+
 
   // ---- Closing costs (LE-shaped estimate; server engine uses ZIP + price) ----
   // (rp — the payment the borrower actually makes — is derived below, once the closing-cost
@@ -186,6 +219,11 @@ export default function PricerPage() {
         body: JSON.stringify({
           zip, state, price: dealBasis, loanAmount: r.loan, loanType, purpose,
           ratePct: effRate, taxRatePct: taxRatePctEff, insAnnual: r.insMonthly * 12,
+          // The exemption has to reach the ESCROW too, or cash to close collects 3 months of a tax
+          // the veteran does not owe while the payment above it already shows the reduction.
+          dvExemptGranted: dvGranted, dvExemptTier: dvTier,
+          dvNonAdValoremAnnual: dvNavEntered ? num(dvNonAdValorem) : null,
+          taxIsActual: taxOver,
           sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
           originationPct: origPct === "" ? undefined : num(origPct),
           // Both API routes already accepted vaExempt; the screen never sent it, so a disabled
@@ -205,7 +243,11 @@ export default function PricerPage() {
         });
     }, 350);
     return () => { clearTimeout(t); ctl.abort(); };
-  }, [dealBasis, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct, vaExempt, vaFirstUse, ovrNums]);
+    // dvGranted / dvTier / dvNonAdValorem ARE DEPENDENCIES. Without them, ticking the exemption
+    // moved the payment (which recomputes from the base useMemo) but never refetched the closing
+    // costs — so the escrow impound and cash to close kept the previous scenario's full tax until
+    // some unrelated field happened to change. The screen contradicted itself, silently.
+  }, [dealBasis, r.loan, r.insMonthly, state, zip, loanType, purpose, effRate, taxRatePctEff, sellerCredit, escrowWaived, ownersTitle, origPct, vaExempt, vaFirstUse, ovrNums, dvGranted, dvTier, dvNavEntered, dvNonAdValorem]);
 
   async function downloadPdf() {
     if (isRefi ? (!num(value) || !num(refiLoan)) : !num(price)) {
@@ -227,6 +269,8 @@ export default function PricerPage() {
           sellerCredit: num(sellerCredit) || 0, escrowWaived, ownersTitle,
           originationPct: origPct === "" ? undefined : num(origPct),
           vaExempt, vaFirstUse, miMonthlyOverride: miOverride.trim() !== "" && num(miOverride) >= 0 ? num(miOverride) : undefined,
+          dvExemptGranted: dvGranted, dvExemptTier: dvTier,
+          dvNonAdValoremAnnual: dvNavEntered ? num(dvNonAdValorem) : null,
           overrides: ovrNums,
         }),
       });
@@ -509,6 +553,61 @@ export default function PricerPage() {
                         SUBSEQUENT use of the VA benefit (3.30% instead of 2.15%)
                       </label>
                     )}
+                    {/* DISABLED-VETERAN PROPERTY TAX EXEMPTION.
+                        NOT inside the `loanType.startsWith("va")` gate above, deliberately: this is
+                        a STATE tax benefit that follows the veteran, so a disabled veteran buying
+                        with a conventional or FHA loan is entitled to exactly the same relief.
+                        Gating it on the VA product would overstate their payment. */}
+                    <div className="pt-2 mt-1 border-t border-slate-800 space-y-1">
+                      <label className="flex items-start gap-2 text-[11px] text-slate-300">
+                        <input type="checkbox" checked={dvGranted} onChange={(e) => setDvGranted(e.target.checked)} className="accent-emerald-500 mt-0.5" />
+                        <span>
+                          Disabled-veteran PROPERTY TAX exemption <span className="text-slate-500">— granted by the assessor</span>
+                          <span className="block text-slate-600">Ongoing tax relief, separate from the one-time funding fee above. Tick only once it is approved, not on a stated rating.</span>
+                        </span>
+                      </label>
+                      {/* PICKING "VA" DOES NOT TICK THIS, AND NOTHING USED TO SAY SO.
+                          Ramon, 2026-10-08: "I'm clicking VA loan and it doesn't seem to be
+                          calculating properly" — about this exemption. It was calculating
+                          correctly; it was never being ASKED FOR. The exemption follows the
+                          veteran, not the loan, so auto-ticking it on a VA product would quote a
+                          payment below what a non-disabled veteran owes — the opposite error, and
+                          the worse one. But a VA file is far and away the likeliest place this
+                          applies, and the screen offered no hint it existed. So: prompt, with the
+                          money named, and let the human assert the assessor granted it. */}
+                      {!dvGranted && String(loanType || "").startsWith("va") && (
+                        <p className="text-[10px] leading-snug text-amber-400/90 pl-6">
+                          {dvHint
+                            ? `VA loan selected — if this veteran's disability exemption has been granted by the assessor, tick the box above: worth about $${Math.round(dvHint).toLocaleString()}/mo here.`
+                            : `VA loan selected — if this veteran's disability exemption has been granted by the assessor, tick the box above. It is a separate state benefit and is not applied automatically.`}
+                        </p>
+                      )}
+                      {dvGranted && r.dv?.modelled && (state === "FL" || state === "MI") && (
+                        <div className="pl-6">
+                          <label className={lbl}>Non-ad-valorem assessments $/yr <span className="text-slate-600">(from the tax bill)</span></label>
+                          <CurrencyInput value={dvNonAdValorem} onChange={setDvNonAdValorem} className={inp} placeholder="required — CDD, solid waste, stormwater…" />
+                        </div>
+                      )}
+                      {dvGranted && dvTierApplies && (
+                        <div className="pl-6 flex items-center gap-3 text-[11px] text-slate-300">
+                          <span className="text-slate-500">CA tier</span>
+                          <label className="flex items-center gap-1">
+                            <input type="radio" name="dvtier" checked={dvTier === "basic"} onChange={() => setDvTier("basic")} className="accent-emerald-500" /> Basic
+                          </label>
+                          <label className="flex items-center gap-1">
+                            <input type="radio" name="dvtier" checked={dvTier === "low_income"} onChange={() => setDvTier("low_income")} className="accent-emerald-500" /> Low-income
+                          </label>
+                        </div>
+                      )}
+                      {dvGranted && r.dv && (
+                        <p className={`text-[10px] leading-snug pl-6 ${r.dv.pending ? "text-amber-400" : r.dv.modelled ? "text-emerald-400" : "text-amber-400"}`}>
+                          {r.dv.modelled ? r.dv.headline : r.dv.reason}
+                        </p>
+                      )}
+                      {dvGranted && r.dv?.modelled && r.dv.caveats.map((c: string, i: number) => (
+                        <p key={i} className="text-[10px] text-slate-600 leading-snug pl-6">• {c}</p>
+                      ))}
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="flex flex-col justify-end gap-1 pb-1">
                         <label className="flex items-center gap-2 text-[12px] text-slate-300"><input type="checkbox" checked={escrowWaived} onChange={(e) => setEscrowWaived(e.target.checked)} className="accent-emerald-500" /> Waive escrows</label>

@@ -201,6 +201,45 @@ for (const st of ["TX", "AZ", "NY"]) {
     "CA relief at a 0.40% parcel is computed at 0.40%, never at the 1% Prop 13 base");
 }
 
+// ── THE VA PROMPT. Ramon, 2026-10-08: "I'm clicking VA loan and it doesn't seem to be calculating
+// properly", about this exemption. It WAS calculating correctly — it was never being asked for.
+// Two properties now have to hold at once, and they pull in opposite directions.
+{
+  const { estimatePITIA } = require("../lib/pricer");
+  const vaBase: any = { price: 700000, loanAmount: 700000, termMonths: 360, ratePct: 6.5,
+                        state: "CA", zip: "90008", loanType: "va30", taxRatePct: 0.82, hoa: 0 };
+
+  // (1) PICKING VA MUST NOT APPLY THE EXEMPTION BY ITSELF. The relief follows the VETERAN and is
+  //     granted by an assessor; most VA borrowers are not disabled veterans. Auto-applying it would
+  //     quote a payment BELOW what the borrower actually owes — the worse of the two errors, and
+  //     the one that surfaces as a payment shock after closing rather than a lost deal.
+  const vaOnly: any = estimatePITIA(vaBase);
+  const conv: any = estimatePITIA({ ...vaBase, loanType: "conv30" });
+  chk(Math.abs((vaOnly.taxMonthly || 0) - (conv.taxMonthly || 0)) < 0.01,
+    "selecting VA alone must NOT reduce the tax line — the exemption is granted by the assessor, not by the loan product");
+
+  // (2) …AND TICKING IT MUST STILL MOVE THE PAYMENT, or the prompt points at a dead control.
+  const ticked: any = estimatePITIA({ ...vaBase, dvExemptGranted: true, dvExemptTier: "basic" });
+  chk((vaOnly.taxMonthly || 0) - (ticked.taxMonthly || 0) > 1,
+    "ticking the granted exemption must reduce the CA tax line — this is the number the prompt quotes");
+
+  // (3) THE PROMPT'S FIGURE IS THE ENGINE'S, NOT A RULE OF THUMB. Same computation the screen does.
+  const hint = (vaOnly.taxMonthly || 0) - (ticked.taxMonthly || 0);
+  chk(hint > 100 && hint < 200,
+    `CA basic-tier relief on a $700k/0.82% parcel should land near $119/mo; got ${hint.toFixed(2)} — ` +
+    "if this moves, the prompt is quoting a number the payment will not honour");
+
+  // (4) WHERE IT CANNOT BE QUANTIFIED THE PROMPT MUST FALL BACK, never claim "$0/mo". FL and MI
+  //     need the non-ad-valorem figure first; TX is not modelled at all.
+  for (const st of ["FL", "MI", "TX"]) {
+    const off: any = estimatePITIA({ ...vaBase, state: st, zip: st === "FL" ? "33309" : st === "MI" ? "48098" : "75001" });
+    const on: any = estimatePITIA({ ...vaBase, state: st, zip: st === "FL" ? "33309" : st === "MI" ? "48098" : "75001",
+                                    dvExemptGranted: true, dvExemptTier: null });
+    chk(Math.abs((off.taxMonthly || 0) - (on.taxMonthly || 0)) < 0.01,
+      `${st} must yield no quantified hint without the data the statute needs — the screen then uses its unquantified wording`);
+  }
+}
+
 console.log("");
 if (bad) {
   console.error(`FAIL — ${bad} problem(s). A wrong disabled-veteran exemption either overstates a veteran's payment and shrinks what they qualify for, or under-escrows a real loan and hands them a payment shock after closing.\n`);
