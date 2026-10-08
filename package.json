@@ -127,7 +127,8 @@
     "verify:stub-variability": "npx tsx scripts/verify-stub-variability.ts",
     "verify:income-pin-date": "tsx scripts/verify-income-pin-date.ts",
     "verify:supabase-grants": "tsx scripts/verify-supabase-grants.ts",
-    "verify:imports": "node scripts/verify-import-integrity.mjs --worktree"
+    "verify:imports": "node scripts/verify-import-integrity.mjs --worktree",
+    "verify:owner-number": "tsx scripts/verify-owner-number-key.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

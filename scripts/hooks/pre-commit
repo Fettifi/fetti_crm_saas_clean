@@ -358,6 +358,20 @@ if [ -n "$VOICE" ]; then
   fi
 fi
 
+# A FEATURE THAT RINGS HIM MUST READ A KEY SOMETHING ACTUALLY SETS. The errand bridge shipped
+# reading cfg("OWNER_MOBILE") — set in neither Vercel (43 prod keys, read 2026-10-08) nor
+# app_settings. It type-checked, built and deployed; it would have failed at the one moment that
+# matters, a live human on the line after a 40-minute hold, and failed looking exactly like "he
+# didn't pick up". Static allowlist + new code must go through lib/ownerCell.ts. Offline, ~1s.
+OWNERNUM=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/ownerCell' -e 'lib/ownerCallFrom' -e 'app/api/voice/' -e 'lib/hotLead' -e 'lib/notify/leadAlert' -e 'lib/phoneMessages' -e 'lib/connect.ts' -e 'lib/commsWatchdog' -e 'api/sms/inbound' -e 'verify-owner-number-key')
+if [ -n "$OWNERNUM" ]; then
+  printf "   %-24s " "verify:owner-number"
+  OUT=$(npm run --silent verify:owner-number 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:owner-number"; printf '%s\n' "$OUT" | grep -v 'Supabase Admin' | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$CRON" ]; then
   printf "   %-24s " "verify:cron-watched"
   OUT=$(npm run --silent verify:cron-watched 2>&1)

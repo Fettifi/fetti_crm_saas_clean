@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cfg, getSetting, setSetting } from "@/lib/settings";
 import { decisionToken } from "@/lib/voiceTransfer";
 import { ownerCallFrom } from "@/lib/ownerCallFrom";
+import { ownerCell } from "@/lib/ownerCell";
 import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
@@ -45,7 +46,11 @@ export async function POST(req: NextRequest) {
   }
 
   const tsid = process.env.TWILIO_ACCOUNT_SID, ttok = process.env.TWILIO_AUTH_TOKEN;
-  const owner = (await cfg("OWNER_MOBILE")) || process.env.OWNER_MOBILE || "";
+  // lib/ownerCell.ts, NOT a key of this route's own invention. The first version read
+  // cfg("OWNER_MOBILE") — set in neither Vercel nor app_settings — so this route would have
+  // 500'd at the one moment that matters: a live human on the line after a long hold. Read that
+  // file before changing this line; it has the measurements.
+  const owner = await ownerCell();
   if (!tsid || !ttok || !owner) return NextResponse.json({ bridged: false, error: "not configured" }, { status: 500 });
 
   const auth = "Basic " + Buffer.from(`${tsid}:${ttok}`).toString("base64");
