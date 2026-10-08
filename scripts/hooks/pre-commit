@@ -346,6 +346,18 @@ if [ -n "$ANYTS" ] || printf '%s\n' "$CHANGED" | grep -q '^package\.json$'; then
   fi
 fi
 
+# PENNY MUST NOT BE ABLE TO DIAL A PERSON. Errand mode is a SECOND door into the dialer with none
+# of the consumer gates on the first one (consent, calling hours, one-per-day). The substitute is an
+# allowlist plus a live CRM check that fails closed. Broken on purpose five ways before it shipped.
+VOICE=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/voice/callTargets' -e 'app/api/voice/errand/' -e 'verify-errand-safety')
+if [ -n "$VOICE" ]; then
+  printf "   %-24s " "verify:errand-safety"
+  OUT=$(npm run --silent verify:errand-safety 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:errand-safety"; printf '%s\n' "$OUT" | grep -v 'Supabase Admin' | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$CRON" ]; then
   printf "   %-24s " "verify:cron-watched"
   OUT=$(npm run --silent verify:cron-watched 2>&1)
