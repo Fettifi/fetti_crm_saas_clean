@@ -68,6 +68,16 @@ export async function POST(req: NextRequest) {
       loanType: String(b.loanType || "conv30"),
       taxRatePct: taxSent && taxBasis > 0 ? (taxOverAnnual / taxBasis) * 100 : (useLocRates ? loc.taxRatePct : undefined),
       insRatePct: insSent && insBasis > 0 ? (insOverAnnual / insBasis) * 100 : (useLocRates ? loc.insRatePct : undefined),
+      // Disabled-veteran property tax exemption — the SAME inputs the screen sends, applied by the
+      // SAME engine. The exemption must not be a screen-only courtesy: the borrower's PDF is the
+      // artifact they keep and budget against.
+      taxIsActual: taxSent, purpose: String(b.purpose || 'purchase'),
+      dvExemptGranted: b.dvExemptGranted === true,
+      dvExemptTier: b.dvExemptTier ?? null,
+      dvNonAdValoremAnnual:
+        b.dvNonAdValoremAnnual != null && b.dvNonAdValoremAnnual !== "" && Number.isFinite(Number(b.dvNonAdValoremAnnual)) && Number(b.dvNonAdValoremAnnual) >= 0
+          ? Number(b.dvNonAdValoremAnnual)
+          : null,
     };
 
     // Resolve the rate. Honor an explicit advisor override; otherwise estimate.
@@ -99,7 +109,13 @@ export async function POST(req: NextRequest) {
           countyFips: useLocRates ? loc.countyFips : null, countyName: useLocRates ? loc.countyName : null,
           price, loanAmount: r.loan,
           loanType: ccLoanType(loanType), purpose: mapPurpose(b.purpose),
-          ratePct, taxRatePct: r.taxRate, insAnnual: r.insMonthly * 12,
+          // POST-EXEMPTION effective rate, not r.taxRate. `r.taxRate` is the rate BEFORE the
+          // disabled-veteran exemption; feeding it here would escrow 3 months of a tax the veteran
+          // does not owe while page 1 showed the reduced payment. Derived from the engine's own
+          // post-exemption monthly so the impound can never drift from the payment above it.
+          ratePct,
+          taxRatePct: price > 0 ? ((r.taxMonthly * 12) / price) * 100 : r.taxRate,
+          insAnnual: r.insMonthly * 12,
           pointsPct: Number(b.pointsPct) || 0, sellerCredit: Number(b.sellerCredit) || 0, lenderCredit: Number(b.lenderCredit) || 0,
           escrowWaived: b.escrowWaived === true, ownersTitle: b.ownersTitle === true,
           vaExempt: b.vaExempt === true, model: ccModel,
@@ -141,6 +157,7 @@ export async function POST(req: NextRequest) {
       ratePct, rateIsOverride: !!b.rateIsOverride, termMonths: baseInput.termMonths,
       pi: r.pi, taxMonthly: r.taxMonthly, insMonthly: r.insMonthly, pmiMonthly: r.pmiMonthly, hoa: r.hoa, total: r.total,
       taxRate: r.taxRate, insRate: r.insRate,
+      dv: (r as any).dv,
       officerName: b.officerName || undefined, officerNmls: b.officerNmls || undefined,
     });
 

@@ -3,6 +3,8 @@
 // estimated from the property's STATE (derived from ZIP) using effective rates.
 // These are ESTIMATES for quoting, not exact figures — county and carrier vary.
 
+import { dvExemption, type DvExemptionResult, type DvTier } from "./vaPropertyTax";
+
 // Effective annual PROPERTY TAX rate, % of value, by state (approx, Tax Foundation).
 export const PROPERTY_TAX_RATE: Record<string, number> = {
   AL: 0.41, AK: 1.19, AZ: 0.62, AR: 0.62, CA: 0.71, CO: 0.51, CT: 1.79, DE: 0.58,
@@ -167,6 +169,16 @@ export type PricerInput = {
   // provided (> 0), these win over the state-level tables below.
   taxRatePct?: number;     // effective property-tax rate, % of value / yr
   insRatePct?: number;     // effective homeowner's-insurance rate, % of value / yr
+  /** DISABLED-VETERAN PROPERTY TAX EXEMPTION — the ongoing tax benefit, not the VA funding fee.
+   *  Deliberately NOT gated on loanType: the exemption follows the veteran, so a disabled veteran
+   *  on a conventional or FHA loan gets it too. See lib/vaPropertyTax.ts. */
+  dvExemptGranted?: boolean;              // GRANTED by the assessor — not a self-reported rating
+  dvExemptTier?: DvTier | null;           // CA only: which R&TC 205.5 tier
+  dvNonAdValoremAnnual?: number | null;   // FL/MI: from the actual bill; required to apply it
+  /** taxRatePct came from an LO-entered ACTUAL annual tax bill, which already nets any exemption. */
+  taxIsActual?: boolean;
+  /** "purchase" | "rateTerm" | "cashOut" — decides whose tax bill an entered figure is. */
+  purpose?: string | null;
 };
 
 export function estimatePITIA(i: PricerInput) {
@@ -193,8 +205,32 @@ export function estimatePITIA(i: PricerInput) {
   const insRate = stated(i.insRatePct)
     ? Number(i.insRatePct)
     : (i.state ? (INSURANCE_RATE[i.state] ?? DEFAULT_INS) : DEFAULT_INS);
-  const taxMonthly = (i.price || value) * (taxRate / 100) / 12;
+  const taxMonthlyBeforeDv = (i.price || value) * (taxRate / 100) / 12;
   const insMonthly = value * (insRate / 100) / 12;
+
+  // DISABLED-VETERAN PROPERTY TAX EXEMPTION. Applied HERE, in the one engine both the screen and
+  // the borrower PDF call, because this pricer has already shipped a bug where the two computed the
+  // same figure separately and disagreed. `dv` is returned so both surfaces render the SAME
+  // caveats from the SAME result rather than re-deriving prose.
+  //
+  // `netTaxAnnual` is null whenever the exemption cannot be computed honestly (claimed but the
+  // non-ad-valorem figure is missing, state not modelled, year past the verified one). Null means
+  // DO NOT MOVE THE PAYMENT — fall through to the full modelled tax, which is the safe direction.
+  const dv = dvExemption({
+    state: i.state,
+    granted: i.dvExemptGranted,
+    tier: i.dvExemptTier,
+    assessedValue: i.price || value,
+    baseTaxAnnual: taxMonthlyBeforeDv * 12,
+    // The rate the base was built from — California's relief must use this parcel's own rate, not
+    // a flat 1%, or it credits relief at a rate the property does not pay.
+    taxRatePct: taxRate,
+    // An entered tax bill already contains any granted exemption; re-applying it double-counts.
+    baseIsActual: i.taxIsActual === true,
+    purpose: i.purpose,
+    nonAdValoremAnnual: i.dvNonAdValoremAnnual,
+  });
+  const taxMonthly = dv.netTaxAnnual != null ? dv.netTaxAnnual / 12 : taxMonthlyBeforeDv;
 
   const miOverridden = i.miMonthlyOverride != null && Number.isFinite(Number(i.miMonthlyOverride)) && Number(i.miMonthlyOverride) >= 0;
   // "Include PMI estimate if LTV > 80%" IS A CONVENTIONAL-ONLY SWITCH. It was gating every
@@ -213,5 +249,5 @@ export function estimatePITIA(i: PricerInput) {
   const hoa = i.hoaMonthly || 0;
   const total = pi + taxMonthly + insMonthly + pmiMonthly + hoa;
 
-  return { loan, ltv, pi, taxMonthly, insMonthly, pmiMonthly, pmiAnnual, hoa, total, taxRate, insRate, value, miOverridden };
+  return { loan, ltv, pi, taxMonthly, insMonthly, pmiMonthly, pmiAnnual, hoa, total, taxRate, insRate, value, miOverridden, dv, taxMonthlyBeforeDv };
 }

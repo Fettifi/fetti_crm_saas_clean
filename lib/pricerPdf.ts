@@ -26,6 +26,14 @@ export type PricerPdfData = {
   loanType?: string; ratePct: number; rateIsOverride?: boolean; termMonths: number;
   pi: number; taxMonthly: number; insMonthly: number; pmiMonthly: number; hoa: number; total: number;
   taxRate: number; insRate: number;
+  /** Disabled-veteran property tax exemption result (lib/vaPropertyTax). When it applied, the
+   *  borrower must be able to see WHY their taxes are lower and what is still owed — a reduced
+   *  figure with no explanation is the thing that produces a complaint at closing. */
+  dv?: {
+    applies: boolean; modelled: boolean; pending: boolean;
+    netTaxAnnual: number | null; reliefAnnual: number;
+    headline: string; caveats: string[]; citation: string; reason?: string;
+  };
   officerName?: string; officerNmls?: string; date?: string;
   // Optional page 2: LE-shaped closing-cost estimate (from lib/closingCosts).
   closing?: {
@@ -122,7 +130,13 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
   text("MONTHLY PAYMENT BREAKDOWN", 9, bold, EMERALD); cur += 16;
   const payRows: [string, string][] = [
     ["Principal & interest", money(d.pi)],
-    [`Property taxes (${money(d.taxMonthly * 12)}/yr${d.taxIsActual ? ", actual" : d.county ? ` — ${d.county}` : d.state ? ` — ${d.state}` : ""})`, money(d.taxMonthly)],
+    // When the disabled-veteran exemption applied, SAY SO ON THE ROW. A silently reduced tax line
+    // is indistinguishable from an error, and the borrower cannot check it against their own bill.
+    [`Property taxes (${money(d.taxMonthly * 12)}/yr${
+      d.dv?.applies && !d.dv.pending && d.dv.reliefAnnual > 0
+        ? ", after disabled-veteran exemption"
+        : d.taxIsActual ? ", actual" : d.county ? ` — ${d.county}` : d.state ? ` — ${d.state}` : ""
+    })`, money(d.taxMonthly)],
     [`Homeowner's insurance (${money(d.insMonthly * 12)}/yr${d.insIsActual ? ", actual" : ", est."})`, money(d.insMonthly)],
     // Naming it "PMI" on an FHA or USDA quote is wrong — those are MIP and the guarantee fee,
     // and the disclaimer then told the borrower it "applies to conventional loans over 80% LTV"
@@ -139,6 +153,25 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
   cur += trh;
   page.drawRectangle({ x: M, y: H - cur + 4, width: CW, height: payRows.length * 18 + trh, borderColor: rgb(0.85, 0.87, 0.9), borderWidth: 1 });
   cur += 18;
+
+  // DISABLED-VETERAN PROPERTY TAX EXEMPTION — the explanation, on the borrower's own document.
+  //
+  // Printed whenever the exemption was CLAIMED, including when it is pending, because "claimed but
+  // not applied" is exactly the state the borrower most needs to see: their payment still carries
+  // the full tax and they may be expecting otherwise. Every caveat is printed, never trimmed — the
+  // ones that survive the exemption (Florida CDD and non-ad-valorem charges, California's
+  // Mello-Roos and the fact that California only REDUCES the taxable value) are the whole reason
+  // this sheet cannot simply show a smaller number.
+  if (d.dv?.applies && d.dv.modelled) {
+    text(d.dv.pending ? "DISABLED-VETERAN PROPERTY TAX EXEMPTION — NOT YET APPLIED" : "DISABLED-VETERAN PROPERTY TAX EXEMPTION", 9, bold, EMERALD);
+    cur += 14;
+    para(d.dv.headline, 8.5, bold, rgb(0.15, 0.17, 0.2));
+    cur += 2;
+    for (const c of d.dv.caveats) { para(`• ${c}`, 7.5, font, GREY); }
+    para(d.dv.citation, 7, font, GREY);
+    para("This exemption is granted by the county or local assessor, not by the lender, and it is not automatic — it must be applied for. Figures here are an estimate of its effect; your actual bill is set by the taxing authority.", 7.5, font, GREY);
+    cur += 10;
+  }
 
   para(`This is an ESTIMATE for planning purposes, not a quote, loan offer, or commitment to lend. Property taxes use the property location's effective tax rate (U.S. Census ACS data) and will vary by the actual assessment and exemptions. Homeowner's insurance is an estimate based on regional averages and location risk — it is not an insurance quote and will vary by the property, coverage, deductible, and carrier. The interest rate is an estimate and is subject to market conditions, your credit, and final approval until locked. Mortgage insurance varies by program: conventional PMI applies over 80% LTV and can be removed as equity builds; FHA charges an annual MIP regardless of LTV; USDA charges an annual guarantee fee; VA loans carry NO monthly mortgage insurance. Actual figures are determined by the tax authority, an insurance quote, and final underwriting.`, 8, font, GREY);
   cur += 12;
