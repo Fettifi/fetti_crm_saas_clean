@@ -34,7 +34,15 @@ const money = (n?: number | null) =>
  * different ratios for one deal.
  */
 export function resolveLtv(l: any, x: any): string | null {
-  const stated = x?.ltv != null && String(x.ltv).trim() !== "" ? String(x.ltv).trim() : null;
+  const raw = x?.ltv != null ? String(x.ltv).trim() : "";
+  // A ZERO IS AN ANSWER for points, lender fees and prepay — see fmt() below, and it is right there.
+  // IT IS NOT AN ANSWER FOR LTV. A loan that exists cannot be 0% of anything, so a stored 0 is a
+  // MISSING value wearing a number's clothes: it is not blank, so it satisfied the old emptiness test,
+  // won the "stated beats computed" precedence, and returned before the recomputation below could
+  // ever run. Letter PA-202609-2015 (10331 Lindley, 2026-09-08) went to the listing agent printing
+  // "Loan-to-value (LTV) 0.0%" beside a 3.5% down payment. Only null/""/<=0 is absent here.
+  const n = Number(raw.replace(/[%,\s]/g, ""));
+  const stated = raw !== "" && !(Number.isFinite(n) && n <= 0) ? raw : null;
   if (stated) return stated.endsWith("%") ? stated : `${stated}%`;
   const asIs = Number(x?.as_is_value) > 0 ? Number(x.as_is_value) : null;
   const price = Number(l?.purchase_price) > 0 ? Number(l.purchase_price) : null;
@@ -43,6 +51,34 @@ export function resolveLtv(l: any, x: any): string | null {
   const basis = (isPurchase && asIs != null && price != null) ? Math.min(asIs, price) : (asIs ?? price);
   if (!(Number(l?.loan_amount) > 0) || !basis) return null;
   return `${Math.round((Number(l.loan_amount) / basis) * 1000) / 10}%`;
+}
+
+/**
+ * DTI, sanity-checked against the letter's own arithmetic.
+ *
+ * Back-end DTI INCLUDES housing, so it can never be LESS than PITIA / qualifying income. That is
+ * arithmetic, not policy — no program, exception or compensating factor makes it possible. Letter
+ * PA-202609-2015 (10331 Lindley, 2026-09-08) went to a listing agent printing **DTI 16%** beside
+ * **PITIA $4,735** and **income $10,414/mo**, a housing ratio of 45.5% on its own face. Like `ltv`,
+ * `dti` is a carried field — typed or pre-filled from an extraction — and nothing checked it.
+ *
+ * A false number is worse than an absent one on a document a third party relies on, so an impossible
+ * stated DTI is treated as ABSENT and the row is simply omitted. We do NOT substitute the housing
+ * ratio: that is a FLOOR, not the borrower's DTI, and printing it would be inventing a figure.
+ * [[a-zero-is-an-answer-except-where-it-is-impossible]]
+ */
+export function resolveDti(l: any, x: any): string | null {
+  const raw = (l?.dti ?? x?.dti) != null ? String(l?.dti ?? x?.dti).trim() : "";
+  if (raw === "") return null;
+  const stated = Number(raw.replace(/[%,\s]/g, ""));
+  if (!Number.isFinite(stated) || stated <= 0) return null;          // 0% DTI is not an answer either
+  const pitia = Number(String(x?.monthly_payment ?? l?.monthly_payment ?? "").replace(/[^0-9.]/g, ""));
+  const income = Number(String(x?.qualifying_income ?? l?.qualifying_income ?? "").replace(/[^0-9.]/g, ""));
+  if (pitia > 0 && income > 0) {
+    const housing = (pitia / income) * 100;
+    if (stated + 0.5 < housing) return null;                          // impossible: omit, never print
+  }
+  return raw.endsWith("%") ? raw : `${raw}%`;
 }
 
 /** Format a captured value for display according to its declared kind. */
@@ -70,10 +106,12 @@ export function letterSections(l: any, x: any): TermSection[] {
   const extra = x && typeof x === "object" ? x : {};
   const hidden = new Set<string>(Array.isArray((extra as any).__hidden) ? (extra as any).__hidden : []);
   const ltv = resolveLtv(l, extra);
+  const dti = resolveDti(l, extra);
   // Values live in two places: real columns on `preapprovals`, and the extras blob. Read both
   // through one accessor so no field's home has to be remembered at the call site.
   const valueOf = (f: PaField): any => {
     if (f.key === "ltv") return ltv;
+    if (f.key === "dti") return dti;
     // ONE LOAN TERM ROW, AND IT SAYS WHAT THE DOCUMENT SAYS.
     // `term` is a dropdown column; `loan_term_length` is the sheet's verbatim wording. A 3-year
     // bridge sheet has no matching dropdown option, so the enum used to print the NEAREST one —
