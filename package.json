@@ -3,7 +3,7 @@
   "version": "1.0.2",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 127.0.0.1",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -128,7 +128,8 @@
     "verify:income-pin-date": "tsx scripts/verify-income-pin-date.ts",
     "verify:supabase-grants": "tsx scripts/verify-supabase-grants.ts",
     "verify:imports": "node scripts/verify-import-integrity.mjs --worktree",
-    "verify:owner-number": "tsx scripts/verify-owner-number-key.ts"
+    "verify:owner-number": "tsx scripts/verify-owner-number-key.ts",
+    "verify:rls": "tsx scripts/verify-rls-lockdown.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

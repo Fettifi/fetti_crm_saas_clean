@@ -467,6 +467,22 @@ if [ -n "$GRANTS" ]; then
   fi
 fi
 
+# verify:rls — SAME TRIGGER, SAME REASON. A permissive `using (true)` policy lets the public anon
+# key (which ships in every browser) read a table directly, bypassing proxy.ts and every server
+# route. 20260713153000_portal_rls_lockdown.sql closed that for leads + applications and explained
+# precisely why it had to live in version control rather than the dashboard — then three more
+# tables (conversations, messages, rupee_memory) sat permissive IN THE REPO until 2026-10-11.
+# Production was hardened out-of-band both times, so nothing was ever broken and nothing ever
+# prompted a fix; the damage was aimed at whoever next ran `supabase db reset`.
+# Gated on $GRANTS because migrations are the only place a policy can be introduced.
+if [ -n "$GRANTS" ]; then
+  printf "   %-18s " "verify:rls"
+  OUT=$(npm run --silent verify:rls 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:rls"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$AUTH" ]; then
   printf "   %-18s " "verify:auth"
   OUT=$(npm run --silent verify:auth 2>&1)

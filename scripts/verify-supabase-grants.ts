@@ -24,6 +24,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const MIGRATIONS = path.join(process.cwd(), "supabase", "migrations");
 const APP_ROLES = ["anon", "authenticated", "service_role"];
@@ -41,6 +42,40 @@ if (!fs.existsSync(MIGRATIONS)) {
 const files = fs.readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort();
 if (!files.length) {
   console.error("✖ no .sql migrations found — cannot run, which is NOT a pass.");
+  process.exit(1);
+}
+
+// AN UNTRACKED MIGRATION IS NOT A MIGRATION, AND READING THE DISK HID THAT FOR 14 DAYS.
+//
+// This guard reads supabase/migrations/ from the WORKING DIRECTORY. 20260927210000_data_api_grants.sql
+// — the file written on 2026-09-27 specifically to survive the October 30 Data API change — was never
+// `git add`ed. It sat on disk, so this guard loaded it, found its 9 grants, and printed PASS. Every
+// other migration in the directory was tracked; it was the only one missing, and it was not ignored.
+//
+// Meanwhile the thing the guard exists to protect — a rebuild — replays only what is COMMITTED, and
+// the committed migrations carried ZERO grant statements between them. So the guard was green on the
+// exact scenario it was built for, for 14 days, with 19 days left on the clock.
+//
+// The disk is not the repo. Anything that reasons about "what a fresh checkout / preview branch /
+// `supabase db reset` would do" has to ask git, not the filesystem.
+// [[a-fix-on-disk-is-not-a-fix]] [[an-untracked-file-makes-the-tree-lie]]
+try {
+  const tracked = new Set(
+    execFileSync("git", ["ls-files", "supabase/migrations"], { encoding: "utf8" })
+      .split("\n").filter(Boolean).map((p) => path.basename(p)),
+  );
+  const untracked = files.filter((f) => !tracked.has(f));
+  if (untracked.length) {
+    console.error(`✖ ${untracked.length} migration(s) exist on disk but are NOT TRACKED by git:`);
+    for (const u of untracked) console.error(`    ${u}`);
+    console.error("  This guard reads the disk, so they counted toward the grants above — but a rebuild,");
+    console.error("  a preview branch or a fresh clone replays only what is committed, and would not see");
+    console.error("  them at all. `git add` them, or this check is measuring a database nobody will build.");
+    process.exit(1);
+  }
+} catch (e: any) {
+  // A git failure must not read as "all tracked". Say so and stop.
+  console.error(`✖ could not ask git which migrations are tracked (${e?.message?.slice(0, 80)}) — refusing to pass.`);
   process.exit(1);
 }
 
