@@ -124,6 +124,8 @@ export type StaleFile = {
   deliveredDays: number | null;  // days since they last uploaded a document
   docsDelivered: number;         // how many documents they have handed over
   flag: StaleFlag;
+  /** lead.nurture_paused — the send paths refuse this borrower. NEVER advise contacting them. */
+  paused: boolean;
   severity: number;
 };
 
@@ -156,6 +158,23 @@ export function nextAction(f: StaleFile): string {
       return `THEY DELIVERED — ${f.docsDelivered} document${f.docsDelivered === 1 ? "" : "s"} uploaded ${f.deliveredDays} days ago and they have heard nothing back. Call today, confirm receipt, tell them what happens next`;
     return "they replied and we never came back — answer them today";
   }
+  // A PAUSED LEAD CANNOT BE CONTACTED, SO NEVER ADVISE CONTACTING ONE.
+  //
+  // 2026-10-04: this digest told us for six consecutive weeks to "make first contact today" with
+  // Canisha Connelly-Laviengvong — $700,000 purchase, 54 days quiet, genuinely never contacted — while
+  // `text-borrower.mjs` refused her every time with "unsubscribed / paused by the recipient". Two
+  // mechanisms on the same desk giving opposite instructions about the same borrower, weekly, and the
+  // louder one was wrong. An alarm that asks for the impossible is how people learn to scroll past the
+  // week it is real.
+  //
+  // It still gets LISTED — suppressing it would bury a live borrower, and `nurture_paused` is set by
+  // leadShield/metaHeal for dedup and quarantine as well as by a real opt-out, so the flag itself is not
+  // proof the borrower unsubscribed. What changes is the instruction: resolve the pause first, because
+  // until it clears there is no channel. [[sms-consent-single-predicate]]
+  if (f.paused)
+    return "CANNOT BE CONTACTED — this lead is nurture_paused, so every send path refuses it. " +
+           "Find out why it is paused (real opt-out, or a dedup/shield quarantine) and clear that first; " +
+           "there is no channel to this borrower until you do";
   if (f.flag === "no_outreach")
     return "NOBODY HAS EVER CONTACTED THIS BORROWER — make first contact today";
   if (stage.includes("processing")) return "in processing — chase the open condition or the vendor holding it up";
@@ -193,9 +212,24 @@ export async function findStalledFiles(): Promise<StaleFile[]> {
       loan_amount: f.loan_amount ?? null, property_value: f.property_value ?? null,
       updated_at: f.updated_at ?? null, days, bucket, lastTouch: null,
       outreachDays: null, replyDays: null, deliveredDays: null, docsDelivered: 0,
-      flag: null, severity: RANK[bucket],
+      flag: null, paused: false, severity: RANK[bucket],
     });
   }
+
+  // WIRE THE PAUSE FLAG, OR THE GUARD ABOVE CAN NEVER FIRE. Read-only, best-effort, and on failure
+  // every row simply stays `paused: false` — i.e. exactly today's behaviour, never a regression.
+  try {
+    const ids = stale.map((s) => s.lead_id).filter(Boolean) as string[];
+    if (ids.length) {
+      const { data: leads } = await supabaseAdmin
+        .from("leads")
+        .select("id, nurture_paused")
+        .in("id", ids.slice(0, 500));
+      const paused = new Set<string>();
+      for (const l of (leads || []) as any[]) if (l?.nurture_paused) paused.add(String(l.id));
+      for (const s of stale) if (s.lead_id && paused.has(String(s.lead_id))) s.paused = true;
+    }
+  } catch { /* leave every row unpaused — the digest degrades to its previous wording, not to silence */ }
 
   // Best-effort context: the last thing that actually happened on each file. Turns
   // "cold 22 days" into "cold 22 days, last touch was an email we sent" — which is a

@@ -205,12 +205,56 @@ async function checkLive() {
   }
 }
 
+// ── 6. A paused lead must never be told to "make first contact" ──────────────
+//
+// 2026-10-04: the digest advised "NOBODY HAS EVER CONTACTED THIS BORROWER — make first contact today"
+// for six straight weeks on a lead whose nurture_paused flag made every send path refuse her. The
+// advice and the send path contradicted each other weekly, and the advice was the louder one.
+function checkPausedNeverAdvisesContact() {
+  console.log("\n[6] a paused borrower is never advised to be contacted");
+  const base: StaleFile = {
+    id: "x", file_number: "FF-TEST", lead_id: "L1", borrower_name: "Test", email: null, phone: null,
+    stage: "Application", product: null, state: "CA", loan_amount: null, property_value: null,
+    updated_at: null, days: 54, bucket: "cold" as any, lastTouch: null, outreachDays: null,
+    replyDays: null, deliveredDays: null, docsDelivered: 0, flag: "no_outreach", paused: false,
+    severity: 0,
+  } as any;
+
+  const unpaused = nextAction(base);
+  if (!/first contact/i.test(unpaused))
+    fail(`an UNPAUSED no_outreach file no longer advises first contact — got: ${unpaused}`);
+  else pass("unpaused + never contacted still says: make first contact");
+
+  const paused = nextAction({ ...base, paused: true });
+  if (/first contact|call today|answer them/i.test(paused))
+    fail(`a PAUSED file still advises contacting the borrower — got: ${paused}`);
+  else if (!/paused/i.test(paused))
+    fail(`a PAUSED file does not mention the pause, so the reader cannot act — got: ${paused}`);
+  else pass("paused file says it cannot be contacted and names the pause as the thing to clear");
+
+  // The flag must actually be POPULATED, or the branch above is unreachable in production.
+  //
+  // The first version of this check grepped the source for /nurture_paused/ and passed while the real
+  // query had been gutted — because the word also appears in the comment above and in the message the
+  // branch returns. A guard that matches its own commentary is not a guard. Assert the DATA PATH: a
+  // select against `leads` that actually asks for the column, and an assignment that sets `.paused`.
+  const src = readFileSync(join(ROOT, "lib", "stalledFiles.ts"), "utf8");
+  const selectsIt = /from\(\s*["']leads["']\s*\)[\s\S]{0,200}?nurture_paused/.test(src);
+  const assignsIt = /\.paused\s*=\s*true/.test(src);
+  if (!selectsIt)
+    fail("lib/stalledFiles.ts does not SELECT nurture_paused from leads — the paused branch cannot fire");
+  else if (!assignsIt)
+    fail("lib/stalledFiles.ts never assigns .paused = true — the column is read and thrown away");
+  else pass("findStalledFiles selects nurture_paused from leads AND assigns .paused — branch reachable");
+}
+
 (async () => {
   console.log("VERIFY: stalled-file worklist (/api/los/stalled + components/StalledWorklist)");
   const real = assertRealClient();
   checkSingleSourceOfTruth();
   checkFailClosed();
   checkRanking();
+  checkPausedNeverAdvisesContact();
   if (real) {
     await checkNoWrites();
     await checkLive();

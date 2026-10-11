@@ -287,6 +287,54 @@ function pushSafeName(name: string): string {
     const mine = new Set(Object.values(manifest).map((v: any) => v?.file).filter(Boolean) as string[]);
     const byNumber = new Map((files || []).map((f: any) => [String(f.file_number), f]));
 
+    // CONTENT IDENTITY, PER LOAN FILE — the dedupe that the name lookup below cannot do.
+    //
+    // 2026-10-01: three documents were pushed into live loan files as NEW documents when all I had
+    // done was RENAME the mirror copy to say what the document was. jazmine wilson's W-2 set, Asia
+    // Dearman's pay stub and Corine Lucas's mortgage statement each ended up in the LOS twice,
+    // byte-identical, under two different checklist items. Ramon had just asked for duplicates to be
+    // REMOVED; the sync was manufacturing them while I worked.
+    //
+    // The reason is a vacuous check. The dedupe below selects on `file_name` alone, and the sha256
+    // comparison lives INSIDE the `if (dupe?.id)` branch — so content is only ever compared once a
+    // NAME already matched. Rename the file and there is no name match, nothing to compare, and the
+    // push falls straight through to the upload. The note beside it ("A NAME MATCH IS NOT A CONTENT
+    // MATCH") fixed the opposite error — same name / different bytes — and left this one wide open.
+    // A renamed file is not an edge case here: the folder exists for Ramon to work in, the whole
+    // point of the naming pass is that a filename should say what the document is, and the mirror
+    // itself renames files on every conversion.
+    //
+    // So: a file whose BYTES already exist on that loan file is never a new document, whatever it is
+    // called. Hashing is nearly free — the pull side already holds a byte-exact local copy of almost
+    // every document, so the index reads local disk and only downloads what is not mirrored. Built
+    // lazily, per loan file, and only for files that are actually push candidates.
+    const docsByFile = new Map<string, any[]>();
+    for (const d of docs) {
+      const a = docsByFile.get(d.loan_file_id) || [];
+      a.push(d); docsByFile.set(d.loan_file_id, a);
+    }
+    const shaIndex = new Map<string, Map<string, any>>();
+    const shaIndexFor = async (loanFileId: string) => {
+      const cached = shaIndex.get(loanFileId);
+      if (cached) return cached;
+      const idx = new Map<string, any>();
+      for (const d of docsByFile.get(loanFileId) || []) {
+        const local = manifest[d.storage_path]?.file;
+        try {
+          if (local && existsSync(local)) {
+            idx.set(createHash("sha256").update(readFileSync(local)).digest("hex"), d);
+            continue;
+          }
+          const { data } = await supabaseAdmin.storage.from(BUCKET).download(d.storage_path);
+          if (data) idx.set(createHash("sha256").update(Buffer.from(await data.arrayBuffer())).digest("hex"), d);
+          // A document we cannot read is simply absent from the index. That can only cause a
+          // duplicate to slip through, never a real document to be withheld — the safe direction.
+        } catch { /* same */ }
+      }
+      shaIndex.set(loanFileId, idx);
+      return idx;
+    };
+
     for (const folder of readdirSync(ROOT)) {
       const dir = join(ROOT, folder);
       if (!existsSync(dir) || !statSync(dir).isDirectory()) continue;
@@ -313,6 +361,18 @@ function pushSafeName(name: string): string {
           else { pushSkipped++; continue; }
         }
         const storeName = pushSafeName(name);
+
+        // CONTENT FIRST, NAME SECOND. These bytes already on this loan file means this is the same
+        // document under a new name — a rename, not an upload. Say which document it matches, so a
+        // file that looks ignored is explained rather than mysterious.
+        const localSha = createHash("sha256").update(readFileSync(abs)).digest("hex");
+        const already = (await shaIndexFor(lf.id)).get(localSha);
+        if (already) {
+          if (pushSafeName(already.file_name || "") !== storeName)
+            console.log(`  push skip  ${folder}/${entry} — same bytes as the existing document ` +
+              `"${already.name}" (${already.file_name}). A rename is not a new document.`);
+          mine.add(abs); pushSkipped++; continue;
+        }
 
         // A NAME MATCH IS NOT A CONTENT MATCH. The first version skipped on file_name alone, so a
         // file Ramon revised locally — signed, flattened, re-scanned — kept the same name, looked
@@ -358,6 +418,11 @@ function pushSafeName(name: string): string {
         // Record it so the next pull recognises the file as accounted for and does not
         // re-download the same bytes under a second name.
         manifest[path] = { file: abs, bytes: st.size };
+        // And into the content index, so a SECOND local copy of these same bytes later in this very
+        // run is recognised as the document we just created rather than pushed a third time.
+        (await shaIndexFor(lf.id)).set(localSha, {
+          id: null, loan_file_id: lf.id, name: storeName, file_name: storeName, storage_path: path,
+        });
         console.log(`  pushed  ${folder}/${storeName}`);
         pushed++;
       }
