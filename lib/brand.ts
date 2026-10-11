@@ -22,6 +22,17 @@ export const BRAND = {
   // Deliberately NOT used on brand artwork, social posts, or any company-level advertising —
   // that copy names the LLC and carries `nmls` above.
   mlo: { name: "Ramon Dent", nmls: "2235992", email: "ramon@fettifi.com" },
+  // THE OFFICE LINE, and the ONLY number that may appear on print collateral.
+  //
+  // Added 2026-10-02 because a pre-approval letter went to a buyer's agent with NO WAY TO REACH
+  // ANYONE ON IT. Michelle Dubner wrote back: "the letter does not carry a phone number." A
+  // pre-approval is forwarded to listing agents and sellers precisely so they can call and verify
+  // the buyer is real — a letter they cannot verify is worth less than no letter, because it reads
+  // as unverifiable rather than merely absent.
+  //
+  // NEVER substitute Ramon's mobile or the Twilio DID here. The DID can go busy on a zero balance,
+  // and a dead number on a document that outlives the session is worse than a missing one.
+  phone: "(424) 675-6295",
   mission:
     "Help every client. Home buyers, real estate investors, and business owners. Get the right loan and close it fast. We find a path.",
   voice:

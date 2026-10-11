@@ -13,26 +13,76 @@ export default function UpdatePasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  // 2026-10-05: THIS PAGE NEVER READ THE RESET LINK. It called getSession() and, finding none, said
+  // "Your reset link may have expired or is invalid" — so the only user it ever worked for was one who
+  // ALREADY had a session, i.e. exactly the person who does not need a password reset. Ramon hit it
+  // live today; the Supabase mail had arrived seconds earlier and the link was perfectly good.
+  //
+  // The link is PKCE (`token=pkce_…&type=recovery`), so Supabase bounces back to this page with a
+  // `?code=` that has to be EXCHANGED for a session before one exists. Nothing here did that.
+  //
+  // Handle every shape the recovery link can arrive in, and never race a single getSession():
+  //   * `?code=…`            PKCE — exchange it explicitly.
+  //   * `#access_token=…`    legacy implicit flow — detectSessionInUrl consumes it asynchronously.
+  //   * already signed in    (rare here) — just show the form.
+  // onAuthStateChange is the authority because the SDK's own URL handling is async and can land after
+  // mount. Only declare the link bad once we have actually waited for it.
   useEffect(() => {
     let isMounted = true;
+    let settled = false;
 
-    async function verifySession() {
-      const { data, error } = await supabase.auth.getSession();
-      if (!isMounted) return;
+    const done = (msg: string | null) => {
+      if (!isMounted || settled) return;
+      settled = true;
+      if (msg) setError(msg);
+      setChecking(false);
+    };
 
-      if (error || !data.session) {
-        setError(
-          "Your reset link may have expired or is invalid. Please request a new one."
-        );
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session || event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") done(null);
+    });
+
+    (async () => {
+      try {
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
+        const errDesc =
+          url.searchParams.get("error_description") ||
+          new URLSearchParams(url.hash.replace(/^#/, "")).get("error_description");
+
+        // Supabase itself rejected the link (expired, already used). Say what it said.
+        if (errDesc) return done(decodeURIComponent(errDesc.replace(/\+/g, " ")));
+
+        if (code) {
+          const { error: xErr } = await supabase.auth.exchangeCodeForSession(code);
+          if (xErr) {
+            return done(
+              xErr.message ||
+                "This reset link could not be verified. Request a new one, and open it in the same browser you requested it from."
+            );
+          }
+          return done(null);
+        }
+
+        const { data } = await supabase.auth.getSession();
+        if (data.session) return done(null);
+      } catch {
+        /* fall through to the settle timer below */
       }
 
-      setChecking(false);
-    }
-
-    verifySession();
+      // No code, no session yet — give the SDK's async URL handling a moment before failing.
+      setTimeout(async () => {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) return done(null);
+        done(
+          "Your reset link may have expired or is invalid. Please request a new one, and open it in the same browser you requested it from."
+        );
+      }, 1500);
+    })();
 
     return () => {
       isMounted = false;
+      sub?.subscription?.unsubscribe();
     };
   }, []);
 
