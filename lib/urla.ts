@@ -460,14 +460,36 @@ export function assembleUrla(lead: any, loanFile?: any): Urla {
   // Narrow on purpose: it fires only while the lead column still holds the wizard's own payload
   // value (raw carries the submitted body), so a MISMO import, an LOS edit or a later correction
   // is never second-guessed.
+  //
+  // ── AND IT IS NOW A LEGACY PATH ONLY. 2026-10-07: app/apply/form/page.tsx was fixed at the
+  // source — the flip flow asks `rehab_budget`, the equity flow asks `existing_mortgage_balance`,
+  // and BOTH flows then ask `loan_amount_requested` for the amount actually requested. This
+  // reinterpretation was written to compensate for that defect, so once the cause was removed the
+  // compensation became the defect: a flip borrower asking for $420k with a $75k rehab budget had
+  // URLA 4a blanked and $420,000 printed as the REHAB BUDGET (lib/underwritingDesk.ts sizes
+  // cash-in-deal and LTARV off it), while their real $75k answer was discarded; a HELOC borrower
+  // wanting $100k against a $500k balance got a senior lien of $100,000 — understating what they
+  // owe by $400k on the figure CLTV is computed from. Both are worse than the blank they replaced,
+  // because both are confident and wrong. [[corrections-invalidate-derived-content]]
+  //
+  // The discriminator is the discrete key, and it is sound because of the ORDER the wizard asks
+  // in: `rehab_budget` / `existing_mortgage_balance` are non-optional questions that come BEFORE
+  // `loan_amount_requested` on their flows, so a row carrying an amount but no discrete key
+  // cannot have come from the fixed wizard — it is pre-2026-10-07. scripts/verify-urla-fidelity.ts
+  // asserts that ordering, because this branch depends on it.
   const requestedNumber = num(lead?.loan_amount_requested);
   const wizardNumber = requestedNumber != null && num(raw.loan_amount_requested) === requestedNumber;
-  const rehabBudgetFlow = wizardNumber && /(fix\s*&?\s*n?\s*flip|\bflip\b|rehab|construction|ground.?up|bridge)/.test(purposeStr);
-  const payoffBalanceFlow = wizardNumber && /(heloc|home\s*equity)/.test(purposeStr);
-  const flowRehabBudget = rehabBudgetFlow && requestedNumber! > 0 ? requestedNumber : undefined;
+  const askedRehabBudget = num(raw.rehab_budget);
+  const askedLienBalance = num(raw.existing_mortgage_balance);
+  const rehabBudgetFlow = wizardNumber && askedRehabBudget == null
+    && /(fix\s*&?\s*n?\s*flip|\bflip\b|rehab|construction|ground.?up|bridge)/.test(purposeStr);
+  const payoffBalanceFlow = wizardNumber && askedLienBalance == null && /(heloc|home\s*equity)/.test(purposeStr);
+  const flowRehabBudget = askedRehabBudget != null && askedRehabBudget > 0 ? askedRehabBudget
+    : rehabBudgetFlow && requestedNumber! > 0 ? requestedNumber : undefined;
   // Only a balance they actually owe becomes a senior lien. "Nothing owed" is an answer, and a
   // $0 lien block in the lender's file is a phantom, so it stays absent.
-  const flowPayoffBalance = payoffBalanceFlow && requestedNumber! > 0 ? requestedNumber : undefined;
+  const flowPayoffBalance = askedLienBalance != null && askedLienBalance > 0 ? askedLienBalance
+    : payoffBalanceFlow && requestedNumber! > 0 ? requestedNumber : undefined;
 
   const property: UrlaProperty = {
     address: (propAddr.street || propAddr.city || propAddr.state || propAddr.zip) ? propAddr : undefined,
