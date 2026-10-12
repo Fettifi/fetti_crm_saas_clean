@@ -6,13 +6,52 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { generateBatch } from "@/lib/content";
 import { logActivity } from "@/lib/activity";
 import { recordHeartbeat } from "@/lib/heartbeat";
-import { cfg } from "@/lib/settings";
+import { cfg, getSetting } from "@/lib/settings";
+import { WEEKLY_BRIEF_KEY } from "@/lib/competitorWatch";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 90;
 
+// THE COMPETITOR WATCH COLLECTED THE INDUSTRY AND NOTHING READ IT.
+//
+// Ramon, 2026-10-12: "I also want you to monitor the flow and the climate of the industry. That's
+// the whole reason for the competitor watch tool. I want you to use that data to influence what our
+// daily posts are."
+//
+// He was describing a real disconnection, not a preference. `/api/cron/competitor-watch` has been
+// writing COMPETITOR_WEEKLY_BRIEF for weeks — 2,382 characters as of 2026-10-12T13:30:33Z, naming
+// which competitor moved, by how much, and WHY ("CrossCountry … +1,614 followers and 7.56%
+// engagement this week, almost entirely driven by a $500 Halloween giveaway reel"). And this cron
+// called generateBatch("") — an EMPTY topic — so every daily post was written with zero knowledge of
+// what the market was doing that week. Two systems, no wire between them.
+//
+// The brief steers the THEME. It does not get quoted: a competitor's name or numbers must never
+// reach a public post. Ramon's standing rules bar naming real people and firms in marketing, and a
+// post that cites a rival's engagement rate is both strange and a gift to them.
+async function competitorTheme(): Promise<string> {
+  try {
+    const raw = await getSetting(WEEKLY_BRIEF_KEY);
+    if (!raw) return "";
+    const { brief, at } = JSON.parse(raw) as { brief?: string; at?: string };
+    if (!brief) return "";
+    // A STALE BRIEF IS WORSE THAN NONE. It is written weekly; past ~10 days it is describing a
+    // market that has moved, and steering today's posts by it is confidently out of date.
+    if (at) {
+      const ageDays = (Date.now() - Date.parse(at)) / 86400000;
+      if (!Number.isFinite(ageDays) || ageDays > 10) return "";
+    }
+    return `WHAT THE MARKET IS DOING THIS WEEK — steer the angle of these posts by it, but NEVER name a
+competitor, quote their numbers, or reference another company in the copy. Use it only to choose WHAT
+to talk about and WHICH format lands right now:
+
+${String(brief).slice(0, 1800)}`;
+  } catch { return ""; }
+}
+
 async function run(topic = "") {
-  const rows = await generateBatch(topic);
+  // An explicit topic (a manual POST) always wins; the brief only fills an empty one.
+  const steer = topic || (await competitorTheme());
+  const rows = await generateBatch(steer);
   if (!rows.length) return { ok: true, created: 0 };
   const { data, error } = await supabaseAdmin.from("content_posts").insert(rows).select("*");
   if (error) throw new Error(error.message);
