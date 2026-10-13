@@ -68,12 +68,42 @@ case "$cmd" in
     path=${1:-}
     [ -z "$path" ] && exit 0
     [ -s "$LEDGER" ] || exit 0
-    # A lesson applies when its scope appears anywhere in the edited path. Deliberately simple:
-    # a matcher nobody can predict is a matcher nobody trusts.
-    jq -r --arg p "$path" '
+    # A LEDGER THAT WILL NOT PARSE HAS TO SAY SO.
+    #
+    # This was `jq ... 2>/dev/null | head -60`, and that is two silencers in a row. The redirect
+    # throws away jq's parse error, and the pipe hands the exit status to `head`, which always
+    # succeeds. Measured with one half-written line appended: jq streams the valid objects, hits
+    # the bad one, and stops — so the hook printed 13 of 39 lines and exited 0. Not empty, which
+    # might have been noticed: TRUNCATED, and indistinguishable from a complete answer. Every
+    # lesson recorded after the corruption point silently stops being shown to anyone.
+    # That is the exact shape of the silent-failure bugs this ledger exists to record.
+    err="$LEDGER.err.$$"
+    if out=$(jq -r --arg p "$path" '
       select(.scope as $s | ($s == ".") or ($p | contains($s)))
       | "  [\(.kind)]\(if .count > 1 then " REPEAT x\(.count) — this has bitten before" else "" end)\n    \(.summary)\(if (.detail // "") != "" then "\n    \(.detail)" else "" end)"
-    ' "$LEDGER" 2>/dev/null | head -60
+    ' "$LEDGER" 2>"$err"); then
+      rm -f "$err"
+      printf '%s\n' "$out" | head -60
+    else
+      echo "  !! THE LESSON LEDGER WILL NOT PARSE — $LEDGER" >&2
+      echo "     Until it does, NO past failure can be put in front of anyone, and this hook" >&2
+      echo "     would otherwise look exactly like a clean file with nothing to report." >&2
+      sed 's/^/     jq: /' "$err" >&2
+      rm -f "$err"
+      exit 3
+    fi
+    ;;
+
+  # Is the ledger readable at all? Separated out so a guard can ask the question directly
+  # rather than inferring it from empty output. exit 0 = parses · 3 = malformed.
+  check)
+    [ -s "$LEDGER" ] || { echo "lesson ledger is empty (that is fine)"; exit 0; }
+    err="$LEDGER.err.$$"
+    if n=$(jq -s 'length' "$LEDGER" 2>"$err"); then
+      rm -f "$err"; echo "lesson ledger parses — $n entr$([ "$n" = 1 ] && echo y || echo ies)"
+    else
+      echo "LESSON LEDGER IS MALFORMED — $LEDGER" >&2; sed 's/^/  jq: /' "$err" >&2; rm -f "$err"; exit 3
+    fi
     ;;
 
   list)

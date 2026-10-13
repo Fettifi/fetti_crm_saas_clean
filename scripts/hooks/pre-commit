@@ -298,6 +298,17 @@ if printf '%s\n' "$CHANGED" | grep -q -e 'sync-loan-docs' -e 'verify-push-conten
   fi
 fi
 
+# THE LEDGER THAT RECORDS EVERY GUARD BLOCK HAS TO BE READABLE, OR THIS WHOLE HOOK FORGETS.
+# Unconditional, because this hook APPENDS to .claude/lessons.jsonl itself every time a guard
+# blocks — so a half-written append is a failure mode it creates. A corrupt ledger used to
+# truncate `lessons.sh for-file` silently (13 of 39 lines, exit 0), which reads as a complete
+# answer, so every lesson recorded after the bad line quietly stopped reaching anyone.
+printf "   %-24s " "verify:lesson-ledger"
+OUT=$(sh "$(git rev-parse --show-toplevel)/scripts/hooks/lessons.sh" check 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:lesson-ledger"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 if [ -n "$ANYTS" ]; then
   printf "   %-24s " "verify:urla-fidelity"
   OUT=$(npm run --silent verify:urla-fidelity 2>&1)

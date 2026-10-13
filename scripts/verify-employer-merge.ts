@@ -33,8 +33,15 @@ ck("IHSS recipients stay separate", !sameEmployerStem("ihss\x00c1837869", "ihss\
 // "case#" on an ordinary employer must not fork the stream. Milton, 2026-08-04: a re-read
 // labelled a check number on ONE of his two Le Lycee stubs as case#260059, so it never merged
 // with the other and his single salary was counted TWICE ($19,090) on an FHA file.
+// THE SEPARATOR HAS TO BE A NUL, OR THIS CHECK TESTS SOMETHING ELSE AND PASSES ANYWAY.
+// sameEmployerStem splits its input on \u0000 into stem and identity. Written with SPACES, both
+// identities came back EMPTY, so `if (ia && ib && ia !== ib)` — the exact rule this line names —
+// was never reached; it passed through the 12-character CONTAINMENT branch instead, because
+// "lelyceefrancaisdela c260059" does contain "lelyceefrancaisdela ". Green for the wrong reason,
+// over the defect that counted Milton's one salary twice. Proven: restore the pre-fix rule
+// (`if (ia !== ib) return false`) and the spaced version still passes while this one fails.
 ck("a spurious case# does not fork an ordinary employer",
-  sameEmployerStem("lelyceefrancaisdela c260059", "lelyceefrancaisdela "));
+  sameEmployerStem("lelyceefrancaisdela\x00c260059", "lelyceefrancaisdela"));
 const miltonDup = computeQualifyingIncome([
   F({ file: "w25", docType: "w2", borrower: 2, incomeCategory: "wage_salaried", employerOrPayer: "LE LYCEE FRANCAIS DE LOS ANGELES",
       streamId: "LE LYCEE FRANCAIS DE LOS ANGELES|95-2404136", ein: "95-2404136", taxYear: 2025, w2Box5: 91354.54 }),
