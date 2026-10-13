@@ -55,7 +55,7 @@ export async function SocialProofWall({
             A licensed lender built to get it done.
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-slate-500">
-            Fully licensed and regulated — and built for the deals big banks won&apos;t. Start in two minutes, no credit impact.
+            Fully licensed and regulated — and built for the way you actually earn. Start in two minutes, no credit impact.
           </p>
           <div className="mt-8">
             <TrustBadgeRow />

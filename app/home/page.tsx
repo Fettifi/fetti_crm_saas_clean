@@ -21,7 +21,7 @@ export const revalidate = 600;
 export const metadata = {
   title: "Fetti Financial Services LLC | Home, Investment & Business Lending",
   description:
-    "Fetti Financial Services LLC — a nonbank mortgage lender (NMLS #2267023). We get the loans done that big banks won't. Turned down by a bank? That's exactly who we're built for. Pre-qualify in 2 minutes, no credit impact.",
+    "Fetti Financial Services LLC — a mortgage lender and broker (NMLS #2267023) built for the way you actually earn. Self-employed, commissioned, investing, or buying your first place. Pre-qualify in 2 minutes, no credit impact.",
   alternates: { canonical: "https://fettifi.com" },
 };
 
@@ -90,12 +90,14 @@ const STATS = [
   { value: "2 min", label: "To pre-qualify · no credit pull" },
 ];
 
-// The bank-vs-broker contrast. The core differentiator vs Chase / BofA / Wells / Rocket.
-const BANK_VS = [
-  { them: "Sells you one menu. Their own products", us: "A nonbank lender built around your deal, not one menu" },
-  { them: "Works for the bank's shareholders", us: "Works for you. We win when you do" },
+// The contrast, with no competitor named. Ramon, 2026-10-13: "Lead with the borrower, don't mention
+// banks at all." The left column is a PROCESS, not a company — we can describe a template honestly
+// without asserting what any named institution would have done with this visitor's file.
+const CONTRAST = [
+  { them: "One menu, and you fit it or you don't", us: "Programs matched to your scenario, not the other way round" },
+  { them: "You are a file in a queue", us: "A named person on your file who answers the phone" },
   { them: "Branch hours, hold music, hand-offs", us: "One specialist, your phone, California-fast" },
-  { them: "Turns you down if you don't fit their box", us: "Built for the deals banks won't do" },
+  { them: "Income has to arrive on two W-2s", us: "Built for income that arrives any other way" },
 ];
 
 const AUDIENCE = [
@@ -107,19 +109,19 @@ const AUDIENCE = [
 
 const STEPS = [
   { n: "01", icon: Sparkles, title: "Tell us your goal", desc: "Two-minute pre-qualification. Purchase, refinance, investment, or business. No credit pull to start." },
-  { n: "02", icon: Headphones, title: "A specialist reaches out", desc: "A real loan expert reviews your scenario and maps how we get it done — even the deals banks turn down." },
+  { n: "02", icon: Headphones, title: "A specialist reaches out", desc: "A real loan expert reviews your scenario and maps the path — including the ones that take more than a template." },
   { n: "03", icon: BadgeCheck, title: "Get funded", desc: "We move fast, keep you updated at every step, and get you to the closing table." },
 ];
 
 const WHY = [
   { icon: ShieldCheck, title: "Compliance in our DNA", desc: "Shaped by years in heavily-regulated industries. We do it right. Every file, every time." },
   { icon: Rocket, title: "California-fast", desc: "Bridge and hard-money options close in days. Pre-qualification takes minutes." },
-  { icon: Scale, title: "We work for you", desc: "A nonbank lender in your corner. Our job is getting your deal done — not hitting a bank's quota." },
+  { icon: Scale, title: "We work for you", desc: "Your scenario is the starting point, and our job is finding the program that fits it." },
   { icon: HeartHandshake, title: "We get you", desc: "Built by people who've been the operator and the everyday grinder. We respect what you need." },
 ];
 
 const FAQ = [
-  { q: "What makes Fetti different?", a: "We're a nonbank lender (NMLS #2267023) built to get the deals done that big banks won't — including the borrowers banks turn away: first-time buyers, self-employed, investors, unusual income, tough scenarios. We're in your corner, working to get your loan closed. All loans are subject to credit approval and program guidelines." },
+  { q: "What makes Fetti different?", a: "We're built for the way people actually earn (NMLS #2267023) — first-time buyers, self-employed, commissioned, investors, and income that does not arrive on two W-2s. We have programs that qualify you on bank deposits, on a property's rent, or on a full-doc file, and we start from your scenario rather than asking you to fit one. All loans are subject to credit approval and program guidelines." },
   { q: "Can you help with my down payment?", a: "Yes — for a lot of buyers, that's the easiest part to solve. Between FHA (3.5% down), VA and USDA ($0 down if you're eligible), and down payment assistance programs from state, county, and national sources, we can often cover most or all of your down payment and closing costs. Eligibility and terms vary by program — we'll show you exactly what you qualify for in a 2-minute chat, no credit impact." },
   { q: "Will getting started affect my credit?", a: "No. Pre-qualifying takes about two minutes with no hard credit pull. We only move forward when you're ready." },
   { q: "How fast can I close?", a: "It depends on the loan, but we move fast. Bridge and hard-money options can close in days, and we keep you posted at every step. All loans are subject to credit approval and program guidelines." },
@@ -162,12 +164,22 @@ export default async function MarketingHome() {
           <p className="mb-6 text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
             We <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">DO</span> Money<span className="text-emerald-600">!</span>
           </p>
+          {/* LEAD WITH THE BORROWER, AND NAME NO COMPETITOR. Ramon, 2026-10-13: the old line was
+              "The loans the banks won't do" — "I don't think it sounds right... something a little
+              more catchy and a little more accepting without lying or boasting," then "Lead with the
+              borrower, don't mention banks at all."
+              It also claimed something we cannot know: whether a bank declined this visitor. What we
+              CAN say is what is true of our own book — we are built for income that does not come on
+              two W-2s. That is specific, it is checkable, and it promises no approval. */}
           <h1 className="mt-7 text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.05] text-slate-900">
-            The loans the banks{" "}
-            <span className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent">won&apos;t do.</span>
+            Built for the way you{" "}
+            <span className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent">actually earn.</span>
           </h1>
           <p className="mt-6 text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            We&apos;re a <span className="font-semibold text-slate-800">nonbank lender</span> built for the deals big banks turn down — and the buyers they overlook. First-time buyer, self-employed, investor, or short on the down payment? That&apos;s exactly who we&apos;re here for. Home, investment, and business loans — with down payment assistance for buyers who qualify. Start in two minutes. No credit impact.
+            Self-employed, commissioned, investing, or buying your first place — if your income
+            doesn&apos;t fit a template, that&apos;s exactly what we&apos;re built for. Home, investment
+            and business loans, with down payment assistance for buyers who qualify. Start in two
+            minutes. No credit impact.
           </p>
           <div className="mt-9 flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/apply/form" className="group inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">
@@ -186,7 +198,7 @@ export default async function MarketingHome() {
             <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Equal Housing Opportunity</span>
           </div>
           <CediBubble center size={64} className="mt-10">
-            I&apos;m <span className="font-bold text-slate-900">Mark</span> with Fetti Financial Services — a nonbank lender. We get it funded, and we do the loans the banks won&apos;t. Tell me your goal below; if a bank turned you down, that&apos;s exactly who we&apos;re built for. Two minutes, no credit pull.
+            I&apos;m <span className="font-bold text-slate-900">Mark</span> with Fetti Financial Services. Tell me your goal below and how your income is put together — however that looks, there is usually a program built for it. Two minutes, no credit pull.
           </CediBubble>
           <div className="mt-4 flex justify-center"><CediVoice /></div>
         </div>
@@ -204,18 +216,18 @@ export default async function MarketingHome() {
         </div>
       </section>
 
-      {/* ---------- Bank vs Broker ---------- */}
+      {/* ---------- Template vs your scenario ---------- */}
       <section className="max-w-6xl mx-auto px-6 py-20">
         <div className="text-center max-w-2xl mx-auto mb-12">
           <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">The Fetti advantage</p>
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">A bank tells you no. We figure out how to get it done.</h2>
-          <p className="text-slate-500 mt-3">Big banks only fund what fits a narrow box and turn the rest away. We&apos;re a nonbank lender built for the deals and the borrowers they won&apos;t touch.</p>
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Start with your scenario. We find the program that fits it.</h2>
+          <p className="text-slate-500 mt-3">Most lending starts with a template and asks you to match it. We start with how you actually earn, then match a program to that.</p>
         </div>
         <div className="grid md:grid-cols-2 gap-5 max-w-4xl mx-auto">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-7">
-            <div className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-4">A big bank</div>
+            <div className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-4">A one-size process</div>
             <ul className="space-y-3">
-              {BANK_VS.map((r) => (
+              {CONTRAST.map((r) => (
                 <li key={r.them} className="flex items-start gap-3 text-slate-500">
                   <X className="w-5 h-5 text-slate-400 mt-0.5 shrink-0" /><span>{r.them}</span>
                 </li>
@@ -224,9 +236,9 @@ export default async function MarketingHome() {
           </div>
           <div className="rounded-2xl border-2 border-emerald-300 bg-white p-7 shadow-lg shadow-emerald-600/5 relative">
             <span className="absolute -top-3 left-7 rounded-full bg-emerald-600 text-white text-xs font-bold px-3 py-1 shadow">Fetti</span>
-            <div className="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-4">Fetti. Nonbank lender</div>
+            <div className="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-4">Fetti</div>
             <ul className="space-y-3">
-              {BANK_VS.map((r) => (
+              {CONTRAST.map((r) => (
                 <li key={r.us} className="flex items-start gap-3 text-slate-800">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" /><span>{r.us}</span>
                 </li>
@@ -372,7 +384,7 @@ export default async function MarketingHome() {
           <div>
             <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-4">Why Fetti</p>
             <CediBubble className="mb-5">I don&apos;t miss. Here&apos;s why folks roll with Fetti. Straight from me. 🦉</CediBubble>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-slate-900">A nonbank lender that moves like a fintech and fights in your corner.</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-slate-900">Moves like a fintech. Answers like a person.</h2>
             <p className="text-slate-500 mt-4 leading-relaxed">
               Institutional-grade programs, operator-grade discipline, and a team that actually picks up the phone.
               We carry the load — structuring, funding, and guiding — so you get your loan done, closed fast, without the stress.
