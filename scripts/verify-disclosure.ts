@@ -40,7 +40,11 @@ for (const [name, value] of Object.entries({ LICENSING_NOTE, LICENSING_SHORT, SO
 
 // 2. NEVER print Ramon's mobile or the Twilio DID on a public disclosure.
 for (const [name, value] of Object.entries({ LICENSING_NOTE, LICENSING_SHORT, SOCIAL_DISCLOSURE })) {
-  chk(!/323[.\-\s]?620[.\-\s]?3534|920[.\-\s]?754[.\-\s]?3647/.test(value),
+  // COMPARE DIGITS, NOT A SEPARATOR GUESS. 2026-10-03: this pattern allowed ONE separator between
+  // groups, so the ordinary rendered form "(323) 620-3534" — paren AND space — slipped straight
+  // through. Found by substituting the mobile into a document on purpose and watching the twin of
+  // this check report ok. Normalise, then compare.
+  chk(!/3236203534|9207543647/.test(String(value).replace(/\D/g, "")),   // PRIVACY-NEEDLE-DIGITS
     `${name} does not print the mobile or the Twilio DID`);
 }
 
