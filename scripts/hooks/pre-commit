@@ -303,6 +303,15 @@ fi
 # blocks — so a half-written append is a failure mode it creates. A corrupt ledger used to
 # truncate `lessons.sh for-file` silently (13 of 39 lines, exit 0), which reads as a complete
 # answer, so every lesson recorded after the bad line quietly stopped reaching anyone.
+# A TRACKED FILE MUST NEVER CARRY A BORROWER'S NAME OR INCOME. Unconditional: income-baseline.json
+# is GENERATED, so it can regain a field the day someone adds one to the snapshot — and this repo was
+# public for ten weeks with 35 borrowers in it before anyone looked.
+printf "   %-24s " "verify:baseline-clean"
+OUT=$(npm run --silent verify:baseline-clean 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:baseline-clean"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 printf "   %-24s " "verify:lesson-ledger"
 OUT=$(sh "$(git rev-parse --show-toplevel)/scripts/hooks/lessons.sh" check 2>&1)
 if [ $? -eq 0 ]; then echo "PASS"; else

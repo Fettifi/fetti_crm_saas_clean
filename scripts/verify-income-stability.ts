@@ -30,10 +30,35 @@
 // file. The point is that it can never happen WITHOUT SOMEONE SEEING IT FIRST.
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import { createHash } from "crypto";
 import path from "path";
 
 const ROUTE = "app/api/los/files/[id]/verify-income/route.ts";
 const BASELINE = path.join(process.cwd(), "scripts", "income-baseline.json");
+/**
+ * THE AUDIT TRAIL LIVES OUTSIDE GIT, BECAUSE IT IS THE MOST SENSITIVE THING THIS GUARD PRODUCES.
+ *
+ * Every accepted move records WHY a borrower's settled income was allowed to change, in prose — and
+ * that prose names the borrower, both figures, their employer, hire dates, benefit income and
+ * account last-4s. It was being written into scripts/income-baseline.json, which is tracked, in a
+ * repo that was public on GitHub from 2026-08-01. Fourteen such records were published.
+ *
+ * The record itself is worth keeping — "this one is on the record and not a shrug" is the whole
+ * point of --accept-move. So it moved here rather than being deleted: same content, same use, and
+ * .gitignore keeps it off the remote. If this file is absent the guard still works; it simply has
+ * no prior acceptances to carry forward.
+ */
+const ACCEPTED = path.join(process.cwd(), "scripts", ".income-accepted-moves.local.json");
+
+function readAccepted(): AcceptedMove[] {
+  try { return JSON.parse(readFileSync(ACCEPTED, "utf8")).acceptedMoves || []; } catch { return []; }
+}
+function writeAccepted(moves: AcceptedMove[]) {
+  writeFileSync(ACCEPTED, JSON.stringify({
+    _note: "LOCAL ONLY — gitignored. Borrower names, incomes, employers and account fragments.",
+    acceptedMoves: moves,
+  }, null, 2));
+}
 
 function env(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -165,6 +190,50 @@ function argValue(flag: string): string | null {
 // verify-income-replay.ts already learned exactly this ("Keys sorted so a re-save is a diff of the
 // NUMBERS, not of row order") and sorts its snapshot. This is the parallel path that never got the
 // fix. Sorted by file number, because that is what a human reads, with the id as tie-break.
+/**
+ * WHAT GETS WRITTEN TO DISK CARRIES NO BORROWER DATA. THIS FILE IS IN GIT.
+ *
+ * 2026-10-13. scripts/income-baseline.json was tracked in a repo that was PUBLIC on GitHub from
+ * 2026-08-01. Fetched anonymously, with no login, it gave up 35 borrowers by name, 13 of them with
+ * their qualifying monthly income beside the name, plus document labels carrying account last-4s
+ * ("Simply Checking 4803"), balances ("avail 3023.15") and third-party tenant names. That is NPI on
+ * a licensed brokerage's borrowers, published for ten weeks, and I wrote the file that did it.
+ *
+ * Making the repo private is containment. This is the fix: the baseline never needed any of it.
+ *
+ * Its whole job is to answer "did this file's income INPUTS move since last time", which is a
+ * comparison — and a comparison only needs a stable fingerprint, not a readable name. So the stored
+ * form drops `borrower` entirely and replaces each document's NAME with a 12-char SHA-256 prefix.
+ * Document ids stay (opaque UUIDs), so set comparison is bit-for-bit as sensitive as before, and
+ * hashing the name keeps the guard's sensitivity to a RENAME — which matters, because INCOME_RE
+ * classifies on the name, so renaming a document really can change whether it feeds the income read.
+ *
+ * The report loses nothing: it already fetches the LIVE snapshot, which has the real names, so the
+ * failure message resolves them from there at print time instead of from disk. A name reaches your
+ * terminal; it never reaches the repo.
+ *
+ * `cachedIncome` stays a number on purpose. Stripped of the borrower name it identifies nobody — an
+ * FF-number maps to a person only inside the private database — and keeping it is what lets the
+ * message say "$10,414 -> $12,000" rather than "something changed". [[absence-needs-an-exhaustive-read]]
+ */
+export function redactForStorage<T extends Snapshot>(snap: T): T {
+  const h = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 12);
+  const files = Object.fromEntries(
+    Object.entries(snap.files).map(([id, f]) => [id, {
+      ...f,
+      borrower: "",                       // resolved live at report time, never stored
+      candidates: f.candidates.map((c) => {
+        const i = c.indexOf("|");
+        return i < 0 ? c : `${c.slice(0, i)}|${h(c.slice(i + 1))}`;
+      }),
+    }]),
+  );
+  // Belt and braces: if any future edit puts acceptedMoves back on the snapshot, it still never
+  // reaches disk through this function.
+  const { acceptedMoves: _drop, ...rest } = snap as any;
+  return { ...rest, files } as T;
+}
+
 export function sortFiles<T extends Snapshot>(snap: T): T {
   const entries = Object.entries(snap.files).sort(([idA, a], [idB, b]) =>
     (a.file || "").localeCompare(b.file || "") || idA.localeCompare(idB));
@@ -178,13 +247,25 @@ async function main() {
   const now = await snapshot();
 
   if (!existsSync(BASELINE)) {
-    writeFileSync(BASELINE, JSON.stringify(sortFiles(now), null, 2));
+    writeFileSync(BASELINE, JSON.stringify(redactForStorage(sortFiles(now)), null, 2));
     console.log(`No baseline existed — created: ${Object.keys(now.files).length} files, LOGIC_VERSION=${now.logicVersion}`);
     console.log("Re-run without --save to check against it.");
     return;
   }
 
   const base: Snapshot = JSON.parse(readFileSync(BASELINE, "utf8"));
+  // COMPARE LIKE WITH LIKE. The stored baseline holds hashed document names and no borrower; the
+  // live snapshot holds the real ones. Redact a copy of the live snapshot for every comparison, and
+  // keep `now` itself for anything a human reads.
+  const nowCmp = redactForStorage(now);
+  /** The borrower's name for a message — from the LIVE row, never from disk. */
+  const who = (id: string) => now.files[id]?.borrower || "(file no longer in the LOS)";
+  /** A document's real name for a message — resolved from the live candidate list by id. */
+  const docName = (id: string, cand: string) => {
+    const uuid = cand.split("|")[0];
+    const live = now.files[id]?.candidates.find((c) => c.startsWith(uuid + "|"));
+    return live ? live.slice(uuid.length + 1) : `${uuid} (name not stored — look it up in the LOS)`;
+  };
   const problems: string[] = [];
   const notes: string[] = [];
   // Files whose number moved on an UNCHANGED document set, keyed by id.
@@ -206,22 +287,22 @@ async function main() {
   }
 
   for (const [id, b] of Object.entries(base.files)) {
-    const n = now.files[id];
-    if (!n) { notes.push(`file removed: ${b.file} (${b.borrower})`); continue; }
+    const n = nowCmp.files[id];
+    if (!n) { notes.push(`file removed: ${b.file} (${who(id)})`); continue; }
     const added = n.candidates.filter((c) => !b.candidates.includes(c));
     const removed = b.candidates.filter((c) => !n.candidates.includes(c));
     if (added.length || removed.length) {
       problems.push(
-        `${b.borrower} (${b.file}): income document set changed ` +
+        `${who(id)} (${b.file}): income document set changed ` +
         `${b.candidates.length} -> ${n.candidates.length}. Its cached income ${money(b.cachedIncome)} ` +
         `WILL be invalidated and re-read.` +
-        added.map((a) => `\n      + ${a.split("|")[1]}`).join("") +
-        removed.map((r) => `\n      - ${r.split("|")[1]}`).join("")
+        added.map((a) => `\n      + ${docName(id, a)}`).join("") +
+        removed.map((r) => `\n      - ${docName(id, r)}`).join("")
       );
     } else if (b.cachedIncome != null && n.cachedIncome != null && b.cachedIncome !== n.cachedIncome) {
-      moved.set(id, { file: b.file, borrower: b.borrower, from: b.cachedIncome, to: n.cachedIncome });
+      moved.set(id, { file: b.file, borrower: who(id), from: b.cachedIncome, to: n.cachedIncome });
       problems.push(
-        `${b.borrower} (${b.file}): qualifying income moved ${money(b.cachedIncome)} -> ${money(n.cachedIncome)} ` +
+        `${who(id)} (${b.file}): qualifying income moved ${money(b.cachedIncome)} -> ${money(n.cachedIncome)} ` +
         `with NO change to the documents. That is the 2026-07-22 complaint ("different this week on the ` +
         `same file") and it should never happen on its own.` +
         `\n      This one CANNOT be cleared by --save alone. Resolve it, or accept it on the record with:` +
@@ -248,7 +329,8 @@ async function main() {
       console.error("\n--accept-move requires --reason=\"…\". An adopted number with no stated basis is indistinguishable from a mistake.");
       process.exit(1);
     }
-    const next: Snapshot & { acceptedMoves?: AcceptedMove[] } = { ...now, acceptedMoves: (base as any).acceptedMoves || [] };
+    const accepted: AcceptedMove[] = readAccepted();
+    const next: Snapshot = { ...now };
     for (const m of unnamed) {
       // Carry the OLD entry forward verbatim, so the discrepancy survives the re-baseline and this
       // guard keeps failing on exactly this file until somebody decides.
@@ -257,9 +339,10 @@ async function main() {
     }
     for (const f of acceptMove) {
       const m = [...moved.values()].find((x) => x.file === f)!;
-      next.acceptedMoves!.push({ file: m.file, borrower: m.borrower, from: m.from, to: m.to, acceptedAt: new Date().toISOString(), reason });
+      accepted.push({ file: m.file, borrower: m.borrower, from: m.from, to: m.to, acceptedAt: new Date().toISOString(), reason });
     }
-    writeFileSync(BASELINE, JSON.stringify(sortFiles(next), null, 2));
+    writeAccepted(accepted);
+    writeFileSync(BASELINE, JSON.stringify(redactForStorage(sortFiles(next)), null, 2));
     console.log(`\nBaseline saved: ${Object.keys(next.files).length} files, LOGIC_VERSION=${next.logicVersion}`);
     if (acceptMove.length) for (const f of acceptMove) console.log(`  ACCEPTED MOVE ${f} — "${reason}" (recorded in the baseline)`);
     if (unnamed.length) {

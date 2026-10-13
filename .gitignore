@@ -18,3 +18,6 @@ tsconfig.tsbuildinfo
 
 # Throwaway diagnostic scripts (agents + ad-hoc DB probes) — never committed
 scripts/_tmp-*
+
+# Income audit trail — borrower names, incomes, employers, account fragments. NEVER tracked.
+scripts/.income-accepted-moves.local.json

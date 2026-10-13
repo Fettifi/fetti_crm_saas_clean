@@ -129,7 +129,8 @@
     "verify:supabase-grants": "tsx scripts/verify-supabase-grants.ts",
     "verify:imports": "node scripts/verify-import-integrity.mjs --worktree",
     "verify:owner-number": "tsx scripts/verify-owner-number-key.ts",
-    "verify:rls": "tsx scripts/verify-rls-lockdown.ts"
+    "verify:rls": "tsx scripts/verify-rls-lockdown.ts",
+    "verify:baseline-clean": "tsx scripts/verify-baseline-clean.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
