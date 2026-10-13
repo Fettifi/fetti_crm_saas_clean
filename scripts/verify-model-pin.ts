@@ -49,6 +49,57 @@ for (const f of ["lib/aiFallback.ts", "lib/contentQC.ts"]) {
   ck(`${f} reads ANTHROPIC_MODEL`, /process\.env\.ANTHROPIC_MODEL/.test(src));
 }
 
+// WHICH MODEL IS ACTUALLY IN FORCE? A WIRED KNOB NOBODY TURNED IS STILL THE OLD MODEL.
+//
+// Everything above proves the knob reaches every call site. Nothing proved it was ever SET — and on
+// 2026-10-11 it was not, in any of the 41 production env names. So every one of those correctly
+// wired `process.env.ANTHROPIC_MODEL || "<literal>"` expressions fell through to its literal, and
+// the whole app — income extraction, condition parsing, underwriting, the borrower-facing chat —
+// ran a previous-generation model while this guard printed ALL PASS. highest-model-always was
+// being violated by the thing built to enforce it, silently, because the default was invisible.
+//
+// The comment at the top is still right that an ID DOES NOT BELONG IN A GUARD: it expires. So this
+// does not assert which id is correct. It PRINTS the id that will actually be used, and it fails if
+// the call sites disagree with each other — drift between literals is the shape that let
+// lib/aiFallback.ts sit on a stale model while nineteen other paths moved.
+// Make the invisible visible and let the human judge it. [[prove-it-dont-announce]]
+const fallbacks = new Map<string, string[]>();
+for (const f of files) {
+  const src = readFileSync(f, "utf8");
+  if (!/api\.anthropic\.com/.test(src)) continue;
+  const body = src.split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+  // THE LITERAL NEED NOT SIT NEXT TO THE ENV READ, AND THE ONE FILE THAT DRIFTED IS THE PROOF.
+  // The first cut required `ANTHROPIC_MODEL || "<literal>"` adjacently. lib/contentQC.ts:22 reads
+  // `process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || "claude-opus-4-8"` — a second env
+  // name in between — so the check could not see it, and lib/contentQC.ts is the very file this
+  // block's own comment names as having sat on a stale model. A guard blind at exactly the place
+  // that broke before is worse than no guard: it reports ALL PASS over the gap. Allow any chain of
+  // further `process.env.X ||` terms before the literal. [[a-red-guard-is-a-hypothesis]]
+  for (const m of body.matchAll(/process\.env\.ANTHROPIC_MODEL\s*(?:\|\|\s*process\.env\.[A-Z0-9_]+\s*)*\|\|\s*["'](claude-[a-z0-9.-]+)["']/g)) {
+    if (!fallbacks.has(m[1])) fallbacks.set(m[1], []);
+    fallbacks.get(m[1])!.push(f);
+  }
+}
+const env = process.env.ANTHROPIC_MODEL;
+const ids = [...fallbacks.keys()].sort();
+console.log("");
+console.log(`  model actually in force here: ${env ? `${env}  (from ANTHROPIC_MODEL)` : `${ids[0] ?? "unknown"}  (ANTHROPIC_MODEL is UNSET — the literal fallback is what runs)`}`);
+if (!env)
+  console.log(`       ANTHROPIC_MODEL is not set in this environment, so the knob is wired but not turned.\n` +
+              `       Confirm it is set in Vercel production too, or the deployed app runs the literal.`);
+// A FLOOR, BECAUSE `<= 1` IS ALSO TRUE AT ZERO. Written as `ids.length <= 1` this printed
+// "✅ all 0 call site(s) share ONE fallback id" and "model actually in force here: unknown" — green,
+// while seeing nothing at all. Centralise model resolution into one helper (a likely refactor, and
+// the right one) and the regex stops matching anywhere: the check would go green on the day it went
+// blind. Require EXACTLY ONE id, and say so when there are none.
+// [[assertions-inside-a-branch-go-vacuous]] · [[things-that-look-like-they-work]]
+ck(`all ${[...fallbacks.values()].flat().length} call site(s) share ONE fallback id`, fallbacks.size === 1,
+   fallbacks.size === 0
+     ? `found NO "ANTHROPIC_MODEL || <literal>" fallback in any file that calls api.anthropic.com. ` +
+       `This check has gone blind — either the pattern moved (a shared helper?) or the call sites did. ` +
+       `Find where the model id now comes from and point this at it.`
+     : ids.map((i) => `${i} <- ${fallbacks.get(i)!.length} file(s), e.g. ${fallbacks.get(i)![0]}`).join("\n       "));
+
 console.log(fail ? `\n❌ ${fail} check(s) failed — a model knob that misses a call site is not a knob\n`
                  : `\n✅ ALL PASS — one ANTHROPIC_MODEL setting moves every Anthropic call site\n`);
 process.exit(fail ? 1 : 0);
