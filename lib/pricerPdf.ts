@@ -10,8 +10,39 @@ import { standaloneBytes } from "./imageToPdf";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
 const money = (n?: number | null) => (n == null ? "—" : "$" + Math.round(Number(n)).toLocaleString());
 
+/**
+ * A SCENARIO LABEL BELONGS IN THE FILENAME AND NOWHERE ELSE.
+ *
+ * 2026-10-13, found rebuilding the Nance file. Five payment estimates went to a borrower on
+ * 2026-06-17 reading "Prepared for Lawrence Nance V2.", "…V3.", "…V4.", "…V6." — four of the five
+ * documents that client received were addressed to a person who does not exist.
+ *
+ * Nothing malfunctioned. The download filename is derived from `borrowerName`, and that was the ONLY
+ * field that could tell six down-payment scenarios apart on disk, so the LO put the version there —
+ * the one place where it also reads back out to the client, in the opening line of the letter.
+ *
+ * The real fix is the field that was missing, below. This regex is the backstop for a name that
+ * already carries the tag: the label still reaches the filename, so the files stay distinguishable,
+ * but it never reaches the borrower-facing line. Deliberately narrow — it must match a trailing
+ * version tag and nothing that could be part of a human name.
+ */
+const SCENARIO_TAIL = /[\s,;_-]+(?:[-–—]\s*)?(V\.?\s?\d{1,2}|Option\s?\d{1,2}|Scenario\s?\d{1,2}|#\s?\d{1,2})\s*$/i;
+
+/** Split "Lawrence Nance V2" into the name a client may be addressed by and a label for the file. */
+export function splitScenario(raw?: string): { name?: string; label?: string } {
+  if (!raw) return {};
+  const m = String(raw).match(SCENARIO_TAIL);
+  if (!m) return { name: String(raw).trim() };
+  const name = String(raw).slice(0, m.index).trim();
+  // Never hand back an EMPTY name: "V2" alone is a label, not a borrower, and stripping it would
+  // silently drop the only identifier on the document.
+  return name ? { name, label: m[1].replace(/\s+/g, "") } : { name: String(raw).trim() };
+}
+
 export type PricerPdfData = {
   borrowerName?: string; address?: string; state?: string;
+  /** Scenario label ("V2", "Option 3"). Used for the FILENAME only — never printed on the document. */
+  scenarioLabel?: string;
   county?: string; taxSource?: "zcta" | "county" | "state" | "default" | "ca-prop13";
   taxIsActual?: boolean; insIsActual?: boolean;
   price: number; value?: number; down: number; loanAmount: number; ltv: number;
@@ -89,7 +120,8 @@ export async function buildPricerPdf(d: PricerPdfData): Promise<Uint8Array> {
   cur += 22;
 
   center("ESTIMATED MONTHLY PAYMENT", 14, bold); cur += 24;
-  const who = d.borrowerName ? `Prepared for ${d.borrowerName}. ` : "";
+  // A scenario tag in the name field reaches the FILENAME, never this sentence. See SCENARIO_TAIL.
+  const who = splitScenario(d.borrowerName).name ? `Prepared for ${splitScenario(d.borrowerName).name}. ` : "";
   para(`${who}Here is an estimate of the monthly payment for this property, including principal, interest, taxes, insurance, and any mortgage insurance or HOA dues.`, 10.5);
   // THE STATE IS ONLY A FALLBACK, NEVER AN APPEND. A real address already carries it, so the
   // unconditional join printed "10331 Lindley Ave #150, Porter Ranch, CA 91326, CA" on a

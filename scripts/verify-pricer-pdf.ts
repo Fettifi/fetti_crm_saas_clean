@@ -11,7 +11,7 @@
 //
 //   npx tsx scripts/verify-pricer-pdf.ts
 import { estimateClosingCosts } from "../lib/closingCosts";
-import { buildPricerPdf } from "../lib/pricerPdf";
+import { buildPricerPdf, splitScenario } from "../lib/pricerPdf";
 
 const base: any = {
   state: "CA", countyFips: "06037", countyName: "Los Angeles",
@@ -129,6 +129,33 @@ async function render(cc: any): Promise<string> {
   chk(/FHA MIP/.test(fhaTxt), "an FHA quote labels the figure FHA MIP, not PMI");
   chk(/VA loans carry NO monthly mortgage insurance/.test(fhaTxt),
     "and the disclaimer describes each program instead of asserting a conventional rule");
+
+
+  // ── A SCENARIO LABEL MUST NEVER REACH THE BORROWER-FACING LINE.
+  //    2026-10-13, found rebuilding the Nance file: five estimates went to a client on 2026-06-17
+  //    reading "Prepared for Lawrence Nance V2.", "…V3.", "…V4.", "…V6." Nothing malfunctioned —
+  //    the download filename is derived from borrowerName, so the only field that could tell six
+  //    down-payment scenarios apart on disk was also the one printed to the client.
+  const NANCE = {
+    state: "CA", price: 2400000, down: 200000, loanAmount: 2200000, ratePct: 5.875,
+    termMonths: 360, loanType: "VA 30-Yr", purpose: "purchase",
+    pi: 13014, taxMonthly: 2500, insMonthly: 600, pmiMonthly: 0, hoa: 0, total: 16114, ltv: 91.7,
+  };
+  const vTxt = await pdfText(new Uint8Array(await buildPricerPdf({ ...NANCE, borrowerName: "Lawrence Nance V2" } as any)));
+  chk(/Prepared for Lawrence Nance\./.test(vTxt), "a name typed as 'Lawrence Nance V2' is addressed as Lawrence Nance");
+  chk(!/Nance V2/.test(vTxt), "and the scenario tag appears NOWHERE on the document");
+  for (const tag of ["V2", "V 3", "v.4", "Option 2", "Scenario 3", "#2"]) {
+    const t = splitScenario(`Lawrence Nance ${tag}`);
+    chk(t.name === "Lawrence Nance" && !!t.label, `'${tag}' is read as a scenario label, not part of the name`);
+  }
+  chk(splitScenario("Lawrence Nance").name === "Lawrence Nance" && !splitScenario("Lawrence Nance").label,
+    "a plain name is left exactly alone");
+  // NAMES THAT LOOK LIKE LABELS AND ARE NOT. Mangling a real borrower's name is worse than the bug.
+  for (const real of ["John Doe III", "Henry VIII", "Maria V Santos", "Nance V2 Jr", "Trust #2 Holdings LLC"]) {
+    chk(splitScenario(real).name === real, `'${real}' survives untouched`);
+  }
+  chk(splitScenario("V2").name === "V2", "a bare 'V2' stays as the name — stripping it would leave the document unaddressed");
+  chk(!splitScenario(undefined).name, "an absent name stays absent");
 
   console.log("");
   if (bad) { console.error(`FAIL — ${bad} problem(s). The borrower's document is the surface that matters.\n`); process.exit(1); }

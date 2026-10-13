@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { estimatePITIA, estimatePITIAFinanced } from "@/lib/pricer";
-import { buildPricerPdf } from "@/lib/pricerPdf";
+import { buildPricerPdf, splitScenario } from "@/lib/pricerPdf";
 import { estimateRate, creditValueToFico, LOAN_TYPES } from "@/lib/rateEstimator";
 import { loadRateModel } from "@/lib/rateModelServer";
 import { resolveLocation } from "@/lib/propertyData";
@@ -147,7 +147,8 @@ export async function POST(req: NextRequest) {
 
     const pdf = await buildPricerPdf({
       closing,
-      borrowerName: b.borrowerName || undefined, address: b.address || undefined, state: stateIn || undefined,
+      borrowerName: b.borrowerName || undefined, scenarioLabel: b.scenarioLabel || undefined,
+      address: b.address || undefined, state: stateIn || undefined,
       county: taxSent ? undefined : (useLocRates ? (loc.countyName || undefined) : undefined),
       taxSource: taxSent ? undefined : (useLocRates ? loc.taxSource : undefined),
       taxIsActual: taxSent, insIsActual: insSent,
@@ -161,7 +162,15 @@ export async function POST(req: NextRequest) {
       officerName: b.officerName || undefined, officerNmls: b.officerNmls || undefined,
     });
 
-    const name = `Fetti-Payment-Estimate${b.borrowerName ? "-" + String(b.borrowerName).replace(/[^\w]+/g, "_") : ""}.pdf`;
+    // THE FILENAME CARRIES THE SCENARIO LABEL; THE DOCUMENT NEVER DOES. Six scenarios for one
+    // borrower must be distinguishable on disk, and before `scenarioLabel` existed the only field
+    // that could do that was the borrower's name — which is also printed to the client in the
+    // opening line. Four of five estimates sent on 2026-06-17 were addressed to "Lawrence Nance V2",
+    // "…V3", "…V4", "…V6". See lib/pricerPdf.ts SCENARIO_TAIL.
+    const split = splitScenario(b.borrowerName || undefined);
+    const label = String(b.scenarioLabel || split.label || "").replace(/[^\w]+/g, "");
+    const who = split.name ? "-" + split.name.replace(/[^\w]+/g, "_") : "";
+    const name = `Fetti-Payment-Estimate${who}${label ? "-" + label : ""}.pdf`;
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,
       headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${name}"` },
