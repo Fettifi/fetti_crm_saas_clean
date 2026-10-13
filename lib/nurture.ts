@@ -158,9 +158,10 @@ async function logSkipped(leadId: string, lane: string, step: number, reason: st
 // THE CADENCE AND THE CAP MUST AGREE, OR THE EXTRA STEPS ARE A LIE.
 //
 // STEPS has 7 entries plus an unbounded reactivation lane; the governor's
-// PROACTIVE_LIFETIME_CAP is 3. Steps 4-7 and the whole reactivation lane could therefore
-// never be delivered to anyone — 26 leads sat queued at nurture_step 4-7 for touches the gate
-// would always refuse. Two numbers in two files, nobody comparing them. This does not pick the
+// PROACTIVE_LIFETIME_CAP WAS 3 (it is 7 since 2026-08-02 — read it from the import, never from
+// this sentence). Steps 4-7 and the whole reactivation lane could therefore never be delivered
+// to anyone — 26 leads sat queued at nurture_step 4-7 for touches the gate would always
+// refuse. Two numbers in two files, nobody comparing them. This does not pick the
 // right number (that is Ramon's call) — it makes the disagreement impossible to ship silently.
 if (STEPS.length > PROACTIVE_LIFETIME_CAP) {
   console.warn(

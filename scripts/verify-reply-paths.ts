@@ -157,6 +157,20 @@ console.log(`\nREPLY PATHS — a pause is not a delete\n`);
   chk(!at(cap), `and is denied at ${cap} — the cap binds on TOUCHES, not on the ${cap * 2} logged rows`);
 }
 
+// ── AND NO REPORT MAY RESTATE THE CAP AS A LITERAL.
+//    scripts/verify-governor.ts — the replay written to PROVE the harassment was fixed — closed
+//    with a hardcoded `${3}` for ten weeks after Ramon raised the cap to 7. Read live on
+//    2026-10-12 it still said 3: the report understated its own worst case by more than half, in
+//    the reassuring direction, and nothing went red. The cap check above derives from the
+//    constant; so must anything that prints it. Prose about a number drifts, the number does not.
+{
+  const replay = code("scripts/verify-governor.ts");
+  chk(/PROACTIVE_LIFETIME_CAP/.test(replay),
+    "the governor replay imports the cap rather than restating it — a hardcoded 3 outlived the raise to 7 by ten weeks");
+  chk(!/\$\{\s*\d/.test(replay),
+    "and interpolates no bare numeric literal anywhere — `${3}` is exactly how a constant and the report about it come apart");
+}
+
 // ── REACTIVATION IS EXEMPT FROM THE LIFETIME CAP — AND FROM NOTHING ELSE.
 //    Ramon, 2026-08-02: "exempt it". The lane is the plan for mining the dormant book now that
 //    ad spend is zero, and it had never delivered one message because the drip alone consumed

@@ -6,7 +6,7 @@ import "./_env";
 import { rows } from "./_liveDb";
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "fs";
-import { evaluateThreadRules, bodyFingerprint, type SendKind } from "@/lib/conversation/governor";
+import { evaluateThreadRules, bodyFingerprint, PROACTIVE_LIFETIME_CAP, type SendKind } from "@/lib/conversation/governor";
 
 const env = Object.fromEntries(
   readFileSync(".env.local", "utf8").split("\n").filter((l) => l.includes("=") && !l.startsWith("#"))
@@ -102,6 +102,24 @@ async function main() {
   }
   named.sort((a, b) => Number(b[1].split(" ")[0]) - Number(a[1].split(" ")[0]));
   named.slice(0, 8).forEach(([n, d]) => console.log(`    ${n.padEnd(28)} ${d}`));
-  console.log(`\n  Under the governor the longest possible unanswered run is ${3} (the proactive lifetime cap).\n`);
+  // THE NUMBER COMES FROM THE CONSTANT, AND IT BOUNDS ONLY WHAT IT ACTUALLY BOUNDS.
+  //
+  // This line printed a hardcoded 3. It was read live on 2026-10-12, ten weeks after Ramon
+  // raised PROACTIVE_LIFETIME_CAP to 7 (2026-08-02) so the 7-step cadence could be delivered —
+  // so the replay understated its own worst case by more than half, in the reassuring direction,
+  // in the one report written to prove the harassment was fixed. Imported now, the same way
+  // lib/nurture.ts imports it to announce a cadence longer than the cap at module load.
+  //
+  // Interpolating the constant ALONE would still have been wrong, for the reason
+  // verify-governor-rules.ts records at its own cap block: a new number read onto an old
+  // assumption describes a rule nobody has. The cap is NOT a bound on the runs printed above.
+  // Those count every outbound ROW of every kind. Rule 6 counts PROACTIVE touches only, grouped
+  // by minute so a both-channel touch costs one slot, and reactivation (exempt, 2026-08-02) and
+  // operational sends sit outside it entirely.
+  console.log(
+    `\n  Rule 6 caps a lead who never replies at ${PROACTIVE_LIFETIME_CAP} proactive touches for life` +
+      ` — up to ${PROACTIVE_LIFETIME_CAP * 2} of the rows counted above, since logComms writes one per channel.` +
+      `\n  Reactivation and operational sends are OUTSIDE that cap, so the runs above are not bounded by it.\n`,
+  );
 }
 main().catch((e) => { console.error(e.message); process.exit(1); });
