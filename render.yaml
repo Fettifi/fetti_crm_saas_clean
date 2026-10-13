@@ -29,4 +29,11 @@ services:
       - key: CRM_INGEST_URL
         value: https://app.fettifi.com/api/voice/ingest
       - key: BRIDGE_REV            # bump to trigger a blueprint-sync redeploy
-        value: '2026-07-13-partial-capture'
+        # 2026-10-13: the live bridge still answered "rev=2026-07-13-partial-capture" — this value
+        # had not moved since July, so NONE of the October work was running on it. Six commits to
+        # voice-realtime/ sat undeployed, including the one that matters most: Penny's knowledge base
+        # (lib/voice/mortgageKB.ts, wired 2026-10-06 — 33 sections, 30 FAQs). She was answering real
+        # borrower calls on July code with no mortgage knowledge at all, which is exactly what Ramon
+        # heard: "she still sounds basic and rudimentary." A push is not a deploy, and on this service
+        # a COMMIT is not a deploy either — only bumping this string is. [[a-push-is-not-a-deploy]]
+        value: '2026-10-13-kb-and-partial-capture'
