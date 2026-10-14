@@ -130,7 +130,8 @@
     "verify:imports": "node scripts/verify-import-integrity.mjs --worktree",
     "verify:owner-number": "tsx scripts/verify-owner-number-key.ts",
     "verify:rls": "tsx scripts/verify-rls-lockdown.ts",
-    "verify:baseline-clean": "tsx scripts/verify-baseline-clean.ts"
+    "verify:baseline-clean": "tsx scripts/verify-baseline-clean.ts",
+    "verify:chase-hold": "tsx --conditions=react-server scripts/verify-chase-hold.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

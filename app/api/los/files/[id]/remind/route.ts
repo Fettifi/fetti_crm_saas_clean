@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { sendDocRequest } from "@/lib/notify/docRequest";
+import { getChaseHold, holdLabel } from "@/lib/chaseHold";
 
 export const dynamic = "force-dynamic";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
@@ -18,6 +19,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .from("loan_files").select("id, share_token, file_number, borrower_name, email, phone, lead_id").eq("id", id).maybeSingle();
     if (!file) return NextResponse.json({ error: "loan file not found" }, { status: 404 });
     if (!file.share_token) return NextResponse.json({ error: "This file has no secure link yet." }, { status: 409 });
+
+    // The one-click reminder honours a hold too. The bulk sweep is not the only way to break a
+    // promise — a single well-meant click does it just as well, and this is the button an LO
+    // reaches for when they have forgotten why a file is quiet.
+    const hold = await getChaseHold(id);
+    if (hold) {
+      return NextResponse.json({
+        error: `This file is ${holdLabel(hold)}. Nothing was sent. Lift the hold first if that agreement has changed.`,
+        hold,
+      }, { status: 409 });
+    }
 
     // Missing = still "needed". Required first, then optional.
     const { data: docs } = await supabaseAdmin

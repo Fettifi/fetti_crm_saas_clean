@@ -426,6 +426,15 @@ if [ -n "$LIVE" ] && [ -f .env.local ]; then
   fi
 fi
 
+# A HOLD IS A PROMISE THE BROKER MADE OUT LOUD. If the chase routes stop honouring it, a borrower
+# who was told his file was parked gets chased anyway — so this runs on every commit, not just when
+# the LOS files change.
+printf "   %-24s " "verify:chase-hold"
+OUT=$(npm run --silent verify:chase-hold 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:chase-hold"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 if [ -n "$PORTFOLIO" ]; then
   printf "   %-24s " "verify:los-portfolio"
   OUT=$(npm run --silent verify:los-portfolio 2>&1)

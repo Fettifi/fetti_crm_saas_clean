@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { sendDocRequest } from "@/lib/notify/docRequest";
 import { mayChaseDocs } from "@/lib/los";
+import { getChaseHolds, holdLabel } from "@/lib/chaseHold";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -25,6 +26,14 @@ export async function POST() {
       needByFile.set(d.loan_file_id, arr);
     }
 
+    // A HOLD IS A PROMISE, AND IT OUTRANKS THE SWEEP.
+    // 2026-10-14: Ramon agreed with Andrej Strapko by phone that nothing moves on his other four
+    // properties until 78 Oxford closes. All four are active/Application with required docs
+    // outstanding and an email on the row — exactly what this loop chases. Read once, fail closed:
+    // if the holds cannot be read we do not chase anybody, because the cost of a wrong skip is a
+    // delayed reminder and the cost of a wrong send is a broker breaking his word in writing.
+    const holds = await getChaseHolds();
+
     const reminded: any[] = [];
     const skipped: any[] = [];
     for (const f of files || []) {
@@ -39,6 +48,8 @@ export async function POST() {
         skipped.push({ name: f.borrower_name, reason: `${why} — not chased` });
         continue;
       }
+      const hold = holds.get(f.id);
+      if (hold) { skipped.push({ name: f.borrower_name, reason: holdLabel(hold) }); continue; }
       const need = needByFile.get(f.id) || [];
       const missing = need.filter((d) => d.required).map((d) => d.name);
       if (!missing.length) { skipped.push({ name: f.borrower_name, reason: "no required docs outstanding" }); continue; }
