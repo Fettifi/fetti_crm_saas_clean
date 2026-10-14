@@ -86,7 +86,12 @@ async function emailGate(r: { to_email?: string | null; leadId?: string | null }
   if (!r.leadId) return true;   // a third party with no lead row has no unsubscribe record
   const { data } = await supabaseAdmin.from("leads").select("raw, nurture_paused").eq("id", r.leadId).maybeSingle();
   if (!data) return true;
-  if (!messagingAllowed(data as any).ok) return false;
+  // TRANSACTIONAL. Everything routed through this file is LO-initiated for one named recipient on a
+  // live file — a card authorization, an e-sign link, a document request. A bare `nurture_paused`
+  // (the "stop the drip" flag) must not kill it; a real revocation still does, and the two lines
+  // below are the ones that enforce that. 2026-10-14: this returned false for Andrej Strapko and
+  // the card authorization died with channels=[] and no reason shown to the LO.
+  if (!messagingAllowed(data as any, { transactional: true }).ok) return false;
   if ((data as any).raw?.email_optout_at) return false;
   return true;
 }
@@ -102,7 +107,9 @@ async function smsGate(r: DocRequest): Promise<{ ok: boolean; reason?: string; s
   const { data } = await supabaseAdmin
     .from("leads").select("raw, nurture_paused, state").eq("id", r.leadId).maybeSingle();
   if (!data) return { ok: false, reason: "lead not found — cannot evidence consent" };
-  const paused = messagingAllowed(data as any);
+  // Transactional for the same reason as the email leg — but SMS consent is NOT waived. An inbound
+  // STOP is absolute under the TCPA, and smsAllowed() below still has to pass on its own evidence.
+  const paused = messagingAllowed(data as any, { transactional: true });
   if (!paused.ok) return { ok: false, reason: paused.reason };
   const v = smsAllowed((data as any).raw);
   return { ok: v.ok, reason: v.reason, state: (data as any).state ?? null };

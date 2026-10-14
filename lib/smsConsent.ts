@@ -60,9 +60,44 @@ export const canSms = (raw: ConsentRaw): boolean => smsAllowed(raw).ok;
  * `nurture_paused` is what the one-click CAN-SPAM unsubscribe writes, and what an inbound STOP
  * writes. Before this it was read in exactly two send-path files; the governor and the responder
  * never looked at it, and neither did the document chaser.
+ *
+ * ── 2026-10-14: A MARKETING PAUSE WAS SILENTLY BLOCKING TRANSACTIONAL SENDS ────────────────────
+ *
+ * Ramon could not send Andrej Strapko a credit-card authorization. The LO panel said it could not
+ * reach the borrower; `card_auth.sent` logged `channels=[]`. The cause was this function: his lead
+ * carries `nurture_paused = true`, so the email leg's gate returned false and the send died with no
+ * reason surfaced. His own record says why the flag was set:
+ *
+ *     "nurture_paused = true DELIBERATELY. He wrote on 2026-10-06: 'The automated system keeps
+ *      requesting information I previously provided.' HE IS NOT UNSUBSCRIBED FROM RAMON — this only
+ *      blocks automated sequences."
+ *
+ * The intent was recorded and the code did something else. There is no revocation artifact on that
+ * lead at all — no sms_optout_at, no email_optout_at, no STOP. 32 leads carry this flag, and for
+ * every one of them an LO-initiated card authorization, e-sign link or document request was dead.
+ *
+ * So `nurture_paused` is overloaded: it means BOTH "stop the drip campaign" and "I unsubscribed".
+ * Only the second should stop a document the borrower is actively waiting for. A card authorization
+ * an LO clicks send on for one named borrower on a live file is a TRANSACTIONAL / relationship
+ * message, which is what CAN-SPAM exempts from the commercial opt-out (15 U.S.C. §7702(2)(B),(17)).
+ *
+ * `transactional: true` therefore ignores a bare pause — and ONLY a bare pause. An explicit
+ * revocation still blocks, on every channel, every time. An inbound STOP is absolute for SMS under
+ * the TCPA and is never bypassed: smsGate still requires smsAllowed() on top of this.
  */
-export function messagingAllowed(lead: { nurture_paused?: boolean | null; raw?: ConsentRaw }): SmsVerdict {
-  if (lead?.nurture_paused) return { ok: false, reason: "unsubscribed / paused by the recipient" };
+export function messagingAllowed(
+  lead: { nurture_paused?: boolean | null; raw?: ConsentRaw },
+  opts?: { transactional?: boolean },
+): SmsVerdict {
+  const r = (lead?.raw ?? {}) as NonNullable<ConsentRaw>;
+  // A REVOCATION the recipient actually made. These bind regardless of why we are writing.
+  if ((r as any).email_optout_at) return { ok: false, reason: "recipient opted out of email" };
+  if (r.sms_optout_at) return { ok: false, reason: "opted out (STOP)" };
+  if ((r as any).do_not_contact) return { ok: false, reason: "do-not-contact on file" };
+  // A bare marketing pause stops campaigns, not a document the borrower is waiting on.
+  if (lead?.nurture_paused && !opts?.transactional) {
+    return { ok: false, reason: "unsubscribed / paused by the recipient" };
+  }
   return { ok: true };
 }
 

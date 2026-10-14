@@ -56,6 +56,26 @@ chk(/no SMS consent/i.test(smsAllowed({}).reason || ""), "and so does a blank re
 chk(!messagingAllowed({ nurture_paused: true }).ok, "an unsubscribed recipient is off-limits on email too, not just SMS");
 chk(messagingAllowed({ nurture_paused: false, raw: { sms_consent: true } }).ok, "and an active recipient is not blocked");
 
+// ── 3b. A MARKETING PAUSE IS NOT A REVOCATION. 2026-10-14: Ramon could not send Andrej Strapko a
+//       credit-card authorization. `card_auth.sent` logged channels=[] and the panel said it could
+//       not reach the borrower. Cause: his lead carries nurture_paused, set DELIBERATELY to stop
+//       automated sequences — his own record says "HE IS NOT UNSUBSCRIBED FROM RAMON" — and there is
+//       no revocation artifact on him at all. 32 leads carry that flag; for every one of them an
+//       LO-initiated card auth, e-sign link or document request was silently dead.
+//       Transactional sends ignore a BARE pause. They never ignore a revocation.
+chk(messagingAllowed({ nurture_paused: true }, { transactional: true }).ok,
+  "a TRANSACTIONAL send is not blocked by a bare marketing pause");
+chk(!messagingAllowed({ nurture_paused: true, raw: { email_optout_at: "2026-01-01" } as any }, { transactional: true }).ok,
+  "...but an explicit EMAIL opt-out still blocks it");
+chk(!messagingAllowed({ nurture_paused: false, raw: { sms_optout_at: "2026-01-01" } as any }, { transactional: true }).ok,
+  "...and an inbound STOP still blocks it (TCPA is absolute)");
+chk(!messagingAllowed({ nurture_paused: false, raw: { do_not_contact: true } as any }, { transactional: true }).ok,
+  "...and a do-not-contact flag still blocks it");
+chk(!messagingAllowed({ nurture_paused: true }).ok,
+  "...while a CAMPAIGN send is still blocked by that same pause");
+chk(!messagingAllowed({ nurture_paused: false, raw: { sms_optout_at: "2026-01-01" } as any }).ok,
+  "a STOP blocks a campaign on email too, not just SMS");
+
 // ── 4. EVERY AUTOMATED SMS CARRIES AN OPT-OUT INSTRUCTION. None of the three document-chaser
 //      bodies did.
 chk(withStopLine("Upload your docs here: https://x").endsWith(STOP_LINE), "the STOP line is appended");
