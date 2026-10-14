@@ -145,7 +145,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         action: "card_auth.cvv_requested", detail: { borrowerIndex: i, last4: a.last4, to: (sent as any)?.sent || [] },
       }).catch(() => {});
       const to = (sent as any)?.sent || [];
-      if (!to.length) return NextResponse.json({ error: "Couldn't reach the borrower to ask for the code — send them this link yourself.", link }, { status: 502 });
+      const cvvWhy = ((sent as any)?.skipped || []).map((x: any) => `${x.channel}: ${x.reason}`).join(" · ");
+      if (!to.length) return NextResponse.json({ error: `Couldn't reach the borrower to ask for the code${cvvWhy ? ` — ${cvvWhy}` : ""}. Send them this link yourself.`, link }, { status: 502 });
       return NextResponse.json({ ok: true, sentTo: to, link });
     }
 
@@ -191,9 +192,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!email && !phone && !alsoEmail) {
         return NextResponse.json({ error: "No email or phone on file for this borrower — add their contact on the lead / 1003, enter an email to also send to, or copy the link to send it yourself.", link }, { status: 422 });
       }
-      const { sent } = (email || phone)
+      const { sent, skipped } = (email || phone)
         ? await sendSignRequest({ to_name: names[i], to_email: email, to_phone: phone, link, title: "Credit Card Authorization", leadId: lead.id, loanFileId: id })
-        : { sent: [] as string[] };
+        : { sent: [] as string[], skipped: [] as { channel: "email" | "sms"; reason: string }[] };
       await logActivity({ entity_type: "loan_file", entity_id: id, loan_file_id: id, lead_id: lead.id, actor: "lo", action: "card_auth.sent", detail: { borrowerIndex: i, channels: sent, amount: amt } }).catch(() => {});
 
       let alsoSentTo: string | null = null;
@@ -207,9 +208,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const parts: string[] = [];
       if (sent.length) parts.push(`via ${sent.join(" + ")} to ${email || phone}`);
       if (alsoSentTo) parts.push(`by email to ${alsoSentTo}`);
+
+      // SAY WHY, DON'T GUESS. This used to return "Couldn't deliver (email/SMS not configured)"
+      // whenever nothing went out. On 2026-10-14 nothing was misconfigured: the email leg was
+      // refused by the consent gate (nurture_paused) and the borrower had no phone number. Ramon
+      // read that message as the LOS being broken and lost an afternoon to it. The reasons exist —
+      // sendSignRequest now hands them back — so pass them through verbatim.
+      if (!email && !phone) skipped.push({ channel: "email", reason: "no email or phone on file for this borrower" });
+      else if (!phone && !skipped.some((x) => x.channel === "sms")) skipped.push({ channel: "sms", reason: "no mobile number on file for this borrower" });
+      const why = skipped.map((x) => `${x.channel}: ${x.reason}`).join(" · ");
       return NextResponse.json({
-        ok: true, sent, alsoSentTo, link, to: email || phone,
-        message: parts.length ? `Sent ${parts.join(" and ")}.` : "Couldn't deliver (email/SMS not configured) — copy the link to send it manually.",
+        ok: true, sent, alsoSentTo, link, to: email || phone, skipped,
+        message: parts.length
+          ? `Sent ${parts.join(" and ")}.${skipped.length ? ` (${why})` : ""}`
+          : `Nothing was delivered — ${why || "no channel was available"}. The link is below; send it yourself, or fix the cause and try again.`,
       });
     }
 

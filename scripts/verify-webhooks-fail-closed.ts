@@ -56,10 +56,39 @@ for (const r of ROUTES) {
   const call = branch.slice(branch.indexOf("sendSignRequest("), branch.indexOf("sendSignRequest(") + 400);
   ck("card-auth request_cvv passes to_email / to_phone to sendSignRequest", /to_email:\s*email/.test(call) && /to_phone:\s*phone/.test(call));
   ck("card-auth request_cvv passes a title (the sender renders it) and the link", /title:/.test(call) && /link/.test(call));
-  ck("card-auth request_cvv returns the link on failure so the LO can deliver it by hand", /status: 502/.test(branch) && /error: "Couldn't reach the borrower[^"]*", link/.test(branch));
+  // Quote style is not the contract; returning the link is. Widened 2026-10-14 when the message
+  // became a template literal so it could name WHY the send failed.
+  ck("card-auth request_cvv returns the link on failure so the LO can deliver it by hand",
+    /status: 502/.test(branch) && /error: [`"]Couldn't reach the borrower[\s\S]*?, link \}/.test(branch));
   const sig = code("lib/notify/docRequest.ts");
   ck("sendSignRequest still reads to_email / to_phone (the contract this pins)", /to_email\?: string \| null; to_phone\?: string \| null/.test(sig));
 }
 
+// ── A FAILED SEND MUST SAY WHY, NOT GUESS ───────────────────────────────────────────────────────
+// 2026-10-14: Ramon could not send a card authorization. The panel said "Couldn't deliver
+// (email/SMS not configured)". Nothing was misconfigured — the email leg was refused by the consent
+// gate (nurture_paused) and the borrower had no phone. Both legs returned a bare `false`, so the one
+// fact that would have ended it in ten seconds was discarded inside sendSignRequest. He read it as
+// the LOS being broken, and so did I. A sender that invents a cause is worse than one that is silent.
+{
+  // code() strips comments first: this file's own write-up quotes the bad string, and a guard
+  // must not be tripped — or satisfied — by prose. Same reason the other blocks here use it.
+  const dr = code("lib/notify/docRequest.ts");
+  const ca = code("app/api/los/files/[id]/card-auth/route.ts");
+  ck("sendSignRequest hands back WHY each channel was skipped",
+    /skipped: \{ channel: "email" \| "sms"; reason: string \}\[\]/.test(dr));
+  ck("the email leg carries a reason rather than a bare false",
+    /return \{ id: false, reason: g\.reason \}/.test(dr));
+  ck("the SMS leg carries the consent gate's reason",
+    /return \{ ok: false, reason: gate\.reason/.test(dr));
+  ck("emailGate returns a reason, not a boolean", /Promise<EmailGate>/.test(dr));
+  ck("card-auth surfaces those reasons to the LO", /const why = skipped\.map/.test(ca));
+  ck("...and no longer GUESSES the cause", !/email\/SMS not configured/.test(ca));
+  ck("a missing mobile is named explicitly", /no mobile number on file for this borrower/.test(ca));
+}
+
 console.log(fail ? `\n❌ ${fail} check(s) failed\n` : "\n✅ ALL PASS — every inbound webhook fails closed, and the card-code re-ask can actually send\n");
+
+
+
 process.exit(fail ? 1 : 0);

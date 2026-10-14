@@ -59,7 +59,7 @@ async function emailDocRequest(r: DocRequest): Promise<boolean> {
     r.docs.length === 1
       ? `Document needed for your Fetti loan: ${r.docs[0]}`
       : `Documents needed for your Fetti loan${r.file_number ? ` (${r.file_number})` : ""}`;
-  if (!(await emailGate(r as any))) return false;
+  if (!(await emailGate(r as any)).ok) return false;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -80,20 +80,22 @@ async function emailDocRequest(r: DocRequest): Promise<boolean> {
  *  in exactly two places, neither of them here. So a borrower who wrote "stop emailing me" still
  *  received doc-request, portal-link and e-sign mail — from a button that fires in bulk across
  *  every open loan file. The SMS legs were gated today; their email twins were not. */
-async function emailGate(r: { to_email?: string | null; leadId?: string | null }): Promise<boolean> {
-  if (!r.to_email) return false;
-  if (await isEmailSuppressed(r.to_email)) return false;
-  if (!r.leadId) return true;   // a third party with no lead row has no unsubscribe record
+type EmailGate = { ok: boolean; reason?: string };
+async function emailGate(r: { to_email?: string | null; leadId?: string | null }): Promise<EmailGate> {
+  if (!r.to_email) return { ok: false, reason: "no email address on file for this borrower" };
+  if (await isEmailSuppressed(r.to_email)) return { ok: false, reason: `${r.to_email} is on the suppression list (it previously bounced or was marked spam)` };
+  if (!r.leadId) return { ok: true };   // a third party with no lead row has no unsubscribe record
   const { data } = await supabaseAdmin.from("leads").select("raw, nurture_paused").eq("id", r.leadId).maybeSingle();
-  if (!data) return true;
+  if (!data) return { ok: true };
   // TRANSACTIONAL. Everything routed through this file is LO-initiated for one named recipient on a
   // live file — a card authorization, an e-sign link, a document request. A bare `nurture_paused`
   // (the "stop the drip" flag) must not kill it; a real revocation still does, and the two lines
   // below are the ones that enforce that. 2026-10-14: this returned false for Andrej Strapko and
   // the card authorization died with channels=[] and no reason shown to the LO.
-  if (!messagingAllowed(data as any, { transactional: true }).ok) return false;
-  if ((data as any).raw?.email_optout_at) return false;
-  return true;
+  const verdict = messagingAllowed(data as any, { transactional: true });
+  if (!verdict.ok) return { ok: false, reason: verdict.reason || "blocked by the consent gate" };
+  if ((data as any).raw?.email_optout_at) return { ok: false, reason: "this borrower opted out of email" };
+  return { ok: true };
 }
 
 /** THE CONSENT LOOKUP THE CHASER NEVER DID. Returns the verdict plus the state, which sharpens
@@ -150,7 +152,7 @@ export type UploadLinkSend = {
 
 async function emailUploadLink(r: UploadLinkSend): Promise<boolean> {
   // Same gate as the doc-request leg — a suppressed address is suppressed on every leg.
-  if (!(await emailGate(r as any))) return false;
+  if (!(await emailGate(r as any)).ok) return false;
   const key = process.env.RESEND_API_KEY;
   const from = senderFrom();
   if (!key || !from || !r.to_email) return false;
@@ -204,12 +206,13 @@ export type SignSend = {
   link: string; title: string; lo_name?: string | null;
   leadId?: string | null; loanFileId?: string | null;
 };
-async function emailSign(r: SignSend): Promise<string | false> {
+async function emailSign(r: SignSend): Promise<{ id: string | false; reason?: string }> {
   // Same gate as the doc-request leg — a suppressed address is suppressed on every leg.
-  if (!(await emailGate(r as any))) return false;
+  const g = await emailGate(r as any);
+  if (!g.ok) return { id: false, reason: g.reason };
   const key = process.env.RESEND_API_KEY;
   const from = senderFrom();
-  if (!key || !from || !r.to_email) return false;
+  if (!key || !from || !r.to_email) return { id: false, reason: "email sending is not configured on the server (RESEND_API_KEY / from address)" };
   const first = (r.to_name || "there").split(" ")[0];
   const who = r.lo_name || "Fetti Financial Services";
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#0f172a">
@@ -228,27 +231,44 @@ async function emailSign(r: SignSend): Promise<string | false> {
   // Resend's message id is what a delivery/bounce webhook event carries (data.email_id). Handing
   // it back lets the envelope pin the event to THIS send instead of to every envelope that
   // happens to know the address.
-  return res.ok ? String(j?.id || "sent") : false;
+  return res.ok ? { id: String(j?.id || "sent") } : { id: false, reason: `the email provider rejected it${j?.message ? `: ${j.message}` : ` (HTTP ${res.status})`}` };
 }
-async function smsSign(r: SignSend): Promise<boolean> {
+async function smsSign(r: SignSend): Promise<{ ok: boolean; reason?: string }> {
   // Third hand-rolled POST. Three of the 15 unconsented deliveries came from this one.
   const gate = await smsGate(r as any);
-  if (!gate.ok) return false;
+  if (!gate.ok) return { ok: false, reason: gate.reason || "blocked by the SMS consent gate" };
   const first = (r.to_name || "there").split(" ")[0];
   const body = withStopLine(`Hi ${first}, ${r.lo_name || "Fetti Financial Services"} sent you a document to e-sign: "${r.title}". Review & sign securely: ${r.link}`);
   const res = await sendSms(r.to_phone!, body, { statusCallback: true, state: gate.state });
   if (res.ok && r.leadId) await logComms({ leadId: r.leadId, loanFileId: r.loanFileId, channel: "sms", direction: "outbound", type: "esign_request", body, to: r.to_phone!, actor: "lo", providerId: res.sid }).catch(() => {});
-  return res.ok;
+  return res.ok ? { ok: true } : { ok: false, reason: "the SMS provider rejected it" };
 }
 /** Send an e-signature request over every configured channel. Never throws. */
-export async function sendSignRequest(r: SignSend): Promise<{ sent: string[]; emailId?: string | null }> {
+/**
+ * WHEN NOTHING GOES OUT, SAY WHY.
+ *
+ * 2026-10-14: Ramon could not send a card authorization and the panel told him "Couldn't deliver
+ * (email/SMS not configured)". Nothing was misconfigured — the email leg was refused by the consent
+ * gate and the borrower had no phone. Both legs returned a bare `false`, so the one fact that would
+ * have ended it in ten seconds was thrown away inside this function. He spent the afternoon thinking
+ * the LOS was broken, and so did I.
+ *
+ * `skipped` carries each channel's actual reason up to the caller. A send that delivers nothing is
+ * not a failure to be summarised — it is a question with an answer, and the answer is already here.
+ */
+export async function sendSignRequest(r: SignSend): Promise<{ sent: string[]; emailId?: string | null; skipped: { channel: "email" | "sms"; reason: string }[] }> {
   const sent: string[] = [];
+  const skipped: { channel: "email" | "sms"; reason: string }[] = [];
   let emailId: string | null = null;
   await Promise.all([
-    emailSign(r).then((id) => { if (id) { sent.push("email"); emailId = id === "sent" ? null : id; } }).catch((e) => console.warn("[sign] email", e)),
-    smsSign(r).then((ok) => { if (ok) sent.push("sms"); }).catch((e) => console.warn("[sign] sms", e)),
+    emailSign(r)
+      .then((res) => { if (res.id) { sent.push("email"); emailId = res.id === "sent" ? null : res.id; } else if (res.reason) skipped.push({ channel: "email", reason: res.reason }); })
+      .catch((e) => { console.warn("[sign] email", e); skipped.push({ channel: "email", reason: `email failed: ${e?.message || e}` }); }),
+    smsSign(r)
+      .then((res) => { if (res.ok) sent.push("sms"); else if (res.reason) skipped.push({ channel: "sms", reason: res.reason }); })
+      .catch((e) => { console.warn("[sign] sms", e); skipped.push({ channel: "sms", reason: `SMS failed: ${e?.message || e}` }); }),
   ]);
-  return { sent, emailId };
+  return { sent, emailId, skipped };
 }
 
 /** Send a document request over every configured channel. Never throws. */
