@@ -8,9 +8,26 @@
 // Certificate of Completion was issued. The LOE itself showed a blank signature line, and I nearly
 // uploaded it to the lender as executed.
 //
-// The defect was not the clamp; it was that the clamp answered a unit error with silence. This guard
-// pins the refusal at the door, pins the clamp contract it depends on, and proves on the live data that
-// no envelope carries out-of-range geometry.
+// 2026-10-14 — THE LINE THAT USED TO BE HERE WAS WRONG, AND IT COST A SECOND BLANK DOCUMENT.
+//
+// It read: "The defect was not the clamp; it was that the clamp answered a unit error with silence."
+// On that reasoning this guard went on to PIN THE CLAMP IN PLACE, asserting `Math.min(0.98, ...)` as
+// a contract to be preserved. So did verify-esign-offpage-refusal. Two guards, both green, both
+// holding the defect still.
+//
+// The clamp WAS the defect. Silence was not something the clamp happened to do alongside its job —
+// it is what a clamp IS. By forcing an out-of-range coordinate into [0, 0.98] it guarantees the
+// value is in range by the time the off-page refusal downstream looks at it, so that refusal can
+// never fire for a signer placement. The clamp did not fail to report the error; it ERASED it.
+//
+// It happened again on 2026-10-14: Jackson Metoyer 82609059, PTF 55 — the Loan Originator's Section
+// 9 of the Final 1003, owed to the funder the day the loan was scheduled to fund. xPct 13.21 clamped
+// to 0.98, signature drawn at x=599.8 on a 612pt page, envelope `completed`, signature line BLANK.
+// Caught by rendering the PDF and looking at it, which is not a mechanism.
+//
+// The stamper now REFUSES an out-of-range coordinate instead of clamping it. This guard pins the
+// refusal at the door AND at the stamper, keeps the 2026-09-18 geometry as the historical record of
+// what clamping produced, and proves on live data that no envelope carries out-of-range geometry.
 //
 //   npm run verify:esign-field-units
 import "./_env";
@@ -22,10 +39,11 @@ let fail = 0;
 const ck = (n: string, c: boolean, d = "") => { if (!c) fail++; console.log(`  ${c ? "✅" : "❌"} ${n}${d ? ` — ${d}` : ""}`); };
 const code = (f: string) => readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
 
-// The stamper's real arithmetic, copied from sign/[token]/route.ts so the geometry can be exercised
-// without a PDF. If that math changes, the pinned-source checks below fail and this must be revisited.
+// THE HISTORICAL ARITHMETIC — what the stamper did until 2026-10-14, kept so the two incidents can
+// still be reproduced from their real numbers. This is the record of what clamping produced; it is
+// NOT the current contract, and nothing below asserts that the shipping code still does this.
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Number(v) || 0));
-function placeOnPage(f: { xPct: number; yPct: number; wPct: number; hPct: number }, pw = 612, ph = 792) {
+function placeAsClamped(f: { xPct: number; yPct: number; wPct: number; hPct: number }, pw = 612, ph = 792) {
   const x = clamp(f.xPct, 0, 0.98) * pw;
   const bw = clamp(f.wPct, 0.05, 0.6) * pw;
   const bh = clamp(f.hPct, 0.02, 0.2) * ph;
@@ -33,18 +51,46 @@ function placeOnPage(f: { xPct: number; yPct: number; wPct: number; hPct: number
   return { x, yBottom, bw, bh, onPage: x >= 0 && x + bw <= pw && yBottom >= 0 && yBottom + bh <= ph };
 }
 
+// THE CURRENT CONTRACT. Coordinates are fractions; out-of-range is refused, not coerced. `accepted`
+// is false exactly when the stamper now returns 422 instead of drawing anything.
+const inRange = (v: number) => Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 1;
+function place(f: { xPct: number; yPct: number; wPct: number; hPct: number }, pw = 612, ph = 792) {
+  const accepted = inRange(f.xPct) && inRange(f.yPct) && inRange(f.wPct) && inRange(f.hPct);
+  const bw = f.wPct * pw, bh = f.hPct * ph;
+  const x = f.xPct * pw;
+  const yBottom = ph - f.yPct * ph - bh;
+  const EDGE = 1;
+  const onPage = x >= -EDGE && yBottom >= -EDGE && x + bw <= pw + EDGE && yBottom + bh <= ph + EDGE;
+  return { accepted, x, yBottom, bw, bh, onPage };
+}
+
 async function main() {
   console.log("\nE-SIGN FIELD UNITS — a fraction, not a percent\n");
 
-  // ── 1. The geometry that actually happened. Percentages leave the page; fractions do not.
+  // ── 1. The geometry that actually happened, twice. Percentages leave the page; fractions do not.
   {
-    const asPercent = placeOnPage({ xPct: 12.4, yPct: 65.7, wPct: 41, hPct: 4 });
-    ck("the exact values I sent place the box OFF the page (the 2026-09-18 defect, reproduced)",
+    const asPercent = placeAsClamped({ xPct: 12.4, yPct: 65.7, wPct: 41, hPct: 4 });
+    ck("2026-09-18 Magali — the exact values I sent place the box OFF the page (reproduced)",
       !asPercent.onPage, `x=${asPercent.x.toFixed(2)} w=${asPercent.bw.toFixed(2)} yBottom=${asPercent.yBottom.toFixed(2)}`);
     ck("…and x pins to the 0.98 clamp, which is where the signature was found", Math.abs(asPercent.x - 599.76) < 0.01);
-    const asFraction = placeOnPage({ xPct: 0.124, yPct: 0.657, wPct: 0.41, hPct: 0.04 });
-    ck("the same numbers ÷100 place the box ON the page", asFraction.onPage,
+    const metoyer = placeAsClamped({ xPct: 13.21, yPct: 18.89, wPct: 46.05, hPct: 2.78 });
+    ck("2026-10-14 Metoyer — the SAME clamp put PTF 55's signature off the page (reproduced)",
+      !metoyer.onPage, `x=${metoyer.x.toFixed(1)} w=${metoyer.bw.toFixed(1)} yBottom=${metoyer.yBottom.toFixed(1)}`);
+    const asFraction = place({ xPct: 0.124, yPct: 0.657, wPct: 0.41, hPct: 0.04 });
+    ck("the same numbers ÷100 place the box ON the page", asFraction.onPage && asFraction.accepted,
       `x=${asFraction.x.toFixed(2)} yBottom=${asFraction.yBottom.toFixed(2)}`);
+  }
+
+  // ── 1b. Under the CURRENT contract those inputs are never placed at all — they are refused.
+  {
+    ck("Magali's percentages are REFUSED, not coerced onto the page",
+      !place({ xPct: 12.4, yPct: 65.7, wPct: 41, hPct: 4 }).accepted);
+    ck("Metoyer's percentages are REFUSED, not coerced onto the page",
+      !place({ xPct: 13.21, yPct: 18.89, wPct: 46.05, hPct: 2.78 }).accepted);
+    ck("the corrected Metoyer field is accepted AND on the page",
+      (() => { const p = place({ xPct: 0.1321, yPct: 0.1889, wPct: 0.4605, hPct: 0.0278 }); return p.accepted && p.onPage; })());
+    ck("a negative coordinate is refused", !place({ xPct: -0.1, yPct: 0.5, wPct: 0.2, hPct: 0.05 }).accepted);
+    ck("a NaN coordinate is refused", !place({ xPct: NaN, yPct: 0.5, wPct: 0.2, hPct: 0.05 }).accepted);
   }
 
   // ── 2. The door is shut: ingest refuses > 1 rather than clamping it.
@@ -59,11 +105,18 @@ async function main() {
     ck("…covering all four geometry keys", (["xPct", "yPct", "wPct", "hPct"] as const).every((k) => new RegExp(`"${k}"`).test(src)));
   }
 
-  // ── 3. The clamp contract this guard's arithmetic mirrors is still what ships.
+  // ── 3. The stamper REFUSES out-of-range geometry. It must never clamp it back into range again:
+  //      a clamp guarantees the value is in range by the time the off-page refusal looks at it, so
+  //      that refusal can never fire. This is the check that was inverted until 2026-10-14.
   {
     const src = code(SIGN);
-    ck("the stamper still clamps xPct/yPct to 0.98", /Math\.min\(0\.98, Number\(f\.xPct\)/.test(src) && /Math\.min\(0\.98, Number\(f\.yPct\)/.test(src));
-    ck("…wPct to 0.6 and hPct to 0.2", /Math\.min\(0\.6, Number\(f\.wPct\)/.test(src) && /Math\.min\(0\.2, Number\(f\.hPct\)/.test(src));
+    ck("the stamper REFUSES an out-of-range coordinate", /badUnits/.test(src) && /esign\.bad_units_refused/.test(src));
+    ck("…and no longer clamps xPct/yPct to 0.98",
+      !/Math\.min\(0\.98, Number\(f\.xPct\)/.test(src) && !/Math\.min\(0\.98, Number\(f\.yPct\)/.test(src));
+    ck("…nor wPct to 0.6 / hPct to 0.2",
+      !/Math\.min\(0\.6, Number\(f\.wPct\)/.test(src) && !/Math\.min\(0\.2, Number\(f\.hPct\)/.test(src));
+    ck("…and the stamper's own bounds test checks CONTAINMENT, so a straddling box is caught too",
+      /x \+ bw > pw \+ EDGE/.test(src) && /yBottom \+ bh > ph \+ EDGE/.test(src));
     ck("…and still maps y from the TOP (ph - yPct*ph - bh), the convention the sender lays out against",
       /ph - \(f\.yPct \|\| 0\) \* ph - bh/.test(src));
   }

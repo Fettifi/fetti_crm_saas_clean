@@ -120,16 +120,48 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     // field for anybody else: everything below is stamped as this recipient, this signature.
     const placed = Array.isArray(body?.placedFields) ? body.placedFields : [];
     if (placed.length) {
+      // COORDINATES HERE ARE FRACTIONS OF THE PAGE (0-1) — THE SAME CONTRACT /api/esign/requests
+      // ENFORCES AT INGEST. AN OUT-OF-RANGE VALUE IS REFUSED, NEVER CLAMPED.
+      //
+      // 2026-10-14, Jackson Metoyer 82609059, PTF 55: the Loan Originator's Section 9 of the Final
+      // 1003, owed to the funder on the day the loan was scheduled to fund. This block used to CLAMP
+      // each coordinate into [0, 0.98]. An envelope written straight into app_settings — bypassing
+      // the ingest route that rejects values > 1 — carried xPct 13.21 and yPct 18.89, meaning
+      // PERCENT. The clamp turned both into 0.98, so the signature was drawn at x=599.8 on a 612pt
+      // page with its box bottom at y=-142.6. The envelope reported `completed`, the recipient
+      // `signed`, a signed_hash was written, and the Section 9 signature line was BLANK. It was
+      // caught only by rendering the result and looking at it.
+      //
+      // A clamp is the wrong instinct for a coordinate. It converts "I do not understand these
+      // numbers" into "I will put the signature somewhere", and somewhere is off the paper — while
+      // every downstream surface reports the document as executed. Refusing costs one error message;
+      // clamping cost a blank instrument on a funding file.
+      // [[verified-the-check-never-read-the-value]] [[things-that-look-like-they-work]]
+      const badUnits: string[] = [];
+      const frac = (v: unknown, dflt: number, name: string, i: number): number => {
+        if (v === undefined || v === null || v === "") return dflt;   // absent is fine — use the default
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0 || n > 1) {
+          badUnits.push(`${name}=${String(v)} on field ${i}`);
+          return dflt;
+        }
+        return n;
+      };
       const clean: EsignField[] = placed.slice(0, 5).map((f: any, i: number) => ({
         id: `self-${recipient.id}-${i}`,
         type: "signature" as const,
         page: Math.max(1, Math.min(Number(f.page) || 1, pdf.getPageCount())),
-        xPct: Math.max(0, Math.min(0.98, Number(f.xPct) || 0)),
-        yPct: Math.max(0, Math.min(0.98, Number(f.yPct) || 0)),
-        wPct: Math.max(0.05, Math.min(0.6, Number(f.wPct) || 0.24)),
-        hPct: Math.max(0.02, Math.min(0.2, Number(f.hPct) || 0.06)),
+        xPct: frac(f.xPct, 0, "xPct", i),
+        yPct: frac(f.yPct, 0, "yPct", i),
+        wPct: frac(f.wPct, 0.24, "wPct", i),
+        hPct: frac(f.hPct, 0.06, "hPct", i),
         recipientId: recipient.id,
       }));
+      if (badUnits.length) {
+        console.error("[esign] refusing out-of-range signer placement", env.token, recipient.id, badUnits);
+        await logActivity({ entity_type: "esign", entity_id: env.token, loan_file_id: env.loan_file_id || undefined, actor: "system", action: "esign.bad_units_refused", detail: { title: env.title, signer: recipient.name, fields: badUnits } }).catch(() => {});
+        return NextResponse.json({ error: "We can't place your signature on this document correctly. Nothing was signed — please contact us and we'll send a corrected copy." }, { status: 422 });
+      }
       mine = [...mine.filter((f) => f.type !== "signature"), ...clean];
       // Persist so the audit trail and any later re-render show where it actually went.
       env.fields = [
@@ -158,9 +190,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       const bw = (f.wPct || 0.2) * pw, bh = (f.hPct || 0.04) * ph;
       const x = (f.xPct || 0) * pw;
       const yBottom = ph - (f.yPct || 0) * ph - bh;
-      // A hair of overhang is normal from rounding; being wholly or mostly outside is not.
-      if (x + bw < 1 || x > pw - 1 || yBottom + bh < 1 || yBottom > ph - 1) {
-        offPage.push(`${f.type}@p${f.page || 1} x=${x.toFixed(0)} y=${yBottom.toFixed(0)} of ${pw.toFixed(0)}x${ph.toFixed(0)}`);
+      // CONTAINMENT, NOT "WHOLLY OUTSIDE".
+      //
+      // This test used to ask whether the box had left the page ENTIRELY: x + bw < 1 || x > pw - 1 ||
+      // yBottom + bh < 1 || yBottom > ph - 1. A box that STRADDLES an edge satisfies none of those and
+      // sailed through — which is exactly what happened on Metoyer 82609059. The clamped box was
+      // x=599.8 w=367.2 (running to 967 on a 612pt page) with yBottom=-142.6 h=158.4, so
+      // `yBottom + bh` came to 15.8, comfortably above 1, and the old test reported it on-page. The
+      // signature image is then centred INSIDE that box, so the ink landed off the paper while the
+      // arithmetic said it had not. The right-hand edge was never tested against pw at all.
+      //
+      // The signature has to sit ON the paper, so test all four edges for containment. EDGE absorbs
+      // the hair of overhang that rounding genuinely produces; anything beyond a point is a
+      // misplacement, and a misplacement must refuse rather than write a blank instrument.
+      const EDGE = 1;
+      if (x < -EDGE || yBottom < -EDGE || x + bw > pw + EDGE || yBottom + bh > ph + EDGE) {
+        offPage.push(`${f.type}@p${f.page || 1} box x=${x.toFixed(0)}..${(x + bw).toFixed(0)} y=${yBottom.toFixed(0)}..${(yBottom + bh).toFixed(0)} of ${pw.toFixed(0)}x${ph.toFixed(0)}`);
       }
     }
     if (offPage.length) {
