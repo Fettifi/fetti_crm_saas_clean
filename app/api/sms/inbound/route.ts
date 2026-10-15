@@ -99,6 +99,43 @@ export async function POST(req: NextRequest) {
       return new NextResponse(xml, { status: 200, headers: { "Content-Type": "text/xml" } });
     }
 
+    // A REQUEST FROM RAMON'S OWN PHONE THAT IS NOT PREFIXED "task" STILL HAS TO BE ANSWERED.
+    //
+    // 2026-10-15: he texted this number twice — "We received appraisal back from class evaluation
+    // for Jackson metoyer get that sent over to BFF so that we can get paid" (14:38) and "Send an
+    // email to the folks at BFF requesting a wire confirmation for our compensation" (18:44). Both
+    // were real instructions. Neither began with "task", so neither hit the branch above: they fell
+    // through to the lead path, landed in Twilio, and sat there. The desk's sms-watch read prints
+    // them under the heading "SOMEBODY REPLIED AND NOTHING ELSE ON THE DESK READS THIS", which is
+    // accurate and no use unless somebody runs it. He had to ask in person whether his text arrived.
+    //
+    // He asked for a receipt: "some sort of confirmation that it has been received and is being
+    // worked on." The receipt below says RECEIVED AND LOGGED and does not claim anyone is working
+    // it, because at the moment it is sent that would not be true, and a system that reports work
+    // it has not done is the failure this desk keeps paying for. The completion half is the ack
+    // text sent by sms-watch --ack once the thing is actually finished.
+    if (digits && digits === ownerCell && body.trim().length > 12) {
+      const title = body.trim().replace(/\s+/g, " ").slice(0, 200);
+      let ref = "";
+      try {
+        const { data } = await supabaseAdmin
+          .from("org_tasks")
+          .insert([{ title, source: "sms-request", status: "open", priority: 3, cadence: "once" }])
+          .select("id").maybeSingle();
+        ref = String(data?.id || "").replace(/-/g, "").slice(0, 6).toUpperCase();
+      } catch { /* a failed insert must not swallow his request silently — fall through to the reply */ }
+      await logActivity({
+        entity_type: "owner_request", entity_id: ref || "unlogged", actor: "owner",
+        action: "owner.sms_request", detail: { body: title, ref },
+      }).catch(() => {});
+      const esc2 = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const msg = ref
+        ? `Got it${ref ? ` — logged as #${ref}` : ""}. On the desk queue now; you'll get a text here when it's done.`
+        : `Got it — logged. On the desk queue now; you'll get a text here when it's done.`;
+      return new NextResponse(`<Response><Message>${esc2(msg)}</Message></Response>`,
+        { status: 200, headers: { "Content-Type": "text/xml" } });
+    }
+
     // Keyword opt-in (e.g. "Text DEAL to ..." from The Lot). Because the viewer
     // texts US first, this is express written consent (TCPA-compliant). We log
     // the consented lead and reply with the capture link; the hourly self-heal

@@ -429,6 +429,13 @@ fi
 # A HOLD IS A PROMISE THE BROKER MADE OUT LOUD. If the chase routes stop honouring it, a borrower
 # who was told his file was parked gets chased anyway — so this runs on every commit, not just when
 # the LOS files change.
+# A text from Ramon that goes unanswered is how an instruction gets lost for four hours.
+printf "   %-24s " "verify:owner-sms-receipt"
+OUT=$(npm run --silent verify:owner-sms-receipt 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:owner-sms-receipt"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 printf "   %-24s " "verify:chase-hold"
 OUT=$(npm run --silent verify:chase-hold 2>&1)
 if [ $? -eq 0 ]; then echo "PASS"; else
