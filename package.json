@@ -132,7 +132,8 @@
     "verify:rls": "tsx scripts/verify-rls-lockdown.ts",
     "verify:baseline-clean": "tsx scripts/verify-baseline-clean.ts",
     "verify:chase-hold": "tsx --conditions=react-server scripts/verify-chase-hold.ts",
-    "verify:owner-sms-receipt": "tsx --conditions=react-server scripts/verify-owner-sms-receipt.ts"
+    "verify:owner-sms-receipt": "tsx --conditions=react-server scripts/verify-owner-sms-receipt.ts",
+    "verify:sender-from": "tsx scripts/verify-sender-from.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

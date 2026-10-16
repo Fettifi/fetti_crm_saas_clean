@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin as supabase } from '@/lib/supabaseAdminClient';
 import { rateLimit, clientIp } from '@/lib/rateLimit';
 import { hashOtp } from '@/lib/portalSession';
+import { senderFrom } from '@/lib/notify/mailFrom';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,24 @@ export const dynamic = 'force-dynamic';
 // both broke login and leaked a working code to anyone with server-log access.
 async function emailCode(to: string, code: string): Promise<boolean> {
     const key = process.env.RESEND_API_KEY;
-    const from = process.env.LEAD_NOTIFY_EMAIL_FROM || 'Fetti Financial Services <noreply@fettifi.com>';
+    // THE SENDER COMES FROM ONE PLACE. This line used to read
+    //   process.env.LEAD_NOTIFY_EMAIL_FROM || 'Fetti Financial Services <noreply@fettifi.com>'
+    // which was the ONLY borrower-facing send in the app that bypassed lib/notify/mailFrom.ts —
+    // the module written specifically to be the single source of truth for the visible From.
+    // Two things were wrong with it, found 2026-10-16:
+    //
+    //  1. LEAD_NOTIFY_EMAIL_FROM is "FettiFinancialServices<hello@fettifi.com>", and hello@ HAS NO
+    //     INBOX (Ramon confirmed 2026-07-14). So a borrower who replied to her own access-code email
+    //     reached a dead mailbox. mailFrom.ts already coerces hello@ -> frank@ for exactly this
+    //     reason; this route never consulted it.
+    //  2. The `||` fallback named noreply@fettifi.com, and fettifi.com is a VERIFIED Resend sending
+    //     domain (confirmed against the Resend API 2026-10-16), so Resend will happily send as ANY
+    //     local-part on it, DKIM-signed and DMARC-aligned. Clearing one dashboard env var would have
+    //     silently moved every borrower access code onto an address nobody monitors — and one that
+    //     now carries a block entry on our mail perimeter.
+    //
+    // senderFrom() resolves to frank@fettifi.com, the only monitored fettifi.com mailbox.
+    const from = senderFrom();
     if (!key) { console.error('[portal/send-otp] RESEND_API_KEY missing — cannot deliver code'); return false; }
     const html = `<div style="font-family:ui-sans-serif,system-ui,Arial;max-width:440px;margin:0 auto;padding:24px">
       <p style="font-size:15px;color:#0f172a">Your Fetti Financial Services secure-portal access code:</p>

@@ -442,6 +442,20 @@ if [ $? -eq 0 ]; then echo "PASS"; else
   echo "FAIL"; FAILED="$FAILED verify:chase-hold"; printf '%s\n' "$OUT" | sed 's/^/      /'
 fi
 
+# THE VISIBLE "FROM" ON BORROWER MAIL. Unconditional, like the two above, because the thing it
+# protects is not confined to any one subsystem: fettifi.com is a VERIFIED Resend sending domain,
+# so ANY local-part on it will send, DKIM-signed and DMARC-aligned. DMARC p=reject stops an outsider
+# forging us; nothing stopped US sending as the wrong address until this guard.
+# Found 2026-10-16: app/api/portal/auth/send-otp/route.ts was the one borrower-facing send that
+# bypassed lib/notify/mailFrom.ts, defaulting to noreply@fettifi.com and in practice sending as
+# hello@fettifi.com — a mailbox with no inbox, so a borrower replying to her own portal access code
+# reached nobody. 108 verify:* guards existed and not one covered the sender.
+printf "   %-24s " "verify:sender-from"
+OUT=$(npm run --silent verify:sender-from 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:sender-from"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 if [ -n "$PORTFOLIO" ]; then
   printf "   %-24s " "verify:los-portfolio"
   OUT=$(npm run --silent verify:los-portfolio 2>&1)
