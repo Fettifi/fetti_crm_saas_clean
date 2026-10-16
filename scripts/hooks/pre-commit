@@ -450,6 +450,15 @@ fi
 # bypassed lib/notify/mailFrom.ts, defaulting to noreply@fettifi.com and in practice sending as
 # hello@fettifi.com — a mailbox with no inbox, so a borrower replying to her own portal access code
 # reached nobody. 108 verify:* guards existed and not one covered the sender.
+# DOCUMENT DELETION ON A LIVE LOAN FILE. Unconditional: combine-docs removes originals on opt-in,
+# and until 2026-10-16 it deleted EVERY selected document including the ones it had just SKIPPED —
+# so an encrypted bank statement was destroyed and reported as "could not combine" in one response.
+printf "   %-24s " "verify:combine-docs-delete"
+OUT=$(npm run --silent verify:combine-docs-delete 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:combine-docs-delete"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 printf "   %-24s " "verify:sender-from"
 OUT=$(npm run --silent verify:sender-from 2>&1)
 if [ $? -eq 0 ]; then echo "PASS"; else

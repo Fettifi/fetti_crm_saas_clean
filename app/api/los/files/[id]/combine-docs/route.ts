@@ -41,6 +41,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const out = await PDFDocument.create();
     const merged: string[] = [];
+    // THE DOCUMENTS THAT ACTUALLY WENT IN, not their labels. `merged` is a string[] of display
+    // names, so it could never drive the delete below — which is exactly why the delete reached for
+    // `ordered` (EVERY selected document) and destroyed the ones it had just SKIPPED.
+    // See the removeOriginals block for the incident this prevents.
+    const mergedDocs: typeof ordered = [];
     const skipped: string[] = [];
     for (const d of ordered) {
       const label = d.name || d.file_name || "document";
@@ -53,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
           const pages = await out.copyPages(src, src.getPageIndices());
           pages.forEach((p) => out.addPage(p));
-          merged.push(label);
+          merged.push(label); mergedDocs.push(d);
         } else if (["png"].includes(ext)) {
           const img = await out.embedPng(standaloneBytes(bytes));
           // Letter, in the image's orientation — NOT the pixel count. Passing pixels as points
@@ -63,7 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           const place = fitInside(img.width, img.height, size);
           const page = out.addPage([size.w, size.h]);
           page.drawImage(img, { x: place.x, y: place.y, width: place.w, height: place.h });
-          merged.push(label);
+          merged.push(label); mergedDocs.push(d);
         } else if (["jpg", "jpeg"].includes(ext)) {
           const img = await out.embedJpg(standaloneBytes(bytes));
           // Letter, in the image's orientation — NOT the pixel count. Passing pixels as points
@@ -73,7 +78,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           const place = fitInside(img.width, img.height, size);
           const page = out.addPage([size.w, size.h]);
           page.drawImage(img, { x: place.x, y: place.y, width: place.w, height: place.h });
-          merged.push(label);
+          merged.push(label); mergedDocs.push(d);
         } else {
           skipped.push(`${label} (${ext || "unknown"} — only PDF/JPG/PNG can be combined)`);
         }
@@ -103,12 +108,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (insErr || !doc) return NextResponse.json({ error: insErr?.message || "Could not save the combined PDF." }, { status: 500 });
 
     // Optional: remove the originals (explicit opt-in). Delete storage first, then rows.
+    //
+    // !! ONLY THE DOCUMENTS THAT ARE ACTUALLY IN THE COMBINED PDF. This deleted `ordered` — every
+    // document the user SELECTED — including the ones the merge loop had just pushed onto `skipped`.
+    // A selected file that could not be merged (password-protected or corrupt PDF, an unsupported
+    // type like .docx or .heic, a storage download that failed) was removed from the bucket AND its
+    // loan_documents row deleted, while appearing nowhere in the merged output. The response even
+    // reported it honestly under `skipped` — so the API said "I could not combine this" in the same
+    // breath as destroying it.
+    //
+    // That is unrecoverable loss of a borrower's document on a live mortgage file, and encrypted
+    // bank statements and tax PDFs — the most common thing a lender asks for — are exactly the
+    // inputs that land in `skipped`. `merged` could not guard it because `merged` is a string[] of
+    // LABELS; the fix is to carry the documents themselves (`mergedDocs`) and delete only those.
+    // A skipped document is now left exactly where it was, which is the only safe default:
+    // the user can retry it, convert it, or combine it by hand.
     let removed = 0;
     if (removeOriginals) {
-      const paths = ordered.map((d) => d.storage_path).filter(Boolean);
-      try { await supabaseAdmin.storage.from(BUCKET).remove(paths); } catch { /* best-effort */ }
-      const { data: del } = await supabaseAdmin.from("loan_documents").delete().in("id", ordered.map((d) => d.id)).eq("loan_file_id", id).select("id");
-      removed = (del || []).length;
+      const paths = mergedDocs.map((d) => d.storage_path).filter(Boolean);
+      if (paths.length) { try { await supabaseAdmin.storage.from(BUCKET).remove(paths); } catch { /* best-effort */ } }
+      const ids = mergedDocs.map((d) => d.id);
+      if (ids.length) {
+        const { data: del } = await supabaseAdmin.from("loan_documents").delete().in("id", ids).eq("loan_file_id", id).select("id");
+        removed = (del || []).length;
+      }
     }
 
     await logActivity({
