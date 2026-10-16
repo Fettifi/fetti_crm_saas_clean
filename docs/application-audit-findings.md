@@ -24,7 +24,7 @@ Every line below was checked against the working tree today, not carried forward
 | 3 | `<LIABILITIES>` container missing from the exporter — lenders import a 1003 showing zero debts | **FIXED** | `lib/mismo.ts:239–270`, deal-level LIABILITY / LIABILITY_DETAIL / LIABILITY_HOLDER |
 | 5 | Veteran exports as `MortgageType Conventional`, `SelfDeclaredMilitaryServiceIndicator` hardcoded false | **FIXED in MISMO** | `lib/mismo.ts:537` derives it from the borrower's own answers and emits **undefined when unanswered** rather than false |
 | 6 | Co-borrower declarations / military / demographics stamped borrower 1's answers onto borrower 2 | **FIXED (the dangerous half)** | `lib/mismo.ts:535` — `const mil = i === 0 ? u.military \|\| {} : {}`, so borrower 2 is empty rather than wrong |
-| 4 | **The signed authorization is never turned into a document**, so nothing can be handed to an underwriter | **STILL OPEN** | see below |
+| 4 | **The signed authorization is never turned into a document**, so nothing can be handed to an underwriter | **FIXED 2026-10-16** | `lib/authorizationPdf.ts` + apply-route upload to the private `loan-docs` bucket; `verify:authorization-document` (12 checks, in the hook, failed on purpose three ways) |
 
 **So the blocker note on A479195 was stale.** It read *"68 findings remain, ranked, not yet fixed"*
 while most of the top of that ranking had in fact been executed. Correcting a count nobody is
@@ -32,7 +32,7 @@ tracking is the same failure as a roster that still announces a withdrawn loan.
 
 ## What is genuinely still open, and what it needs
 
-### 4 — the signed authorization produces no document  *(the heart of Ramon's ask)*
+### 4 — the signed authorization produces no document  — **FIXED 2026-10-16, commit below**
 
 The wizard **does** capture it: `app/apply/form/page.tsx:751` pushes a
 `{ kind: "authorization", id: "borrower_authorization" }` step, and the comment above it is explicit
