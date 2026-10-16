@@ -12,6 +12,7 @@
     "fetti:watch": "npx nodemon --watch app --watch components --watch lib --ext ts,tsx,js,jsx --exec \"npm run fetti:auto && npm run fetti:feature\"",
     "fetti:deploy": "bash scripts/fetti_deploy.sh",
     "verify:1003": "npx tsx scripts/verify-1003.ts",
+    "verify:declaration-capture": "NODE_OPTIONS=--conditions=react-server npx tsx scripts/verify-declaration-capture.ts",
     "verify:mismo-decl": "NODE_OPTIONS=--conditions=react-server npx tsx scripts/verify-mismo-declarations.ts",
     "verify:urla-amount-dob": "NODE_OPTIONS=--conditions=react-server npx tsx scripts/verify-urla-amount-dob.ts",
     "verify:leadscore": "npx tsx scripts/verify-leadscore.ts",

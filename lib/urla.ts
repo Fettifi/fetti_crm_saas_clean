@@ -637,6 +637,16 @@ function declFrom(raw: any, seeded?: UrlaDeclarations): Partial<UrlaDeclarations
     coSignerOnUndisclosedDebt: f("cosigner", seeded?.coSignerOnUndisclosedDebt),
     undisclosedBorrowedFunds: f("borrowed_funds", seeded?.undisclosedBorrowedFunds),
     applyingNewCredit: f("new_credit", seeded?.applyingNewCredit),
+    // 5a(5). ADDED 2026-10-16 alongside the checklist option that feeds it. Before this, neither
+    // this function nor the literal above named applyingOtherMortgage, so a borrower-originated
+    // file shipped D.1 blank on the printed 1003 and omitted
+    // UndisclosedMortgageApplicationIndicator from the MISMO export — one of the "missing
+    // information" complaints behind ask A479195.
+    applyingOtherMortgage: f("other_mortgage", seeded?.applyingOtherMortgage),
+    // 5a(2). Its own step, asked only when the borrower says they will occupy as primary, so the
+    // answer is "" (unasked) rather than a fabricated "No" for investors — same rule as every
+    // other declaration here.
+    priorOwnershipLast3Years: sel(raw.decl_prior_ownership, seeded?.priorOwnershipLast3Years),
     propertySubjectToLien: f("pace_lien", seeded?.propertySubjectToLien),
     declaredBankruptcy: e("bankruptcy", seeded?.declaredBankruptcy),
     propertyForeclosed: e("foreclosure", seeded?.propertyForeclosed),

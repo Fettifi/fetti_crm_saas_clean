@@ -354,6 +354,21 @@ if [ -n "$ANYTS" ]; then
   fi
 fi
 
+# A GUARD ON THE FIELD IS NOT A GUARD ON THE METRIC. verify:mismo-decl was green throughout the
+# 2026-10-16 defect because it asks whether the EXPORTER handles a declaration, not whether the
+# borrower is ever ASKED. SECTION_5_DECLARATIONS listed fifteen and the wizard could produce
+# thirteen: 5a(5) had no checklist option and 5a(2) had no step, so every borrower-originated 1003
+# shipped D.1 and A.1 blank while an imported one kept them. This asserts the metric a reader acts
+# on — a fully-answered application yields FIFTEEN — and reads the wizard's own source, so adding a
+# declaration without adding a way to answer it goes red here instead of at a lender.
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:decl-capture"
+  OUT=$(npm run --silent verify:declaration-capture 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:declaration-capture"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 # BOTH TCPA GATES MUST AGREE ABOUT WHAT TIME IT IS WHERE THE BORROWER IS. lib/quietHours.ts (SMS)
 # and lib/callingHours.ts (the dialer) each kept a private NANP area-code table. Diffed through
 # their own resolvers on 2026-10-15 they disagreed about 4 codes and 24 more existed in only one

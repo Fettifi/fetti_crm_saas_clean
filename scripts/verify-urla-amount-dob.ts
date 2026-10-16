@@ -118,9 +118,26 @@ ck("the file the OLD two-field test called complete has thirteen declarations op
   !!(blind.declarations.bankruptcyPast7Years && blind.declarations.intendToOccupyAsPrimary)
   && urlaCompleteness(blind).missing.some((m) => m.startsWith("Declarations")), label(blind));
 const wiz = assembleUrla(lead({ occupancy: "Owner", raw: { decl_financial: "judgments,lawsuit", decl_property_events: "none", decl_seller_relationship: "no" } }), {});
-ck("a borrower who completed both checklists counts 13 of 15", /13 of 15/.test(String(label(wiz))), label(wiz));
-ck("…and the gauge NAMES the two open questions instead of just withholding the tick",
-  /5a\(2\)/.test(String(label(wiz))) && /5a\(5\)/.test(String(label(wiz))));
+// UPDATED 2026-10-16, and deliberately NOT by relaxing it. These asserted "counts 13 of 15" and
+// "NAMES the two open questions, 5a(2) and 5a(5)" — written to DOCUMENT a defect (the wizard could
+// not ask either one) and so they pinned that defect as the expected state. The defect is fixed:
+// 5a(5) now has a checklist option and 5a(2) its own step. A test still demanding 13 would fail the
+// CORRECT behaviour and pressure the next person to revert the fix. See finding 71 in
+// docs/application-audit-findings.md and `npm run verify:declaration-capture`.
+//
+// `wiz` answers both checklists but is never shown the 5a(2) step, so it is 14 of 15 with exactly
+// 5a(2) open — and 5a(5) now reads "No" because the borrower SAW the option and left it unticked,
+// which is an answer. The assertion that always mattered survives: the gauge NAMES what is open.
+ck("a borrower who answered both checklists but was not shown 5a(2) counts 14 of 15",
+  /14 of 15/.test(String(label(wiz))), label(wiz));
+ck("…and the gauge NAMES the open question instead of just withholding the tick",
+  /5a\(2\)/.test(String(label(wiz))) && !/5a\(5\)/.test(String(label(wiz))), label(wiz));
+ck("…5a(5) now reads No — the borrower saw the option and left it unticked, which is an ANSWER",
+  wiz.declarations.applyingOtherMortgage === "No", String(wiz.declarations.applyingOtherMortgage));
+const wizFull = assembleUrla(lead({ occupancy: "Owner", raw: { decl_financial: "judgments,lawsuit",
+  decl_property_events: "none", decl_seller_relationship: "no", decl_prior_ownership: "no" } }), {});
+ck("…and once 5a(2) IS asked, the same borrower reaches 15 of 15",
+  /15 of 15/.test(String(label(wizFull))), label(wizFull));
 const all15 = (over: Record<string, string> = {}) => assembleUrla(lead({ raw: { urla: { declarations: { ...Object.fromEntries(SECTION_5.map((k) => [k, "No"])), ...over } } } }), {});
 ck("all fifteen answered -> the check passes", urlaCompleteness(all15()).present.some((p) => /15 of 15/.test(p)), label(all15()));
 ck("…which also proves every seeded declaration SURVIVES assembleUrla — 5a(2) and 5a(5) were dropped",

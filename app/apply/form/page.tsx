@@ -689,8 +689,26 @@ function appSteps(a: Answers): Q[] {
       { value: "cosigner", label: "I'm a co-signer or guarantor on a debt not listed here" },
       { value: "borrowed_funds", label: "I've borrowed money for this transaction that isn't disclosed" },
       { value: "new_credit", label: "I'm applying for new credit before closing" },
+      // 5a(5). ADDED 2026-10-16. This option did not exist, so declFrom() had nothing to map and
+      // `applyingOtherMortgage` could only ever be filled by a staff edit or a MISMO import — every
+      // borrower-originated 1003 shipped 5a(5) blank. It is NOT the same question as new_credit
+      // (5a(6)): a second mortgage application is the one that changes the debt picture at closing,
+      // and lenders ask them separately because the answers differ.
+      { value: "other_mortgage", label: "I'm applying for a mortgage on another property before this one closes" },
       { value: "pace_lien", label: "The property has a PACE or clean-energy lien" },
     ] });
+  // 5a(2), and the URLA only asks it when 5a(1) is YES — "Will you occupy as your primary
+  // residence? If YES, have you had an ownership interest in another property in the last three
+  // years?" So it is asked exactly when effectiveOccupancy() resolves to Owner, which is also when
+  // intendToOccupyAsPrimary becomes "Yes" in lib/urla.ts. Asking an investor this question would
+  // put an answer on a declaration the form never actually poses to them.
+  if (effectiveOccupancy(a) === "Owner") {
+    steps.push({ id: "decl_prior_ownership", kind: "select",
+      prompt: "In the last three years, have you owned another property?",
+      sub: "The application asks this of anyone buying a primary home. It does not count against you — it decides which first-time-buyer programmes you qualify for.",
+      options: [{ value: "no", label: "No — this is the only property I've owned" },
+                { value: "yes", label: "Yes — I've had an ownership interest in another property" }] });
+  }
   steps.push({ id: "decl_property_events", kind: "checklist", noneLabel: "None of these — clean history",
     prompt: "In the last 7 years, has any of this happened?", sub: "Every lender sees these on your credit. Telling us first lets us pick a lender that works with it.",
     options: [

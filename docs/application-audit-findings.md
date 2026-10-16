@@ -60,6 +60,46 @@ same shape as the Metoyer credit-authorization gap that prompted the ask in the 
 3. A guard that FAILS when an application row carries an authorization signature with no
    corresponding document — the condition that is true right now, for every application ever taken.
 
+### 71 — two Section 5 declarations were never ASKED — **FOUND AND FIXED 2026-10-16**
+
+Found while re-auditing the second clause of A479195, *"ALL URLA declarations present and stored"*,
+on a quiet desk cycle. Written here before it was fixed, per the rule at the top of this file.
+
+`SECTION_5_DECLARATIONS` lists fifteen. The apply wizard could produce **thirteen**:
+
+| ref | field | why it could never be answered |
+|---|---|---|
+| 5a(5) | `applyingOtherMortgage` | no option in the `decl_financial` checklist, so `declFrom()` had nothing to map |
+| 5a(2) | `priorOwnershipLast3Years` | no step existed in the wizard at all |
+
+Both are parsed on the way IN (`lib/mismoImport.ts:200` and `:207`) and printed on the 1003 as
+**D.1** and **A.1**, so a file imported from a lender carried them while **every file originated by
+our own application shipped them blank** — one of the literal "MISMO exports are missing
+information" complaints behind this ask. 5a(5) is not a duplicate of 5a(6) `applyingNewCredit`: a
+second *mortgage* application is the one that changes the debt picture at closing, which is why the
+URLA asks them separately.
+
+**Why nothing caught it, and this is the reusable part.** `verify:mismo-decl` was green before,
+during and after — it asserts that the *exporter* emits each declaration correctly and omits it
+rather than writing `false` when unanswered. All true, and all beside the point. **A guard on the
+field is not a guard on the metric.**
+
+**Fixed:** checklist option `other_mortgage` plus a `decl_prior_ownership` step shown only to
+owner-occupants (the URLA asks 5a(2) only when 5a(1) is YES); both mapped in `declFrom()`.
+
+**Guarded:** `npm run verify:declaration-capture`, wired into the pre-commit hook. It asserts the
+metric — a fully-answered application reports **15 of 15** — reads the *wizard's own source* for the
+option values so a new declaration without a way to answer it goes red, and still asserts that an
+unasked declaration stays `""` and is never fabricated as `"No"`. Made to fail on purpose three
+ways: delete the checklist option (red), drop the `declFrom` mapping (red), default an unasked
+answer to `"No"` (red). Files restored byte-identical after each.
+
+**One correction worth recording:** my first version of that guard reported four failures that were
+entirely its own — it read `borrowers[0].declarations` when the assembled declarations hang off the
+Urla root, and put `occupancy` in `raw` when `assembleUrla` reads the lead *column*
+(`lib/urla.ts:508`, written by `app/api/apply/route.ts:240`). Reconciled against a real
+`assembleUrla` dump before trusting a single result. A red guard is a hypothesis.
+
 ### The other ~62
 
 Not recoverable from the transcript as a ranked list; they live across 78 agent outputs. **Do not
