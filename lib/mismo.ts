@@ -641,7 +641,33 @@ export function buildMismo34(u: Urla): string {
       parties += `${T(12)}<LEGAL_ENTITY>\n${T(13)}<LEGAL_ENTITY_DETAIL>\n` + el("FullName", b.employment?.employerName, T(14)) + `${T(13)}</LEGAL_ENTITY_DETAIL>\n${T(12)}</LEGAL_ENTITY>\n`;
       if (b.employment?.employerAddress) parties += addr(b.employment.employerAddress, T(12));
       parties += `${T(12)}<EMPLOYMENT>\n`;
-      parties += el("EmploymentBorrowerSelfEmployedIndicator", bool(b.employment?.selfEmployed), T(13));
+      // `bool(b.employment?.selfEmployed)` TOLD THE LENDER "NOT SELF-EMPLOYED" FOR A BORROWER
+      // NOBODY ASKED. UrlaEmployment.selfEmployed is `boolean | undefined` and assembleUrla only
+      // ever sets it to `true` or leaves it undefined (lib/urla.ts:378, :428 — both `|| undefined`),
+      // so on every wizard file that did not match self / 1099 / contract / business owner the
+      // export carried a flat negative. Measured on the real exporter before this fix, with a
+      // borrower whose employment was { employerName, position } and nothing else:
+      //
+      //     selfEmployed undefined  ->  <EmploymentBorrowerSelfEmployedIndicator>false</...>
+      //     selfEmployed false      ->  <EmploymentBorrowerSelfEmployedIndicator>false</...>
+      //
+      // — indistinguishable from an answer, and lib/mismoImport.ts:147 reads that "false" straight
+      // back into selfEmployed, so one round trip through our own code destroys the unanswered
+      // state for good. The same blindness-at-both-ends that hid the Section 5 declarations.
+      //
+      // The cost is a condition the file does not owe, or one it does. This indicator is what an
+      // underwriter reads to decide whether to order two years of business returns and K-1s and
+      // whether wage income can be used at face value; a false negative on a real self-employed
+      // borrower gets the file approved on income the lender would not have allowed.
+      //
+      // So: tri-state, exactly as InterestOnlyIndicator above and the fifteen declarations below
+      // already do it. An Indicator has no unknown value, so an unanswered question is OMITTED —
+      // el() drops undefined. An absent element an underwriter can see and condition on beats a
+      // negative they cannot. This was the last `bool()` in this file still asserting a negative
+      // from an absent answer; the other call sites are either computed booleans or already
+      // tri-stated (ConstructionLoanIndicator, InterestOnlyIndicator, the HMDA refusals).
+      parties += el("EmploymentBorrowerSelfEmployedIndicator",
+        typeof b.employment?.selfEmployed === "boolean" ? bool(b.employment.selfEmployed) : undefined, T(13));
       parties += el("EmploymentPositionDescription", b.employment?.position, T(13));
       parties += el("EmploymentStatusType", "Current", T(13));
       parties += el("EmploymentTimeInLineOfWorkMonthsCount", b.employment?.yearsInLineOfWork ? Math.round(b.employment.yearsInLineOfWork * 12) : undefined, T(13));

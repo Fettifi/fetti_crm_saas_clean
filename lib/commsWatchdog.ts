@@ -63,18 +63,24 @@ async function drainPendingSms(): Promise<number> {
     .not("raw->pending_sms", "is", null).limit(200);
   for (const l of (rows || []) as any[]) {
     const pending = l.raw?.pending_sms;
-    if (!pending?.body || !l.phone) continue;
+    // THE NUMBER THE MESSAGE WAS WRITTEN FOR, not whatever is on the lead row today. A doc request
+    // or e-sign link is addressed to a specific handset — a co-borrower, or a phone recorded on the
+    // loan file — and `l.phone` is not necessarily it. Sending a borrower's upload link to the
+    // wrong person is a privacy breach, so prefer the stored recipient and fall back only when the
+    // record predates this field.
+    const toPhone: string | null = (pending && typeof pending.to_phone === "string" && pending.to_phone) || l.phone || null;
+    if (!pending?.body || !toPhone) continue;
     if (l.nurture_paused) continue;
     if (await automationPaused()) break;             // the master shutoff outranks the queue
     if (!smsAllowed(l.raw).ok) continue;             // consent may have been revoked while held
-    const res = await sendSms(l.phone, pending.body, { statusCallback: true, state: l.state ?? null });
+    const res = await sendSms(toPhone, pending.body, { statusCallback: true, state: l.state ?? null });
     if (res.deferred) continue;                      // still outside the window — leave it queued
     const raw = { ...(l.raw || {}) };
     delete raw.pending_sms;                          // sent OR permanently refused: stop holding it
     await supabaseAdmin.from("leads").update({ raw }).eq("id", l.id);
     if (res.ok) {
       drained++;
-      await logComms({ leadId: l.id, channel: "sms", direction: "outbound", type: pending.kind || "first_touch", body: pending.body, to: l.phone, providerId: res.sid }).catch(() => {});
+      await logComms({ leadId: l.id, channel: "sms", direction: "outbound", type: pending.kind || "first_touch", body: pending.body, to: toPhone, providerId: res.sid }).catch(() => {});
       await logActivity({ entity_type: "lead", entity_id: l.id, lead_id: l.id, actor: "system", action: "sms.queue_drained", detail: { kind: pending.kind, held_since: pending.queued_at } }).catch(() => {});
     }
   }

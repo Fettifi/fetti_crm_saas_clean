@@ -12,7 +12,17 @@
 // recorded, explicit opt-in must return false.
 //
 //   npx tsx scripts/verify-sms-consent.ts
-import { smsAllowed, canSms, messagingAllowed, withStopLine, STOP_LINE, isRevocation } from "../lib/smsConsent";
+import {
+  smsAllowed, canSms, messagingAllowed, withStopLine, STOP_LINE, isRevocation,
+  loSendAllowed, invitedReply, emailOptOutRecord,
+} from "../lib/smsConsent";
+// These two reach lib/comms → lib/notify/emailCopy, which imports "server-only" — which is why
+// package.json runs this guard with `tsx --conditions=react-server` (verify:script-conditions
+// blocks a commit that forgets it). Imported, not re-implemented: a guard that keeps its own
+// copy of the predicate proves only that the copy agrees with itself.
+import { smsSendOutcome } from "../lib/notify/docRequest";
+import { isTransactionalKind, governorKindFor } from "../lib/notify/leadResponder";
+import { OPERATIONAL_KINDS } from "../lib/conversation/governor";
 import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 
@@ -79,7 +89,33 @@ chk(!messagingAllowed({ nurture_paused: false, raw: { sms_optout_at: "2026-01-01
 // ── 4. EVERY AUTOMATED SMS CARRIES AN OPT-OUT INSTRUCTION. None of the three document-chaser
 //      bodies did.
 chk(withStopLine("Upload your docs here: https://x").endsWith(STOP_LINE), "the STOP line is appended");
-chk(withStopLine(`already says STOP somewhere`) === "already says STOP somewhere", "and never doubled up");
+// 2026-10-15 — THIS ASSERTION USED TO READ:
+//     withStopLine("already says STOP somewhere") === "already says STOP somewhere"
+// and it encoded the defect. The predicate was `/\bSTOP\b/i`, so the required disclosure was
+// dropped from any body that merely contained the word. All three bodies in
+// lib/notify/docRequest.ts interpolate caller text — r.docs, r.title, r.lo_name — so a document
+// named "Stop Payment Authorization" produced a text with no way to opt out, on the very path
+// whose three hand-rolled senders put 15 unconsented texts on handsets. The test is now the
+// INSTRUCTION, not the keyword.
+chk(withStopLine("already says STOP somewhere").endsWith(STOP_LINE),
+  "the word STOP alone does NOT count as the disclosure — it is dropped only for a real opt-out instruction");
+for (const already of [
+  `Please sign: ${"Agreement"} (Reply STOP to opt out.)`,
+  "Text STOP to unsubscribe",
+  "reply stop to opt out.",
+  "Respond STOP at any time",
+]) {
+  chk(withStopLine(already) === already, `and never doubled up: ${JSON.stringify(already)}`);
+}
+// The real failing inputs. Each is a body this file's own senders can produce.
+for (const body of [
+  `Hi Ray, Fetti Financial Services sent you a document to e-sign: "Stop Payment Authorization". Review & sign securely: https://x`,
+  "Hi Ray, Fetti here. We need: Stop-Loss Policy, 2024 1040. Upload securely here: https://x",
+  "Hi Ray, Fetti here. Stop by the office if that is easier: https://x",
+  "Hi Ray — nonstop since Monday, here is your portal: https://x",
+]) {
+  chk(withStopLine(body).endsWith(STOP_LINE), `a body that merely mentions stopping still carries the disclosure: ${JSON.stringify(body.slice(0, 54))}…`);
+}
 
 // ── 5. NO SENDER MAY HAND-ROLL ITS OWN TWILIO CALL. This is the check that keeps the fix from
 //      being undone by the next new sender: three separate hand-rolled POSTs in one file were
@@ -276,6 +312,245 @@ chk(rawSenders === 0, `no file outside lib/comms.ts and lib/phoneMessages.ts tal
     const calls = (src.match(/respondToLead\(\{/g) || []).length;
     const withRaw = (src.match(/raw: [^,]+,/g) || []).length;
     chk(calls === 0 || withRaw >= calls, `${f} passes raw on all ${calls} respondToLead call(s) — otherwise fail-closed silences everyone`);
+  }
+}
+
+// ── 15. THE ONE-CLICK UNSUBSCRIBE MUST LEAVE AN ARTIFACT THAT SURVIVES.
+//     app/api/unsubscribe/route.ts recorded a CAN-SPAM opt-out as `nurture_paused: true` and
+//     NOTHING else. Two problems, both real:
+//       • After the 2026-10-14 transactional fix, a bare nurture_paused is explicitly NOT a
+//         revocation — it is also the switch an LO flips to stop a drip. The consumer's own act
+//         had no record anywhere.
+//       • lib/leadShield.ts promoteQuarantined writes `nurture_paused: false` UNCONDITIONALLY
+//         and then replays the new-lead pipeline, first-touch email included. It is reached from
+//         five places including app/api/apply/prefill on a LINK CLICK — and the unsubscribe link
+//         and the pre-filled apply link travel in the same drip email.
+{
+  console.log("  -- the CAN-SPAM opt-out, and what survives an un-pause --");
+  const rec = emailOptOutRecord({}, "one_click_link", "2026-10-15T00:00:00.000Z");
+  chk(rec.email_marketing_optout_at === "2026-10-15T00:00:00.000Z" && rec.email_marketing_optout_source === "one_click_link",
+    "the opt-out writes a timestamped, sourced artifact — the evidence a CAN-SPAM dispute needs");
+  chk(emailOptOutRecord({ email_marketing_optout_at: "2026-01-01T00:00:00.000Z" } as any, "one_click_link", "2026-10-15T00:00:00.000Z")
+        .email_marketing_optout_at === "2026-01-01T00:00:00.000Z",
+    "a second click never moves the ORIGINAL stamp forward — the 10-business-day clock runs from the first request");
+
+  // THE BEHAVIOUR THAT WAS BROKEN: nurture_paused cleared, opt-out still binding.
+  const unsubbed = { nurture_paused: true, raw: { ...emailOptOutRecord({}, "one_click_link") } };
+  const unpaused = { nurture_paused: false, raw: unsubbed.raw };
+  chk(!messagingAllowed(unsubbed).ok, "an unsubscribed lead is off-limits to marketing");
+  chk(!messagingAllowed(unpaused).ok,
+    "...AND STAYS off-limits after promoteQuarantined clears nurture_paused — which is the bug: before the artifact, this was ALLOWED");
+  chk(messagingAllowed({ nurture_paused: false, raw: {} }).ok,
+    "while a lead who never unsubscribed is untouched — the predicate must not block real work");
+  // THE DISTINCTION THAT MUST NOT COLLAPSE. A one-click link in a follow-up email asks us to
+  // stop COMMERCIAL mail; 15 U.S.C. §7702(2)(B),(17) puts a document the borrower is waiting on
+  // outside that. Writing `email_optout_at` here would have re-created the Strapko failure.
+  chk(messagingAllowed(unpaused, { transactional: true }).ok,
+    "their own card authorization / e-sign link still reaches them — a marketing opt-out is not a do-not-contact");
+  chk(!messagingAllowed({ nurture_paused: false, raw: { email_optout_at: "2026-10-15" } as any }, { transactional: true }).ok,
+    "...but an unqualified \"stop emailing me\" reply still blocks even transactional mail");
+  chk(/unsubscrib/i.test(messagingAllowed(unpaused).reason || ""),
+    "and the refusal says the recipient unsubscribed, so the LO is not left guessing");
+
+  const unsub = code("app/api/unsubscribe/route.ts");
+  chk(/emailOptOutRecord\(/.test(unsub), "the route writes the artifact rather than the bare boolean");
+  chk(/nurture_paused: true/.test(unsub), "and still sets nurture_paused — the drip checks that read only the column must keep holding");
+  chk(/select\("raw"\)/.test(unsub) && /error \|\| !lead/.test(unsub),
+    "and never spreads a reconstructed raw over a failed read — that blob also holds the SMS consent artifact");
+  const optinSrc = code("app/api/optin/route.ts");
+  chk(/email_marketing_optout_at/.test(optinSrc), "the opt-in link refuses a lead carrying the new artifact too");
+}
+
+// ── 16. THE LO-INITIATED PATHS HAD NO GATE. One of the 16 unconsented deliveries came from the
+//     manual composer. app/api/conversations/route.ts POST sent SMS and email with no consent
+//     check of any kind on one branch and a hand-rolled two-field read on the other; and
+//     lib/ai/assistantTools.ts assistantSendText COMPUTED the verdict, sent anyway, and stapled
+//     it to the SUCCESS payload as a compliance note.
+{
+  console.log("  -- a human pressing send is not consent --");
+  const consented = { nurture_paused: false, raw: { sms_consent: true } };
+  chk(loSendAllowed(consented, "sms").ok, "an LO may text a lead with recorded consent");
+  chk(loSendAllowed({ nurture_paused: true, raw: { sms_consent: true } }, "sms").ok,
+    "a bare marketing pause does not stop an LO writing to one named borrower (transactional)");
+  chk(loSendAllowed({ nurture_paused: true, raw: {} }, "email").ok,
+    "nor does it stop their email — this is the Strapko case");
+  // The four verdicts the hand-rolled expression could not see.
+  const refusals: [any, string][] = [
+    [{ raw: { sms_consent: true, sms_optout_at: "2026-07-06T08:36:54Z" } }, "a lead who texted STOP"],
+    [{ raw: { sms_consent: false } }, "a lead who ticked the box OFF"],
+    [{ raw: { sms_consent: true, sms_undeliverable: true } }, "a number the carrier says cannot receive"],
+    [{ raw: { sms_consent: true, historical_import: true } }, "an imported lead with no artifact to produce"],
+    [{ raw: {} }, "a lead with no consent record at all"],
+    [{ raw: { do_not_contact: true } }, "a do-not-contact flag"],
+  ];
+  for (const [lead, why] of refusals) {
+    const v = loSendAllowed(lead, "sms");
+    chk(!v.ok && !!v.reason, `an LO is REFUSED, with a reason, for ${why}`);
+  }
+  chk(!loSendAllowed({ raw: { email_optout_at: "2026-10-01" } as any }, "email").ok,
+    "and an email revocation refuses the email leg");
+  chk(loSendAllowed({ raw: {} }, "email").ok,
+    "while a lead with no consent record may still be EMAILED — email consent is not SMS consent, and blocking it would stop every reply");
+
+  // ── A GATE IS THREE THINGS IN ORDER: evaluate, REFUSE, and only then send. ─────────────────
+  // The first version of these checks asserted only that `loSendAllowed(` appeared in the file,
+  // and `if (!v.ok)` somewhere in it. Sabotaging the fix to `if (false)` left both true and the
+  // guard stayed GREEN with the gate dead — which is the identical shape of the defect being
+  // fixed here (a verdict computed and ignored). So the order is measured, and the refusal
+  // branch is required to actually RETURN before the send call.
+  //
+  // Ordering is read off the RAW source: code() strips `//` to end-of-line, and these files
+  // carry https:// URLs inside template strings, so a marker on such a line would vanish and
+  // the check would report an ordering it never measured.
+  const convRaw = readFileSync("app/api/conversations/route.ts", "utf8");
+  const conv = code("app/api/conversations/route.ts");
+  {
+    const iGate = convRaw.indexOf("const verdict = loSendAllowed(lead as any, channel)");
+    const iRefuse = convRaw.indexOf("if (!verdict.ok)");
+    const iSms = convRaw.indexOf("await sendSms(lead.phone, text,");
+    const iEmail = convRaw.indexOf("await sendEmail(lead.email, subject,");
+    chk(iGate > 0, "the Conversations composer runs the predicate on the row it just read");
+    chk(iRefuse > iGate, "and branches on the verdict");
+    chk(iSms > iRefuse && iEmail > iRefuse,
+      `with BOTH send legs after the refusal — gate@${iGate} refuse@${iRefuse} sms@${iSms} email@${iEmail}`);
+    const refusal = iRefuse > 0 && iSms > iRefuse ? convRaw.slice(iRefuse, iSms) : "";
+    chk(/return NextResponse\.json\(/.test(refusal) && /status: 409/.test(refusal),
+      "and the refusal RETURNS 409 with the reason — not a logged warning followed by a send");
+  }
+  chk(!/sms_consent === true \|\| raw\.consent\?\.sms_optin === true/.test(conv),
+    "and no longer reads consent with its own two-field expression, which could not see a STOP");
+  chk(!/allowQuietHours: true/.test(conv),
+    "and claims no blanket quiet-hours exemption — sendSms reserves that for a reply the recipient asked for");
+  chk(/allowQuietHours: invited/.test(conv) && /invitedReply\(/.test(conv),
+    "the exemption is EARNED per send, from a real inbound message");
+  chk(/select\("id, full_name, first_name, last_name, email, phone, state, raw, nurture_paused"\)/.test(conv),
+    "and the row it gates on actually selects raw/nurture_paused/state — `state` was read and never selected");
+
+  const toolsRaw = readFileSync("lib/ai/assistantTools.ts", "utf8");
+  const tools = code("lib/ai/assistantTools.ts");
+  /** One exported function's body, so `if (!v.ok)` in a SIBLING cannot satisfy its sibling's check. */
+  const fn = (src: string, from: string, to: string) => {
+    const a = src.indexOf(from), b = src.indexOf(to);
+    return a >= 0 && b > a ? src.slice(a, b) : "";
+  };
+  {
+    const text = fn(toolsRaw, "export async function assistantSendText", "export async function assistantCreateTask");
+    chk(text.length > 200, `assistantSendText was located (${text.length} chars) — the slice is not empty`);
+    const iGate = text.indexOf('loSendAllowed(r.lead as any, "sms")');
+    const iRefuse = text.indexOf("if (!v.ok)");
+    const iSend = text.indexOf("await sendSms(phone");
+    chk(iGate > 0 && iRefuse > iGate && iSend > iRefuse,
+      `Rupee's text tool evaluates, refuses, THEN sends — gate@${iGate} refuse@${iRefuse} send@${iSend}`);
+    const refusal = iRefuse > 0 && iSend > iRefuse ? text.slice(iRefuse, iSend) : "";
+    chk(/return \{/.test(refusal) && /ok: false/.test(refusal),
+      "and the refusal RETURNS — the old code computed the verdict and stapled it to a SENT message");
+    chk(!/compliance_note/.test(refusal), "rather than downgrading it to a note");
+
+    const mail = fn(toolsRaw, "export async function assistantSendEmail", "export async function assistantSendText");
+    chk(mail.length > 200, `assistantSendEmail was located (${mail.length} chars)`);
+    const jGate = mail.indexOf('loSendAllowed(r.lead as any, "email")');
+    const jRefuse = mail.indexOf("if (!v.ok) return");
+    const jSend = mail.indexOf("await sendEmail(email, subject");
+    chk(jGate > 0 && jRefuse > jGate && jSend > jRefuse,
+      `and her email tool honours a recorded email opt-out before sending — gate@${jGate} refuse@${jRefuse} send@${jSend}`);
+  }
+  chk(!/const consented = r\.lead \? smsConsented/.test(tools),
+    "the computed-then-ignored `consented` variable is gone");
+  chk(!/raw\?\.sms_consent === true \|\| raw\?\.consent\?\.sms_optin === true/.test(tools),
+    "and so is the local second-opinion consent helper");
+}
+
+// ── 17. QUIET HOURS ARE NOT WAIVED BY A BUTTON. 47 C.F.R. §64.1200(c)(1); lib/quietHours.ts
+//     holds the tighter 8am-8pm window because Florida's FTSA does.
+{
+  console.log("  -- an invited reply, and nothing else, gets past the window --");
+  const now = new Date("2026-10-15T04:00:00.000Z");
+  chk(invitedReply(new Date(now.getTime() - 60 * 60_000).toISOString(), now),
+    "a borrower who wrote an hour ago is waiting on an answer — the reply is invited");
+  chk(invitedReply(new Date(now.getTime() - 23.5 * 3600_000).toISOString(), now),
+    "and still invited at 23.5h");
+  chk(!invitedReply(new Date(now.getTime() - 25 * 3600_000).toISOString(), now),
+    "but NOT at 25h — that is outreach, and outreach waits for the window");
+  chk(!invitedReply(null, now), "silence is never an invitation");
+  chk(!invitedReply(undefined, now), "nor is a missing timestamp");
+  chk(!invitedReply("not a date", now), "nor is an unparseable one");
+  chk(!invitedReply(new Date(now.getTime() + 3600_000).toISOString(), now),
+    "and a FUTURE timestamp is a clock problem, not an invitation — it must not open the window");
+}
+
+// ── 18. A QUIET-HOURS HOLD IS NOT A PROVIDER REJECTION. lib/notify/docRequest.ts smsSign
+//     returned the literal string "the SMS provider rejected it" for every non-ok result,
+//     including sendSms's `deferred: true` hold — a message that never reached Twilio. The LO
+//     was told a vendor refused a document request that was simply waiting for 8am, and nothing
+//     retried it. Same failure shape as the 2026-10-14 card authorization.
+{
+  console.log("  -- a hold, a refusal and a failure are three different answers --");
+  const held = smsSendOutcome({ ok: false, deferred: true, detail: "quiet hours — it is 22:00 for the recipient (America/Los_Angeles); TCPA allows 8:00-20:00 local" });
+  chk(held.held === true && held.ok === false, "a deferred send is reported as HELD, not failed");
+  chk(/quiet hours/i.test(held.reason || ""), "and the reason is the real one — the recipient's local time");
+  chk(!/provider/i.test(held.reason || "") && !/reject/i.test(held.reason || ""),
+    "and it never blames the SMS provider for a message that never reached it");
+  const refused = smsSendOutcome({ ok: false, detail: "recipient has opted out — suppressed" });
+  chk(refused.held === false && /opted out/.test(refused.reason || ""),
+    "a suppression refusal is NOT held — retrying it is the thing we must never do");
+  const failed = smsSendOutcome({ ok: false, detail: "HTTP 400" });
+  chk(failed.held === false && /could not be sent/.test(failed.reason || ""), "and a real failure says so");
+  chk(smsSendOutcome({ ok: true, sid: "SM1" } as any).ok === true, "a success is a success");
+
+  const doc = code("lib/notify/docRequest.ts");
+  chk(!/reason: "the SMS provider rejected it"/.test(doc), "the sentence that lied to the LO is gone");
+  chk(/queueHeldSms\(/.test(doc) && /pending_sms/.test(doc),
+    "a held text is parked on raw.pending_sms, which lib/commsWatchdog.ts drainPendingSms already drains");
+  chk(/paused: !!\(data as any\)\.nurture_paused/.test(doc) && /if \(!leadId \|\| paused\) return false/.test(doc),
+    "and it does NOT promise a retry for a paused lead — drainPendingSms skips those");
+  chk(/NOT queued/.test(doc), "saying so explicitly instead");
+  chk(!/no channels configured — request added to file but not delivered/.test(doc),
+    "and sendDocRequest no longer reports a deliberate refusal as a configuration problem");
+}
+
+// ── 19. THE EMAIL LEG OF THE AUTOMATED RESPONDER HAD NO OPT-OUT GATE AT ALL — the SMS leg has
+//     had one since 2026-08-02. `messagingAllowed` appeared nowhere in the file, and the
+//     governor cannot supply it: authorizeSend reads activity_log twice and never opens `leads`,
+//     so nurture_paused / email_optout_at / do_not_contact are invisible to it, whatever its own
+//     docblock claims about the reactivation lane not reaching "an opt-out".
+{
+  console.log("  -- the drip's email leg --");
+  chk(isTransactionalKind("doc_chase"), "a document we are genuinely waiting on is transactional (Ramon kept the chaser, 2026-08-01)");
+  for (const k of ["first_touch", "nurture", "reactivation", "ai_reply", undefined, null, "", "proactive_7"]) {
+    chk(!isTransactionalKind(k as any), `but ${JSON.stringify(k)} is marketing — a CAN-SPAM opt-out stops it`);
+  }
+  // It must agree with the governor's own set rather than keeping a second list.
+  chk(OPERATIONAL_KINDS.has(governorKindFor("doc_chase")) && governorKindFor("doc_chase") === "operational",
+    "and the answer is derived from the governor's OPERATIONAL_KINDS, so the two cannot drift");
+  chk(governorKindFor("reactivation") === "reactivation" && governorKindFor("ai_reply") === "reply" && governorKindFor("whatever") === "proactive",
+    "the extracted kind mapping is the one respondToLead used inline");
+
+  const responder = code("lib/notify/leadResponder.ts");
+  chk(/messagingAllowed\(data as any, \{ transactional: isTransactionalKind\(l\.kind\) \}\)/.test(responder),
+    "the gate reads the predicate with the transactional flag coming from the send kind, not hardcoded either way");
+  chk(/isEmailSuppressed\(l\.email\)/.test(responder),
+    "and still checks the BOUNCE list, which is a different fact from an opt-out");
+  // EVALUATE, REFUSE, THEN SEND — inside emailLead, measured on the RAW file. code() strips
+  // `//` to end-of-line and the first `//` on the send line is the one inside
+  // "https://api.resend.com", so the marker vanished and the first version of this check read
+  // post@-1. Asserting `emailOptOutGate(l)` merely APPEARS was also not enough: sabotaging the
+  // refusal to `if (false)` left it true and the guard stayed green with the gate dead.
+  const rawResponder = readFileSync("lib/notify/leadResponder.ts", "utf8");
+  {
+    const a = rawResponder.indexOf("async function emailLead");
+    const b = rawResponder.indexOf("async function smsLead");
+    const body = a >= 0 && b > a ? rawResponder.slice(a, b) : "";
+    chk(body.length > 500, `emailLead was located (${body.length} chars) — the slice is not empty`);
+    const gateAt = body.indexOf("const gate = await emailOptOutGate(l)");
+    const refuseAt = body.indexOf("if (!gate.ok)");
+    const postAt = body.indexOf('fetch("https://api.resend.com/emails"');
+    chk(gateAt > 0, "emailLead consults the opt-out gate");
+    chk(postAt > 0, "and the Resend POST this is ordering against is where it is expected");
+    chk(refuseAt > gateAt && postAt > refuseAt,
+      `the gate is evaluated and REFUSED before the send — gate@${gateAt} refuse@${refuseAt} post@${postAt}`);
+    const refusal = refuseAt > 0 && postAt > refuseAt ? body.slice(refuseAt, postAt) : "";
+    chk(/return \{ ok: false/.test(refusal),
+      "and the refusal RETURNS rather than logging and continuing — the whole defect class in this cluster");
   }
 }
 

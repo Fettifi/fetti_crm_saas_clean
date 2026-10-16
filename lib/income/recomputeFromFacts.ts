@@ -24,6 +24,11 @@ import { replayBankStatement, type BankFactsUsed } from "./bankReplay";
  * and are compared on that directly, so this list is closed — it never needs another entry.
  */
 export const PRIOR_LOGIC_VERSIONS: readonly string[] = [
+  // Added by the 2026-10-15 bump (STR haircut surviving lease resolution, lib/income/rentalIncome.ts).
+  // verify:income-recompute requires the route's CURRENT version to be on this list, so a bump
+  // adds itself here — otherwise a legacy envelope written under it can never prove its documents
+  // are unchanged and pays for a model re-read it does not need.
+  "2026-10-15-str-haircut-survives-lease-resolution",
   "2026-09-18-bank-merge-holder-institution-and-recompute-from-stored-facts",
   "2026-09-17-bank-statement-unnumbered-statement-merges-into-its-account",
   "2026-09-11-stub-variability-within-year-and-full-periods-only",

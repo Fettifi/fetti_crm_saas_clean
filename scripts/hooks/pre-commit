@@ -114,6 +114,10 @@ SHIELD=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/leadShield' -e 'lib/leadReal
 GUARDMETA=$(printf '%s\n' "$CHANGED" | grep -E 'scripts/verify-|scripts/hooks/pre-commit|^package\.json$')
 # The DSCR lease-rent engine and the LTV basis both produce numbers that leave the building.
 RENT=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income/rentalIncome' -e 'lib/dscr' -e 'verify-rental-income')
+# THE FHA MAXIMUM A BORROWER WRITES AN OFFER AGAINST. Its own trigger because $MI watches
+# lib/pricer.ts and $INCOV watches lib/income.ts + app/income/ — and this defect lived in the
+# seam: the library was already right, the screen passed neither the financed UFMIP nor the term.
+FHAMAX=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/income.ts' -e 'app/income/page.tsx' -e 'lib/pricer.ts' -e 'lib/closingCosts' -e 'scripts/verify-fha-max-loan')
 LTV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/scenario' -e 'verify-scenario-ltv')
 BIZ=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/bizApp' -e 'verify-bizapp')
 GOV=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/governor' -e 'lib/conversationGovernor' -e 'verify-governor')
@@ -350,6 +354,34 @@ if [ -n "$ANYTS" ]; then
   fi
 fi
 
+# BOTH TCPA GATES MUST AGREE ABOUT WHAT TIME IT IS WHERE THE BORROWER IS. lib/quietHours.ts (SMS)
+# and lib/callingHours.ts (the dialer) each kept a private NANP area-code table. Diffed through
+# their own resolvers on 2026-10-15 they disagreed about 4 codes and 24 more existed in only one
+# of them: 502 Louisville and 463 Indianapolis were Central in the dialer, so AI outbound calls
+# were permitted to 9:59pm recipient-local; 219 Gary was Eastern in the SMS gate, so texts went at
+# 7:00am. quietHours also resolved the STATE before the area code, which made its own documented
+# split-state corrections unreachable code. Now one table, swept at pinned instants. ~0.9s,
+# offline, so it gates every TS change — it is a statutory window, not a preference.
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:tcpa-timezones"
+  OUT=$(npm run --silent verify:tcpa-timezones 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:tcpa-timezones"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+# Same rule, the EMPLOYMENT block. The declarations above were fixed to omit an unanswered answer;
+# EmploymentBorrowerSelfEmployedIndicator was still `bool(selfEmployed)` on a `boolean | undefined`,
+# so a borrower nobody asked reached the lender declaring they are not self-employed — and our own
+# importer read that "false" back in, which made it permanent. Three states, proved by round trip.
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:mismo-employment"
+  OUT=$(npm run --silent verify:mismo-employment 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:mismo-employment"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$ANYTS" ]; then
   printf "   %-24s " "verify:borrower-auth"
   OUT=$(npm run --silent verify:borrower-authorization 2>&1)
@@ -484,6 +516,21 @@ if [ $? -eq 0 ]; then echo "PASS"; else
   echo "FAIL"; FAILED="$FAILED verify:no-pixels-on-tokens"; printf '%s\n' "$OUT" | sed 's/^/      /'
 fi
 
+# A SIGNED LINK IN A BORROWER'S INBOX IS A 16-BYTE SECRET. /api/unsubscribe and /api/optin
+# authenticated with `t !== unsubToken(l)` / `t !== optInToken(id)` — a string compare that
+# short-circuits on the first wrong character, on the two shortest tokens in the repo (both
+# .slice(0,16)). /api/optin is the one route that can WRITE a TCPA consent artifact, so forging a
+# link there manufactures the evidence that Fetti may text somebody. Twelve other token checks
+# already used timingSafeEqual; these two were the outliers.
+# Unconditional and 0.6s: it drives the real route handlers, so it also proves the fix did not
+# break the links — timingSafeEqual THROWS on unequal lengths, and a constant-time rewrite
+# without a length test turns every truncated unsubscribe link into a 500.
+printf "   %-24s " "verify:token-timing"
+OUT=$(npm run --silent verify:token-timing 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:token-timing"; printf '%s\n' "$OUT" | grep -v 'Supabase Admin' | sed 's/^/      /'
+fi
+
 printf "   %-24s " "verify:storage-private"
 OUT=$(npm run --silent verify:storage-private 2>&1)
 if [ $? -eq 0 ]; then echo "PASS"; else
@@ -500,6 +547,16 @@ printf "   %-24s " "verify:urla-schedules"
 OUT=$(npm run --silent verify:urla-schedules 2>&1)
 if [ $? -eq 0 ]; then echo "PASS"; else
   echo "FAIL"; FAILED="$FAILED verify:urla-schedules"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
+# The same loss one level down from the sliced schedules: row() drew wrap(v,...)[0] and dropped the
+# rest, so a 57-character bank name printed 43 characters of itself on the page the borrower signs.
+# This renders the PDF and reads back every drawn string's baseline and x-extent, because a value
+# that prints in full and lands on the row beneath it is not fixed either.
+printf "   %-24s " "verify:urla-row-wrap"
+OUT=$(npm run --silent verify:urla-row-wrap 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:urla-row-wrap"; printf '%s\n' "$OUT" | sed 's/^/      /'
 fi
 
 printf "   %-24s " "verify:preapproval-internal"
@@ -720,6 +777,16 @@ if [ -n "$MI" ]; then
   done
 fi
 
+if [ -n "$FHAMAX" ]; then
+  for G in verify:fha-max-loan; do
+    printf "   %-18s " "$G"
+    OUT=$(npm run --silent "$G" 2>&1)
+    if [ $? -eq 0 ]; then echo "PASS"; else
+      echo "FAIL"; FAILED="$FAILED $G"; printf '%s\n' "$OUT" | sed 's/^/      /'
+    fi
+  done
+fi
+
 if [ -n "$DVTAX" ]; then
   for G in verify:va-property-tax; do
     printf "   %-18s " "$G"
@@ -868,6 +935,74 @@ if [ -n "$ANYTS" ]; then
       echo "FAIL"; FAILED="$FAILED $G"; printf '%s\n' "$OUT" | grep -v 'Supabase Admin' | sed 's/^/      /'
     fi
   done
+fi
+
+# ── THE INFRA SET — the credential store, the throttle, the share token and a saved zero ──────
+# Added 2026-10-15. Each of these four protects something that was silent: nothing was red, nothing
+# was broken on screen, and the damage was aimed at whoever rebuilt or whoever read the number next.
+
+# verify:rls-live — UNCONDITIONAL (when the credentials are on disk), for the same reason
+# verify:storage-private is: what re-opens this hole is a dashboard toggle nobody commits, so a
+# commit-path trigger cannot see it. app_settings was outside the guard's table list until today and
+# it is the runtime credential store — 1,501 rows, including MS_GRAPH_CLIENT_SECRET,
+# META_ACCESS_TOKEN and ANTHROPIC_API_KEY. The check also now reads the TRUE row count beside the
+# anon read, because a zero-row anon read on an EMPTY table is not evidence of anything.
+# ~3s, 2 fetches per table. Skips cleanly with no .env.local rather than blocking a fresh clone.
+if [ -f .env.local ]; then
+  # EXIT 2 IS "COULD NOT VERIFY", NOT "DEFECT FOUND", AND THEY MUST NOT BE THE SAME ANSWER.
+  # This block mapped every non-zero to FAIL, so a dropped connection, a Supabase blip or a
+  # flight blocked EVERY commit in the repo behind a security banner that was not true. A guard
+  # that stops all work on a network error gets bypassed with --no-verify, and then it protects
+  # nothing. Exit 1 = a real finding and still blocks. Exit 2 = unreachable and warns.
+  printf "   %-24s " "verify:rls-live"
+  OUT=$(npm run --silent verify:rls-live 2>&1); RLSRC=$?
+  if [ $RLSRC -eq 0 ]; then echo "PASS"
+  elif [ $RLSRC -eq 2 ]; then
+    echo "SKIPPED (could not reach the database - NOT a clean result)"
+  else
+    echo "FAIL"; FAILED="$FAILED verify:rls-live"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+# verify:rate-limiter — the RPC every throttle in the app calls was defined in NO migration: it
+# existed only inside the production database, so a rebuild came up with no throttle at all and
+# lib/rateLimit.ts fails OPEN, silently. The same counter is the SMS idempotency gate, and the
+# portal OTP routes use it failClosed, where an absent limiter locks a borrower out of her own
+# documents. Triggers on the limiter, on any migration (where the definition now lives), and on
+# itself. Migration-only commits reach here because $GRANTS is in the early-exit gate above.
+RATELIM=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/rateLimit' -e 'supabase/migrations/' -e 'verify-rate-limiter')
+if [ -n "$RATELIM" ]; then
+  printf "   %-24s " "verify:rate-limiter"
+  OUT=$(npm run --silent verify:rate-limiter 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:rate-limiter"; printf '%s\n' "$OUT" | grep -v 'Supabase Admin' | sed 's/^/      /'
+  fi
+fi
+
+# verify:letter-expiry — four surfaces answered "is this pre-approval still valid?" from one
+# expires_on column and gave three different answers. The PDF download 410'd 30h59m59s before the
+# date printed on the letter, while the web page served the same letter as live. The person who
+# finds that out is the listing agent on the other side of the offer.
+LETTEREXP=$(printf '%s\n' "$CHANGED" | grep -F -e 'preapprovalExpiry' -e 'preapprovalPdf' -e 'letter/' -e 'verify-letter-expiry')
+if [ -n "$LETTEREXP" ]; then
+  printf "   %-24s " "verify:letter-expiry"
+  OUT=$(npm run --silent verify:letter-expiry 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:letter-expiry"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
+# verify:config-number — a margin of 0% could not be saved: the writer admits 0 on purpose and
+# every reader ran `Number(cfg(...)) || 2.75`, so the dashboard printed projected earnings on a
+# margin the broker had just set to nothing. verify:patterns SHAPE 3 cannot catch this — it accepts
+# a non-zero `|| default` as the REMEDY for the mirror-image bug — so the rule lives here.
+CFGNUM=$(printf '%s\n' "$CHANGED" | grep -F -e 'lib/configNumber' -e 'app/api/dashboard' -e 'settings/margin' -e 'org-learn' -e 'verify-config-number')
+if [ -n "$CFGNUM" ]; then
+  printf "   %-24s " "verify:config-number"
+  OUT=$(npm run --silent verify:config-number 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:config-number"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
 fi
 
 if [ -n "$FAILED" ]; then

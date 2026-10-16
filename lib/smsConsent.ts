@@ -25,6 +25,15 @@ export type ConsentRaw = {
   sms_undeliverable?: boolean | null;
   historical_import?: boolean | null;
   consent?: { sms_optin?: boolean | null } | boolean | null;
+  // Declared rather than reached through `as any`. All three were already being read by
+  // messagingAllowed() and by lib/notify/docRequest.ts through casts, which is how
+  // email_marketing_optout_at could have been misspelled at a call site and silently read
+  // as undefined — a consent field that is `undefined` by typo always answers "allowed".
+  email_optout_at?: string | null;
+  /** The CAN-SPAM commercial opt-out: see emailOptOutRecord() below. */
+  email_marketing_optout_at?: string | null;
+  email_marketing_optout_source?: string | null;
+  do_not_contact?: boolean | null;
 } | null | undefined;
 
 /**
@@ -91,14 +100,107 @@ export function messagingAllowed(
 ): SmsVerdict {
   const r = (lead?.raw ?? {}) as NonNullable<ConsentRaw>;
   // A REVOCATION the recipient actually made. These bind regardless of why we are writing.
-  if ((r as any).email_optout_at) return { ok: false, reason: "recipient opted out of email" };
+  if (r.email_optout_at) return { ok: false, reason: "recipient opted out of email" };
   if (r.sms_optout_at) return { ok: false, reason: "opted out (STOP)" };
-  if ((r as any).do_not_contact) return { ok: false, reason: "do-not-contact on file" };
+  if (r.do_not_contact) return { ok: false, reason: "do-not-contact on file" };
+  // ── THE ONE-CLICK UNSUBSCRIBE HAD NO ARTIFACT, AND `nurture_paused` IS NOT ONE. ─────────────
+  //
+  // 2026-10-15: app/api/unsubscribe/route.ts recorded a CAN-SPAM opt-out by writing
+  // `nurture_paused: true` and nothing else. After the 2026-10-14 transactional fix above, that
+  // boolean is explicitly documented as NOT a revocation — it is also the switch an LO flips to
+  // stop a drip — so the consumer's own act left no durable record anywhere.
+  //
+  // And the column does not survive. lib/leadShield.ts:534 (promoteQuarantined) writes
+  // `nurture_paused: false` UNCONDITIONALLY and then replays the full new-lead pipeline,
+  // first-touch email included. It is reached by autoPromoteIfQuarantined from five places —
+  // app/api/apply/prefill (a LINK CLICK), the portal upload route, the Calendly webhook, inbound
+  // SMS and lib/inbound/ingestEmail. The unsubscribe link and the pre-filled apply link sit in
+  // the footer and the body of the SAME drip email, so one borrower in Review stage clicking
+  // Unsubscribe and later clicking the apply link erases the opt-out and restarts the drip.
+  //
+  // So the opt-out now writes its own field, in `raw`, which promoteQuarantined preserves.
+  // It is SCOPED: a one-click link in a follow-up email is a request to stop COMMERCIAL mail,
+  // and 15 U.S.C. §7702(2)(B),(17) puts a transactional/relationship message outside the
+  // commercial-message definition the opt-out governs. Writing `email_optout_at` here instead
+  // would have killed the borrower's own card authorizations and e-sign links — the exact
+  // Strapko failure the lines above exist to prevent. Marketing stops absolutely; a document
+  // they are waiting on does not.
+  if (r.email_marketing_optout_at && !opts?.transactional) {
+    return { ok: false, reason: "recipient unsubscribed from marketing email (one-click opt-out)" };
+  }
   // A bare marketing pause stops campaigns, not a document the borrower is waiting on.
   if (lead?.nurture_paused && !opts?.transactional) {
     return { ok: false, reason: "unsubscribed / paused by the recipient" };
   }
   return { ok: true };
+}
+
+/**
+ * THE DURABLE ARTIFACT A ONE-CLICK UNSUBSCRIBE MUST LEAVE BEHIND.
+ *
+ * Returns the `raw` fields to merge — never overwriting an EARLIER opt-out stamp, the same
+ * preserve-first shape lib/inbound/ingestEmail.ts uses for an inbound "stop emailing me".
+ * In a CAN-SPAM dispute the burden is ours and the evidence is this timestamp plus its source;
+ * 15 U.S.C. §7704(a)(4) gives 10 business days to honour the request.
+ */
+export function emailOptOutRecord(
+  raw: ConsentRaw,
+  via: string,
+  at: string = new Date().toISOString(),
+): { email_marketing_optout_at: string; email_marketing_optout_source: string } {
+  const prior = (raw as NonNullable<ConsentRaw>)?.email_marketing_optout_at;
+  return {
+    email_marketing_optout_at: prior || at,
+    email_marketing_optout_source: via,
+  };
+}
+
+/**
+ * MAY A HUMAN LO SEND THIS ONE PERSON THIS ONE MESSAGE?
+ *
+ * The LO-initiated paths (the Conversations inbox composer, Rupee's send tools) had no gate at
+ * all — they read consent with hand-rolled expressions, or computed the verdict and sent anyway.
+ * Reconciling the Twilio ledger against the CRM found 1 of the 16 unconsented deliveries came
+ * from the manual composer; "a human clicked it" is not consent and never was.
+ *
+ * TRANSACTIONAL, because it is one named recipient on a live file and a human chose to write
+ * them — so a bare marketing pause does not stop it. A revocation always does. On SMS,
+ * smsAllowed() still has to pass on its own recorded evidence: the TCPA puts the burden of
+ * proving consent on the sender and a human's intent is not evidence.
+ */
+export function loSendAllowed(
+  lead: { nurture_paused?: boolean | null; raw?: ConsentRaw },
+  channel: "sms" | "email",
+): SmsVerdict {
+  const base = messagingAllowed(lead, { transactional: true });
+  if (!base.ok) return base;
+  if (channel === "email") return { ok: true };
+  return smsAllowed(lead?.raw);
+}
+
+/**
+ * IS THIS TEXT A REPLY THE RECIPIENT ASKED FOR?
+ *
+ * sendSms's `allowQuietHours` is the only way past the TCPA window, and its own comment reserves
+ * it for "an internal alert, or a direct reply the recipient just asked for". The Conversations
+ * inbox claimed it unconditionally — on the free-text composer AND on the application-link push,
+ * which is a solicitation by any reading. 47 C.F.R. §64.1200(c)(1) bars a solicitation outside
+ * 8am-9pm local (lib/quietHours.ts holds the tighter 8am-8pm window because Florida's FTSA does).
+ *
+ * An inbound message inside the window below means a person is waiting on an answer, so the LO's
+ * reply is invited and is not a solicitation. Silence means it is outreach, and it waits.
+ */
+export function invitedReply(
+  lastInboundAt: string | null | undefined,
+  now: Date = new Date(),
+  windowHours = 24,
+): boolean {
+  if (!lastInboundAt) return false;
+  const t = new Date(lastInboundAt).getTime();
+  if (!Number.isFinite(t)) return false;
+  const age = now.getTime() - t;
+  // A future timestamp is a clock problem, not an invitation.
+  return age >= 0 && age <= windowHours * 3600_000;
 }
 
 /** The disclosure shown on the one-click opt-in page — and stored verbatim as the artifact.
@@ -110,8 +212,25 @@ export const SMS_OPTIN_DISCLOSURE =
 
 /** Every automated SMS must tell the recipient how to stop it. Appended once, never doubled. */
 export const STOP_LINE = "Reply STOP to opt out.";
+/**
+ * THE WORD "STOP" IS NOT THE DISCLOSURE. THE INSTRUCTION IS.
+ *
+ * The test was `/\bSTOP\b/i`, so any body that merely CONTAINED the word stop — in any sense —
+ * had the required opt-out disclosure silently removed. The three bodies in
+ * lib/notify/docRequest.ts interpolate caller-supplied text straight into the message:
+ * `r.docs` (smsDocRequest), `r.title` (smsSign) and `r.lo_name` (all three). A document named
+ * "Stop Payment Authorization" or a note to "stop by the office" therefore produced a text with
+ * no way to opt out — which is a CTIA/carrier requirement on every program message and the TCPA
+ * hygiene the three hand-rolled senders in that file were gated for in the first place.
+ *
+ * So match the INSTRUCTION, not the keyword. Deliberately narrow: "reply/text/respond/send STOP".
+ * Checked against the real tree — the five bodies that already carry their own opt-out language
+ * (lib/nurture.ts's seven steps, lib/connect.ts, lib/scoutMessages.ts, lib/markConcierge.ts and
+ * the inbound auto-replies) all phrase it as "Reply STOP to opt out.", so nothing doubles up.
+ */
+const OPT_OUT_INSTRUCTION = /\b(?:reply|text|respond|send)\s+(?:with\s+)?["“'`]?stop\b/i;
 export function withStopLine(body: string): string {
-  return /\bSTOP\b/i.test(body) ? body : `${body.replace(/\s+$/, "")} ${STOP_LINE}`;
+  return OPT_OUT_INSTRUCTION.test(body) ? body : `${body.replace(/\s+$/, "")} ${STOP_LINE}`;
 }
 
 // A REVOCATION IS A REVOCATION ON ANY CHANNEL.

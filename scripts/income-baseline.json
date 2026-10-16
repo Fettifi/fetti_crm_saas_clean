@@ -1,5 +1,5 @@
 {
-  "logicVersion": "2026-09-18-bank-merge-holder-institution-and-recompute-from-stored-facts",
+  "logicVersion": "2026-10-15-str-haircut-survives-lease-resolution",
   "incomeRe": "w-?2|pay.?stub|check.?stub|paystub|earnings|(?<!(?:closing|settlement|escrow|mortg?age|billing|hoa|card)[\\s_.-]?)statement|income|ssa|social.?security|pension|award|annuity|voe|verification[\\s_.-]*of[\\s_.-]*employment|employment[\\s_.-]*(?:letter|verification)|tax[\\s_.-]*return|1099|1040|schedule\\s*[ce]|profit.?and.?loss|p&l|k-?1|disability|alimony|child.?support|(?<!re|p)lease|rent[\\s_.-]*roll|rental[\\s_.-]*agreement|(?<!main)tenanc|1007|1025|market[\\s_.-]*rent|dd.?214|certificate[\\s_.-]*of[\\s_.-]*eligibility|\\bcoe\\b",
   "neverIncomeRe": "\\binternal\\b[\\s_.-]*(?:worksheet|draft|memo)|not[\\s_.-]*for[\\s_.-]*submission|\\bdo[\\s_.-]*not[\\s_.-]*(?:submit|send)\\b",
   "files": {

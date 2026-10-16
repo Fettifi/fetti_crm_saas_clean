@@ -12,8 +12,41 @@ import { leadQuality } from "@/lib/leadQuality";
 import { leadReality } from "@/lib/leadReality";
 import { cfg } from "@/lib/settings";
 import { COMMS_PERSONA } from "@/lib/markPersona";
+import { loSendAllowed, invitedReply, smsAllowed } from "@/lib/smsConsent";
 
 export const dynamic = "force-dynamic";
+
+// ── THE ONE SENDER IN THIS REPO WITH NO CONSENT GATE AT ALL. ──────────────────────────────────
+//
+// Every other outbound path routes through lib/smsConsent: the automated engine (lib/nurture.ts,
+// lib/leadPipeline.ts), the document chaser (lib/notify/docRequest.ts), the responder
+// (lib/notify/leadResponder.ts). This route read consent with a hand-rolled
+// `raw.sms_consent === true || raw.consent?.sms_optin === true` on one branch and NOTHING on the
+// other, and claimed `allowQuietHours: true` on both. A hand-rolled expression cannot see
+// sms_optout_at, sms_consent === false, sms_undeliverable or historical_import — so the composer
+// that produced 1 of the 16 unconsented deliveries reconciled out of the Twilio ledger was still
+// reading consent with the same kind of expression that let it happen.
+//
+// A HUMAN PRESSED SEND, so these are transactional (loSendAllowed → a bare marketing pause does
+// not stop an LO writing to one named borrower). A revocation still stops everything, and SMS
+// still needs recorded consent of its own: the TCPA burden of proof is ours and "Ramon meant to"
+// is not evidence.
+//
+// QUIET HOURS ARE NOT WAIVED BY A BUTTON. sendSms's own contract reserves allowQuietHours for
+// "a direct reply the recipient just asked for". So the exemption is now earned per send: an
+// inbound message in the last 24h means someone is waiting and the reply is invited; otherwise
+// the TCPA window binds (47 C.F.R. §64.1200(c)(1); lib/quietHours.ts holds 8am-8pm because
+// Florida's FTSA is tighter than the federal 9pm).
+const INVITED_WINDOW_HOURS = 24;
+/** The most recent inbound message on this thread, or null. Feeds the invited-reply test. */
+function lastInboundAt(messages: { direction?: string | null; at?: string | null }[]): string | null {
+  let latest: string | null = null;
+  for (const m of messages || []) {
+    if (m?.direction !== "inbound" || !m?.at) continue;
+    if (!latest || String(m.at) > latest) latest = String(m.at);
+  }
+  return latest;
+}
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
@@ -38,6 +71,7 @@ export async function GET(req: NextRequest) {
     const messages = await getLeadTimeline(leadId);
     // Conversion context: everything the LO needs at a glance next to the thread.
     const raw: any = (lead as any).raw || {};
+    const smsVerdict = smsAllowed(raw);
     const { data: lf } = await supabaseAdmin.from("loan_files").select("id, share_token").eq("lead_id", leadId).limit(1).maybeSingle();
     let missingDocs: string[] = [];
     if ((lf as any)?.id) {
@@ -52,7 +86,11 @@ export async function GET(req: NextRequest) {
         quality: leadQuality({ tier: (lead as any).tier, score: (lead as any).score, decision: raw.qualify?.decision || raw.decision || null }),
         reality: leadReality({ raw, name: leadName(lead), email: lead.email, phone: lead.phone }),
         facts: Array.isArray(raw.concierge_facts) ? raw.concierge_facts : [],
-        smsConsent: raw.sms_consent === true || raw.consent?.sms_optin === true,
+        // The predicate, not a two-field read. This badge said "SMS consent on file" for a lead
+        // carrying `sms_consent: true` alongside `sms_optout_at` — somebody who texted STOP —
+        // because it never looked at the revocation. The LO reads this before deciding to text.
+        smsConsent: smsVerdict.ok,
+        smsConsentReason: smsVerdict.ok ? null : smsVerdict.reason || null,
         aiCallConsent: raw.ai_call_consent === true,
         paused: !!(lead as any).nurture_paused,
         appLink: magicApplyLink(lead as any),
@@ -79,7 +117,7 @@ export async function POST(req: NextRequest) {
 
     if (action !== "send") {
       const { data: l } = await supabaseAdmin.from("leads")
-        .select("id, full_name, first_name, phone, email, loan_purpose, state, stage, raw").eq("id", leadId).maybeSingle();
+        .select("id, full_name, first_name, phone, email, loan_purpose, state, stage, raw, nurture_paused").eq("id", leadId).maybeSingle();
       if (!l) return NextResponse.json({ error: "lead not found" }, { status: 404 });
       const raw: any = (l as any).raw || {};
 
@@ -114,20 +152,39 @@ export async function POST(req: NextRequest) {
         const text2 = action === "send_app_link"
           ? `Hey ${first}, it's ${COMMS_PERSONA} at Fetti — your application is saved and pre-filled, about 3 minutes to finish whenever you're ready: ${link}`
           : `Hey ${first}, it's ${COMMS_PERSONA} at Fetti — here's Ramon's calendar, grab any time that works and it's locked in: ${link}`;
-        const smsOk = raw.sms_consent === true || raw.consent?.sms_optin === true;
-        if ((l as any).phone && smsOk) {
-          const r = await sendSms((l as any).phone, text2 + " (Reply STOP to opt out.)", { state: (l as any).state, allowQuietHours: true });
-          if (!r.ok) return NextResponse.json({ error: `SMS failed: ${r.detail}` }, { status: 502 });
-          await logComms({ leadId, channel: "sms", direction: "outbound", type: "manual", body: text2, to: (l as any).phone, providerId: r.sid, actor: "lo", status: "sent" });
-          return NextResponse.json({ ok: true, via: "sms" });
+        // THE CONSENT PREDICATE, not a hand-rolled read of two fields. The old expression said
+        // yes for a lead carrying `sms_consent: true` alongside `sms_optout_at` — a borrower who
+        // had texted STOP — because it never looked at the revocation at all.
+        const smsVerdict = loSendAllowed(l as any, "sms");
+        // An application-link or calendar push is a SOLICITATION however it is triggered, so it
+        // gets no quiet-hours exemption. A hold is not a dead end: the email leg below has no
+        // quiet-hours rule, so we fall through to it rather than telling the LO it failed.
+        let smsHeld: string | null = null;
+        if ((l as any).phone && smsVerdict.ok) {
+          const r = await sendSms((l as any).phone, text2 + " (Reply STOP to opt out.)", { state: (l as any).state });
+          if (r.ok) {
+            await logComms({ leadId, channel: "sms", direction: "outbound", type: "manual", body: text2, to: (l as any).phone, providerId: r.sid, actor: "lo", status: "sent" });
+            return NextResponse.json({ ok: true, via: "sms" });
+          }
+          if (!r.deferred) return NextResponse.json({ error: `SMS failed: ${r.detail}` }, { status: 502 });
+          smsHeld = r.detail;
         }
         if ((l as any).email) {
+          const emailVerdict = loSendAllowed(l as any, "email");
+          if (!emailVerdict.ok) {
+            return NextResponse.json({ error: `Not sent — ${emailVerdict.reason}.` }, { status: 409 });
+          }
           const r = await sendEmail((l as any).email, action === "send_app_link" ? "your application — 3 minutes to finish" : "grab a time with Ramon", { html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#0f172a">${escapeHtml(text2).replace(/(https?:\/\/\S+)/g, '<a href="$1" style="color:#0c7a52">$1</a>')}</div>` });
-          if (!(r as any).ok) return NextResponse.json({ error: "Email failed" }, { status: 502 });
+          if (!(r as any).ok) return NextResponse.json({ error: `Email failed: ${(r as any).detail || "unknown"}` }, { status: 502 });
           await logComms({ leadId, channel: "email", direction: "outbound", type: "manual", body: text2, to: (l as any).email, providerId: (r as any).id, actor: "lo", status: "sent" });
-          return NextResponse.json({ ok: true, via: "email" });
+          return NextResponse.json({ ok: true, via: "email", ...(smsHeld ? { smsHeld } : {}) });
         }
-        return NextResponse.json({ error: "Lead has no reachable channel (SMS needs consent)." }, { status: 400 });
+        // SAY WHICH REASON APPLIES. "no reachable channel (SMS needs consent)" was the same
+        // sentence whether the lead had no phone, no consent, or had texted STOP — so the LO
+        // could not tell "ask them to opt in" from "they opted out, stop".
+        if (smsHeld) return NextResponse.json({ error: `Held — ${smsHeld}. No email on file, so it cannot be sent another way right now.` }, { status: 409 });
+        if ((l as any).phone && !smsVerdict.ok) return NextResponse.json({ error: `Cannot text this lead — ${smsVerdict.reason}. No email on file either.` }, { status: 409 });
+        return NextResponse.json({ error: "Lead has no reachable channel (no phone with SMS consent, and no email)." }, { status: 400 });
       }
 
       if (action === "bridge") {
@@ -145,14 +202,36 @@ export async function POST(req: NextRequest) {
     const text = String(body.body || "").trim();
     if (!leadId || !text) return NextResponse.json({ error: "leadId and body are required" }, { status: 400 });
 
+    // `state` was read off this row and passed to sendSms, but was never SELECTED — so the
+    // quiet-hours check fell back to an area-code guess on every manual send. It did not show
+    // because allowQuietHours:true meant the check never ran. raw + nurture_paused are what the
+    // consent predicate reads.
     const { data: lead } = await supabaseAdmin
-      .from("leads").select("id, full_name, first_name, last_name, email, phone").eq("id", leadId).maybeSingle();
+      .from("leads").select("id, full_name, first_name, last_name, email, phone, state, raw, nurture_paused").eq("id", leadId).maybeSingle();
     if (!lead) return NextResponse.json({ error: "lead not found" }, { status: 404 });
+
+    const verdict = loSendAllowed(lead as any, channel);
+    if (!verdict.ok) {
+      // 409, not 502: nothing failed. We refused, and the LO needs to read the reason — "they
+      // opted out" and "they never opted in" are different problems with different next steps.
+      return NextResponse.json({ error: `Not sent — ${verdict.reason}.`, reason: verdict.reason, refused: true }, { status: 409 });
+    }
 
     if (channel === "sms") {
       if (!lead.phone) return NextResponse.json({ error: "This lead has no phone number on file." }, { status: 400 });
-      const r = await sendSms(lead.phone, text, { state: (lead as any).state, allowQuietHours: true });
-      if (!r.ok) return NextResponse.json({ error: `SMS failed: ${r.detail}` }, { status: 502 });
+      // INVITED REPLY, EARNED PER SEND. A borrower who wrote in the last 24h is waiting on an
+      // answer, and sendSms's contract allows exactly that case past the window. Outreach waits.
+      const invited = invitedReply(lastInboundAt(await getLeadTimeline(leadId) as any), new Date(), INVITED_WINDOW_HOURS);
+      const r = await sendSms(lead.phone, text, { state: (lead as any).state, allowQuietHours: invited });
+      if (!r.ok) {
+        // A HOLD IS NOT A FAILURE. Reporting a quiet-hours hold as "SMS failed" is how an LO
+        // concludes the provider is broken and re-clicks send; it also hides the one fact that
+        // tells them what to do, which is that it is the middle of the night where the borrower is.
+        if (r.deferred) {
+          return NextResponse.json({ error: `Held — ${r.detail}. Send it inside their window, or reply from the thread once they write back.`, held: true, reason: r.detail }, { status: 409 });
+        }
+        return NextResponse.json({ error: `SMS failed: ${r.detail}` }, { status: 502 });
+      }
       await logComms({ leadId, channel: "sms", direction: "outbound", type: "manual", body: text, to: lead.phone, providerId: r.sid, actor: "lo", status: "sent" });
       return NextResponse.json({ ok: true, channel, providerId: r.sid });
     }

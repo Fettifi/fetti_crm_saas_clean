@@ -81,7 +81,15 @@ for (const f of files) {
   }
   src.split("\n").forEach((ln, i) => {
     if (isComment(ln)) return;
-    if (!/Number\(\s*(await\s+)?(cfg|getSetting)\s*\(/.test(ln)) return;
+    //   (d) THE HELPER WHOSE WHOLE JOB IS THIS CHECK IS NOT AN INSTANCE OF THE BUG. On 2026-10-15
+    //       this rule's THIRD false alarm on already-correct code: lib/configNumber.ts exports
+    //       settingNumber(), which exists precisely to distinguish absent from 0, and
+    //           settingNumber(await cfg("LOAN_MARGIN_PCT"), 2.75, { min: 0, max: 100 })
+    //       contains the substring "Number(await cfg(" — so the detector read the fix as the
+    //       defect, and would have blocked the commit that repaired it. A lookbehind, because
+    //       settingNumber( is not a call to Number( at all. A bare, unguarded
+    //       Number(await cfg("X")) is still caught; verified by breaking it on purpose.
+    if (!/(?<![A-Za-z$_])Number\(\s*(await\s+)?(cfg|getSetting)\s*\(/.test(ln)) return;
     // TWO legitimate guards, and missing either of them made this detector cry wolf on its
     // first run — flagging three call sites that were already correct, including one whose
     // comment cites the very incident this rule encodes. A detector that reports problems that

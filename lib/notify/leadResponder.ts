@@ -9,14 +9,67 @@ import { senderFrom } from "@/lib/notify/mailFrom";
 import { scrubSmsIsms, unsubUrl, renderTouch, EMAIL_TOUCHES } from "@/lib/notify/emailCopy";
 import { cfg } from "@/lib/settings";
 import { logComms, isEmailSuppressed, sendSms } from "@/lib/comms";
-import { smsAllowed } from "@/lib/smsConsent";
+import { smsAllowed, messagingAllowed, type SmsVerdict } from "@/lib/smsConsent";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { logActivity } from "@/lib/activity";
 import { isSyntheticLead } from "@/lib/synthetic";
 import { quietHoursFor, quietReason } from "@/lib/quietHours";
 import { COMMS_PERSONA } from "@/lib/markPersona";
 import { automationPaused, PAUSED_NOTE } from "@/lib/automationGate";
-import { authorizeSend, type SendKind } from "@/lib/conversation/governor";
+import { authorizeSend, OPERATIONAL_KINDS, type SendKind } from "@/lib/conversation/governor";
+
+/**
+ * THE CALLER'S `kind` MAPPED ONTO THE GOVERNOR'S. Extracted from inside respondToLead because
+ * the email opt-out gate below needs the same answer, and two copies of this mapping would drift
+ * — which is how one leg of a send ends up classifying a message differently from the other.
+ */
+export function governorKindFor(kind?: string | null): SendKind {
+  const k = String(kind || "first_touch");
+  // "reactivation" is its own governor kind: exempt from the LIFETIME cap and from nothing
+  // else (Ramon, 2026-08-02). Everything else still binds — replied, converted, opted out,
+  // quiet hours, blast fingerprint — and it carries a 30-day cooldown of its own.
+  return k === "doc_chase" ? "operational"
+    : k === "ai_reply" ? "reply"
+    : k === "reactivation" ? "reactivation"
+    : "proactive";
+}
+
+/**
+ * IS THIS SEND SOMETHING THE BORROWER'S OWN LIVE FILE NEEDS, or is it marketing?
+ *
+ * Defined off the governor's own OPERATIONAL_KINDS set rather than a second list here, so the
+ * two answers cannot disagree. Today that is `doc_chase` and nothing else: a drip touch, a
+ * reactivation and an AI concierge reply are all commercial messages and a CAN-SPAM opt-out
+ * stops every one of them. Chasing a document we are genuinely waiting on is a transactional /
+ * relationship message under 15 U.S.C. §7702(2)(B),(17) and is not stopped by a marketing pause
+ * — the same line lib/notify/docRequest.ts draws, and the one Ramon kept on 2026-08-01.
+ */
+export function isTransactionalKind(kind?: string | null): boolean {
+  return OPERATIONAL_KINDS.has(governorKindFor(kind));
+}
+
+/**
+ * THE EMAIL LEG HAD NO OPT-OUT GATE. The SMS leg has had one since 2026-08-02.
+ *
+ * emailLead() checked isEmailSuppressed — the BOUNCE/spam list — and nothing else, so a
+ * recipient's own revocation was invisible to it. `messagingAllowed` appears nowhere in this
+ * file, and the governor block below does NOT supply it either: authorizeSend reads
+ * activity_log twice and never touches `leads`, so it cannot see nurture_paused,
+ * email_optout_at, email_marketing_optout_at or do_not_contact. The docblock on `reactivation`
+ * in lib/conversation/governor.ts claims that lane "does not reach ... an opt-out, a suppressed
+ * address" — it reaches both, because the only thing enforcing either is this function.
+ *
+ * Mirrors lib/notify/docRequest.ts emailGate: a send with no lead id has no unsubscribe record
+ * to read (suppression still applies at the primitive), so it is allowed rather than failed
+ * closed — fail-closed there would silence the apply-route first touch, which passes no id.
+ */
+async function emailOptOutGate(l: LeadContact): Promise<SmsVerdict> {
+  if (!l.id) return { ok: true };
+  const { data } = await supabaseAdmin
+    .from("leads").select("raw, nurture_paused").eq("id", l.id).maybeSingle();
+  if (!data) return { ok: true };
+  return messagingAllowed(data as any, { transactional: isTransactionalKind(l.kind) });
+}
 
 export type LeadContact = {
   /** The lead's `raw` blob and state, when the caller has them — lets smsLead re-check consent
@@ -61,6 +114,16 @@ async function emailLead(l: LeadContact, fallbackBody: string) {
   // two-chokepoint shape as TCPA quiet hours (sendSms + smsLead). Miss one and the drip
   // keeps mailing dead addresses, which is the exact bug this fixes.
   if (await isEmailSuppressed(l.email)) {
+    return { ok: false as boolean, id: undefined as string | undefined, body: "" };
+  }
+  // THIRD CHOKEPOINT, AND THE ONE THAT WAS MISSING ENTIRELY: the recipient's own opt-out.
+  // isEmailSuppressed above is the BOUNCE list — "this address rejects mail" — which is a
+  // different fact from "this person asked us to stop". CAN-SPAM gives 10 business days to
+  // honour the request (15 U.S.C. §7704(a)(4)); this engine is the drip, the reactivation lane
+  // and the doc chaser, so it is exactly the mail an opt-out is about.
+  const gate = await emailOptOutGate(l);
+  if (!gate.ok) {
+    console.log(`[responder] email refused — ${gate.reason}`);
     return { ok: false as boolean, id: undefined as string | undefined, body: "" };
   }
 
@@ -160,20 +223,18 @@ export async function respondToLead(lead: LeadContact): Promise<{ sent: string[]
   // MASTER SHUTOFF for anything the system sends on its own. Returning no channels makes
   // every caller record "delivered on no channel" rather than pretend it sent.
   if (await automationPaused()) { console.warn("[leadResponder]", PAUSED_NOTE); return { sent: [] }; }
-  // THE GOVERNOR decides, not the caller. Every engine that used to send on its own now has
-  // to get past one gate that can see the WHOLE conversation — what the other engines just
-  // sent, whether the borrower has spoken, and whether this body is a blast. 82% of the 756
-  // messages that caused the complaint fail these rules (scripts/verify-governor.ts).
+  // THE GOVERNOR decides the CONVERSATION rules, not the caller: what the other engines just
+  // sent, whether the borrower has spoken, whether this body is a blast. 82% of the 756 messages
+  // that caused the complaint fail these rules (scripts/verify-governor.ts).
+  //
+  // IT DOES NOT DECIDE CONSENT. authorizeSend reads activity_log and nothing else — it never
+  // opens `leads`, so nurture_paused, email_optout_at, email_marketing_optout_at, do_not_contact
+  // and SMS consent are all invisible to it, whatever its own docblock says about opt-outs. Those
+  // are enforced per channel below: smsAllowed() in smsLead, emailOptOutGate() in emailLead.
+  // Treating the governor as the consent gate is how the email leg shipped with none at all.
   {
     const k = String(lead.kind || "first_touch");
-    // "reactivation" is its own governor kind: exempt from the LIFETIME cap and from nothing
-    // else (Ramon, 2026-08-02). Everything below still binds — replied, converted, opted out,
-    // quiet hours, blast fingerprint — and it carries a 30-day cooldown of its own.
-    const govKind: SendKind =
-      k === "doc_chase" ? "operational"
-      : k === "ai_reply" ? "reply"
-      : k === "reactivation" ? "reactivation"
-      : "proactive";
+    const govKind: SendKind = governorKindFor(k);
     const d = await authorizeSend({ leadId: lead.id, kind: govKind, body: (lead.message || "") + " " + (lead.emailBody || ""), smsBody: lead.message || "", emailBody: lead.emailBody || "" });
     if (!d.allow) { console.warn(`[leadResponder] held (${k}):`, d.reason); return { sent: [] }; }
   }

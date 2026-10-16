@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { isOpenFile, TERMINAL_STAGES } from "@/lib/fileLiveness";
 import { cfg } from "@/lib/settings";
+import { settingNumber } from "@/lib/configNumber";
 
 // Real dashboard KPIs: leads, loan files, loan volume in dollars, and potential
 // earnings at an ADJUSTABLE margin (saved company default, editable on the
@@ -15,8 +16,14 @@ const DEAD = ["dead", "lost", "not_qualified", "declined"];
 
 export async function GET() {
   try {
-    // Adjustable margin (% Fetti makes per dollar lent). Saved default 2.75%.
-    const marginPct = Number(await cfg("LOAN_MARGIN_PCT")) || 2.75;
+    // Adjustable margin (% Fetti makes per dollar lent). Default 2.75% when nothing is saved.
+    //
+    // `Number(await cfg(...)) || 2.75` could not store a margin of ZERO: `||` rejects every falsy
+    // value, so a deliberate 0 came back out as 2.75. app/api/settings/margin/route.ts admits 0 on
+    // purpose (it rejects only pct < 0 and pct > 100), writes "0", and replies { ok: true, pct: 0 },
+    // so the save reported success and this line undid it — and then printed projected earnings on
+    // a margin the broker had just set to nothing. The range below is that route's own 0–100.
+    const marginPct = settingNumber(await cfg("LOAN_MARGIN_PCT"), 2.75, { min: 0, max: 100 });
     const MARGIN = marginPct / 100;
     const [{ data: leads }, { data: files }] = await Promise.all([
       supabaseAdmin.from("leads")
@@ -65,7 +72,7 @@ export async function GET() {
     const leadRequested = liveLeads.reduce((s, l) => s + loanOfLead(l), 0);
     const volume = { pipeline: pipelineVolume, funded: fundedVolume, leadRequested, total: pipelineVolume + fundedVolume };
 
-    // ---- Earnings at 2.75% ----
+    // ---- Earnings at the saved margin (2.75% only when none is saved) ----
     const earnings = {
       rate: MARGIN,
       pipeline: pipelineVolume * MARGIN,

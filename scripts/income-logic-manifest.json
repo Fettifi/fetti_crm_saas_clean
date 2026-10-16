@@ -1,8 +1,8 @@
 {
-  "logicVersion": "2026-09-18-bank-merge-holder-institution-and-recompute-from-stored-facts",
-  "pinnedAt": "2026-09-19T05:06:33.500Z",
+  "logicVersion": "2026-10-15-str-haircut-survives-lease-resolution",
+  "pinnedAt": "2026-10-16T04:53:03.946Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "557cdd4d29584eb7",
+    "app/api/los/files/[id]/verify-income/route.ts": "495cc8eb649c2fad",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankReplay.ts": "bbb61927f654be5a",
     "lib/income/bankStatement.ts": "6ab317b2e7088d12",
@@ -14,8 +14,8 @@
     "lib/income/overrideExemplars.ts": "d33ed7c3fa074035",
     "lib/income/programs.ts": "3ef831cba44f1919",
     "lib/income/readDocument.ts": "e0380964e130461f",
-    "lib/income/recomputeFromFacts.ts": "7529ce08279b5aa3",
-    "lib/income/rentalIncome.ts": "134ed0667752a05a",
+    "lib/income/recomputeFromFacts.ts": "6e922de3e08a162f",
+    "lib/income/rentalIncome.ts": "1c38dbc86d18170d",
     "lib/income/selectMethod.ts": "73532ce57baaba19",
     "lib/income/verifyWorksheet.ts": "25a83dafe34daa81"
   },
@@ -72,6 +72,15 @@
       "reason": "Candidate SELECTION only: (?<!re)lease no longer matches the word Please (our e-sign titles), and NEVER_INCOME_RE keeps our own internal/not-for-submission worksheets out of the read. Checked against all 36 live files / 718 documents: exactly 3 documents are dropped (2 e-sign parking-charge artifacts on FF-202607-8421, 1 Fetti internal worksheet on FF-202608-2047) and every one of them is a NEW upload absent from every baselined candidate set — zero files lose an already-baselined candidate, so no cached qualifying income can move. Both files already have a re-read pending from unrelated new documents; this only keeps three wrong-KIND documents out of it.",
       "files": [
         "app/api/los/files/[id]/verify-income/route.ts"
+      ]
+    },
+    {
+      "at": "2026-10-16T04:55:40.153Z",
+      "logicVersion": "2026-10-15-str-haircut-survives-lease-resolution",
+      "reason": "Comment-only edit to the verify-income route (recording the 2026-10-15 STR bump and that the recompute-from-stored-facts path has superseded the 2026-09-11 re-roll trade), plus adding that version to PRIOR_LOGIC_VERSIONS so verify:income-recompute can match a legacy envelope written under it. The engine change itself (lib/income/rentalIncome.ts STR haircut) was repinned WITH a reroll under this same LOGIC_VERSION; neither of these two edits changes any computation.",
+      "files": [
+        "app/api/los/files/[id]/verify-income/route.ts",
+        "lib/income/recomputeFromFacts.ts"
       ]
     }
   ]

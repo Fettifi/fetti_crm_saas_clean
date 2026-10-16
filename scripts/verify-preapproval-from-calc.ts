@@ -8,7 +8,7 @@
 //
 //   npx tsx scripts/verify-preapproval-from-calc.ts
 import { readFileSync } from "fs";
-import { maxHousingPayment, maxLoanFromPayment, miAnnualFactor } from "../lib/income";
+import { maxHousingPayment, maxLoanFromPayment, miAnnualFactor, FHA_UFMIP_PCT } from "../lib/income";
 import { programFromProduct } from "../lib/loanProgram";
 
 let bad = 0;
@@ -43,7 +43,14 @@ chk(/const downUsed = Math\.max\(downN, floorPct\)/.test(q),
   "a typed value below the floor is raised to it, not quoted as-is");
 chk(/downFloored/.test(q) && /minimum/.test(readFileSync("components/los/IncomeQualifier.tsx", "utf8")),
   "and the screen SAYS the floor was applied — a silent correction is a number he cannot explain");
-chk(/program === "fha" \? 1\.75 : 0/.test(q), "FHA passes the 1.75% financed fee, conventional passes none");
+// THE VALUE, NOT THE LITERAL. This pinned the characters `1.75` in the source, so importing the
+// shared FHA_UFMIP_PCT constant — strictly better, and the whole point of removing the duplicate
+// rate that let two screens disagree — read as a regression. A guard that forbids the correct
+// refactor gets switched off. Accept either spelling, and assert the CONSTANT still equals 1.75
+// so the check cannot be satisfied by a wrong number wearing the right name.
+chk(/program === "fha" \? (?:1\.75|FHA_UFMIP_PCT) : 0/.test(q),
+  "FHA passes the financed UFMIP, conventional passes none");
+chk(FHA_UFMIP_PCT === 1.75, `and FHA_UFMIP_PCT is still 1.75 (got ${FHA_UFMIP_PCT})`);
 
 // ── the handoff carries the figures ──────────────────────────────────────────────────────────
 console.log("\nissuing from the calculator carries what the calculator worked out:");

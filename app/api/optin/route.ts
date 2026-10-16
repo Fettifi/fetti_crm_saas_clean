@@ -4,6 +4,7 @@
 // dispute the burden of proving consent is ours and a description of the widget proves
 // nothing. HMAC-scoped to opt-in so an apply link cannot grant consent.
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { optInToken } from "@/lib/magicLink";
 import { logActivity } from "@/lib/activity";
@@ -12,10 +13,24 @@ import { SMS_OPTIN_DISCLOSURE, smsAllowed } from "@/lib/smsConsent";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// CONSTANT-TIME TOKEN COMPARE. `t !== optInToken(id)` short-circuits on the first differing
+// character, leaking how much of a guessed token is right — and this token is 16 hex characters
+// (lib/magicLink.ts truncates the HMAC), guarding the one route that can WRITE a TCPA consent
+// artifact. Every other token check in this repo already does it this way (lib/cardAuth.ts,
+// lib/portalSession.ts, app/api/apply/prefill, app/api/meta/webhook, …). The length test comes
+// first and swallows the throw: timingSafeEqual raises on unequal lengths, and a 500 on a
+// mistyped link would look to the consumer like the opt-in page is broken.
+function tokenEquals(given: unknown, expected: string): boolean {
+  const a = Buffer.from(typeof given === "string" ? given : "", "utf8");
+  const b = Buffer.from(String(expected || ""), "utf8");
+  if (a.length !== b.length || a.length === 0) return false;
+  try { return crypto.timingSafeEqual(a, b); } catch { return false; }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { id, t } = await req.json();
-    if (!id || !t || t !== optInToken(String(id))) {
+    if (!id || !t || !tokenEquals(t, optInToken(String(id)))) {
       return NextResponse.json({ error: "invalid link" }, { status: 401 });
     }
     const { data: lead } = await supabaseAdmin.from("leads").select("id, raw, nurture_paused").eq("id", id).maybeSingle();
@@ -32,7 +47,10 @@ export async function POST(req: NextRequest) {
     // "text me instead" in that same email was returned to the full email drip. Two live
     // leads are in exactly that state.
     if (raw.sms_optout_at) return NextResponse.json({ ok: false, reason: "opted_out" }, { status: 409 });
-    if (raw.email_optout_at || (lead as any).nurture_paused) {
+    // `raw.email_marketing_optout_at` is the durable artifact the one-click link now writes
+    // (app/api/unsubscribe/route.ts). nurture_paused alone is not enough to check: lib/leadShield
+    // promoteQuarantined clears that column, and this route is reached from the SAME email.
+    if (raw.email_optout_at || (lead as any).nurture_paused || raw.email_marketing_optout_at) {
       return NextResponse.json({ ok: false, reason: "unsubscribed" }, { status: 409 });
     }
 

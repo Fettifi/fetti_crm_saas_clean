@@ -41,6 +41,29 @@ export async function buildUrlaPdf(u: Urla, loanFile?: any): Promise<Uint8Array>
     for (const w of words) { const t = line ? line + " " + w : w; if (f.widthOfTextAtSize(t, size) > max && line) { lines.push(line); line = w; } else line = t; }
     if (line) lines.push(line); return lines;
   };
+  // Leading for a field value that needs more than one line. 9.5 on 8.5pt type keeps the same 3pt
+  // gap between the last line and the field's rule that a single-line value has always had, and a
+  // row whose values all fit on one line measures and renders exactly as before — see rowHeight().
+  const VLEAD = 9.5;
+  // A VALUE IS WRAPPED TO ITS COLUMN, AND A TOKEN WIDER THAN THE COLUMN IS BROKEN BY CHARACTER.
+  // wrap() never breaks inside a word, so a single long unspaced token — an entity name typed
+  // without spaces, a long email, a URL — comes back as one over-wide line and runs straight
+  // through the neighbouring field's value. That is the same unreadable result as the truncation
+  // below it, so both are handled here rather than one of them.
+  const wrapValue = (v: string, size: number, max: number): string[] => {
+    const out: string[] = [];
+    for (const line of wrap(v, bold, size, max)) {
+      if (bold.widthOfTextAtSize(line, size) <= max) { out.push(line); continue; }
+      let acc = "";
+      for (const ch of line) {
+        // `acc &&` guarantees at least one character per line, so a max narrower than a single
+        // glyph terminates instead of looping forever.
+        if (acc && bold.widthOfTextAtSize(acc + ch, size) > max) { out.push(acc); acc = ch; } else acc += ch;
+      }
+      if (acc) out.push(acc);
+    }
+    return out.length ? out : [v];
+  };
   const ensure = (need: number) => { if (cur + need > H - M - 22) { page = doc.addPage([W, H]); pageNo++; footer(page, pageNo); cur = M; } };
 
   const band = (label: string) => {
@@ -70,32 +93,67 @@ export async function buildUrlaPdf(u: Urla, loanFile?: any): Promise<Uint8Array>
   // `row()` already calls `ensure()`, so the rows paginate on their own; the slices were pure loss.
   // What pagination alone does not do is re-print the column header, leaving a continued schedule
   // as unlabelled columns on the next page — so `schedule()` reprints it on break.
-  const schedule = <T,>(header: { label: string; w: number }[], headerH: number, items: T[], rowNeed: number, draw: (item: T) => void) => {
+
+  // The height a row will ACTUALLY render at: its nominal height plus one leading per extra
+  // wrapped line in its tallest field. A row whose every value fits on one line measures exactly
+  // `rowH`, so every single-line row on the form is laid out byte-for-byte as it was before.
+  // schedule() needs this because it reserves space for a multi-row item BEFORE drawing it.
+  const rowLines = (fields: { label: string; value?: any; w: number }[]) =>
+    Math.max(1, ...fields.map((f) => (S(f.value) ? wrapValue(S(f.value), 8.5, f.w - 10).length : 1)));
+  const rowHeight = (fields: { label: string; value?: any; w: number }[], rowH = 22) =>
+    rowH + (rowLines(fields) - 1) * VLEAD;
+
+  const schedule = <T,>(header: { label: string; w: number }[], headerH: number, items: T[], rowsOf: (item: T) => { fields: { label: string; value?: any; w: number }[]; h?: number }[]) => {
     row(header, headerH);
     let lastPage = page;
     for (const item of items) {
-      ensure(rowNeed);                                     // may start a new page
+      const specs = rowsOf(item);
+      // RESERVE THE ITEM'S MEASURED HEIGHT, NOT A HARDCODED GUESS. This used to take a fixed
+      // `rowNeed` — 16 for a one-row asset, 38 for a two-row REO entry. Now that a wrapped value
+      // grows its row, 38 is no longer an REO entry's height: a two-line address makes it 47.5,
+      // and the pre-reserve would have been 9.5pt short, so row() #2's own ensure() could have
+      // paginated between an REO address and its status/rent/balance line. Reserving the sum of
+      // the measured rows means the inner ensure() calls cannot fire, so an item's rows always
+      // land together on one page. verify:urla-row-wrap asserts that by reading the rendered y's.
+      ensure(specs.reduce((t, s) => t + rowHeight(s.fields, s.h), 0));
       if (page !== lastPage) { row(header, headerH); }     // continued — relabel the columns
-      draw(item);
+      for (const s of specs) row(s.fields, s.h);
       lastPage = page;
     }
   };
 
+  // EVERY FIELD PRINTED ITS FIRST WRAPPED LINE AND THREW THE REST AWAY, WITH NO MARK.
+  //
+  // `wrap(v, bold, 8.5, f.w - 10)[0]` — element [0], remainder discarded. Measured on the real
+  // renderer before this fix: a 2a asset institution "First Republic Bank of Southern California
+  // Private Wealth" (57 chars, column CW*0.35 = 190pt) printed 43 characters and silently dropped
+  // "Private Wealth". The same cut lands on an employer name, an employer address, an LLC's legal
+  // name, a long REO address — every value on the form goes through this one line.
+  //
+  // This is the schedule-truncation defect one level down. A dropped row and a value cut
+  // mid-string have the same cost: the borrower SIGNS a 1003 that says something different from
+  // the MISMO built from the same Urla object and sent to the same underwriter, and the borrower
+  // attests to the shorter version. A half-printed employer or subject address is also what an
+  // underwriter re-keys into a VOE or a title order.
+  //
+  // So the value now prints in full and the row GROWS to hold it: extra lines stack downward at
+  // VLEAD, and the field's rule drops to sit under the whole block at the same 3pt gap. The rule
+  // drops by the row's MAX growth, not each field's own, so a row with one tall field still reads
+  // as one band instead of a ragged staircase.
   const row = (fields: { label: string; value?: any; w: number }[], rowH = 22) => {
-    ensure(rowH);
+    const lines = fields.map((f) => (S(f.value) ? wrapValue(S(f.value), 8.5, f.w - 10) : []));
+    const extra = (Math.max(1, ...lines.map((l) => l.length || 1)) - 1) * VLEAD;
+    ensure(rowH + extra);                  // the GROWN height — a short reserve is an overlap
     let x = M;
-    for (const f of fields) {
-      const baseY = H - cur - 14;
-      page.drawLine({ start: { x, y: baseY - 2 }, end: { x: x + f.w - 8, y: baseY - 2 }, thickness: 0.5, color: LINE });
+    const baseY = H - cur - 14;            // after ensure(): cur may have reset to a new page
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      page.drawLine({ start: { x, y: baseY - 2 - extra }, end: { x: x + f.w - 8, y: baseY - 2 - extra }, thickness: 0.5, color: LINE });
       page.drawText(f.label, { x, y: H - cur - 7, size: 6.3, font, color: GREY });
-      const v = S(f.value);
-      if (v) {
-        const fit = wrap(v, bold, 8.5, f.w - 10)[0] || v;
-        page.drawText(fit, { x, y: baseY + 1, size: 8.5, font: bold, color: BLACK });
-      }
+      lines[i].forEach((ln, j) => page.drawText(ln, { x, y: baseY + 1 - j * VLEAD, size: 8.5, font: bold, color: BLACK }));
       x += f.w;
     }
-    cur += rowH;
+    cur += rowH + extra;
   };
 
   const cbox = (x: number, yTop: number, checked: boolean) => {
@@ -221,7 +279,7 @@ export async function buildUrlaPdf(u: Urla, loanFile?: any): Promise<Uint8Array>
   subhead("2a. Assets — Bank Accounts, Retirement, and Other Accounts You Have");
   const assetHdr = [{ label: "Account Type", w: CW * 0.3 }, { label: "Financial Institution", w: CW * 0.35 }, { label: "Account Number", w: CW * 0.2 }, { label: "Cash/Market Value ($)", w: CW * 0.15 }];
   const assets = u.assets || [];                      // was .slice(0, 6) — see schedule()
-  if (assets.length) schedule(assetHdr, 13, assets, 16, (a) => row([{ label: "", value: a.type, w: CW * 0.3 }, { label: "", value: a.institution, w: CW * 0.35 }, { label: "", value: a.accountNumber, w: CW * 0.2 }, { label: "", value: money(a.balance), w: CW * 0.15 }], 16));
+  if (assets.length) schedule(assetHdr, 13, assets, (a) => [{ h: 16, fields: [{ label: "", value: a.type, w: CW * 0.3 }, { label: "", value: a.institution, w: CW * 0.35 }, { label: "", value: a.accountNumber, w: CW * 0.2 }, { label: "", value: money(a.balance), w: CW * 0.15 }] }]);
   else { row(assetHdr, 13); row([{ label: "", value: "", w: CW * 0.3 }, { label: "", value: "", w: CW * 0.35 }, { label: "", value: "", w: CW * 0.2 }, { label: "", value: "", w: CW * 0.15 }], 16); }
   subhead("2b. Other Assets and Credits You Have (e.g., earnest money, gift, employer assistance)");
   row([{ label: "Asset or Credit Type", w: CW * 0.6 }, { label: "Cash/Market Value ($)", w: CW * 0.4 }], 16);
@@ -230,7 +288,7 @@ export async function buildUrlaPdf(u: Urla, loanFile?: any): Promise<Uint8Array>
   const liabs = u.liabilities || [];                  // was .slice(0, 6) — the worst of the three:
   // an omitted liability understates DTI on a document the borrower signs, while the MISMO sent to
   // the same underwriter lists it.
-  if (liabs.length) schedule(liabHdr, 13, liabs, 16, (l) => row([{ label: "", value: l.type, w: CW * 0.28 }, { label: "", value: l.creditor, w: CW * 0.32 }, { label: "", value: "", w: CW * 0.18 }, { label: "", value: money(l.balance), w: CW * 0.12 }, { label: "", value: money(l.monthlyPayment), w: CW * 0.1 }], 16));
+  if (liabs.length) schedule(liabHdr, 13, liabs, (l) => [{ h: 16, fields: [{ label: "", value: l.type, w: CW * 0.28 }, { label: "", value: l.creditor, w: CW * 0.32 }, { label: "", value: "", w: CW * 0.18 }, { label: "", value: money(l.balance), w: CW * 0.12 }, { label: "", value: money(l.monthlyPayment), w: CW * 0.1 }] }]);
   else { row(liabHdr, 13); row([{ label: "", value: "", w: CW * 0.28 }, { label: "", value: "", w: CW * 0.32 }, { label: "", value: "", w: CW * 0.18 }, { label: "", value: "", w: CW * 0.12 }, { label: "", value: "", w: CW * 0.1 }], 16); }
   subhead("2d. Other Liabilities and Expenses (e.g., alimony, child support, job-related expenses)");
   row([{ label: "Type", w: CW * 0.6 }, { label: "Monthly Payment ($)", w: CW * 0.4 }], 16);
@@ -241,11 +299,14 @@ export async function buildUrlaPdf(u: Urla, loanFile?: any): Promise<Uint8Array>
   subhead("3a. Property You Own. If you are refinancing, list the property you are refinancing FIRST.");
   const reoHdr = [{ label: "Address (Street, City, State, ZIP)", w: CW * 0.55 }, { label: "Property Value ($)", w: CW * 0.22 }, { label: "Monthly Insurance/Taxes/HOA ($)", w: CW * 0.23 }];
   const reo = u.reo || [];                            // was .slice(0, 4)
-  // 38 needed, not 16: each REO entry is TWO rows and they must not be split across a page break.
-  if (reo.length) schedule(reoHdr, 13, reo, 38, (r) => {
-    row([{ label: "", value: addrStr(r.address), w: CW * 0.55 }, { label: "", value: money(r.presentValue), w: CW * 0.22 }, { label: "", value: money(r.monthlyMortgage), w: CW * 0.23 }], 16);
-    row([{ label: "Status (Sold / Pending / Retained)", value: r.status, w: CW * 0.3 }, { label: "Monthly Rental Income ($)", value: money(r.monthlyRentalIncome), w: CW * 0.35 }, { label: "Mortgage Unpaid Balance ($)", value: money(r.mortgageBalance), w: CW * 0.35 }]);
-  });
+  // Each REO entry is TWO rows and they must not be split across a page break — the second row
+  // carries the status, the rent and the unpaid balance, and on its own on a new page it belongs
+  // to no address. schedule() now reserves both rows' MEASURED height together, which is what
+  // makes that safe once a long address can grow the first row (the old fixed 38 could not).
+  if (reo.length) schedule(reoHdr, 13, reo, (r) => [
+    { h: 16, fields: [{ label: "", value: addrStr(r.address), w: CW * 0.55 }, { label: "", value: money(r.presentValue), w: CW * 0.22 }, { label: "", value: money(r.monthlyMortgage), w: CW * 0.23 }] },
+    { fields: [{ label: "Status (Sold / Pending / Retained)", value: r.status, w: CW * 0.3 }, { label: "Monthly Rental Income ($)", value: money(r.monthlyRentalIncome), w: CW * 0.35 }, { label: "Mortgage Unpaid Balance ($)", value: money(r.mortgageBalance), w: CW * 0.35 }] },
+  ]);
   else { row(reoHdr, 13); row([{ label: "", value: "", w: CW * 0.55 }, { label: "", value: "", w: CW * 0.22 }, { label: "", value: "", w: CW * 0.23 }], 16); }
   gap();
 

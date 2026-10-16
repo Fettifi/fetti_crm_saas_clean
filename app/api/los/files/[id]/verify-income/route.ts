@@ -96,7 +96,28 @@ const STUB_PRIORITY_WINDOW = 8;
 // So `--no-reroll` was NOT available here and was not claimed: that escape is for changes that
 // cannot move any number, and this one moves a real borrower's by $8,408. A number the engine no
 // longer reproduces must not keep being served, so the cache key moves with the math.
-const LOGIC_VERSION = "2026-09-18-bank-merge-holder-institution-and-recompute-from-stored-facts";
+//
+// 2026-10-15. lib/income/rentalIncome.ts: the short-term-rental 20% haircut was being written
+// into `leaseRent` — the same slot the lease-resolution pass writes `chosen` into — so on any
+// STR document that ALSO states a monthly rent the haircut was OVERWRITTEN, and the worksheet
+// still printed "trailing-12 gross ÷ 12 × 0.80 =" in front of the un-haircut figure. Measured on
+// the live code: trailing-12 $60,000 + a printed $5,000/mo reported $5,000/mo under a derivation
+// whose own arithmetic gives $4,000. 25% of qualifying rent that does not exist, on a DSCR file
+// where the rent IS the income.
+//
+// `--no-reroll` is NOT available: this moves the qualifying rent on any STR unit whose document
+// carries both figures, so a cached number the engine no longer reproduces must stop being
+// served.
+//
+// AND THE 2026-09-11 TRADE ABOVE NO LONGER APPLIES. That note says bumping this constant means
+// "accepting a re-roll on every open file", and names Asia Dearman's +$3,543/mo as the cost. The
+// RECOMPUTE-ON-A-LOGIC-ONLY-MISS block below was built since: the same documents with only this
+// constant moved now recompute deterministically from the stored `factsUsed` and never call the
+// model. So this bump delivers the correction and re-rolls nothing. Measured after the change:
+// verify:income-engine-diff replays 12 live files and NONE moves, and verify:income replays 43
+// with no settled borrower figure moving — no file in the LOS today carries an STR document that
+// also states a monthly rent. The key moves so the next one cannot meet the old number.
+const LOGIC_VERSION = "2026-10-15-str-haircut-survives-lease-resolution";
 // Separator-tolerant (uploads use _ and - where labels use spaces: "Verification_of_Employment",
 // "Chase_Statement"). "statement" stays GENERIC — a Chase/Wells file is rarely named "bank
 // statement" — but it is no longer BARE, because "a non-income statement is harmless" (what this

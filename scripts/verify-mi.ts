@@ -10,6 +10,7 @@
 //
 //   npx tsx scripts/verify-mi.ts
 import { estimatePITIA, estimatePITIAFinanced, miRate, miProgram } from "../lib/pricer";
+import { miAnnualFactor } from "../lib/income";
 
 let bad = 0;
 const chk = (c: boolean, m: string) => { console.log(`  ${c ? "ok  " : "FAIL"}  ${m}`); if (!c) bad++; };
@@ -127,6 +128,42 @@ chk(estimatePITIA({ ...deal, loanType: "va30", miMonthlyOverride: 200 }).pmiMont
   chk(unset.taxMonthly > 0 && unset.insMonthly > 0,
     `and leaving them UNSET still uses the model ($${Math.round(unset.taxMonthly)}/mo tax, $${Math.round(unset.insMonthly)}/mo insurance) — blank and zero stay different facts`);
   chk(zero.total < unset.total, "so the quoted payment reflects the abatement instead of a tax the borrower does not owe");
+}
+
+// ── ONE FHA TABLE, TWO SCREENS. /income's miAnnualFactor kept its OWN copy of the FHA tiers and
+//    took no term argument at all, so a 15-year FHA was priced at the 30-year 0.50% instead of
+//    0.15% — 3.33x the premium, 0.35% of the loan per year of mortgage insurance the borrower
+//    does not owe, subtracted from the payment budget before it is solved into a maximum loan.
+//    Its FHA branch now calls miRate. Asserting that the CALL EXISTS proves nothing; assert the
+//    two engines AGREE across the grid, so neither table can be edited away from the other.
+{
+  const TERMS = [180, 240, 360];
+  const DOWNS = [0, 3.5, 5, 10, 15, 20, 25, 35];
+  const disagree: string[] = [];
+  for (const t of TERMS) for (const d of DOWNS) {
+    const a = miAnnualFactor("fha", d, t), b = miRate(100 - d, "fha", t);
+    if (a !== b) disagree.push(`${t}mo/${d}% down: /income ${a}% vs pricer ${b}%`);
+  }
+  const sampled = TERMS.length * DOWNS.length;
+  chk(sampled === 24 && disagree.length === 0,
+    `the /income FHA factor equals the Quick Pricer's at all ${sampled} term/LTV pairs${disagree.length ? ` — ${disagree.join("; ")}` : ""}`);
+  // The grid above is only meaningful if the factor actually VARIES across it — a table that
+  // returned one constant everywhere would agree with itself and prove nothing.
+  chk(new Set(TERMS.flatMap((t) => DOWNS.map((d) => miAnnualFactor("fha", d, t)))).size >= 4,
+    "…and the grid is not vacuous — the FHA factor takes at least 4 distinct values across it");
+  chk(miAnnualFactor("fha", 20, 180) === 0.15 && miAnnualFactor("fha", 20, 360) === 0.50,
+    `a 15-yr FHA at 80% LTV is 0.15%/yr against a 30-yr's 0.50% — the term the old /income signature could not take ($${Math.round(350000 * 0.0035 / 12)}/mo of phantom MI on a $350k loan)`);
+  chk(miAnnualFactor("fha", 20, 0) === miAnnualFactor("fha", 20, 360),
+    "a missing term falls back to the 30-yr tier — the one that charges MORE, so it cannot overstate a loan");
+  // CONVENTIONAL BPMI is deliberately NOT term-aware in lib/income.ts: no term-sensitive
+  // conventional rate card exists in this tree, and a borrower's maximum is the wrong place to
+  // put a reconstructed figure. The two conventional ladders ALREADY disagree above 85% LTV
+  // (lib/income.ts 0.78/1.03 vs lib/pricer.ts pmiRate 0.67/0.90) — recorded here so whoever
+  // reconciles them does it with Ramon's card in hand and not by making this guard green.
+  chk(miAnnualFactor("conventional", 10, 180) === miAnnualFactor("conventional", 10, 360),
+    "conventional BPMI is term-insensitive here by decision, not by accident");
+  chk(miAnnualFactor("conventional", 20, 360) === 0 && miAnnualFactor("conventional", 5, 360) > 0,
+    "conventional is still zero at 80% LTV and charged above it");
 }
 
 console.log("");

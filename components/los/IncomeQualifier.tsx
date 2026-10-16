@@ -10,7 +10,7 @@
 // DSCR is on PITIA, never bare P&I. Missing escrow shows INCOMPLETE, never a false pass.
 // Estimate for pre-qualification — not an underwriting decision.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { maxHousingPayment, maxLoanFromPayment, dscrExact, miAnnualFactor } from "@/lib/income";
+import { maxHousingPayment, maxLoanFromPayment, dscrExact, miAnnualFactor, FHA_UFMIP_PCT } from "@/lib/income";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import { flagAction, omitConsequence, offersAddIncome, labelFromFlag } from "@/lib/incomeFlagAction";
 
@@ -253,10 +253,16 @@ export default function IncomeQualifier({ metrics, loan, fileId, borrowerEmail }
     const floorPct = program === "fha" ? 3.5 : 3;
     const downUsed = Math.max(downN, floorPct);
     const downFloored = downUsed > downN + 0.0001;
-    const mi = program === "fha" ? miAnnualFactor("fha", downUsed) : (downUsed < 20 ? miAnnualFactor("conventional", downUsed) : 0);
+    // PASS THE TERM. miAnnualFactor's third argument defaults to 360, so omitting it charged a
+    // 15-year FHA the 30-year annual MIP — 0.50% instead of 0.15% — on the screen an LO reads to a
+    // borrower. This line is the other half of the lib/income.ts fix; leaving it meant the engine
+    // and this panel disagreed about the same loan.
+    const mi = program === "fha" ? miAnnualFactor("fha", downUsed, term) : (downUsed < 20 ? miAnnualFactor("conventional", downUsed, term) : 0);
     const maxPITIA = maxHousingPayment(income, debts, backTarget, frontCap);
-    // FHA finances UFMIP 1.75% into the loan; conventional has no such fee.
-    const mlq = maxLoanFromPayment(maxPITIA, escrowN, qualRateN, term, downUsed, mi, program === "fha" ? 1.75 : 0);
+    // FHA finances UFMIP into the loan; conventional has no such fee. FHA_UFMIP_PCT, not a literal
+    // 1.75 — a second copy of a rate is how two screens come to disagree, which is the defect this
+    // whole pass exists to remove.
+    const mlq = maxLoanFromPayment(maxPITIA, escrowN, qualRateN, term, downUsed, mi, program === "fha" ? FHA_UFMIP_PCT : 0);
     const miMonthly = mi && amount ? (amount * mi) / 100 / 12 : 0;
     const pitia = proposedPandI + escrowN + miMonthly;
     const front = income ? (pitia / income) * 100 : 0;

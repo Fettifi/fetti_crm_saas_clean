@@ -2,19 +2,37 @@
 // Ramon directs Rupee like a chief of staff: "email this borrower," "text that agent,"
 // "remind me to follow up." These execute for real (Resend + Twilio + org_tasks) and
 // log everything to the conversation timeline. Every send is a HUMAN-DIRECTED 1:1
-// action Ramon initiated — a different legal posture than the automated nurture engine
-// (which can't confirm each send, so it hard-gates on consent). We still surface the
-// compliance line so Ramon never sends marketing to a non-consented number by reflex.
+// action Ramon initiated — a different legal posture than the automated nurture engine:
+// transactional, so a marketing pause does not stop it.
+//
+// ── A GATE THAT WAS EVALUATED AND THEN IGNORED. ───────────────────────────────────────────────
+//
+// assistantSendText computed `consented`, SENT ANYWAY, and attached the verdict to the result as
+// a `compliance_note` for Ramon to read afterwards. Reading code, this file looked defended. It
+// was not: the only thing the check produced was a warning stapled to a text already on a
+// handset, and a warning after the fact is not a gate. The TCPA is strict liability, $500-$1,500
+// per message, and the burden of proving consent is on the sender — there is nothing to prove
+// after the send.
+//
+// The verdict now BINDS, through the same predicate every other sender in this repo uses
+// (lib/smsConsent.ts). A revocation refuses on both channels. SMS additionally requires recorded
+// consent, because "Ramon asked me to" is intent, not evidence. The one carve-out is unchanged
+// and deliberate: a raw address or number Ramon typed verbatim in his own turn is his business
+// contact, not a lead in the funnel, and gateRecipient below already proves he typed it.
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { sendSms, sendEmail, logComms } from "@/lib/comms";
 import { logActivity } from "@/lib/activity";
 import { canonicalPhone, phoneMatchForms } from "@/lib/phone";
+import { loSendAllowed, smsAllowed } from "@/lib/smsConsent";
 
 type LeadLite = { id: string; full_name: string | null; email: string | null; phone: string | null; stage: string | null; tier: string | null; raw: any };
 
-function smsConsented(raw: any): boolean {
-  return raw?.sms_consent === true || raw?.consent?.sms_optin === true;
-}
+// The local `smsConsented(raw)` helper that used to live here is gone. It read
+// `raw.sms_consent === true || raw.consent?.sms_optin === true`, which answers YES for a lead
+// carrying `sms_consent: true` alongside `sms_optout_at` — somebody who texted STOP — and for a
+// `historical_import` lead with no consent artifact we could produce in a dispute. Both call
+// sites now use smsAllowed()/loSendAllowed() from lib/smsConsent.ts, which check revocation
+// FIRST. One definition of "may we text this person", in the file whose whole purpose is to be it.
 
 // Sanitize a stored name before it re-enters Rupee's LLM context — a lead controls
 // their own name/notes at intake, so strip newlines + cap length to blunt prompt
@@ -59,12 +77,18 @@ export async function findContact(query: string) {
   const { lead, candidates, ambiguous } = await resolveContact(query);
   if (ambiguous) return { found: false, ambiguous: true, message: `Multiple contacts match "${query}" — ask which one:`, candidates: candidates.map((c) => ({ id: c.id, name: safeName(c.full_name), email: c.email, phone: c.phone })) };
   if (!lead) return { found: false, message: `No contact matches "${query}".` };
+  const v = smsAllowed(lead.raw);
   return {
     found: true,
     id: lead.id, name: safeName(lead.full_name), email: lead.email, phone: lead.phone,
     stage: lead.stage, tier: lead.tier,
-    sms_consent: smsConsented(lead.raw),
-    note: smsConsented(lead.raw) ? "Textable — SMS consent on file." : "No SMS consent on file — email is safe; a 1:1 text is your call but keep it non-promotional.",
+    sms_consent: v.ok,
+    // SAY WHICH "NO" IT IS. This said "a 1:1 text is your call" for every non-consented
+    // contact — including one who had texted STOP, where it is not his call and the text will
+    // now be refused. Rupee repeats this line to Ramon, so a wrong one steers the decision.
+    note: v.ok
+      ? "Textable — SMS consent on file."
+      : `Cannot text: ${v.reason}. Email instead, or send the one-click SMS opt-in link.`,
   };
 }
 
@@ -106,6 +130,14 @@ export async function assistantSendEmail(to: string, subject: string, body: stri
   if (!gate.ok) return { ok: false, error: gate.error, candidates: (gate as any).candidates };
   const email = r.lead?.email || r.email;
   if (!email) return { ok: false, error: `No email found for "${to}".` };
+  // A REVOCATION BINDS RUPEE TOO. sendEmail enforces the bounce/spam suppression list at the
+  // primitive, but nothing here read the recipient's own opt-out: a borrower whose reply said
+  // "stop emailing me" (lib/inbound/ingestEmail.ts writes email_optout_at) could still be mailed
+  // from this tool. Transactional, so a marketing pause does not stop Ramon writing to a client.
+  if (r.lead) {
+    const v = loSendAllowed(r.lead as any, "email");
+    if (!v.ok) return { ok: false, error: `Refused — ${v.reason}. That is the recipient's own recorded opt-out; it cannot be overridden from here.` };
+  }
   const html = `<div style="font:15px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#0f172a">${String(body).replace(/\n/g, "<br>")}</div>`;
   const rr = await sendEmail(email, subject, { html, text: body });
   if (!rr.ok) return { ok: false, error: `Email failed: ${rr.detail}` };
@@ -121,14 +153,31 @@ export async function assistantSendText(to: string, message: string, userText?: 
   if (!gate.ok) return { ok: false, error: gate.error, candidates: (gate as any).candidates };
   const phone = r.lead?.phone || r.phone;
   if (!phone) return { ok: false, error: `No phone found for "${to}".` };
-  const consented = r.lead ? smsConsented(r.lead.raw) : true; // raw number Ramon typed = his business contact
+  // THE VERDICT DECIDES. It used to be computed into `consented` and then spent on a note in the
+  // SUCCESS payload — see the header. A raw number Ramon typed verbatim in his own turn is his
+  // business contact and keeps the carve-out (gateRecipient already proved he typed it, and
+  // sendSms still checks phone-level suppression, so a STOP from any lead row still refuses).
+  if (r.lead) {
+    const v = loSendAllowed(r.lead as any, "sms");
+    if (!v.ok) {
+      return {
+        ok: false,
+        error: `Refused — ${v.reason}. Texting ${safeName(r.lead.full_name) || phone} would be a TCPA exposure of $500-$1,500 for this one message, and the burden of proving consent is ours.`,
+        alternative: r.lead.email
+          ? `Email ${r.lead.email} instead, or send the one-click SMS opt-in link so the consent is on file.`
+          : "Send the one-click SMS opt-in link so the consent is on file, or call them.",
+      };
+    }
+  }
   const rr = await sendSms(phone, message);
   if (!rr.ok) return { ok: false, error: `Text failed: ${rr.detail}` };
   await logComms({ leadId: r.lead?.id || null, channel: "sms", direction: "outbound", type: "assistant", body: message, to: phone, status: "sent", providerId: rr.sid, actor: "rupee" }).catch(() => {});
   return {
     ok: true, sent_to: phone, sid: rr.sid,
     message: `Text sent to ${safeName(r.lead?.full_name) || phone}.`,
-    ...(consented ? {} : { compliance_note: "⚠️ No SMS consent on file. Fine for a 1:1 message you directed — never send marketing/promotional texts to non-consented numbers (TCPA)." }),
+    // No lead row = a number Ramon typed himself. Still say it, so a promotional text to a
+    // business contact is a decision he makes knowingly rather than one nobody mentioned.
+    ...(r.lead ? {} : { compliance_note: "No lead record for this number, so no consent artifact exists. Fine for a 1:1 message you directed — never send marketing/promotional texts to non-consented numbers (TCPA)." }),
   };
 }
 

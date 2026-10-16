@@ -112,6 +112,89 @@ console.log("\n── DSCR gross rent ──");
   ], { mode: "dscr", today: "2026-07-27" });
   check("STR trailing-12 ÷ 12 × 0.80", r.monthlyGrossRent, 4000);
 }
+
+console.log("\n── SHORT-TERM RENTAL: the haircut survives, and the printed derivation IS the arithmetic ──");
+// The check above passed throughout the defect, because its STR document carries no printed
+// monthly rent. The haircut was being written into `leaseRent` — the same slot the lease
+// resolution pass writes `chosen` into — so any STR statement that ALSO states a monthly rent
+// (a platform statement printing a monthly average; an STR statement filed beside a 12-month
+// lease for the same door) had its 20% haircut OVERWRITTEN, while the worksheet still printed
+// "trailing-12 gross ÷ 12 × 0.80 =" in front of the un-haircut figure.
+// Measured on the live code before the fix: trailing-12 $60,000 + printed $5,000/mo reported
+// $5,000/mo under a derivation whose own arithmetic is 60,000 ÷ 12 × 0.80 = $4,000. 25% of
+// qualifying rent that does not exist, on a DSCR file where the rent IS the income, under a line
+// of arithmetic the underwriter checks in two seconds.
+const nmoney = (s?: string) => Number(String(s || "").replace(/[^0-9.]/g, ""));
+{
+  const r = computeRentalIncome([
+    lease({ propertyAddress: "4 STR Ln", isShortTermRental: true, trailing12GrossRent: 60000, leaseMonthlyRent: 5000, leaseRentFrequency: "monthly" }),
+  ], { mode: "dscr", today: "2026-07-27" });
+  check("a printed monthly rent does NOT overwrite the STR haircut", r.monthlyGrossRent, 4000);
+  check("the unit is still sourced short_term", r.units[0]?.source, "short_term");
+  // EVALUATE THE DERIVATION, do not pattern-match it. "does the basis contain 0.80" was true
+  // for the whole life of the bug; the question is whether the stated input, put through the
+  // stated arithmetic, yields the number reported beside it.
+  const m = (r.units[0]?.basis || "").match(/trailing-12 gross (\$[\d,]+) ÷ 12 × 0\.80 = (\$[\d,]+)/);
+  check("the basis states the trailing-12 INPUT it was derived from", m != null, true);
+  check("…input ÷ 12 × 0.80 equals the figure reported", m ? Math.round(nmoney(m[1]) / 12 * 0.8) : null, r.monthlyGrossRent);
+  check("…and the figure printed inside the derivation IS the figure used", m ? nmoney(m[2]) : null, r.monthlyGrossRent);
+}
+{
+  // A TABLE, so this cannot pass on one lucky number, and it moves in BOTH directions — some
+  // rows the haircut governs, some rows the long-term lease is lower and governs instead.
+  for (const [t12, printed] of [[60000, 5000], [96000, 6000], [42000, 2000], [61000, 9999], [120000, 0]] as const) {
+    const r = computeRentalIncome([lease({
+      propertyAddress: `${t12} Probe St`, isShortTermRental: true, trailing12GrossRent: t12,
+      ...(printed ? { leaseMonthlyRent: printed, leaseRentFrequency: "monthly" as const } : {}),
+    })], { mode: "dscr", today: "2026-07-27" });
+    check(`trailing-12 ${t12} + printed ${printed || "none"} → min(haircut, lease)`,
+      r.monthlyGrossRent, Math.round(Math.min((t12 / 12) * 0.8, printed || Infinity)));
+  }
+}
+{
+  // Two documents, one door: an STR statement and a long-term lease. The document set does not
+  // say which is in force, so the LOWER governs — the same rule this file applies to an undated
+  // pair of leases. Both figures must appear, and the one used must be named.
+  const r = computeRentalIncome([
+    lease({ propertyAddress: "5 STR Ct", isShortTermRental: true, trailing12GrossRent: 60000 }),
+    lease({ propertyAddress: "5 STR Ct", file: "longterm.pdf", leaseMonthlyRent: 3500, leaseRentFrequency: "monthly" }),
+  ], { mode: "dscr", today: "2026-07-27" });
+  check("STR haircut $4,000 vs a long-term lease $3,500 → the LOWER", r.monthlyGrossRent, 3500);
+  const b = r.units[0]?.basis || "";
+  check("the basis carries BOTH figures", [/\$4,000/.test(b), /\$3,500/.test(b)], [true, true]);
+  check("…and says which one governs", /qualified at the LOWER, \$3,500\/mo$/.test(b), true);
+  check("the conflicting methods are flagged for the LO", r.flags.some((f) => /documented BOTH as a short-term rental/.test(f.text)), true);
+}
+{
+  // Marked short-term, no trailing-12 to haircut: the unit qualifies at FULL rent. That is the
+  // honest answer — nothing can be haircut — but an un-haircut STR with no flag reads as "the
+  // haircut was considered and did not apply".
+  const r = computeRentalIncome([
+    lease({ propertyAddress: "7 No T12 Way", isShortTermRental: true, leaseMonthlyRent: 4500, leaseRentFrequency: "monthly" }),
+  ], { mode: "dscr", today: "2026-07-27" });
+  check("STR with no trailing-12 → full rent, no haircut invented", r.monthlyGrossRent, 4500);
+  check("…and the missing trailing-12 is NAMED", r.flags.some((f) => /no trailing-12-month gross is stated/.test(f.text)), true);
+}
+{
+  // Every unit the engine emits, on any shape: the number in the worksheet line must equal the
+  // number in its own derivation. A basis that disagrees with its figure is what goes to the
+  // underwriter, and it is unrecoverable once it has.
+  const facts = [
+    lease({ propertyAddress: "8 Mixed Ave", isShortTermRental: true, trailing12GrossRent: 72000, leaseMonthlyRent: 5200, leaseRentFrequency: "monthly" }),
+    lease({ propertyAddress: "9 Plain St", leaseMonthlyRent: 2400, leaseRentFrequency: "monthly" }),
+    f1007({ propertyAddress: "9 Plain St", marketRent: 2200 }),
+    lease({ propertyAddress: "10 Weekly Rd", leaseMonthlyRent: 500, leaseRentFrequency: "weekly" }),
+  ];
+  const r = computeRentalIncome(facts, { mode: "dscr", today: "2026-07-27" });
+  check("the mixed set produces a unit per door", r.units.length, 3);
+  const mismatched = r.units.filter((u) => {
+    const stated = [...(u.basis || "").matchAll(/\$[\d,]+/g)].map((x) => nmoney(x[0]));
+    return !stated.some((v) => Math.abs(v - u.used) <= 1);   // the figure used must appear in its own basis
+  });
+  check("no unit reports a figure absent from its own derivation", mismatched.map((u) => `${u.key}: ${u.used} vs "${u.basis}"`), []);
+  check("…and the check is not vacuous — every unit had a derivation to read",
+    r.units.every((u) => /\$[\d,]+/.test(u.basis || "")), true);
+}
 {
   // The duplicate-document case: the same lease uploaded twice must not double the rent.
   const l = { propertyAddress: "1247 N Oakland Ave", leaseMonthlyRent: 2600, leaseRentFrequency: "monthly" as const };

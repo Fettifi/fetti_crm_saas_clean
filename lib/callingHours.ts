@@ -9,42 +9,36 @@
 // Any unmapped value falls through to the next signal, and finally to a conservative
 // window that is inside 8am–9pm across every CONUS zone — so a gap can never cause a
 // too-early/too-late call.
+//
+// THE AREA-CODE TABLE NO LONGER LIVES HERE. Until 2026-10-15 this module and lib/quietHours.ts
+// each kept a private copy, and a diff of the two through their own resolvers (zoneFor /
+// borrowerTz, area codes 200–999) found 4 outright disagreements and 24 codes present in only
+// one table. Two of the disagreements were this file's:
+//
+//   502  Louisville KY       mapped CENTRAL here. Louisville is EASTERN, so the dialer would
+//                            place an AI outbound call at 20:59 Central = 21:59 recipient-local.
+//   463  Indianapolis IN     mapped CENTRAL here. Indianapolis is EASTERN — same 9:59pm call.
+//   364  western KY          mapped EASTERN here, written as "364x" in the Eastern list on the
+//                            assumption a later Central entry would overwrite it. There was no
+//                            later entry, so last-one-wins shipped Eastern for Paducah and
+//                            Owensboro and the dialer opened at 08:00 ET = 07:00 local.
+//
+// Both modules now read lib/usTimeZones.ts, and scripts/verify-tcpa-timezones.ts fails the
+// commit if a second table reappears or if the two gates ever answer differently about the
+// same area code.
 
-const ET = "America/New_York", CT = "America/Chicago", MT = "America/Denver",
-  AZ = "America/Phoenix", PT = "America/Los_Angeles", AK = "America/Anchorage", HT = "Pacific/Honolulu";
+import {
+  ET, CT, MT, PT, STATE_TZ, hourIn, zoneForState, zonesForPhone, withinWindowEverywhere,
+} from "@/lib/usTimeZones";
 
-export const STATE_TZ: Record<string, string> = {
-  AL: CT, AK: AK, AZ: AZ, AR: CT, CA: PT, CO: MT, CT: ET, DE: ET, DC: ET, FL: ET, GA: ET,
-  HI: HT, ID: MT, IL: CT, IN: ET, IA: CT, KS: CT, KY: ET, LA: CT, ME: ET, MD: ET, MA: ET,
-  MI: ET, MN: CT, MS: CT, MO: CT, MT: MT, NE: CT, NV: PT, NH: ET, NJ: ET, NM: MT, NY: ET,
-  NC: ET, ND: CT, OH: ET, OK: CT, OR: PT, PA: ET, RI: ET, SC: ET, SD: CT, TN: CT, TX: CT,
-  UT: MT, VT: ET, VA: ET, WA: PT, WV: ET, WI: CT, WY: MT,
-};
+export { STATE_TZ };
 
-// Area code → timezone. Grouped by zone; split-state area codes are placed in their
-// TRUE zone (850 Central, 915 Mountain, 219 Central, 423/865 Eastern, etc.).
-const TZ_GROUPS: Record<string, string[]> = {
-  [ET]: [
-    "201","202","203","207","212","215","216","220","223","234","240","252","267","272","276","283","301","302","304","305","315","321","326","330","332","336","339","347","351","352","364x","380","386","401","404","407","410","412","413","419","434","440","443","445","448","456","470","475","478","484","508","513","516","517","518","540","551","561","567","570","571","574","582","585","603","607","609","610","614","616","617","631","640","646","656","667","678","680","681","689","703","704","706","716","717","718","724","727","732","734","740","743","754","757","762","770","771","772","773x","774","781","786","802","803","804","810","812","813","814","826","828","835","838","839","843","845","848","854","857","859","860","862","864","865","878","901x","904","908","910","912","914","917","919","929","930","934","937","941","943","947","948","954","959","972x","973","978","980","984","986x","989",
-  ],
-  [CT]: [
-    "205","210","214","217","218","219","224","225","228","251","254","256","262","270","274","281","309","312","314","316","318","319","320","325","327","331","334","337","346","361","405","409","414","417","430","432","447","463","464","469","479","483","479","501","502x","504","507","512","515","531","534","539","557","563","572","573","580","601","605","608","612","615","618","620","629","630","636","641","651","659","660","662","682","708","712","713","715","726","730","731","737","763","769","773","779","785","806","815","816","817","830","832","847","850","870","872","901","903","913","918","920","931","936","938","940","945","952","956","972","975","979","985",
-  ],
-  [MT]: [
-    "208","303","307","308x","385","406","435","505","575","719","720","801","915","970","983","986",
-  ],
-  [AZ]: ["480","520","602","623","928"],
-  [PT]: [
-    "206","209","213","253","279","310","323","341","350","360","408","415","424","425","442","458","503","509","510","530","541","559","562","564","619","626","628","650","657","661","669","702","707","714","725","747","760","775","805","818","820","831","840","858","909","916","925","935","949","951","971",
-  ],
-  [AK]: ["907"],
-  [HT]: ["808"],
-};
-const AREA_TZ: Record<string, string> = {};
-for (const [tz, codes] of Object.entries(TZ_GROUPS)) for (const c of codes) AREA_TZ[c.replace(/x$/, "")] = tz;
+export const CALL_START_HOUR = 8;   // inclusive — 47 C.F.R. §64.1200(c)(1)
+export const CALL_END_HOUR = 21;    // exclusive — last dial at 20:59 recipient-local
 
 // Small ZIP3 (first three digits) → timezone map, ONLY for regions whose zone differs
-// from their state's majority — used when we actually have a borrower ZIP.
+// from their state's majority — used when we actually have a borrower ZIP. This is the one
+// signal precise enough to resolve a split area code, so it stays sub-state and stays here.
 const ZIP3_TZ: Record<string, string> = {
   // FL Panhandle (Central): Panama City / Pensacola
   "324": CT, "325": CT,
@@ -58,8 +52,9 @@ const ZIP3_TZ: Record<string, string> = {
   "838": PT,
   // TN Eastern (Knoxville / Chattanooga / Tri-Cities)
   "373": ET, "374": ET, "377": ET, "378": ET, "379": ET,
-  // W Kentucky (Central)
-  "420": CT, "421": CT, "422": CT, "423": CT, "424": CT, "425": CT, "427": CT,
+  // W Kentucky (Central). 426 is Bowling Green — it was missing, and with no phone on the record
+  // a Bowling Green ZIP fell through to state KY = Eastern, which opens the dialer at 07:00 local.
+  "420": CT, "421": CT, "422": CT, "423": CT, "424": CT, "425": CT, "426": CT, "427": CT,
   // NW + SW Indiana (Central)
   "463": CT, "464": CT, "476": CT, "477": CT,
 };
@@ -69,13 +64,10 @@ function zipTz(zip?: string | null): string | null {
   return z.length >= 3 ? (ZIP3_TZ[z.slice(0, 3)] || null) : null;
 }
 function areaTz(phone?: string | null): string | null {
-  const d = String(phone || "").replace(/\D/g, "");
-  const ten = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
-  return ten.length === 10 ? (AREA_TZ[ten.slice(0, 3)] || null) : null;
+  return zonesForPhone(phone)[0] || null;
 }
 function stateTz(state?: string | null): string | null {
-  const s = String(state || "").trim().toUpperCase();
-  return s ? (STATE_TZ[s] || null) : null;
+  return zoneForState(state);
 }
 
 /** Best single timezone estimate (ZIP → phone area code → state) for display/logging. */
@@ -83,19 +75,27 @@ export function borrowerTz(opts: { zip?: string | null; phone?: string | null; s
   return zipTz(opts.zip) || areaTz(opts.phone) || stateTz(opts.state) || null;
 }
 
-function hourInTz(tz: string): number {
-  return Number(new Date().toLocaleString("en-US", { timeZone: tz, hour: "2-digit", hour12: false }));
-}
-const inHours = (tz: string) => { const h = hourInTz(tz); return h >= 8 && h < 21; };
-
 /** TCPA-safe calling-hours check. It must be 8am–9pm in EVERY location signal we have —
- *  the borrower ZIP AND the phone's area code. Requiring them to agree means a ported
- *  number or an out-of-area investment property can only NARROW the window, never cause
- *  a too-early/too-late call. With no usable signal, fall back to a window that's inside
- *  8am–9pm across the entire continental US (12:00–20:00 ET = 9am–5pm PT). */
-export function withinCallingHours(opts: { zip?: string | null; phone?: string | null; state?: string | null }): boolean {
-  const zones = [zipTz(opts.zip), areaTz(opts.phone)].filter(Boolean) as string[];
+ *  the borrower ZIP AND every zone the phone's area code touches. Requiring them to agree means
+ *  a ported number, an out-of-area investment property, or an area code that straddles a zone
+ *  line (850 covers Pensacola AND Tallahassee) can only NARROW the window, never cause a
+ *  too-early/too-late call. With no usable signal, fall back to a window that's inside
+ *  8am–9pm across the entire continental US (12:00–20:00 ET = 9am–5pm PT).
+ *
+ *  `at` exists so a guard can pin the instant. Before it was a parameter this gate could only be
+ *  tested at whatever time the test happened to run, which is how 502 sat mapped to Central: the
+ *  only input that distinguishes Louisville-Eastern from Louisville-Central is a 9pm clock. */
+export function withinCallingHours(
+  opts: { zip?: string | null; phone?: string | null; state?: string | null },
+  at: Date = new Date(),
+): boolean {
+  const zones: string[] = [];
+  const zip = zipTz(opts.zip);
+  // A split area code contributes EVERY zone it contains, not just its primary — see
+  // AREA_TZ_SPLIT in lib/usTimeZones.ts. The old table picked one and was wrong for the rest of
+  // the territory; this holds the window in all of them.
+  for (const z of [...(zip ? [zip] : []), ...zonesForPhone(opts.phone)]) if (!zones.includes(z)) zones.push(z);
   if (!zones.length) { const st = stateTz(opts.state); if (st) zones.push(st); }
-  if (!zones.length) { const et = hourInTz(ET); return et >= 12 && et < 20; }
-  return zones.every(inHours);
+  if (!zones.length) { const et = hourIn(ET, at); return et >= 12 && et < 20; }
+  return withinWindowEverywhere(zones, CALL_START_HOUR, CALL_END_HOUR, at);
 }

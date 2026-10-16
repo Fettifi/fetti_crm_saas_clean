@@ -13,6 +13,7 @@ import CurrencyInput from "@/components/ui/CurrencyInput";
 import { commitNumericText, numericBoxValue } from "@/lib/numericInput";
 import {
   computeIncome, computeDti, maxHousingPayment, maxLoanFromPayment, miAnnualFactor, SOURCE_META, sourceMonthlyDetail,
+  FHA_UFMIP_PCT,
   type IncomeSource, type SourceType, type LoanType,
 } from "@/lib/income";
 
@@ -123,9 +124,26 @@ export default function IncomeCalcPage() {
     ? Number(fhaFrontCap) : undefined;
   const dti = useMemo(() => computeDti(r.monthlyTotal, debts, housing), [r.monthlyTotal, debts, housing]);
   const maxPay = useMemo(() => maxHousingPayment(r.monthlyTotal, debts, num(targetDti), frontCap), [r.monthlyTotal, debts, targetDti, frontCap]);
-  const autoMi = miAnnualFactor(loanType, num(downPct));
+  const termMonths = (num(termYears) || 30) * 12;
+  // THE TERM PICKS FHA'S MIP TIER. miAnnualFactor took no term, so a 15-year FHA was priced at
+  // the 30-year 0.50% instead of 0.15% — $102/mo of phantom MI on a $350,000 loan, subtracted
+  // from the payment budget before it is solved into a maximum. The term box was on this screen
+  // the whole time and was never handed to the MI calculation.
+  const autoMi = miAnnualFactor(loanType, num(downPct), termMonths);
   const miEffective = miPct.trim() === "" ? autoMi : num(miPct);
-  const ml = useMemo(() => maxLoanFromPayment(maxPay, num(tiHoa), num(rate), num(termYears) * 12, num(downPct), miEffective), [maxPay, tiHoa, rate, termYears, downPct, miEffective]);
+  // THE FINANCED UP-FRONT MIP. FHA's 1.75% UFMIP is rolled INTO the loan: the borrower pays P&I
+  // and MIP on the financed total but buys the house with the BASE loan. maxLoanFromPayment has
+  // taken `financedFeePct` since the FHA max-price fix in lib/income.ts, and this screen — the
+  // one a borrower is shown, and the one the pre-qual PDF is built from — never passed it, so it
+  // was still solving as if the whole payment bought base principal. Measured on a $3,000 max
+  // PITIA, $600 taxes/ins, 6.5%, 30-yr, 3.5% down: max loan came out $354,034 against a true
+  // $347,945, and max purchase price $366,874 against $360,565. $6,310 of purchase price the
+  // borrower cannot actually finance — enough to lose an offer at the appraisal, or to write one
+  // they cannot close. lib/closingCosts.ts and lib/pricer.ts have both had this right all along.
+  const financedFeePct = loanType === "fha" ? FHA_UFMIP_PCT : 0;
+  const ml = useMemo(() => maxLoanFromPayment(maxPay, num(tiHoa), num(rate), termMonths, num(downPct), miEffective, financedFeePct), [maxPay, tiHoa, rate, termMonths, downPct, miEffective, financedFeePct]);
+  // What the borrower would actually owe on day one: the base loan plus the UFMIP rolled in.
+  const financedLoan = ml.maxLoan * (1 + financedFeePct / 100);
   const noRate = num(rate) <= 0;
 
   async function downloadPdf() {
@@ -145,6 +163,12 @@ export default function IncomeCalcPage() {
             "Interest rate used": `${num(rate)}%`,
             "Term": `${num(termYears) || 30} years`,
             "Down payment": `${num(downPct)}%`,
+            // The financed UFMIP is WHY the max loan is what it is. A worksheet that omits it
+            // prints a maximum nobody can reproduce from the assumptions beside it.
+            ...(financedFeePct > 0 ? {
+              "FHA up-front MIP": `${financedFeePct}% of the base loan, financed into it (base ${money(ml.maxLoan)} → ${money(financedLoan)} owed)`,
+            } : {}),
+            "Mortgage insurance used": `${miEffective}%/yr${miPct.trim() === "" ? " (auto)" : " (entered)"}`,
             "Monthly debts counted": money(debts),
             "Taxes / insurance / HOA used": `${money(num(tiHoa))}/mo`,
             "Qualifying income": `${money(r.monthlyTotal)}/mo`,
@@ -424,10 +448,18 @@ export default function IncomeCalcPage() {
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-3 text-center">
-                    <div><div className="text-[10px] uppercase text-slate-500">Max loan amount</div><div className="text-2xl font-bold text-emerald-400">{r.monthlyTotal ? money(ml.maxLoan) : "—"}</div></div>
+                    <div><div className="text-[10px] uppercase text-slate-500">Max {financedFeePct > 0 ? "base " : ""}loan amount</div><div className="text-2xl font-bold text-emerald-400">{r.monthlyTotal ? money(ml.maxLoan) : "—"}</div></div>
                     <div><div className="text-[10px] uppercase text-slate-500">Max purchase price</div><div className="text-2xl font-bold text-emerald-300">{r.monthlyTotal ? money(ml.maxPrice) : "—"}</div></div>
                   </div>
-                  <div className="text-[11px] text-slate-500 text-center mt-2">{num(rate)}% · {termYears}-yr · max P&amp;I {money(ml.maxPI)}/mo{ml.mi > 0 ? ` + MI ${money(ml.mi)}` : ""} after {money(num(tiHoa))} taxes/ins/HOA · {num(downPct)}% down</div>
+                  {/* SAY THE FINANCED FEE OUT LOUD. The headline is the BASE loan — what buys
+                      the house — but the payment is amortized on the base plus the UFMIP, and a
+                      borrower comparing this to a lender's figure needs to see both. */}
+                  {financedFeePct > 0 && r.monthlyTotal > 0 && (
+                    <div className="text-[11px] text-amber-300/90 text-center mt-2">
+                      + FHA up-front MIP {financedFeePct}% ({money(financedLoan - ml.maxLoan)}) financed into the loan → {money(financedLoan)} owed at closing. The payment above is on that figure; the purchase price is on the base loan.
+                    </div>
+                  )}
+                  <div className="text-[11px] text-slate-500 text-center mt-2">{num(rate)}% · {termYears}-yr · max P&amp;I {money(ml.maxPI)}/mo{ml.mi > 0 ? ` + MI ${money(ml.mi)}` : ""}{miEffective > 0 ? ` (${miEffective}%/yr)` : ""} after {money(num(tiHoa))} taxes/ins/HOA · {num(downPct)}% down</div>
                 </>
               )}
             </div>

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { buildPreApprovalPdf } from "@/lib/preapprovalPdf";
 import { getSetting } from "@/lib/settings";
+import { isLetterGone } from "@/lib/preapprovalExpiry";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -11,8 +12,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   const { token } = await params;
   if (!token || token.length < 12) return NextResponse.json({ error: "invalid" }, { status: 400 });
   const { data: l } = await supabaseAdmin.from("preapprovals").select("*").eq("share_token", token).maybeSingle();
-  // Match the JSON route: don't serve a void or expired letter as a PDF.
-  if (!l || l.status === "void" || (l.expires_on && new Date(l.expires_on) < new Date())) {
+  // THIS ROUTE KILLED THE LINK 30h59m59s EARLY — 111,599 seconds, measured, not estimated. It
+  // claimed to match the JSON route and did not: `new Date("2026-10-20")` is UTC midnight, which
+  // is 2026-10-19 17:00 Pacific, so the download
+  // 410'd at 5pm on the day BEFORE the date the letter prints as "valid through" — while the JSON
+  // route and the web page, both already using end of day Pacific, served the same letter as live.
+  // One share token, three answers. The predicate now lives in ONE place for every reader surface;
+  // see lib/preapprovalExpiry.ts for why the boundary is end of day Pacific and never longer.
+  if (isLetterGone(l)) {
     return NextResponse.json({ error: "not found" }, { status: l ? 410 : 404 });
   }
 

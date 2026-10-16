@@ -1,4 +1,10 @@
 import { nonTaxableShare, grossedUpMonthly } from "@/lib/income/benefitRules";
+// THIRD BUILDER, SAME FHA TABLE. miAnnualFactor below had its own copy of the FHA annual-MIP
+// tiers and no term input at all; lib/pricer.ts's miRate has been term-aware since the
+// program-MI fix and is what the Quick Pricer and the borrower's PDF already use. Importing it
+// is the point — a second table is how the two screens come to disagree. lib/pricer.ts is pure
+// (its only import is ./vaPropertyTax), so this stays safe in the client bundle /income needs.
+import { miRate } from "@/lib/pricer";
 // Lender-grade qualifying-income / DTI / DSCR / max-loan engine for the Income
 // Calculator (/income) and the LOS loan-file qualifier. Computes MONTHLY
 // QUALIFYING INCOME the way an underwriter does (Fannie Mae Selling Guide /
@@ -234,11 +240,46 @@ export function maxHousingPayment(monthlyIncome: number, monthlyDebts: number, b
   return Math.min(byBack, byFront);
 }
 
-// Annual mortgage-insurance factor (% of loan / yr) by program + down payment.
-// Conventional BPMI (LTV>80) approx by LTV band; FHA monthly MIP. LO can override.
-export function miAnnualFactor(loanType: LoanType, downPct: number): number {
+/** FHA UP-FRONT MIP, as a % of the BASE loan — financed into the loan, not paid in cash.
+ *
+ *  1.75%. Taken from this repo's own implementation, lib/closingCosts.ts:329
+ *  (`const ufmip = r0(loan * 0.0175)` → "FHA UFMIP 1.75% financed into the loan"), which is the
+ *  figure already printed on Fetti's closing-cost worksheets. Not a number introduced here.
+ *  verify:fha-ufmip asserts this constant and that engine still agree, on a real FHA scenario. */
+export const FHA_UFMIP_PCT = 1.75;
+
+// Annual mortgage-insurance factor (% of loan / yr) by program + down payment + TERM.
+//
+// THE TERM SETS FHA'S PREMIUM, AND THIS FUNCTION DID NOT TAKE ONE.
+//
+// FHA annual MIP is tiered on the term as well as the LTV: a 15-year FHA at or under 90% LTV is
+// 0.15%/yr, where a 30-year pays 0.50%. This returned the 30-year tier for every term, so a
+// 15-year FHA was charged 0.50% — 3.33x the real premium, 0.35% of the loan per year of
+// mortgage insurance the borrower does not owe. Measured: on a $350,000 loan that is
+// 350,000 × 0.0035 ÷ 12 = $102/mo taken out of the payment budget BEFORE it is solved into a
+// maximum loan, so the borrower is told they qualify for less house than they do. The 20-year
+// option on /income was wrong in the other direction only by luck — 240 months is correctly in
+// the >15-year tier, which is why the defect never showed on the term the screen defaults to.
+//
+// The FHA branch now calls lib/pricer.ts's miRate — the term-aware table the Quick Pricer and
+// the borrower's PDF have used since the program-MI fix. TWO TABLES WAS THE DEFECT, not just
+// the wrong value; verify:mi now asserts both engines return the same FHA factor at every
+// term/LTV pair, so they cannot drift apart again.
+//
+// CONVENTIONAL BPMI KEEPS THIS FILE'S OWN LADDER, UNCHANGED AND DELIBERATELY. Real BPMI is
+// term-sensitive too, but no term-aware conventional table exists anywhere in this repo, and a
+// rate card is not something to reconstruct from memory when the output is what a borrower is
+// told they can buy. The signature now carries the term, so a real MGIC/Radian card drops
+// straight in. FOR WHOEVER DOES THAT: this ladder (0.30 / 0.50 / 0.78 / 1.03 above 80% LTV) and
+// lib/pricer.ts's pmiRate (0.30 / 0.49 / 0.67 / 0.90) already disagree above 85% LTV — on a
+// $400,000 loan at 95% LTV that is 0.11% = $37/mo between two Fetti screens. One is stale and
+// neither has a source in the tree; both need Ramon's current card before either is trusted.
+export function miAnnualFactor(loanType: LoanType, downPct: number, termMonths = 360): number {
   const ltv = 100 - Math.max(0, pos(downPct));
-  if (loanType === "fha") return ltv > 95 ? 0.55 : 0.50;
+  // A zero / blank / negative term is a missing input, not a 0-month loan: fall back to 30-year,
+  // the tier that charges MORE. Guessing the cheaper tier on a missing input overstates the loan.
+  const term = termMonths > 0 ? termMonths : 360;
+  if (loanType === "fha") return miRate(ltv, "fha", term);
   if (ltv <= 80) return 0;
   if (ltv <= 85) return 0.30;
   if (ltv <= 90) return 0.50;

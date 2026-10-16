@@ -18,6 +18,8 @@
 //   • Market rent only (no executed lease) → market rent, flagged. Most DSCR lenders price a
 //     vacant unit to a lower tier or require the lease before docs; the LO must see that.
 //   • Short-term rental → trailing-12 gross ÷ 12 × 0.80 (the 20% haircut for STR volatility).
+//     If a long-term lease rent is ALSO on file for that door, the lower of the two, flagged:
+//     the document set does not say which is in force, and guessing upward is not available.
 //   • Expired or month-to-month lease still counts (a holdover tenancy is real income) but is
 //     flagged, because some programmes require a current executed lease.
 // Gross rent is NOT haircut for DSCR — the DSCR ratio itself carries the coverage cushion, so
@@ -154,7 +156,9 @@ export function computeRentalIncome(
     }
     rentals.push(f);
   }
-  type Acc = RentUnit & { expired?: boolean; m2m?: boolean; str?: boolean; hasLease?: boolean; superseded?: number; leaseCandidates?: { rent: number; start: string | null; end: string | null; m2m: boolean }[] };
+  // strMonthly / strT12 are SEPARATE from leaseRent on purpose — see the STR block below. The
+  // haircut used to be parked in `leaseRent`, where the lease-resolution pass overwrote it.
+  type Acc = RentUnit & { expired?: boolean; m2m?: boolean; str?: boolean; strMonthly?: number; strT12?: number; strNoT12?: boolean; hasLease?: boolean; superseded?: number; leaseCandidates?: { rent: number; start: string | null; end: string | null; m2m: boolean }[] };
   const units = new Map<string, Acc>();
 
   for (const f of rentals) {
@@ -177,9 +181,37 @@ export function computeRentalIncome(
         (cur.leaseCandidates ||= []).push({ rent: lr, start: ymd(f.leaseStartDate), end: ymd(f.leaseEndDate), m2m: !!f.isMonthToMonth });
         cur.hasLease = true;
       }
+      // SHORT-TERM RENTAL — the haircut must survive the lease-resolution pass below.
+      //
+      // This used to write the haircut figure into `cur.leaseRent`, the same slot the lease
+      // candidates resolve into. So on any STR document that ALSO carries a printed monthly
+      // rent — an Airbnb/VRBO statement that prints a monthly average, or an STR statement
+      // filed alongside a 12-month lease for the same door — `u.leaseRent = chosen` on the
+      // resolution line overwrote it, the 20% haircut was discarded, and the worksheet still
+      // printed "trailing-12 gross ÷ 12 × 0.80 =" beside the UN-haircut number.
+      //
+      // Measured on the real shape (4 STR Ln, trailing-12 $60,000, printed monthly $5,000):
+      // the engine reported $5,000/mo under a derivation whose own arithmetic is
+      // 60,000 ÷ 12 × 0.80 = $4,000. $1,000/mo — 25% — of qualifying rent that does not
+      // exist, on a DSCR file where the rent IS the income, under a line of arithmetic an
+      // underwriter can check in two seconds and will not believe again.
+      //
+      // So: the STR figure keeps its OWN slot, and the trailing-12 input is kept with it so
+      // the printed derivation states the number it was derived from instead of asserting it.
       if (f.isShortTermRental) {
         const t12 = num(f.trailing12GrossRent);
-        if (t12 != null && t12 > 0) { cur.str = true; cur.leaseRent = (t12 / 12) * 0.8; cur.hasLease = true; }
+        if (t12 != null && t12 > 0) {
+          cur.str = true;
+          cur.hasLease = true;
+          // Several STR statements for one unit: keep the LOWER trailing-12, the same
+          // conservatism the 1007 and the undated-lease paths already apply.
+          if (cur.strT12 == null || t12 < cur.strT12) { cur.strT12 = t12; cur.strMonthly = (t12 / 12) * 0.8; }
+        } else {
+          // Marked short-term with no trailing-12 to haircut. The unit falls through to the
+          // lease/market path at FULL rent, which is the un-haircut number — say so rather
+          // than let a silent absence of the haircut look like a decision.
+          cur.strNoT12 = true;
+        }
       }
       // Term status is judged on the GOVERNING lease only (resolved below) — a renewal that
       // supersedes an expired lease means the unit is NOT expired.
@@ -226,9 +258,28 @@ export function computeRentalIncome(
     let source: RentUnit["source"] = "lease";
     let basis = "";
 
-    if (u.str && lease != null) {
-      used = lease; source = "short_term";
-      basis = `Short-term rental: trailing-12 gross ÷ 12 × 0.80 = ${money(used)}/mo`;
+    if (u.str && u.strMonthly != null && u.strT12 != null) {
+      // THE PRINTED DERIVATION IS THE ARITHMETIC THAT PRODUCED THE FIGURE, with its input
+      // stated. "trailing-12 gross ÷ 12 × 0.80 = $X" with no trailing-12 in it is unverifiable
+      // even when it is true, and was false whenever a printed monthly rent clobbered it.
+      source = "short_term";
+      if (lease != null && lease < u.strMonthly) {
+        // A long-term lease figure for a door that is also documented as a short-term rental:
+        // the document set does not establish which method is in force. Take the LOWER, the
+        // same rule this file already applies to an undated pair of leases (above) — guessing
+        // upward would qualify a deal on a rent nobody can evidence.
+        used = lease;
+        basis = `Short-term rental: trailing-12 gross ${money(u.strT12)} ÷ 12 × 0.80 = ${money(u.strMonthly)}/mo, but a long-term lease for this unit states ${money(lease)}/mo — qualified at the LOWER, ${money(used)}/mo`;
+      } else {
+        used = u.strMonthly;
+        basis = `Short-term rental: trailing-12 gross ${money(u.strT12)} ÷ 12 × 0.80 = ${money(used)}/mo`;
+      }
+      if (lease != null) {
+        flags.push({ text: `${label}: this unit is documented BOTH as a short-term rental (trailing-12 gross ${money(u.strT12)} → ${money(u.strMonthly)}/mo after the 20% STR haircut) and with a long-term lease rent of ${money(lease)}/mo — qualified at the lower of the two (${money(used)}/mo). Confirm which is in force; the STR haircut does not apply to an executed 12-month lease.`, addBackMonthly: 0, borrower });
+      }
+      if (market != null) {
+        flags.push({ text: `${label}: a 1007/1025 market rent of ${money(market)}/mo is on file but was NOT used — the appraiser's market rent is a long-term-tenancy opinion and the short-term-rental method governs here. Verify the programme accepts STR trailing-12 income.`, addBackMonthly: 0, borrower });
+      }
     } else if (lease != null && market != null) {
       used = Math.min(lease, market); source = "lesser_of";
       basis = `Lesser of lease ${money(lease)} and market rent ${money(market)} (1007) = ${money(used)}/mo`;
@@ -250,6 +301,12 @@ export function computeRentalIncome(
 
     if (u.superseded != null && u.superseded !== used && source !== "market") {
       flags.push({ text: `${label}: qualified at ${money(used)} — a second lease document for this unit shows ${money(u.superseded)}. The most recently dated one governs; confirm it is the lease in force.`, addBackMonthly: 0, borrower });
+    }
+    // Marked short-term, nothing to haircut. The figure above is the FULL rent, so name the
+    // absence — an un-haircut STR is the overstatement this unit was supposed to be protected
+    // from, and "no flag" reads as "the haircut was considered and did not apply".
+    if (u.strNoT12 && source !== "short_term") {
+      flags.push({ text: `${label}: read as a SHORT-TERM rental but no trailing-12-month gross is stated on the document, so the 20% STR haircut could not be applied — qualified at the FULL ${money(used)}/mo. Supply the trailing-12 gross (the platform's annual statement) or confirm this is a long-term tenancy.`, addBackMonthly: 0, borrower });
     }
     if (u.expired) flags.push({ text: `${label}: the lease term has ENDED (holdover / month-to-month). The rent still counts, but programmes that require a current executed lease will ask for a renewal.`, addBackMonthly: 0, borrower });
     else if (u.m2m) flags.push({ text: `${label}: month-to-month tenancy. The rent counts, but confirm the programme allows M2M — some require a 12-month executed lease.`, addBackMonthly: 0, borrower });
