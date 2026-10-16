@@ -5,6 +5,7 @@
 // single front door for the website application form and the AI apply chat.
 import { NextRequest, NextResponse, after } from "next/server";
 import { AUTHORIZATION_VERSION, normalizeSignature, signatureAcceptable, type BorrowerAuthorizationRecord } from "@/lib/borrowerAuthorization";
+import { licenceCheck } from "@/lib/licensedStates";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 import { notifyNewLead } from "@/lib/notify/leadAlert";
 import { encryptField } from "@/lib/crypto";
@@ -178,6 +179,17 @@ export async function POST(req: NextRequest) {
       };
       rawBody.borrower_authorization = rec;
       rawBody.borrower_authorization_at = rec.signedAt;
+
+      // The licence verdict travels ON THE ROW, not only in an email somebody may never read.
+      // An alert is seen once; a lead is opened for weeks.
+      const licAtSign = licenceCheck({ state: body.state, occupancy: body.occupancy, loan_purpose: body.loan_purpose });
+      if (!licAtSign.ok) {
+        rawBody.licence_block = {
+          state: licAtSign.state,
+          reason: licAtSign.reason,
+          flaggedAt: new Date().toISOString(),
+        };
+      }
 
       // TURN THE SIGNATURE INTO A DOCUMENT, HERE, WHILE THE EVIDENCE IS FRESH.
       //
@@ -417,13 +429,21 @@ export async function POST(req: NextRequest) {
             const { notifyTeam } = await import("@/lib/notify/leadAlert");
             const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.fettifi.com";
             const who = full_name || email || phone || "A borrower";
+            // LICENCE FOOTPRINT BEFORE URGENCY. A Georgia FHA+DPA application completed on
+            // 2026-10-16 and this alert told the desk to "convert while it's hot" — in a state
+            // where Fetti holds no consumer licence. The footprint is checked here so the
+            // loudest line in the alert is the one that stops the wrong action.
+            const lic = licenceCheck({ state: body.state, occupancy: body.occupancy, loan_purpose: body.loan_purpose });
+            const nextStep = lic.ok
+              ? `They have NOT uploaded documents yet. Fastest close: convert the lead to a loan file and request documents while it's hot.`
+              : `!! DO NOT CONVERT — LICENCE FOOTPRINT\n${lic.reason}`;
             await notifyTeam(
-              `📋 FULL APPLICATION COMPLETED — ${who}${tier ? ` (${tier})` : ""}`,
+              `${lic.ok ? "📋" : "⛔️"} FULL APPLICATION COMPLETED — ${who}${tier ? ` (${tier})` : ""}${lic.ok ? "" : " — UNLICENSED STATE"}`,
               `${who} just completed the FULL loan application (1003).\n\n` +
               `Product: ${body.loan_purpose || "—"}\n` +
               `State: ${body.state || "—"}\n` +
               `Tier: ${tier || "—"} (score ${score ?? "—"})\n\n` +
-              `They have NOT uploaded documents yet. Fastest close: convert the lead to a loan file and request documents while it's hot.\n\n` +
+              `${nextStep}\n\n` +
               `Open the lead (Convert to Application button is on the thread):\n${appUrl}/leads?leadId=${data.id}`
             );
           } catch (e) { console.warn("[/api/apply] app-completed alert failed:", e); }

@@ -393,6 +393,17 @@ fi
 # The signature is captured correctly and was, until 2026-10-16, never turned into a document —
 # so an underwriter asking for the signed authorization got a database column, while the apply
 # screen promised the borrower "a copy is saved to your file and available on request".
+# A Georgia FHA+DPA application completed a full 1003 on 2026-10-16 and the alert said "convert
+# while it's hot" - in a state where Fetti holds no consumer licence. The footprint lived only in
+# the marketing surface; the application flow had no idea.
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:licensed-states"
+  OUT=$(npm run --silent verify:licensed-states 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:licensed-states"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$ANYTS" ]; then
   printf "   %-24s " "verify:auth-document"
   OUT=$(npm run --silent verify:authorization-document 2>&1)
