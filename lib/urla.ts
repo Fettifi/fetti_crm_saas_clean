@@ -768,15 +768,59 @@ export function computeLoanMetrics(u: Urla) {
   const pitia = pi != null ? pi + escrow : undefined;
   const liabilities = (u.liabilities || []).reduce((s, l) => s + (l.monthlyPayment || 0), 0);
   const housing = (escrowKnown && pitia != null) ? pitia : (pi ?? (u.borrowers?.[0]?.monthlyHousingExpense || 0));
+
+  // !! A SURVIVING SENIOR LIEN'S PAYMENT IS PART OF THE PROPERTY'S DEBT SERVICE.
+  //
+  // `cltv` two dozen lines above ALREADY counts `seniorLien`'s BALANCE. This function then divided
+  // gross rent by the new loan's PITIA alone and ignored the senior PAYMENT — so the same object
+  // treated the lien as real for CLTV and imaginary for DSCR.
+  //
+  // Measured on a 2nd-position DSCR deal (as-is 500,000 / new 120,000 / senior 300,000 at 1,850 a
+  // month / rent 3,200 / 7.75% 30yr): computeDeskMetrics returns DSCR 0.90 and FAILS the deal;
+  // computeLoanMetrics returned 1.89 and passed it. That figure does not stay in the CRM —
+  // app/api/los/submit/route.ts prints "DSCR: ${metrics.dscr}" into the submission email to the
+  // wholesale lender, app/api/los/export feeds the LOS tile, and the AI underwriter is told
+  // "DSCR >= 1.0". A deal the Desk had just failed went to an underwriter wearing a passing ratio.
+  //
+  // Three guards missed it, including scripts/verify-desk-lien.ts, written for this exact hand-off:
+  // all of them assert the FIELD survives into the URLA and the MISMO; none asserts a metric that
+  // CONSUMES it. The stage that drops a field is the stage that must be tested.
+  //
+  // Gated on `seniorLien > 0` — the same quantity CLTV uses — so the balance and the payment can
+  // never disagree about whether the lien survives closing. On a 1st-position payoff the balance is
+  // 0 here, so this contributes nothing.
+  const SENIOR_ASSUMED_RATE = 6.5;   // matches lib/underwritingDesk.ts
+  const seniorEntered = u.loan?.existingLienMonthlyPayment != null && Number(u.loan.existingLienMonthlyPayment) >= 0;
+  const seniorPaymentEstimated = seniorLien > 0 && !seniorEntered;
+  const seniorPayment = seniorLien <= 0 ? 0
+    : seniorEntered ? Math.max(0, Number(u.loan!.existingLienMonthlyPayment))
+    // AMORTISING, not interest-only: an IO guess understates the payment and re-inflates the very
+    // ratio this fixes. Conservative direction, and flagged as estimated.
+    : (() => { const r = SENIOR_ASSUMED_RATE / 100 / 12; return (seniorLien * r * Math.pow(1 + r, 360)) / (Math.pow(1 + r, 360) - 1); })();
+  const totalDebtService = pitia != null ? pitia + seniorPayment : undefined;
+
+  // DTI: the surviving first mortgage is a real monthly obligation. But an LO who typed it into the
+  // 1003's liability rows would make adding it here a DOUBLE COUNT — and a double-counted DTI is
+  // just as wrong, in the other direction, on the same submission email. So add it only when no
+  // liability row already represents it (within $5, which absorbs rounding without swallowing a
+  // genuinely different debt of a similar size).
+  const seniorAlreadyListed = seniorPayment > 0 &&
+    (u.liabilities || []).some((l) => Math.abs((l.monthlyPayment || 0) - seniorPayment) < 5);
+  const seniorForDti = seniorAlreadyListed ? 0 : seniorPayment;
+
   const frontDti = monthlyIncome && housing ? (housing / monthlyIncome) * 100 : undefined;
-  const backDti = monthlyIncome ? ((housing + liabilities) / monthlyIncome) * 100 : undefined;
+  const backDti = monthlyIncome ? ((housing + liabilities + seniorForDti) / monthlyIncome) * 100 : undefined;
   const isInvestment = isInvestmentDeal(u.property?.occupancy, u.loan?.productDescription);
-  // DSCR = gross rent ÷ PITIA, and ONLY when escrow is known — never bare P&I (overstates).
-  const dscr = isInvestment && escrowKnown && pitia ? grossRent / pitia : undefined;
+  // DSCR = gross rent ÷ TOTAL debt service, and ONLY when escrow is known — never bare P&I
+  // (overstates), and never the new loan alone when a senior lien survives (overstates harder).
+  const dscr = isInvestment && escrowKnown && totalDebtService ? grossRent / totalDebtService : undefined;
   const round = (n?: number, d = 1) => (n === undefined ? undefined : Math.round(n * 10 ** d) / 10 ** d);
   return {
     monthlyIncome: round(monthlyIncome, 0), borrowerIncome: round(borrowerIncome, 0), rental: round(grossRent, 0),
     value, amount, ltv: round(ltv), cltv: round(cltv), seniorLien: seniorLien || undefined, pi: round(pi, 0), pitia: round(pitia, 0), escrowKnown, escrowEstimated,
+    // `pitia` stays THIS loan's own payment — existing guards assert that explicitly. The honest
+    // denominator is reported separately so a reader can see why DSCR is what it is.
+    seniorPayment: round(seniorPayment, 0) || undefined, seniorPaymentEstimated, totalDebtService: round(totalDebtService, 0),
     taxMonthly: round(taxMonthly, 0), insMonthly: round(insMonthly, 0), zip: zip || undefined, state: stAbbr || undefined,
     liabilities: round(liabilities, 0), frontDti: round(frontDti), backDti: round(backDti), dscr: round(dscr, 2), isInvestment, byBorrower,
   };

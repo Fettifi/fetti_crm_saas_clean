@@ -459,6 +459,22 @@ fi
 # CONFIDENTIALITY ON THE PUBLIC PRE-APPROVAL LETTER. Unconditional: the letter exists to be handed
 # to the listing agent on the other side. An internalOnly field reaching its blob exposes our broker
 # compensation and YSP, and the borrower's FICO, to a counterparty.
+# THE DSCR THAT GOES TO A LENDER. Unconditional: a 2nd-position deal the Underwriting Desk failed at
+# 0.90 was submitted reading 1.89, because computeLoanMetrics divided rent by the new loan's PITIA
+# and ignored the senior lien's payment that CLTV already counted. Three guards asserted the field
+# survived; none asserted a metric that consumed it.
+printf "   %-24s " "verify:dscr-agrees"
+OUT=$(npm run --silent verify:dscr-agrees 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:dscr-agrees"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
+printf "   %-24s " "verify:urla-schedules"
+OUT=$(npm run --silent verify:urla-schedules 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:urla-schedules"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 printf "   %-24s " "verify:preapproval-internal"
 OUT=$(npm run --silent verify:preapproval-internal 2>&1)
 if [ $? -eq 0 ]; then echo "PASS"; else

@@ -136,7 +136,9 @@
     "verify:sender-from": "tsx scripts/verify-sender-from.ts",
     "verify:combine-docs-delete": "tsx scripts/verify-combine-docs-delete.ts",
     "verify:esign-refusals": "tsx scripts/verify-esign-refusals.ts",
-    "verify:preapproval-internal": "tsx scripts/verify-preapproval-internal.ts"
+    "verify:preapproval-internal": "tsx scripts/verify-preapproval-internal.ts",
+    "verify:urla-schedules": "tsx --conditions=react-server scripts/verify-urla-schedules.ts",
+    "verify:dscr-agrees": "tsx --conditions=react-server scripts/verify-dscr-agrees.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

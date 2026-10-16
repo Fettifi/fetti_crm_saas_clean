@@ -59,6 +59,28 @@ export async function buildUrlaPdf(u: Urla, loanFile?: any): Promise<Uint8Array>
   const note = (t: string) => { ensure(11); page.drawText(t, { x: M, y: H - cur - 8, size: 6.8, font, color: GREY }); cur += 11; };
 
   // A row of labeled fields with underlines. fields: {label, value, w}[] (w sums to CW).
+  // A SCHEDULE MUST NOT BE SILENTLY TRUNCATED — IT IS A SIGNED DOCUMENT.
+  //
+  // 2a (assets), 2c (liabilities) and 3a (REO) each took a hard `.slice()` — 6, 6 and 4 — and
+  // printed nothing to say more existed. The MISMO export built from the SAME Urla carries every
+  // row, so a borrower signed a 1003 omitting liabilities while the data file sent to that same
+  // lender listed them. A signed instrument and its data file disagreeing is an underwriting and
+  // compliance problem, not a formatting one, and the borrower attests to the shorter version.
+  //
+  // `row()` already calls `ensure()`, so the rows paginate on their own; the slices were pure loss.
+  // What pagination alone does not do is re-print the column header, leaving a continued schedule
+  // as unlabelled columns on the next page — so `schedule()` reprints it on break.
+  const schedule = <T,>(header: { label: string; w: number }[], headerH: number, items: T[], rowNeed: number, draw: (item: T) => void) => {
+    row(header, headerH);
+    let lastPage = page;
+    for (const item of items) {
+      ensure(rowNeed);                                     // may start a new page
+      if (page !== lastPage) { row(header, headerH); }     // continued — relabel the columns
+      draw(item);
+      lastPage = page;
+    }
+  };
+
   const row = (fields: { label: string; value?: any; w: number }[], rowH = 22) => {
     ensure(rowH);
     let x = M;
@@ -197,17 +219,19 @@ export async function buildUrlaPdf(u: Urla, loanFile?: any): Promise<Uint8Array>
   // ================= SECTION 2 =================
   band("Section 2: Financial Information — Assets and Liabilities.");
   subhead("2a. Assets — Bank Accounts, Retirement, and Other Accounts You Have");
-  row([{ label: "Account Type", w: CW * 0.3 }, { label: "Financial Institution", w: CW * 0.35 }, { label: "Account Number", w: CW * 0.2 }, { label: "Cash/Market Value ($)", w: CW * 0.15 }], 13);
-  const assets = (u.assets || []).slice(0, 6);
-  if (assets.length) assets.forEach((a) => row([{ label: "", value: a.type, w: CW * 0.3 }, { label: "", value: a.institution, w: CW * 0.35 }, { label: "", value: a.accountNumber, w: CW * 0.2 }, { label: "", value: money(a.balance), w: CW * 0.15 }], 16));
-  else { row([{ label: "", value: "", w: CW * 0.3 }, { label: "", value: "", w: CW * 0.35 }, { label: "", value: "", w: CW * 0.2 }, { label: "", value: "", w: CW * 0.15 }], 16); }
+  const assetHdr = [{ label: "Account Type", w: CW * 0.3 }, { label: "Financial Institution", w: CW * 0.35 }, { label: "Account Number", w: CW * 0.2 }, { label: "Cash/Market Value ($)", w: CW * 0.15 }];
+  const assets = u.assets || [];                      // was .slice(0, 6) — see schedule()
+  if (assets.length) schedule(assetHdr, 13, assets, 16, (a) => row([{ label: "", value: a.type, w: CW * 0.3 }, { label: "", value: a.institution, w: CW * 0.35 }, { label: "", value: a.accountNumber, w: CW * 0.2 }, { label: "", value: money(a.balance), w: CW * 0.15 }], 16));
+  else { row(assetHdr, 13); row([{ label: "", value: "", w: CW * 0.3 }, { label: "", value: "", w: CW * 0.35 }, { label: "", value: "", w: CW * 0.2 }, { label: "", value: "", w: CW * 0.15 }], 16); }
   subhead("2b. Other Assets and Credits You Have (e.g., earnest money, gift, employer assistance)");
   row([{ label: "Asset or Credit Type", w: CW * 0.6 }, { label: "Cash/Market Value ($)", w: CW * 0.4 }], 16);
   subhead("2c. Liabilities — Credit Cards, Other Debts, and Leases that You Owe");
-  row([{ label: "Account Type", w: CW * 0.28 }, { label: "Company Name", w: CW * 0.32 }, { label: "Account Number", w: CW * 0.18 }, { label: "Unpaid Balance ($)", w: CW * 0.12 }, { label: "Monthly ($)", w: CW * 0.1 }], 13);
-  const liabs = (u.liabilities || []).slice(0, 6);
-  if (liabs.length) liabs.forEach((l) => row([{ label: "", value: l.type, w: CW * 0.28 }, { label: "", value: l.creditor, w: CW * 0.32 }, { label: "", value: "", w: CW * 0.18 }, { label: "", value: money(l.balance), w: CW * 0.12 }, { label: "", value: money(l.monthlyPayment), w: CW * 0.1 }], 16));
-  else { row([{ label: "", value: "", w: CW * 0.28 }, { label: "", value: "", w: CW * 0.32 }, { label: "", value: "", w: CW * 0.18 }, { label: "", value: "", w: CW * 0.12 }, { label: "", value: "", w: CW * 0.1 }], 16); }
+  const liabHdr = [{ label: "Account Type", w: CW * 0.28 }, { label: "Company Name", w: CW * 0.32 }, { label: "Account Number", w: CW * 0.18 }, { label: "Unpaid Balance ($)", w: CW * 0.12 }, { label: "Monthly ($)", w: CW * 0.1 }];
+  const liabs = u.liabilities || [];                  // was .slice(0, 6) — the worst of the three:
+  // an omitted liability understates DTI on a document the borrower signs, while the MISMO sent to
+  // the same underwriter lists it.
+  if (liabs.length) schedule(liabHdr, 13, liabs, 16, (l) => row([{ label: "", value: l.type, w: CW * 0.28 }, { label: "", value: l.creditor, w: CW * 0.32 }, { label: "", value: "", w: CW * 0.18 }, { label: "", value: money(l.balance), w: CW * 0.12 }, { label: "", value: money(l.monthlyPayment), w: CW * 0.1 }], 16));
+  else { row(liabHdr, 13); row([{ label: "", value: "", w: CW * 0.28 }, { label: "", value: "", w: CW * 0.32 }, { label: "", value: "", w: CW * 0.18 }, { label: "", value: "", w: CW * 0.12 }, { label: "", value: "", w: CW * 0.1 }], 16); }
   subhead("2d. Other Liabilities and Expenses (e.g., alimony, child support, job-related expenses)");
   row([{ label: "Type", w: CW * 0.6 }, { label: "Monthly Payment ($)", w: CW * 0.4 }], 16);
   gap();
@@ -215,13 +239,14 @@ export async function buildUrlaPdf(u: Urla, loanFile?: any): Promise<Uint8Array>
   // ================= SECTION 3 =================
   band("Section 3: Financial Information — Real Estate.");
   subhead("3a. Property You Own. If you are refinancing, list the property you are refinancing FIRST.");
-  row([{ label: "Address (Street, City, State, ZIP)", w: CW * 0.55 }, { label: "Property Value ($)", w: CW * 0.22 }, { label: "Monthly Insurance/Taxes/HOA ($)", w: CW * 0.23 }], 13);
-  const reo = (u.reo || []).slice(0, 4);
-  if (reo.length) reo.forEach((r) => {
+  const reoHdr = [{ label: "Address (Street, City, State, ZIP)", w: CW * 0.55 }, { label: "Property Value ($)", w: CW * 0.22 }, { label: "Monthly Insurance/Taxes/HOA ($)", w: CW * 0.23 }];
+  const reo = u.reo || [];                            // was .slice(0, 4)
+  // 38 needed, not 16: each REO entry is TWO rows and they must not be split across a page break.
+  if (reo.length) schedule(reoHdr, 13, reo, 38, (r) => {
     row([{ label: "", value: addrStr(r.address), w: CW * 0.55 }, { label: "", value: money(r.presentValue), w: CW * 0.22 }, { label: "", value: money(r.monthlyMortgage), w: CW * 0.23 }], 16);
     row([{ label: "Status (Sold / Pending / Retained)", value: r.status, w: CW * 0.3 }, { label: "Monthly Rental Income ($)", value: money(r.monthlyRentalIncome), w: CW * 0.35 }, { label: "Mortgage Unpaid Balance ($)", value: money(r.mortgageBalance), w: CW * 0.35 }]);
   });
-  else { row([{ label: "", value: "", w: CW * 0.55 }, { label: "", value: "", w: CW * 0.22 }, { label: "", value: "", w: CW * 0.23 }], 16); }
+  else { row(reoHdr, 13); row([{ label: "", value: "", w: CW * 0.55 }, { label: "", value: "", w: CW * 0.22 }, { label: "", value: "", w: CW * 0.23 }], 16); }
   gap();
 
   // ================= SECTION 4 =================
