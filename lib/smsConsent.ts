@@ -144,21 +144,46 @@ export function isRevocation(raw: string): boolean {
   const t = (raw || "").trim().toLowerCase();
   if (!t) return false;
 
+  const body = stripOwnFooter(t);
+
+  // ── PER SE REVOCATIONS COME FIRST. NOTHING OVERRIDES AN EXPLICIT OPT-OUT KEYWORD. ───────────
+  // These two rules used to sit BELOW the preference pre-guards, so a message containing the word
+  // "prefer", "instead" or "rather than" returned false before they were ever evaluated:
+  //
+  //     "STOP. I'd prefer you don't contact me again."      -> dropped
+  //     "Please unsubscribe me, I prefer not to be contacted." -> dropped
+  //
+  // Under the FCC's 2024 TCPA Report & Order (47 CFR 64.1200(a)(10)) stop/unsubscribe/opt-out are
+  // PER SE reasonable means of revoking consent, and TCPA is strict liability — $500 to $1,500 for
+  // every message sent after it. A borrower who wrote STOP and kept receiving texts is the single
+  // most expensive sentence in this file, and the false-positive guard below — written to protect
+  // live borrowers from being silenced — was quietly doing the opposite thing to the clearest
+  // revocations we receive.
+  //
+  // 1) The message IS a single opt-out keyword (± trailing punctuation).
+  if (/^(stop\s?all|stop|unsubscribe|cancel|end|quit|optout|opt[-\s]?out|revoke|remove)[.!?\s]*$/.test(t)) return true;
+  // 1b) The message OPENS with an unambiguous opt-out as its own clause: "STOP. I'd prefer you
+  //     don't contact me again." Rule 1 requires the keyword to be the WHOLE message, so any
+  //     trailing sentence defeated it — and a borrower who writes STOP and then explains why is
+  //     the most natural revocation there is.
+  //     Restricted to keywords with no innocent reading, and REQUIRES punctuation closing the
+  //     clause, so "stop by the office tomorrow" and "cancel my 3pm appointment" cannot match.
+  if (/^(?:stop\s?all|stop|unsubscribe|opt[-\s]?out|optout|quit)\b\s*[.!?,:;]/.test(t)) return true;
+  // 2) Words with no other reading in a reply → opt-out even when embedded. Evaluated against
+  //    the body with OUR OWN footer removed.
+  if (/\bunsubscribe\b|\bopt[-\s]?out\b|\bstop\s?all\b/.test(body)) return true;
+
   // ── FALSE POSITIVES SILENCE LIVE BORROWERS, AND NOTHING EVER CLEARS THE FLAG. ──────────────
   // A conditional PREFERENCE is not a revocation: "don't call me before 9am, texts are fine"
   // and "no calls, email me instead" are a borrower telling us HOW to reach them. The old rule
   // 3 fired on both. lib/inbound/ingestEmail.ts gates the suppression write, the drip pause and
   // an early return on this function, and nothing in the repo ever un-suppresses an address.
-  if (/\b(?:is|are)\s+(?:fine|ok|okay|good|better|preferred)\b/.test(t)) return false;
-  if (/\b(?:instead|rather than|prefer)\b/.test(t) && !/\b(?:all contact|any contact|everything)\b/.test(t)) return false;
-
-  const body = stripOwnFooter(t);
-
-  // 1) The message IS a single opt-out keyword (± trailing punctuation).
-  if (/^(stop\s?all|stop|unsubscribe|cancel|end|quit|optout|opt[-\s]?out|revoke|remove)[.!?\s]*$/.test(t)) return true;
-  // 2) Words with no other reading in a reply → opt-out even when embedded. Evaluated against
-  //    the body with OUR OWN footer removed.
-  if (/\bunsubscribe\b|\bopt[-\s]?out\b|\bstop\s?all\b/.test(body)) return true;
+  //
+  // These now guard ONLY the heuristic rules below, which is all they were ever meant to do. They
+  // run against `body` (our own footer stripped) so the word "prefer" inside a quoted signature
+  // cannot disarm the fuzzy rules either.
+  if (/\b(?:is|are)\s+(?:fine|ok|okay|good|better|preferred)\b/.test(body)) return false;
+  if (/\b(?:instead|rather than|prefer)\b/.test(body) && !/\b(?:all contact|any contact|everything)\b/.test(body)) return false;
   // 3) A stop verb whose OBJECT is a contact channel. The gerunds matter: `\bemail\b` cannot
   //    match "emailing", so "please stop emailing me" — the exact sentence this detector was
   //    written for, and the one quoted in the commit that added the email path — was FALSE.

@@ -206,6 +206,16 @@ chk(rawSenders === 0, `no file outside lib/comms.ts and lib/phoneMessages.ts tal
     "Not interested, please stop", "Please remove my email from your list",
     "I do not wish to be contacted", "take me off your list", "no more texts",
     "remove me from your list", "stop texting me", "quit calling me", "do not call me",
+    // 2026-10-16 — THE PREFERENCE PRE-GUARDS RAN BEFORE THE PER SE RULES AND ATE THESE.
+    // `/\b(?:instead|rather than|prefer)\b/ -> return false` was evaluated on the RAW text
+    // ahead of every revocation rule, so the clearest opt-outs we receive were dropped whenever
+    // the borrower happened to explain themselves. Under 47 CFR 64.1200(a)(10) stop/unsubscribe/
+    // opt-out are PER SE reasonable revocation, and TCPA is strict liability per message after it.
+    "STOP. I'd prefer you don't contact me again.",
+    "Please unsubscribe me, I prefer not to be contacted.",
+    "Take me off your list, I would rather not hear from you",
+    "Stop, I prefer to be left alone",
+    "unsubscribe - I'd rather deal with someone else instead",
   ];
   const MUST_NOT = [
     "Don't call me before 9am, texts are fine",
@@ -216,6 +226,9 @@ chk(rawSenders === 0, `no file outside lib/comms.ts and lib/phoneMessages.ts tal
     "email me instead of calling", "W-2", "what rate can I get?",
     // Our own footer, quoted back inside an ordinary reply.
     "sounds good, call me Tuesday. Click here to unsubscribe | Privacy | NMLS #2267023",
+    // The per se opening-clause rule must still not fire on an innocent leading verb: it demands
+    // punctuation CLOSING the clause, so these stay live borrowers.
+    "stopping by later", "Cancel my 3pm, thanks", "stop by the office at 4",
   ];
   for (const m of MUST_STOP) chk(isRevocation(m), `honoured as an opt-out: ${JSON.stringify(m)}`);
   for (const m of MUST_NOT) chk(!isRevocation(m), `NOT an opt-out — silencing this borrower is permanent: ${JSON.stringify(m)}`);
