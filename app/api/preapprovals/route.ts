@@ -214,10 +214,25 @@ export async function POST(req: NextRequest) {
     // not just a rendering flag on data that is already publicly served.
     const hidden: string[] = Array.isArray(b.hidden_fields) ? b.hidden_fields.map(String) : [];
     const hide = new Set(hidden);
-    const letterKeys = [...EXTRA_KEYS, ...PA_INTERNAL_KEYS, "other_terms"].filter((k) => !hide.has(k));
+    // !! PA_INTERNAL_KEYS NEVER REACH THE LETTER BLOB. This read:
+    //      [...EXTRA_KEYS, ...PA_INTERNAL_KEYS, "other_terms"].filter((k) => !hide.has(k))
+    // so an internalOnly field was published to the PUBLIC letter unless Ramon had separately
+    // ticked it off per letter — the opposite of what the field flag, its name, and the UI promise.
+    // app/preapprovals/page.tsx says of exactly these fields: "Captured off the sheet for Ramon,
+    // deliberately NOT printed and NOT stored in the blob the public letter routes read."
+    //
+    // What was reachable through a share link anyone can forward: broker_comp ("Lender-paid 2.000%
+    // ($6,375)"), lender_rebate_ysp, credit_score (the borrower's representative FICO),
+    // cash_to_close, base_price, pricing_adjustments, arv and ltarv. Our compensation and the
+    // other side's negotiating leverage, plus a borrower's credit score, on a letter whose entire
+    // purpose is to be handed to a listing agent.
+    //
+    // `hidden` stays a real control, but only over the fields that were ever publishable: it can
+    // take MORE out of the letter, never put an internal field in.
+    const letterKeys = [...EXTRA_KEYS, "other_terms"].filter((k) => !hide.has(k));
     const extra = take(letterKeys) as Record<string, string>;
     if (hidden.length) (extra as any).__hidden = hidden as any;
-    const internal = take([...PA_INTERNAL_KEYS, ...EXTRA_KEYS].filter((k) => hide.has(k)));
+    const internal = take([...PA_INTERNAL_KEYS, ...EXTRA_KEYS.filter((k) => hide.has(k))]);
 
     const { data, error } = await supabaseAdmin.from("preapprovals").insert([row]).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

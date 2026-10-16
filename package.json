@@ -135,7 +135,8 @@
     "verify:owner-sms-receipt": "tsx --conditions=react-server scripts/verify-owner-sms-receipt.ts",
     "verify:sender-from": "tsx scripts/verify-sender-from.ts",
     "verify:combine-docs-delete": "tsx scripts/verify-combine-docs-delete.ts",
-    "verify:esign-refusals": "tsx scripts/verify-esign-refusals.ts"
+    "verify:esign-refusals": "tsx scripts/verify-esign-refusals.ts",
+    "verify:preapproval-internal": "tsx scripts/verify-preapproval-internal.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

@@ -456,6 +456,15 @@ fi
 # E-SIGN REFUSALS. Unconditional: this route stamps a borrower's signature onto an instrument that
 # goes to a lender. It has already produced one envelope reporting "completed" over a blank signature
 # line. A bad page, an off-page box and an overflowing text value must all REFUSE, never relocate.
+# CONFIDENTIALITY ON THE PUBLIC PRE-APPROVAL LETTER. Unconditional: the letter exists to be handed
+# to the listing agent on the other side. An internalOnly field reaching its blob exposes our broker
+# compensation and YSP, and the borrower's FICO, to a counterparty.
+printf "   %-24s " "verify:preapproval-internal"
+OUT=$(npm run --silent verify:preapproval-internal 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:preapproval-internal"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 printf "   %-24s " "verify:esign-refusals"
 OUT=$(npm run --silent verify:esign-refusals 2>&1)
 if [ $? -eq 0 ]; then echo "PASS"; else
