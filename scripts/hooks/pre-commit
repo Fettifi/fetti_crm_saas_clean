@@ -463,6 +463,15 @@ fi
 # 0.90 was submitted reading 1.89, because computeLoanMetrics divided rent by the new loan's PITIA
 # and ignored the senior lien's payment that CLTV already counted. Three guards asserted the field
 # survived; none asserted a metric that consumed it.
+# BORROWER DOCUMENTS IN STORAGE. Asks the LIVE project, because what re-opens this is a dashboard
+# toggle nobody commits. The repo still shipped a migration creating a PUBLIC bucket with blanket
+# anon insert+select over pay stubs, bank statements, tax returns and IDs.
+printf "   %-24s " "verify:storage-private"
+OUT=$(npm run --silent verify:storage-private 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:storage-private"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 printf "   %-24s " "verify:dscr-agrees"
 OUT=$(npm run --silent verify:dscr-agrees 2>&1)
 if [ $? -eq 0 ]; then echo "PASS"; else

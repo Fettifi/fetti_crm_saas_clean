@@ -138,7 +138,8 @@
     "verify:esign-refusals": "tsx scripts/verify-esign-refusals.ts",
     "verify:preapproval-internal": "tsx scripts/verify-preapproval-internal.ts",
     "verify:urla-schedules": "tsx --conditions=react-server scripts/verify-urla-schedules.ts",
-    "verify:dscr-agrees": "tsx --conditions=react-server scripts/verify-dscr-agrees.ts"
+    "verify:dscr-agrees": "tsx --conditions=react-server scripts/verify-dscr-agrees.ts",
+    "verify:storage-private": "tsx scripts/verify-storage-private.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
