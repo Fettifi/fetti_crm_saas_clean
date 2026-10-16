@@ -146,24 +146,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       }
     }
     if (!doc) {
-      // Generic upload (not tied to a checklist item) = an ADDITIONAL document.
-      // Dedupe by file name so the same file uploaded twice REPLACES, never duplicates.
-      const { data: dupe } = await supabaseAdmin.from("loan_documents")
-        .select("id").eq("loan_file_id", file.id).eq("file_name", safeName)
-        .order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (dupe?.id) {
-        const { data } = await supabaseAdmin.from("loan_documents").update({
-          status: "received", storage_path: path, size_bytes: uploadSize,
-          uploaded_by: "borrower", updated_at: new Date().toISOString(),
-        }).eq("id", dupe.id).eq("loan_file_id", file.id).select().single();
-        doc = data;
-      } else {
-        const { data } = await supabaseAdmin.from("loan_documents").insert([{
-          loan_file_id: file.id, name: safeName, category: "Additional", required: false,
-          status: "received", storage_path: path, file_name: storeName, size_bytes: uploadSize, uploaded_by: "borrower",
-        }]).select().single();
-        doc = data;
-      }
+      // Generic upload (not tied to a checklist item) = an ADDITIONAL document. ALWAYS A NEW ROW.
+      //
+      // This used to "dedupe by file name so the same file uploaded twice REPLACES, never
+      // duplicates" — a name-keyed UPDATE that repointed the newest row with a matching file_name
+      // at the new bytes. A FILENAME IS NOT A DOCUMENT IDENTITY, and this repo already says so in
+      // its own words: scripts/dedupe-loan-documents.ts, "IDENTITY IS sha256 OF THE STORED BYTES.
+      // Never `size_bytes` ... and never `file_name`", with two of Jazmine Wilson's pay stubs one
+      // byte apart and two more byte-identical in COUNT but different documents.
+      //
+      // The update carried storage_path and size_bytes but NOT name, category or required — so the
+      // row kept its old label and pointed at new content. A row reading "2024 W-2 — received"
+      // could end up serving a photo of a driver's licence, and that is what goes to the lender.
+      //
+      // It is not hypothetical: across 809 live loan_documents, 12 (loan_file_id, file_name) pairs
+      // already collide, including **image.jpg seven times on ONE file**, plus image.pdf,
+      // IMG_2007.pdf and 2024_TaxReturn.pdf. Phone scans are named like that by default, so the
+      // borrower most likely to trip it is the one photographing documents on their phone.
+      //
+      // A true byte-duplicate is a separate problem with a separate tool that keys on sha256.
+      // Two rows are recoverable; a row whose label no longer describes its content is not.
+      const { data } = await supabaseAdmin.from("loan_documents").insert([{
+        loan_file_id: file.id, name: safeName, category: "Additional", required: false,
+        status: "received", storage_path: path, file_name: storeName, size_bytes: uploadSize, uploaded_by: "borrower",
+      }]).select().single();
+      doc = data;
     }
 
     await logActivity({
