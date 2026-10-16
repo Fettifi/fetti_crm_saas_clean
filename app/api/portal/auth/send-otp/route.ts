@@ -5,6 +5,7 @@ import { supabaseAdmin as supabase } from '@/lib/supabaseAdminClient';
 import { rateLimit, clientIp } from '@/lib/rateLimit';
 import { hashOtp } from '@/lib/portalSession';
 import { senderFrom } from '@/lib/notify/mailFrom';
+import { randomInt } from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,7 +68,22 @@ export async function POST(req: NextRequest) {
         const genericOk = NextResponse.json({ message: 'If that email is on file, a code has been sent.' });
         if (findError || !lead) return genericOk;
 
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        // CSPRNG, NOT Math.random(). This code is the borrower portal's ONLY authentication
+        // factor — it is what stands between a stranger and that borrower's pay stubs, bank
+        // statements and tax returns.
+        //
+        // V8 implements Math.random() as xorshift128+, which is fast, seeded per-context, and
+        // RECOVERABLE: an attacker who can observe a handful of outputs can reconstruct the
+        // internal state and predict the rest. Observing outputs here costs nothing — anyone can
+        // request codes for an address they control and read them out of their own inbox, then
+        // predict the next code issued to somebody else.
+        //
+        // randomInt is rejection-sampled, so it is also uniform across the range; the old
+        // expression inherited Math.random()'s float rounding at the edges of a 900,000 span.
+        // Brute force is separately contained by the verify route's 10-per-15-min limit, per IP
+        // AND per email, fail-closed — but a rate limit does nothing about a PREDICTED code,
+        // which arrives correct on the first attempt.
+        const code = randomInt(100000, 1000000).toString();
         const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
         // Store only the HASH of the code (never the code itself).
