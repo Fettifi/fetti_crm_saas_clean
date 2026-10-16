@@ -111,6 +111,7 @@
     "verify:esign-offpage-refusal": "tsx --conditions=react-server scripts/verify-esign-offpage-refusal.ts",
     "verify:esign-remind": "tsx --conditions=react-server scripts/verify-esign-remind.ts",
     "verify:penny-intake": "tsx --conditions=react-server scripts/verify-penny-intake.ts",
+    "verify:authorization-document": "tsx --conditions=react-server scripts/verify-authorization-document.ts",
     "verify:penny-kb": "tsx scripts/verify-penny-kb.ts",
     "verify:hook-wired": "tsx scripts/verify-hook-wired.ts",
     "verify:model-pin": "tsx scripts/verify-model-pin.ts",

@@ -390,6 +390,17 @@ if [ -n "$ANYTS" ]; then
   fi
 fi
 
+# The signature is captured correctly and was, until 2026-10-16, never turned into a document —
+# so an underwriter asking for the signed authorization got a database column, while the apply
+# screen promised the borrower "a copy is saved to your file and available on request".
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:auth-document"
+  OUT=$(npm run --silent verify:authorization-document 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:authorization-document"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$ANYTS" ] || printf '%s\n' "$CHANGED" | grep -q '^package\.json$'; then
   printf "   %-24s " "verify:script-conditions"
   OUT=$(npm run --silent verify:script-conditions 2>&1)

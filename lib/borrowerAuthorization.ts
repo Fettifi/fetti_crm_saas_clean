@@ -148,19 +148,49 @@ export function hasAuthorization(rec: unknown): rec is BorrowerAuthorizationReco
   return !!(r && typeof r === "object" && r.version && normalizeSignature(r.signedName) && r.signedAt);
 }
 
-/** The document text as filed — the exact words, with who signed and when appended. */
+// THE ARCHIVE THAT MAKES THE VERSIONING REAL.
+//
+// The header of this file has always said "add a new version, LEAVE THE OLD ONE READABLE, and
+// every stored record keeps pointing at the text its signer actually saw." Nothing enforced it:
+// renderAuthorizationDocument() read the CURRENT AUTHORIZATION_TEXT and then stamped the record's
+// own version number at the bottom. The day a v2 shipped, every v1 record would have rendered
+// v2's words under the label "Text version: 2026-09-09.v1" — a document asserting that a borrower
+// agreed to words they were never shown. That is worse than having no document at all, because it
+// looks like evidence.
+//
+// So the texts live in a registry keyed by version, and rendering an unknown version REFUSES.
+export const AUTHORIZATION_TEXTS: Record<string, { title: string; party: string; text: string; esign: string }> = {
+  "2026-09-09.v1": {
+    title: AUTHORIZATION_TITLE,
+    party: AUTHORIZING_PARTY,
+    text: AUTHORIZATION_TEXT,
+    esign: ESIGN_CONSENT_TEXT,
+  },
+};
+
+/** The document text as filed — the exact words THAT VERSION carried, with who signed and when. */
 export function renderAuthorizationDocument(rec: BorrowerAuthorizationRecord, applicantName?: string | null): string {
+  const v = AUTHORIZATION_TEXTS[rec.version];
+  if (!v) {
+    // Never substitute today's words for words we no longer hold. A record we cannot render
+    // faithfully is a gap to report, not a document to fabricate.
+    throw new Error(
+      `REFUSING to render a borrower authorization: no archived text for version "${rec.version}". ` +
+      `Known versions: ${Object.keys(AUTHORIZATION_TEXTS).join(", ")}. ` +
+      `Rendering it with the current text would assert the borrower agreed to words they never saw.`,
+    );
+  }
   const when = new Date(rec.signedAt);
   const stamp = isNaN(when.getTime()) ? rec.signedAt : when.toISOString().replace("T", " ").slice(0, 19) + " UTC";
   return [
-    AUTHORIZATION_TITLE.toUpperCase(),
-    AUTHORIZING_PARTY,
+    v.title.toUpperCase(),
+    v.party,
     "",
-    AUTHORIZATION_TEXT,
+    v.text,
     "",
     "— ELECTRONIC SIGNATURE " + "—".repeat(40),
     "",
-    ESIGN_CONSENT_TEXT,
+    v.esign,
     "",
     `Signed:            ${rec.signedName}`,
     applicantName ? `Applicant of record: ${applicantName}` : "",

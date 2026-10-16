@@ -178,6 +178,43 @@ export async function POST(req: NextRequest) {
       };
       rawBody.borrower_authorization = rec;
       rawBody.borrower_authorization_at = rec.signedAt;
+
+      // TURN THE SIGNATURE INTO A DOCUMENT, HERE, WHILE THE EVIDENCE IS FRESH.
+      //
+      // Until 2026-10-16 this stopped at the field above: the record was stored and nothing ever
+      // rendered it, so an underwriter who asked for the signed authorization got a database
+      // column. The application screen had meanwhile promised the borrower, in writing, that
+      // "a copy is saved to your file and available on request" — which was not true.
+      //
+      // An application has no loan_file yet (it creates a LEAD), so there is no loan_documents
+      // row to hang this on. It goes into the same private loan-docs bucket under an
+      // application/<lead-or-email> prefix, and the pointer is stored on the lead so the document
+      // can be attached to the file the day one exists.
+      //
+      // THIS MUST NEVER BLOCK THE APPLICATION. The borrower has already signed; losing their
+      // submission because an upload failed would be the worse outcome by far. Failures are
+      // recorded on the row so the gap is visible rather than silent.
+      try {
+        const { buildAuthorizationPdf, authorizationFileName } = await import("@/lib/authorizationPdf");
+        const bytes = await buildAuthorizationPdf(rec, full_name);
+        const key = normalizeSignature(email || full_name).toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 60) || "unknown";
+        const path = `applications/${key}/${rec.signedAt.replace(/[:.]/g, "-")}-authorization.pdf`;
+        const { error: upErr } = await supabaseAdmin.storage.from("loan-docs")
+          .upload(path, Buffer.from(bytes), { contentType: "application/pdf", upsert: true });
+        if (upErr) throw new Error(upErr.message);
+        rawBody.borrower_authorization_document = {
+          bucket: "loan-docs",
+          path,
+          name: authorizationFileName(rec, full_name),
+          bytes: bytes.length,
+          version: rec.version,
+          builtAt: new Date().toISOString(),
+        };
+      } catch (e) {
+        // Visible, not swallowed: verify-authorization-document.ts reads this.
+        rawBody.borrower_authorization_document_error =
+          `${new Date().toISOString()} ${e instanceof Error ? e.message : String(e)}`;
+      }
     }
 
     const row: Record<string, unknown> = {
