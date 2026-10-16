@@ -256,7 +256,20 @@ export async function buildUrlaPdf(u: Urla, loanFile?: any): Promise<Uint8Array>
   // of business returns and K-1s, so the wrong tick either buries the file in conditions it does
   // not owe or lets a real 25% owner through undocumented. The model carries no ownership
   // percentage, so neither percentage box is ticked until something actually states one.
-  checks("", [{ t: "Business owner or self-employed", on: !!e.selfEmployed }, { t: "I own < 25% of the business", on: false }, { t: "I own 25% or more of the business", on: false }]);
+  // AN UNTICKED BOX ON A SIGNED 1003 ASSERTS "NO". lib/mismo.ts now OMITS
+  // EmploymentBorrowerSelfEmployedIndicator when nobody answered, because an Indicator has no
+  // unknown value and an absent element is something an underwriter can see and condition on.
+  // Rendering `on: !!e.selfEmployed` here undid exactly that on the half the borrower SIGNS: an
+  // unanswered question drew an empty box, and an empty box is a negative. The signed instrument
+  // and the data file sent to the same underwriter then disagreed — the divergence the MISMO fix
+  // was written to remove, reintroduced one file over.
+  // Unanswered now says so in words rather than claiming an answer nobody gave.
+  const seAnswered = typeof e.selfEmployed === "boolean";
+  checks("", [
+    { t: seAnswered ? "Business owner or self-employed" : "Business owner or self-employed — NOT ANSWERED", on: seAnswered && !!e.selfEmployed },
+    { t: "I own < 25% of the business", on: false },
+    { t: "I own 25% or more of the business", on: false },
+  ]);
   note("Gross Monthly Income");
   row([{ label: "Base ($)", value: money(inc.base), w: CW / 3 }, { label: "Overtime ($)", value: money(inc.overtime), w: CW / 3 }, { label: "Bonus ($)", value: money(inc.bonus), w: CW / 3 }]);
   row([{ label: "Commission ($)", value: money(inc.commission), w: CW / 3 }, { label: "Other ($)", value: money(inc.other), w: CW / 3 }, { label: "TOTAL ($/month)", value: money(inc.total ?? (((inc.base || 0) + (inc.overtime || 0) + (inc.bonus || 0) + (inc.commission || 0) + (inc.other || 0)) || undefined)), w: CW / 3 }]);

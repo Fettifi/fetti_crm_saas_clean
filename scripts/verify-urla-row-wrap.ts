@@ -263,8 +263,15 @@ async function run() {
   }
   ck("every REO entry keeps its status/rent/balance row with its address", splits.length === 0,
      splits.length ? `${splits.length} split(s): ${splits.slice(0, 3).join(" | ")}` : `${swept} entries over ${PADS} page alignments`);
-  ck("…and the 3a schedule really did break mid-schedule in the sweep", breaks === PADS,
-     `${breaks}/${PADS} alignments crossed a page boundary inside 3a`);
+  // COVERAGE, NOT A FIXTURE PROPERTY. This required breaks === PADS — that EVERY padding
+  // alignment happened to straddle a page boundary. That is a fact about the synthetic
+  // fixture, not about the code: any legitimate change to row height, page size or the
+  // fixture itself moves the count and fails a commit that broke nothing. A guard that
+  // blocks correct work gets switched off, and then it protects nothing.
+  // What actually needs asserting is that the sweep EXERCISED a mid-schedule break at all —
+  // otherwise the split check above passes vacuously by never crossing a page.
+  ck("…and the sweep really did exercise a mid-schedule page break", breaks > 0,
+     `${breaks}/${PADS} alignments crossed a page boundary inside 3a (needs at least 1, or the split check above proves nothing)`);
 
   // ── 7. Pagination still works at all: a form this long must not have been squeezed onto one page.
   ck("the document paginated rather than overflowing one page", pages >= 2, `${pages} page(s)`);
