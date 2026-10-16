@@ -466,6 +466,15 @@ fi
 # BORROWER DOCUMENTS IN STORAGE. Asks the LIVE project, because what re-opens this is a dashboard
 # toggle nobody commits. The repo still shipped a migration creating a PUBLIC bucket with blanket
 # anon insert+select over pay stubs, bank statements, tax returns and IDs.
+# A BORROWER'S BEARER TOKEN MUST NOT REACH AN AD NETWORK. /file, /sign, /letter and /card-auth
+# authenticate by a token IN THE PATH, and TrackingPixels mounts in the ROOT layout — so fbq and
+# gtag were sending document.location, i.e. the credential, to Meta and Google Ads.
+printf "   %-24s " "verify:no-pixels-on-tokens"
+OUT=$(npm run --silent verify:no-pixels-on-tokens 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:no-pixels-on-tokens"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 printf "   %-24s " "verify:storage-private"
 OUT=$(npm run --silent verify:storage-private 2>&1)
 if [ $? -eq 0 ]; then echo "PASS"; else

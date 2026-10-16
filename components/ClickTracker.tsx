@@ -10,6 +10,7 @@ import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { track } from "@vercel/analytics";
 import { getConsent } from "@/lib/consent";
+import { isTokenGatedPath } from "@/lib/personalRoutes";
 
 export default function ClickTracker() {
   const pathname = usePathname();
@@ -18,17 +19,34 @@ export default function ClickTracker() {
   // Re-fire pixel PageView/ViewContent on each client-side route change so every page
   // a consenting visitor browses counts toward retargeting — not just the first load.
   // (The initial load's PageView is fired by TrackingPixels, so skip the first run.)
+  // NO TELEMETRY AT ALL ON A PAGE WHOSE URL IS A CREDENTIAL.
+  // /file/<token>, /sign/<token>, /letter/<token> and /card-auth/<token> authenticate the visitor
+  // with a bearer token IN THE PATH. Every emitter below carries that path: fbq PageView and
+  // ttq.page() send document.location to Meta and TikTok, and track("pageview", {path}) puts it in
+  // Vercel Analytics. TrackingPixels is now gated, but it only controls the INITIAL load — a
+  // visitor who navigates from a tracked page into a token page in the same SPA session arrives
+  // with fbq already on the window, and this effect would have fired the token straight at it.
+  // Read at FIRE TIME from window.location, never from a captured pathname: the click and scroll
+  // handlers below are registered once and would otherwise hold a stale value.
+  const onSecretUrl = () => { try { return isTokenGatedPath(window.location.pathname); } catch { return true; } };
+  // Vercel's track() associates every event with the CURRENT PAGE URL automatically, so "scroll",
+  // "dwell" and "click" leak the token just as surely as a pixel does — and a click event also
+  // carries the href, which on these pages is frequently another tokened link. One wrapper, so a
+  // new call site cannot miss the rule. The `any` mirrors @vercel/analytics' own loose props type.
+  const atrack = (name: string, props?: any) => { if (onSecretUrl()) return; try { (track as any)(name, props); } catch { /* */ } };
+
   useEffect(() => {
     if (firstNav.current) { firstNav.current = false; return; }
     if (getConsent() !== "all") return;
+    if (onSecretUrl()) return;
     const w = window as any;
     try { w.fbq?.("track", "PageView"); w.fbq?.("track", "ViewContent"); } catch { /* */ }
     try { w.ttq?.page?.(); } catch { /* */ }
-    try { track("pageview", { path: pathname || "/" }); } catch { /* */ }
+    atrack("pageview", { path: pathname || "/" });
   }, [pathname]);
 
   useEffect(() => {
-    const marketing = () => getConsent() === "all";
+    const marketing = () => getConsent() === "all" && !onSecretUrl();
     const pixel = (name: string, props: Record<string, unknown>) => {
       if (!marketing()) return;
       const w = window as any;
@@ -43,7 +61,7 @@ export default function ClickTracker() {
       const label = (el.getAttribute("aria-label") || el.textContent || el.getAttribute("href") || "").replace(/\s+/g, " ").trim().slice(0, 60);
       if (!label) return;
       const href = el.getAttribute("href") || undefined;
-      try { track("click", href ? { label, href } : { label }); } catch { /* */ }
+      atrack("click", href ? { label, href } : { label });
       pixel("Click", { label });
     };
     document.addEventListener("click", onClick, true);
@@ -57,7 +75,7 @@ export default function ClickTracker() {
       for (const m of [50, 90]) {
         if (pct >= m && !seen.has(m)) {
           seen.add(m);
-          try { track("scroll", { depth: m }); } catch { /* */ }
+          atrack("scroll", { depth: m });
           pixel("ScrollDepth", { depth: m });
         }
       }
@@ -65,8 +83,8 @@ export default function ClickTracker() {
     window.addEventListener("scroll", onScroll, { passive: true });
 
     // Time-on-page milestones (30s, 90s) — 90s marks an "EngagedVisitor" for retargeting
-    const t30 = setTimeout(() => { try { track("dwell", { seconds: 30 }); } catch { /* */ } pixel("TimeOnPage", { seconds: 30 }); }, 30000);
-    const t90 = setTimeout(() => { try { track("dwell", { seconds: 90 }); } catch { /* */ } pixel("EngagedVisitor", { seconds: 90 }); }, 90000);
+    const t30 = setTimeout(() => { atrack("dwell", { seconds: 30 }); pixel("TimeOnPage", { seconds: 30 }); }, 30000);
+    const t90 = setTimeout(() => { atrack("dwell", { seconds: 90 }); pixel("EngagedVisitor", { seconds: 90 }); }, 90000);
 
     return () => {
       document.removeEventListener("click", onClick, true);

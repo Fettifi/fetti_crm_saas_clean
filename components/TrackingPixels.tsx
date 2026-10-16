@@ -8,7 +8,7 @@ import Script from "next/script";
 import { useEffect, useState } from "react";
 import { getConsent } from "@/lib/consent";
 import { usePathname } from "next/navigation";
-import { isPersonalPath } from "@/lib/personalRoutes";
+import { isNoPixelPath } from "@/lib/personalRoutes";
 
 // Build-time ids. These stay the source of truth for anything already live — see the
 // precedence note in app/api/tracking/ids/route.ts.
@@ -49,7 +49,13 @@ export default function TrackingPixels() {
   const TIKTOK = ENV_TIKTOK || ids.tiktok || undefined;
   const GADS = ENV_GADS || ids.gads || undefined;
 
-  if (isPersonalPath(pathname) || !allowed) return null;
+  // isNoPixelPath, not isPersonalPath: this component mounts in the ROOT layout, so it also
+  // rendered on /file/<token>, /sign/<token>, /letter/<token> and /card-auth/<token> — pages whose
+  // URL IS the borrower's bearer token. fbq('track','PageView') and gtag('config') both transmit
+  // document.location, so every borrower opening a secure link handed their access credential to
+  // Meta and Google Ads. Consent cannot cure that: accepting analytics is not agreeing to publish
+  // the token guarding your own pay stubs. See lib/personalRoutes.ts.
+  if (isNoPixelPath(pathname) || !allowed) return null;
   return (
     <>
       {META && (
