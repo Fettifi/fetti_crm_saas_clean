@@ -183,9 +183,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     // The ingest route now rejects coordinates greater than 1 (verify:esign-field-units holds it), so
     // a violation here means something else produced an off-page placement. Refuse it rather than
     // write a blank instrument.
+    // THE PAGE INDEX WAS CLAMPED, IN THE FUNCTION THAT EXISTS TO REFUSE RATHER THAN CLAMP.
+    //
+    // `pages[Math.min(Math.max((f.page || 1) - 1, 0), pages.length - 1)]` silently relocates a field:
+    // a field placed on page 7 of a document that is now 3 pages gets stamped on page 3, and page 0
+    // or a negative gets stamped on page 1. The envelope then reports `completed`. That is a borrower's
+    // signature on the wrong page of an executed instrument — a defect of exactly the kind the
+    // off-page refusal below was written for, arriving through the page axis instead of x/y.
+    // [[a-clamp-erases-the-error-it-should-raise]]
+    //
+    // A document can legitimately be re-generated shorter after fields were placed, so this is
+    // reachable without anyone doing anything odd. Resolve the index ONCE, validate it, refuse.
+    const pageOf = (f: { page?: number | null }) => (f.page || 1) - 1;
+    const badPage = mine
+      .filter((f) => { const i = pageOf(f); return !Number.isInteger(i) || i < 0 || i >= pages.length; })
+      .map((f) => `${f.type}@p${f.page || 1} of ${pages.length} page(s)`);
+    if (badPage.length) {
+      console.error("[esign] refusing to stamp fields on a page that does not exist", env.token, recipient.id, badPage);
+      await logActivity({ entity_type: "esign", entity_id: env.token, loan_file_id: env.loan_file_id || undefined, actor: "system", action: "esign.badpage_refused", detail: { title: env.title, signer: recipient.name, fields: badPage, pages: pages.length } }).catch(() => {});
+      return NextResponse.json({ error: "We can't place your signature on this document correctly. Nothing was signed — please contact us and we'll send a corrected copy." }, { status: 422 });
+    }
+
     const offPage: string[] = [];
     for (const f of mine) {
-      const pg = pages[Math.min(Math.max((f.page || 1) - 1, 0), pages.length - 1)];
+      const pg = pages[pageOf(f)];
       const { width: pw, height: ph } = pg.getSize();
       const bw = (f.wPct || 0.2) * pw, bh = (f.hPct || 0.04) * ph;
       const x = (f.xPct || 0) * pw;
@@ -214,8 +235,47 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       return NextResponse.json({ error: "We can't place your signature on this document correctly. Nothing was signed — please contact us and we'll send a corrected copy." }, { status: 422 });
     }
 
+    // A TEXT VALUE THAT DOES NOT FIT MUST REFUSE, NOT OVERFLOW ACROSS THE INSTRUMENT.
+    //
+    // `drawText` was given `maxWidth` (so it WRAPS) but no height bound, and pdf-lib draws every
+    // wrapped line regardless of the box. A signer typing a long entity name or address into a
+    // one-line field has the overflow run down the page, over whatever text is beneath it — and the
+    // envelope reports `completed`. Same family as the off-page defect above: the document is
+    // defaced while the arithmetic says it is fine.
+    //
+    // Measure the wrap before stamping. `slice(0, 300)` caps the input but says nothing about how
+    // many LINES 300 characters become in a box this wide.
+    const wrapLines = (text: string, size: number, maxW: number): number => {
+      let lines = 1, cur = "";
+      for (const word of String(text).split(/\s+/).filter(Boolean)) {
+        const next = cur ? `${cur} ${word}` : word;
+        if (helv.widthOfTextAtSize(next, size) <= maxW) { cur = next; continue; }
+        // A single word wider than the box cannot be wrapped away — count the rows it needs.
+        if (!cur) { lines += Math.max(0, Math.ceil(helv.widthOfTextAtSize(word, size) / maxW) - 1); cur = ""; continue; }
+        lines++; cur = word;
+      }
+      return lines;
+    };
+    const overflow: string[] = [];
     for (const f of mine) {
-      const pg = pages[Math.min(Math.max((f.page || 1) - 1, 0), pages.length - 1)];
+      if (f.type !== "text") continue;
+      const pg = pages[pageOf(f)];
+      const { width: pw, height: ph } = pg.getSize();
+      const bw = (f.wPct || 0.2) * pw, bh = (f.hPct || 0.04) * ph;
+      const v = String(fieldValues?.[String(f.id)] || "").slice(0, 300);
+      if (!v) continue;
+      const size = Math.max(7, Math.min(13, bh * 0.6));
+      const needed = wrapLines(v, size, Math.max(1, bw - 4)) * size * 1.15;
+      if (needed > bh + 0.5) overflow.push(`${f.type}@p${f.page || 1} needs ${needed.toFixed(0)}pt in a ${bh.toFixed(0)}pt box`);
+    }
+    if (overflow.length) {
+      console.error("[esign] refusing to stamp overflowing text", env.token, recipient.id, overflow);
+      await logActivity({ entity_type: "esign", entity_id: env.token, loan_file_id: env.loan_file_id || undefined, actor: "system", action: "esign.overflow_refused", detail: { title: env.title, signer: recipient.name, fields: overflow } }).catch(() => {});
+      return NextResponse.json({ error: "One of your answers is too long for the space on this document. Nothing was signed — please shorten it, or contact us and we'll send a corrected copy." }, { status: 422 });
+    }
+
+    for (const f of mine) {
+      const pg = pages[pageOf(f)];
       const { width: pw, height: ph } = pg.getSize();
       const bw = (f.wPct || 0.2) * pw, bh = (f.hPct || 0.04) * ph;
       const x = (f.xPct || 0) * pw;

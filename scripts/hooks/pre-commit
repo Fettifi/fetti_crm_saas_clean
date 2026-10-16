@@ -453,6 +453,15 @@ fi
 # DOCUMENT DELETION ON A LIVE LOAN FILE. Unconditional: combine-docs removes originals on opt-in,
 # and until 2026-10-16 it deleted EVERY selected document including the ones it had just SKIPPED —
 # so an encrypted bank statement was destroyed and reported as "could not combine" in one response.
+# E-SIGN REFUSALS. Unconditional: this route stamps a borrower's signature onto an instrument that
+# goes to a lender. It has already produced one envelope reporting "completed" over a blank signature
+# line. A bad page, an off-page box and an overflowing text value must all REFUSE, never relocate.
+printf "   %-24s " "verify:esign-refusals"
+OUT=$(npm run --silent verify:esign-refusals 2>&1)
+if [ $? -eq 0 ]; then echo "PASS"; else
+  echo "FAIL"; FAILED="$FAILED verify:esign-refusals"; printf '%s\n' "$OUT" | sed 's/^/      /'
+fi
+
 printf "   %-24s " "verify:combine-docs-delete"
 OUT=$(npm run --silent verify:combine-docs-delete 2>&1)
 if [ $? -eq 0 ]; then echo "PASS"; else

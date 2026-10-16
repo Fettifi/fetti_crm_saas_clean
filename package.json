@@ -134,7 +134,8 @@
     "verify:chase-hold": "tsx --conditions=react-server scripts/verify-chase-hold.ts",
     "verify:owner-sms-receipt": "tsx --conditions=react-server scripts/verify-owner-sms-receipt.ts",
     "verify:sender-from": "tsx scripts/verify-sender-from.ts",
-    "verify:combine-docs-delete": "tsx scripts/verify-combine-docs-delete.ts"
+    "verify:combine-docs-delete": "tsx scripts/verify-combine-docs-delete.ts",
+    "verify:esign-refusals": "tsx scripts/verify-esign-refusals.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

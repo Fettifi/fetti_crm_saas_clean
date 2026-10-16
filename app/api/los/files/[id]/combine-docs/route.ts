@@ -55,8 +55,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const bytes = new Uint8Array(await blob.arrayBuffer());
         const ext = extOf(d.file_name || d.storage_path);
         if (ext === "pdf" || looksPdf(bytes)) {
+          // `ignoreEncryption: true` makes pdf-lib LOAD an encrypted file instead of throwing — so an
+          // encrypted PDF never reaches the catch below, is counted as MERGED, and (with the opt-in)
+          // its original is deleted. Its pages copy as blank or garbage, because the content streams
+          // are still encrypted. That is the same data loss the mergedDocs fix closed, arriving by a
+          // different door, and it is the LIKELIER door: password-protected bank statements and tax
+          // PDFs are routine on a mortgage file.
+          //
+          // So: load permissively (to read the page count and give a useful message), but REFUSE to
+          // treat an encrypted document as merged. Skipping leaves the original exactly where it is.
           const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
-          const pages = await out.copyPages(src, src.getPageIndices());
+          if (src.isEncrypted) {
+            skipped.push(`${label} (password-protected — unlock it and re-add, the original is untouched)`);
+            continue;
+          }
+          const srcPages = src.getPageIndices();
+          if (!srcPages.length) { skipped.push(`${label} (no readable pages)`); continue; }
+          const pages = await out.copyPages(src, srcPages);
           pages.forEach((p) => out.addPage(p));
           merged.push(label); mergedDocs.push(d);
         } else if (["png"].includes(ext)) {
