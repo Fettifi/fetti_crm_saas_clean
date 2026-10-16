@@ -190,10 +190,21 @@ export function loSendAllowed(
  * An inbound message inside the window below means a person is waiting on an answer, so the LO's
  * reply is invited and is not a solicitation. Silence means it is outreach, and it waits.
  */
+// THREE HOURS, NOT TWENTY-FOUR — AND THE REASON IS ARITHMETIC, NOT TASTE.
+// A 24-hour window SPANS AN ENTIRE NIGHT: a borrower who wrote at 2pm Monday would license a text
+// at 3am Tuesday as an "invited reply". Any window long enough to contain the quiet period defeats
+// the rule it claims to respect, so the number cannot be chosen for convenience.
+// Three hours covers the case this exemption exists for — she wrote at 7:55pm, the LO answers at
+// 8:05pm — and cannot reach across a night from any starting point inside the 8am-8pm window.
+// This is a judgement, not a statute: 47 C.F.R. §64.1200(c)(1) governs solicitations and says
+// nothing about how stale a conversation may be before a reply stops being one. Erring narrow is
+// the only safe direction — a held text costs minutes, a 3am text is strict liability.
+export const INVITED_REPLY_HOURS = 3;
+
 export function invitedReply(
   lastInboundAt: string | null | undefined,
   now: Date = new Date(),
-  windowHours = 24,
+  windowHours = INVITED_REPLY_HOURS,
 ): boolean {
   if (!lastInboundAt) return false;
   const t = new Date(lastInboundAt).getTime();

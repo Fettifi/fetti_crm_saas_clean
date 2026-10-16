@@ -15,6 +15,7 @@
 import {
   smsAllowed, canSms, messagingAllowed, withStopLine, STOP_LINE, isRevocation,
   loSendAllowed, invitedReply, emailOptOutRecord,
+  INVITED_REPLY_HOURS,
 } from "../lib/smsConsent";
 // These two reach lib/comms → lib/notify/emailCopy, which imports "server-only" — which is why
 // package.json runs this guard with `tsx --conditions=react-server` (verify:script-conditions
@@ -467,8 +468,16 @@ chk(rawSenders === 0, `no file outside lib/comms.ts and lib/phoneMessages.ts tal
   const now = new Date("2026-10-15T04:00:00.000Z");
   chk(invitedReply(new Date(now.getTime() - 60 * 60_000).toISOString(), now),
     "a borrower who wrote an hour ago is waiting on an answer — the reply is invited");
-  chk(invitedReply(new Date(now.getTime() - 23.5 * 3600_000).toISOString(), now),
-    "and still invited at 23.5h");
+  // THE WINDOW MUST NOT BE ABLE TO SPAN A NIGHT. This used to assert "still invited at 23.5h",
+  // which encoded the defect as the contract: a 24h window means a borrower who wrote at 2pm
+  // licenses a text at 3am. Assert the PROPERTY, not the number, so narrowing the window stays
+  // legal and widening it past a night cannot.
+  chk(invitedReply(new Date(now.getTime() - 2 * 3600_000).toISOString(), now),
+    "a borrower who wrote two hours ago is still waiting — the reply is invited");
+  chk(!invitedReply(new Date(now.getTime() - 13 * 3600_000).toISOString(), now),
+    "but 13 hours later is a NEW outreach — 2pm yesterday must not license 3am today");
+  chk(INVITED_REPLY_HOURS < 12,
+    `the invited window cannot contain a night (INVITED_REPLY_HOURS=${INVITED_REPLY_HOURS}, must be < 12)`);
   chk(!invitedReply(new Date(now.getTime() - 25 * 3600_000).toISOString(), now),
     "but NOT at 25h — that is outreach, and outreach waits for the window");
   chk(!invitedReply(null, now), "silence is never an invitation");

@@ -12,7 +12,7 @@ import { leadQuality } from "@/lib/leadQuality";
 import { leadReality } from "@/lib/leadReality";
 import { cfg } from "@/lib/settings";
 import { COMMS_PERSONA } from "@/lib/markPersona";
-import { loSendAllowed, invitedReply, smsAllowed } from "@/lib/smsConsent";
+import { loSendAllowed, invitedReply, smsAllowed, INVITED_REPLY_HOURS } from "@/lib/smsConsent";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +37,9 @@ export const dynamic = "force-dynamic";
 // inbound message in the last 24h means someone is waiting and the reply is invited; otherwise
 // the TCPA window binds (47 C.F.R. §64.1200(c)(1); lib/quietHours.ts holds 8am-8pm because
 // Florida's FTSA is tighter than the federal 9pm).
-const INVITED_WINDOW_HOURS = 24;
+// Imported, not a second copy: two windows that can drift is how the gate and the engine come to
+// disagree about the same send. See the note on INVITED_REPLY_HOURS in lib/smsConsent.ts.
+const INVITED_WINDOW_HOURS = INVITED_REPLY_HOURS;
 /** The most recent inbound message on this thread, or null. Feeds the invited-reply test. */
 function lastInboundAt(messages: { direction?: string | null; at?: string | null }[]): string | null {
   let latest: string | null = null;
