@@ -19,7 +19,7 @@ export default async function ReferPage({ params }: { params: Promise<{ code: st
         <p className="text-slate-600 mt-3 text-lg">Send them your link and we&apos;ll take great care of them — home, investment and business loans, built for the way they actually earn. They get a specialist who actually picks up the phone.</p>
 
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mt-7 text-left">
-          <div className="text-xs uppercase tracking-wide text-emerald-700 font-semibold mb-2">Your personal link</div>
+          <div className="text-xs uppercase tracking-wide text-fetti-deep font-semibold mb-2">Your personal link</div>
           <ReferShare code={clean} />
         </div>
 

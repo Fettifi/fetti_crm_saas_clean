@@ -68,7 +68,7 @@ export default function PhotosGallery() {
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h1 className="text-2xl font-bold">Photos from the day</h1>
-          <a href="/rsvp" className="text-sm text-emerald-400 hover:text-emerald-300">← guest list</a>
+          <a href="/rsvp" className="text-sm text-fetti-green hover:text-fetti-gold">← guest list</a>
         </div>
         <p className="text-slate-400 text-sm mt-1">
           {total} {total === 1 ? "picture" : "pictures"}
@@ -131,7 +131,7 @@ export default function PhotosGallery() {
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <a href={open.url || "#"} download={open.file_name} target="_blank" rel="noreferrer"
-                className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-semibold">Download</a>
+                className="rounded-lg bg-fetti-green hover:bg-fetti-deep px-3 py-1.5 text-xs font-semibold">Download</a>
               <button onClick={() => remove(open)} className="rounded-lg bg-slate-800 hover:bg-red-900/60 px-3 py-1.5 text-xs">Delete</button>
               <button onClick={closeViewer} className="rounded-lg bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs">Close</button>
             </div>

@@ -24,11 +24,11 @@ function Links() {
     return `?${p.toString()}`;
   };
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50/70 to-white text-slate-900 px-5 py-12">
+    <div className="min-h-screen bg-gradient-to-b from-fetti-wash/70 to-white text-slate-900 px-5 py-12">
       <div className="max-w-md mx-auto text-center">
         <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={200} height={183} className="w-44 mx-auto" />
         <p className="text-xl font-black tracking-tight text-slate-900 -mt-1">
-          We <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">DO</span> Money<span className="text-emerald-600">!</span>
+          We <span className="text-fetti-green">DO</span> Money<span className="text-fetti-gold">!</span>
         </p>
         <img src="/mark-owl.png?v=vest" alt="Mark. The all-knowing Fetti owl" width={77} height={112} className="h-24 w-auto mx-auto mt-3 drop-shadow-md" />
         <p className="text-slate-600 mt-2">Home loans, investment & business loans. Fast, licensed, no pressure.</p>
@@ -36,9 +36,9 @@ function Links() {
         <div className="space-y-3 mt-8">
           {CTAS.map((c) => (
             <Link key={c.label} href={`${c.href}${q(c.goal ? { goal: c.goal } : {})}`}
-              className="flex items-center gap-3 bg-white border border-slate-200 shadow-sm hover:border-emerald-300 hover:shadow-md hover:-translate-y-0.5 rounded-2xl px-5 py-4 text-left transition">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 ring-1 ring-emerald-100 shrink-0">
-                <c.icon className="w-5 h-5 text-emerald-600" />
+              className="flex items-center gap-3 bg-white border border-slate-200 shadow-sm hover:border-fetti-green/40 hover:shadow-md hover:-translate-y-0.5 rounded-2xl px-5 py-4 text-left transition">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-fetti-wash ring-1 ring-fetti-line shrink-0">
+                <c.icon className="w-5 h-5 text-fetti-deep" />
               </span>
               <div className="flex-1">
                 <div className="font-semibold text-slate-900">{c.label}</div>

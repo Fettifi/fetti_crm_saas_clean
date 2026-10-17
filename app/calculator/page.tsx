@@ -101,18 +101,18 @@ export default function CalculatorPage() {
     </label>
   );
   const inputCls =
-    "mt-1.5 w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
+    "mt-1.5 w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none focus:border-fetti-green focus:ring-2 focus:ring-fetti-line";
 
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-5xl px-6 py-14">
         <div className="text-center">
-          <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-1.5 text-sm font-semibold text-emerald-700">
+          <span className="inline-flex items-center gap-2 rounded-full bg-fetti-wash px-4 py-1.5 text-sm font-semibold text-fetti-deep">
             <Calculator className="h-4 w-4" /> Mortgage calculator
           </span>
           <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
             What would the payment{" "}
-            <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">actually be?</span>
+            <span className="text-fetti-deep">actually be?</span>
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-slate-600">
             Principal, interest, taxes, insurance and mortgage insurance — the same figures our loan
@@ -131,7 +131,7 @@ export default function CalculatorPage() {
 
               <Field label={`Down payment — ${downPct}% (${money(down)})`}>
                 <input type="range" min={0} max={50} step={0.5} value={downPct}
-                  className="mt-4 w-full accent-emerald-600"
+                  className="mt-4 w-full accent-fetti-green"
                   onChange={(e) => setDownPct(Number(e.target.value))} />
               </Field>
 
@@ -174,8 +174,8 @@ export default function CalculatorPage() {
 
           {/* ---------- result ---------- */}
           <div className="lg:col-span-2">
-            <div className="sticky top-6 rounded-2xl border border-emerald-200 bg-white p-6 shadow-sm">
-              <div className="text-sm font-semibold uppercase tracking-wide text-emerald-700">
+            <div className="sticky top-6 rounded-2xl border border-fetti-line bg-white p-6 shadow-sm">
+              <div className="text-sm font-semibold uppercase tracking-wide text-fetti-deep">
                 Estimated monthly payment
               </div>
               <div className="mt-2 text-4xl font-extrabold tracking-tight text-slate-900">
@@ -198,7 +198,7 @@ export default function CalculatorPage() {
               </div>
 
               {loanType?.startsWith("va") ? (
-                <p className="mt-5 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                <p className="mt-5 rounded-lg bg-fetti-wash px-3 py-2 text-xs text-fetti-deep">
                   VA loans carry no monthly mortgage insurance.
                 </p>
               ) : null}
@@ -211,17 +211,17 @@ export default function CalculatorPage() {
 
               <Link
                 href="/apply/form"
-                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-500"
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-fetti-green px-6 py-3.5 font-bold text-white shadow-lg shadow-fetti-green/20 transition hover:bg-fetti-deep"
               >
                 See what you qualify for <ArrowRight className="h-4 w-4" />
               </Link>
               <a href={CALENDLY} target="_blank" rel="noopener noreferrer"
-                className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-300 px-6 py-3 font-medium text-slate-700 transition hover:border-emerald-400 hover:bg-emerald-50">
+                className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-300 px-6 py-3 font-medium text-slate-700 transition hover:border-fetti-green/50 hover:bg-fetti-wash">
                 <CalendarClock className="h-4 w-4" /> Book a call with our team
               </a>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[11px] text-slate-500">
-                <span className="inline-flex items-center gap-1"><Lock className="h-3 w-3 text-emerald-600" /> No credit impact</span>
-                <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3 w-3 text-emerald-600" /> Equal Housing Opportunity</span>
+                <span className="inline-flex items-center gap-1"><Lock className="h-3 w-3 text-fetti-deep" /> No credit impact</span>
+                <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3 w-3 text-fetti-deep" /> Equal Housing Opportunity</span>
               </div>
             </div>
           </div>

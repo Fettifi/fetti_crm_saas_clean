@@ -56,7 +56,7 @@ export default function ExitCapture({ slug }: { slug: string }) {
   }
 
   if (!open) return null;
-  const field = "w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none";
+  const field = "w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-fetti-green focus:outline-none";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
       <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -77,10 +77,10 @@ export default function ExitCapture({ slug }: { slug: string }) {
               <input name="phone" required placeholder="Phone" className={field} />
               <input name="email" type="email" placeholder="Email (optional)" className={field} />
               <label className="flex items-start gap-2 text-left cursor-pointer">
-                <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" />
+                <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-fetti-green" />
                 <span className="text-[10px] text-slate-400 leading-relaxed">{SMS_CONSENT}</span>
               </label>
-              <button type="submit" disabled={busy} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3.5 rounded-full text-lg">
+              <button type="submit" disabled={busy} className="w-full bg-fetti-green hover:bg-fetti-deep disabled:opacity-60 text-white font-bold py-3.5 rounded-full text-lg">
                 {busy ? "Sending…" : "See my options →"}
               </button>
               {err && <p className="text-red-500 text-sm text-center">{err}</p>}

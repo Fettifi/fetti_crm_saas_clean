@@ -87,13 +87,13 @@ export default function QuotePage() {
     } catch (e) { setErr(e instanceof Error ? e.message : "Error"); } finally { setSubmitting(false); }
   }
 
-  const field = "w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none";
+  const field = "w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-fetti-green focus:outline-none";
 
   return (
     <div className="min-h-screen bg-white text-slate-900 py-12 px-4">
       <div className="max-w-lg mx-auto">
         <div className="text-center mb-8">
-          <p className="text-emerald-600 font-mono text-sm">Lender &amp; broker · Fetti Financial Services</p>
+          <p className="text-fetti-deep font-mono text-sm">Lender &amp; broker · Fetti Financial Services</p>
           <h1 className="text-3xl font-bold mt-1">What can you qualify for?</h1>
           <p className="text-slate-500 mt-2">Instant estimate. No credit pull.</p>
           <CediBubble center size={52} className="mt-5">Run the numbers. I&apos;ll show you what we can do. Easy, no stress. 😎</CediBubble>
@@ -109,17 +109,17 @@ export default function QuotePage() {
               {CREDIT.map((c) => <option key={c}>{c}</option>)}
             </select>
             {err && <p className="text-red-400 text-sm">{err}</p>}
-            <button onClick={calc} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-full">
+            <button onClick={calc} className="w-full bg-fetti-green hover:bg-fetti-deep text-white font-bold py-3 rounded-full">
               See my estimate →
             </button>
           </div>
         )}
 
         {estimate && !done && (
-          <div className="bg-white border border-emerald-200 rounded-2xl p-6">
+          <div className="bg-white border border-fetti-line rounded-2xl p-6">
             <div className="text-center pb-4 border-b border-slate-200">
               <div className="text-slate-500 text-sm">Estimated loan amount</div>
-              <div className="text-4xl font-extrabold text-emerald-600 mt-1">{fmt(estimate.amount)}</div>
+              <div className="text-4xl font-extrabold text-fetti-deep mt-1">{fmt(estimate.amount)}</div>
               <div className="text-slate-500 text-sm mt-2">
                 ~{(estimate.ltv * 100).toFixed(0)}% LTV · est. {fmt(estimate.down)} down
               </div>
@@ -133,12 +133,12 @@ export default function QuotePage() {
               <input name="email" type="email" required placeholder="Email" className={field} />
               <input name="phone" required placeholder="Phone" className={field} />
               <label className="flex items-start gap-2 text-left cursor-pointer">
-                <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" />
+                <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-fetti-green" />
                 <span className="text-[10px] text-slate-400 leading-relaxed">{SMS_CONSENT_DISCLOSURE}</span>
               </label>
               <AddressInput value={addr} onChange={setAddr} placeholder="Property address (optional)" />
               {err && <p className="text-red-400 text-sm">{err}</p>}
-              <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3 rounded-full">
+              <button type="submit" disabled={submitting} className="w-full bg-fetti-green hover:bg-fetti-deep disabled:opacity-60 text-white font-bold py-3 rounded-full">
                 {submitting ? "Submitting…" : "Unlock my full quote →"}
               </button>
               <p className="text-xs text-slate-400 text-center">
@@ -152,11 +152,11 @@ export default function QuotePage() {
         )}
 
         {done && (
-          <div className="bg-white border border-emerald-200 rounded-2xl p-8 text-center">
-            <CheckCircle2 className="w-14 h-14 text-emerald-600 mx-auto mb-4" />
+          <div className="bg-white border border-fetti-line rounded-2xl p-8 text-center">
+            <CheckCircle2 className="w-14 h-14 text-fetti-deep mx-auto mb-4" />
             <h2 className="text-2xl font-bold">You're in!</h2>
             <p className="text-slate-600 mt-2">
-              Your estimated loan amount is <span className="text-emerald-600 font-bold">{fmt(estimate!.amount)}</span>.
+              Your estimated loan amount is <span className="text-fetti-deep font-bold">{fmt(estimate!.amount)}</span>.
               A Fetti specialist will reach out shortly with your exact terms.
             </p>
           </div>

@@ -28,7 +28,7 @@ export default function AboutPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(personSchema) }} />
 
       <article className="max-w-3xl mx-auto px-6 pt-14 pb-10">
-        <p className="text-emerald-600 font-mono text-sm">Licensed mortgage lender &amp; broker · NMLS #2267023</p>
+        <p className="text-fetti-deep font-mono text-sm">Licensed mortgage lender &amp; broker · NMLS #2267023</p>
         <h1 className="text-4xl font-extrabold tracking-tight mt-2">About Fetti Financial Services &amp; Ramon Dent</h1>
 
         <p className="text-lg text-slate-700 leading-relaxed mt-5">
@@ -71,7 +71,7 @@ export default function AboutPage() {
         <p className="text-xs text-slate-500 mt-3 leading-relaxed">{LICENSING_NOTE}</p>
 
         <div className="mt-10">
-          <Link href="/apply/form" className="inline-block bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full text-lg shadow-lg shadow-emerald-600/25 transition">Work with Fetti →</Link>
+          <Link href="/apply/form" className="inline-block bg-fetti-green hover:bg-fetti-deep text-white font-bold px-8 py-4 rounded-full text-lg shadow-lg shadow-fetti-green/25 transition">Work with Fetti →</Link>
         </div>
       </article>
 

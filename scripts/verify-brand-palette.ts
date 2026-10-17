@@ -68,8 +68,86 @@ ck("…and the config still EXPLAINS what it replaced, so nobody reintroduces it
 //
 // So the roster is now DERIVED: start at the public entry points and follow local imports one hop,
 // which is where rendered components live. A file added to the page is covered automatically.
+// THE ENTRY POINTS ARE DISCOVERED, NOT LISTED — and the hand-listed version is why this guard
+// reported green over 85 stock utilities on 2026-10-17.
+//
+// It named three files: app/home/page.tsx and the two shared chrome components. Everything else a
+// visitor can reach was invisible to it. Measured when the walk was finally run:
+//   /apply/form 40 · /calculator 17 · /lending 11 · /quote 11 · /about 4 · /privacy 2
+// including `bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent` on
+// /calculator — the gradient-clipped headline this guard exists to catch, on a page it never
+// looked at — and a `font-mono text-xs uppercase tracking-widest` kicker on /lending that had
+// already been RECOLOURED to a brand token, so a hue check would have passed it while the device
+// survived. That is this guard's own documented trap, reproduced because the roster was a list.
+//
+// A hand-maintained list of what to check is a promise that somebody will remember. The surface
+// here is enumerable — public routes have page.tsx files — so it is enumerated. A new public page
+// is covered the moment it exists.
+//
+// SCOPE: public routes only. The authenticated surfaces (the LOS, admin, the underwriter desk) are
+// internal tools and are deliberately out of scope — they are not what a borrower sees, and
+// dragging them in would make this permanently red for no brand reason.
+// EVERY PUBLIC PAGE MUST BE CLASSIFIED. Discovery alone was not enough: walking app/ for page.tsx
+// found 91 files and 586 stock utilities, because it swept in the internal loan-officer tools —
+// /pricer, /scenarios, /deal-analyzer, /preapprovals, /settings, /messages, /lookup — which are
+// not what a borrower sees and which would make this guard permanently red for no brand reason.
+//
+// But a hand-listed MARKETING set is the same defect that caused this in the first place. So both:
+// the pages are DISCOVERED, and each one must be classified as borrower-facing or internal. Add a
+// new page and the guard fails until you say which it is. The classification is the registry; the
+// filesystem is the surface. [[a-registry-must-enumerate-its-own-surface]]
+const MARKETING = [
+  "home", "lending", "about", "quote", "calculator", "apply", "privacy", "terms",
+  "start", "lp", "refer", "rsvp", "share-your-win", "optin", "file", "letter", "links",
+];
+// Internal tools. Each needs a reason a stranger could evaluate — "it is not borrower-facing" is
+// the whole bar, but it has to be SAID, so nobody parks a marketing page here to quiet the guard.
+const INTERNAL: Record<string, string> = {
+  api: "route handlers, no markup", los: "loan origination desk, staff only",
+  admin: "staff only", underwriter: "staff only", studio: "internal content tooling",
+  dashboard: "staff only", scout: "internal prospecting", photos: "internal upload tool",
+  sign: "token-gated signing surface", "card-auth": "token-gated payment surface",
+  esign: "token-gated signing surface", portal: "token-gated borrower portal, not marketing",
+  "update-password": "auth surface", login: "auth surface", "reset-password": "auth surface",
+  pricer: "internal pricing desk", pricing: "internal pricing desk",
+  scenarios: "internal scenario desk", income: "internal income analysis",
+  "deal-analyzer": "internal underwriting tool", preapprovals: "internal pre-approval desk",
+  settings: "staff settings", messages: "internal inbox", lookup: "internal CRM lookup",
+  competitors: "internal market research", content: "internal content desk",
+  funnel: "internal funnel analytics", growth: "internal growth desk",
+  doctor: "internal diagnostics", realtors: "internal partner desk",
+  partners: "internal partner desk", agents: "internal agent desk",
+  rupee: "internal AI staff console", show: "internal studio",
+  "tiktok-today": "internal content prompt", go: "redirect shim, no markup",
+  underwrite: "internal underwriting desk", tv: "internal display",
+  ads: "internal ad desk", automations: "internal automation desk", command: "internal command centre",
+  compare: "internal comparison tool", connect: "internal integrations", conversations: "internal inbox",
+  leads: "internal lead desk", pipeline: "internal pipeline", requests: "internal request queue",
+  roadmap: "internal roadmap", security: "internal security settings", "task-list": "internal task list",
+  team: "internal team admin", "page.tsx": "app/page.tsx re-exports the internal dashboard",
+  training: "internal training", proof: "internal proof desk",
+};
+
+function publicEntryPoints(dir = "app", out: string[] = []): string[] {
+  let entries: string[] = [];
+  try { entries = readdirSync(dir); } catch { return out; }
+  for (const e of entries) {
+    const full = join(dir, e);
+    let st; try { st = statSync(full); } catch { continue; }
+    if (st.isDirectory()) publicEntryPoints(full, out);
+    else if (e === "page.tsx") out.push(full);
+  }
+  return out;
+}
+
+const ALL_PAGES = publicEntryPoints();
+const topSeg = (f: string) => f.split("/")[1] ?? "";
+const UNCLASSIFIED = [...new Set(ALL_PAGES.map(topSeg))]
+  .filter((seg) => seg && !MARKETING.includes(seg) && !(seg in INTERNAL));
+const MARKETING_PAGES = ALL_PAGES.filter((f) => MARKETING.includes(topSeg(f)));
+
 const ENTRY_POINTS = [
-  "app/home/page.tsx",
+  ...MARKETING_PAGES,
   "components/SiteHeader.tsx",
   "components/SiteFooter.tsx",
 ];
@@ -116,6 +194,13 @@ const PUBLIC_PAGES = (() => {
   }
   return [...seen];
 })();
+ck(`every public route is classified as borrower-facing or internal (${ALL_PAGES.length} page(s))`,
+   UNCLASSIFIED.length === 0,
+   UNCLASSIFIED.length ? `unclassified: ${UNCLASSIFIED.join(", ")} — add to MARKETING or to INTERNAL with a reason` : "");
+for (const [seg, why] of Object.entries(INTERNAL)) {
+  if (!why.trim()) { ck(`INTERNAL["${seg}"] carries a reason`, false); }
+}
+
 console.log(`  (roster: ${PUBLIC_PAGES.length} file(s) — entry points plus what they render)\n`);
 
 let stockHits = 0;

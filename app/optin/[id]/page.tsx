@@ -46,7 +46,7 @@ export default function OptInPage() {
         </p>
 
         {state === "done" ? (
-          <div className="mt-6 rounded-xl border border-emerald-700/60 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+          <div className="mt-6 rounded-xl border border-fetti-deep/60 bg-fetti-green/10 p-4 text-sm text-fetti-wash">
             You&apos;re set — we&apos;ll text you at the number on your file. Reply STOP any time and it stops.
           </div>
         ) : state === "optedout" ? (
@@ -61,14 +61,14 @@ export default function OptInPage() {
                 type="checkbox"
                 checked={agreed}
                 onChange={(e) => setAgreed(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-500"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-fetti-green"
               />
               <span className="text-[11px] leading-relaxed text-slate-400">{DISCLOSURE}</span>
             </label>
             <button
               onClick={submit}
               disabled={!agreed || state === "saving"}
-              className="mt-4 w-full rounded-full bg-emerald-600 py-3 font-bold text-white disabled:opacity-40 hover:bg-emerald-500"
+              className="mt-4 w-full rounded-full bg-fetti-green py-3 font-bold text-white disabled:opacity-40 hover:bg-fetti-deep"
             >
               {state === "saving" ? "Saving…" : "Yes, you can text me"}
             </button>

@@ -74,7 +74,7 @@ export default function AddressInput({
     onChange(addr); setSugs([]); verify(addr);
   }
 
-  const cls = className || "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none";
+  const cls = className || "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-fetti-green focus:outline-none";
 
   return (
     <div className="relative">
@@ -109,7 +109,7 @@ export default function AddressInput({
       {res && (
         <div className="mt-1.5 text-[11px]">
           {res.verified ? (
-            <div className="flex flex-wrap items-center gap-2 text-emerald-400">
+            <div className="flex flex-wrap items-center gap-2 text-fetti-green">
               <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Verified</span>
               {res.standardized && res.standardized.toLowerCase() !== value.trim().toLowerCase() && (
                 <button type="button" onClick={() => { onChange(res.standardized!.split(",")[0]?.trim() || res.standardized!); emit(res, value); }} className="text-indigo-300 hover:underline">use “{res.standardized}”</button>

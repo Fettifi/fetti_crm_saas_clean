@@ -92,7 +92,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
     } finally { setBusyDoc(null); }
   }
 
-  if (loading) return <Center><Loader2 className="w-6 h-6 animate-spin text-emerald-600" /></Center>;
+  if (loading) return <Center><Loader2 className="w-6 h-6 animate-spin text-fetti-deep" /></Center>;
   if (notFound || !file) return <Center><p className="text-slate-500">This link is invalid or has expired. Please contact your Fetti specialist.</p></Center>;
 
   const received = docs.filter((d) => d.status === "received" || d.status === "accepted").length;
@@ -124,7 +124,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
       <div className="max-w-2xl mx-auto px-4 py-10">
         <div className="flex items-center gap-2">
           <img src="/fetti-emblem.png" alt="Fetti Financial Services LLC logo" width={34} height={34} className="w-[34px] h-[34px]" />
-          <div className="text-emerald-600 font-extrabold text-lg">Fetti<span className="text-slate-900"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
+          <div className="text-fetti-deep font-extrabold text-lg">Fetti<span className="text-slate-900"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
         </div>
         <h1 className="text-2xl font-bold mt-4">Welcome{file.borrower_name ? `, ${file.borrower_name.split(" ")[0]}` : ""} 👋</h1>
         <p className="text-slate-500 mt-1">{file.file_number ? <>Your secure loan file · <span className="font-mono text-slate-600">{file.file_number}</span></> : "Upload your documents securely below to get started."}</p>
@@ -143,11 +143,11 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
           <div className="flex items-center gap-1 mt-4 overflow-x-auto">
             {STAGES.map((s, i) => (
               <div key={s} className="flex items-center shrink-0">
-                <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${i <= stageIdx ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>
+                <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${i <= stageIdx ? "bg-fetti-wash text-fetti-deep" : "bg-slate-100 text-slate-400"}`}>
                   {i < stageIdx ? <CheckCircle2 className="w-3.5 h-3.5" /> : i === stageIdx ? <Clock className="w-3.5 h-3.5" /> : null}
                   {s}
                 </div>
-                {i < STAGES.length - 1 && <div className={`w-3 h-px ${i < stageIdx ? "bg-emerald-600/40" : "bg-slate-700"}`} />}
+                {i < STAGES.length - 1 && <div className={`w-3 h-px ${i < stageIdx ? "bg-fetti-green/40" : "bg-slate-700"}`} />}
               </div>
             ))}
           </div>
@@ -161,7 +161,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
               A few details funders ask for. Takes about two minutes and it&apos;s the fastest way to get real terms.
             </p>
             {bizSaved ? (
-              <div className="mt-4 text-sm bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3">
+              <div className="mt-4 text-sm bg-fetti-wash border border-fetti-line text-fetti-deep rounded-xl px-4 py-3">
                 Got it — thank you. That&apos;s everything we needed on the business side.
               </div>
             ) : (
@@ -181,7 +181,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
                     <label className="text-xs text-slate-500">{label}</label>
                     <input type={type} inputMode={type === "number" ? "numeric" : undefined}
                       value={biz[k] || ""} onChange={(e) => setBiz((b) => ({ ...b, [k]: e.target.value }))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-900 focus:border-emerald-500 focus:outline-none" />
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-900 focus:border-fetti-green focus:outline-none" />
                   </div>
                 ))}
                 <div>
@@ -189,7 +189,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
                   <div className="flex gap-2 mt-1">
                     {(["no", "yes"] as const).map((v) => (
                       <button key={v} type="button" onClick={() => setBiz((b) => ({ ...b, existing_biz_debt: v }))}
-                        className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-semibold ${biz.existing_biz_debt === v ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
+                        className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-semibold ${biz.existing_biz_debt === v ? "border-fetti-green bg-fetti-wash text-fetti-deep" : "border-slate-200 text-slate-600"}`}>
                         {v === "no" ? "No, nothing outstanding" : "Yes, there is some"}
                       </button>
                     ))}
@@ -197,7 +197,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
                 </div>
                 {bizErr && <div className="text-sm text-red-600">{bizErr}</div>}
                 <button type="submit" disabled={bizSaving}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold rounded-2xl py-3 text-sm">
+                  className="w-full bg-fetti-green hover:bg-fetti-deep disabled:opacity-50 text-white font-semibold rounded-2xl py-3 text-sm">
                   {bizSaving ? "Saving…" : "Save business details"}
                 </button>
               </form>
@@ -211,7 +211,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
             <h2 className="text-lg font-semibold">Your documents</h2>
             <span className="text-sm text-slate-500">{received}/{docs.length} uploaded</span>
           </div>
-          <div className="h-2 bg-slate-100 rounded mt-2"><div className="h-2 bg-emerald-600 rounded transition-all" style={{ width: `${docs.length ? (received / docs.length) * 100 : 0}%` }} /></div>
+          <div className="h-2 bg-slate-100 rounded mt-2"><div className="h-2 bg-fetti-green rounded transition-all" style={{ width: `${docs.length ? (received / docs.length) * 100 : 0}%` }} /></div>
           <p className="text-xs text-slate-500 mt-2">Tap <span className="font-medium text-slate-700">Upload</span> next to each item to send it securely — ID, bank statements, pay stubs, and anything else listed. You can attach <span className="font-medium text-slate-700">more than one file</span> to any item. Your file moves forward as documents come in.</p>
 
           <div className="space-y-2 mt-4">
@@ -222,7 +222,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
                 <div key={d.id} className={`flex items-center justify-between border rounded-xl px-4 py-3 ${rejected ? "bg-red-50 border-red-200" : "bg-white border-slate-200"}`}>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      {uploaded ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <FileText className={`w-4 h-4 shrink-0 ${rejected ? "text-red-500" : "text-slate-400"}`} />}
+                      {uploaded ? <CheckCircle2 className="w-4 h-4 text-fetti-deep shrink-0" /> : <FileText className={`w-4 h-4 shrink-0 ${rejected ? "text-red-500" : "text-slate-400"}`} />}
                       <span className="font-medium truncate">{d.name}</span>
                       {d.required && !uploaded && <span className="text-[10px] text-amber-500 shrink-0">required</span>}
                     </div>
@@ -233,7 +233,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
                     <input ref={(el) => { fileInputs.current[d.id] = el; }} type="file" multiple className="hidden"
                       onChange={(e) => { const fs = Array.from(e.target.files || []); if (fs.length) uploadMany(d.id, fs); e.currentTarget.value = ""; }} />
                     <button onClick={() => fileInputs.current[d.id]?.click()} disabled={busyDoc === d.id}
-                      className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${uploaded ? "bg-slate-100 hover:bg-slate-200 text-slate-600" : rejected ? "bg-red-600 hover:bg-red-500 text-white font-semibold" : "bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"}`}>
+                      className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${uploaded ? "bg-slate-100 hover:bg-slate-200 text-slate-600" : rejected ? "bg-red-600 hover:bg-red-500 text-white font-semibold" : "bg-fetti-green hover:bg-fetti-deep text-white font-semibold"}`}>
                       {busyDoc === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                       {uploaded ? "Add file(s)" : rejected ? "Re-upload" : "Upload"}
                     </button>
@@ -251,7 +251,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
               onDragOver={(e) => { e.preventDefault(); setDropping(true); }}
               onDragLeave={() => setDropping(false)}
               onDrop={(e) => { e.preventDefault(); setDropping(false); const fs = Array.from(e.dataTransfer.files || []); if (fs.length) setPending(fs); }}
-              className={`w-full border border-dashed rounded-xl py-5 text-sm flex items-center justify-center gap-2 transition ${dropping ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 hover:border-emerald-300 text-slate-500"}`}>
+              className={`w-full border border-dashed rounded-xl py-5 text-sm flex items-center justify-center gap-2 transition ${dropping ? "border-fetti-green bg-fetti-wash text-fetti-deep" : "border-slate-200 hover:border-fetti-green/40 text-slate-500"}`}>
               {busyDoc === "new" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} {dropping ? "Drop to upload" : "Upload another document"}
             </button>
           </div>
@@ -266,7 +266,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
                 <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
                   {docs.filter((d) => d.status === "needed" || d.status === "rejected").map((d) => (
                     <button key={d.id} onClick={async () => { const fs = pending; setPending([]); if (fs.length) await uploadMany(d.id, fs); }}
-                      className="w-full text-left text-sm px-3 py-2 rounded-lg bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700">
+                      className="w-full text-left text-sm px-3 py-2 rounded-lg bg-slate-50 hover:bg-fetti-wash hover:text-fetti-deep text-slate-700">
                       {d.name}{d.required ? "  ·  required" : ""}
                     </button>
                   ))}
@@ -281,7 +281,7 @@ export default function BorrowerFilePage({ params }: { params: Promise<{ token: 
           )}
         </div>
 
-        <p className="text-[11px] text-slate-400 mt-6 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 shrink-0 text-emerald-500/70" /> Your documents are encrypted and visible only to your Fetti loan team.</p>
+        <p className="text-[11px] text-slate-400 mt-6 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 shrink-0 text-fetti-deep/70" /> Your documents are encrypted and visible only to your Fetti loan team.</p>
         <p className="text-[10px] text-slate-400 mt-2">{LICENSING_SHORT}</p>
       </div>
     </div>

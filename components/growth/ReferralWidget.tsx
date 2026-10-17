@@ -44,10 +44,10 @@ export default function ReferralWidget({ leadId }: ReferralWidgetProps) {
     if (!leadId) return null;
 
     return (
-        <div className="bg-slate-900 border border-emerald-500/30 rounded-xl p-6 mt-6 max-w-md mx-auto text-center shadow-2xl shadow-emerald-900/20">
+        <div className="bg-slate-900 border border-fetti-green/30 rounded-xl p-6 mt-6 max-w-md mx-auto text-center shadow-2xl shadow-fetti-forest/20">
             <div className="flex justify-center mb-4">
-                <div className="bg-emerald-500/20 p-3 rounded-full">
-                    <Share2 className="w-8 h-8 text-emerald-400" />
+                <div className="bg-fetti-green/20 p-3 rounded-full">
+                    <Share2 className="w-8 h-8 text-fetti-green" />
                 </div>
             </div>
 
@@ -60,12 +60,12 @@ export default function ReferralWidget({ leadId }: ReferralWidgetProps) {
             <div className="mb-6">
                 <div className="flex justify-between text-xs text-slate-400 mb-2">
                     <span>0 Referrals</span>
-                    <span className="text-emerald-400 font-medium">{referralCount} / 3 Joined</span>
+                    <span className="text-fetti-green font-medium">{referralCount} / 3 Joined</span>
                     <span>3 Referrals</span>
                 </div>
                 <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                     <div
-                        className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
+                        className="h-full bg-gradient-to-r from-fetti-green to-fetti-green transition-all duration-500"
                         style={{ width: `${Math.min((referralCount / 3) * 100, 100)}%` }}
                     />
                 </div>
@@ -79,7 +79,7 @@ export default function ReferralWidget({ leadId }: ReferralWidgetProps) {
                 <button
                     onClick={handleCopy}
                     disabled={loading}
-                    className="p-2 hover:bg-slate-800 rounded-md transition-colors text-emerald-500 disabled:opacity-50"
+                    className="p-2 hover:bg-slate-800 rounded-md transition-colors text-fetti-deep disabled:opacity-50"
                 >
                     {copied ? <Check size={18} /> : <Copy size={18} />}
                 </button>

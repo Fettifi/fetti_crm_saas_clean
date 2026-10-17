@@ -19,11 +19,11 @@ export default function PrivacyChoices() {
         <button onClick={() => apply("essential")} className="text-sm font-medium px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
           Do Not Sell or Share — Essential cookies only
         </button>
-        <button onClick={() => apply("all")} className="text-sm font-medium px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+        <button onClick={() => apply("all")} className="text-sm font-medium px-3 py-2 rounded-lg border border-fetti-green/40 text-fetti-deep hover:bg-fetti-wash">
           Allow all cookies
         </button>
       </div>
-      {msg && <p className="text-xs text-emerald-700 mt-2">{msg}</p>}
+      {msg && <p className="text-xs text-fetti-deep mt-2">{msg}</p>}
       <p className="text-xs text-gray-500 mt-2">
         Your browser&apos;s Global Privacy Control (GPC) signal is automatically honored as an opt-out.
       </p>

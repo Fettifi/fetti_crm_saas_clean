@@ -59,7 +59,7 @@ function withLinks(text: string): React.ReactNode[] {
   while ((m = re.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
     out.push(
-      <Link key={`${m.index}`} href={m[2]} className="text-emerald-700 underline underline-offset-2 hover:text-emerald-600">
+      <Link key={`${m.index}`} href={m[2]} className="text-fetti-deep underline underline-offset-2 hover:text-fetti-deep">
         {m[1]}
       </Link>
     );
@@ -127,13 +127,13 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
             counterpart is a Google violation, so these two must always ship together. It also gives
             the deep pages their first real internal link back up to the hub. */}
         <nav aria-label="Breadcrumb" className="text-xs text-slate-500 mb-3">
-          <Link href="/" className="hover:text-emerald-600">Home</Link>
+          <Link href="/" className="hover:text-fetti-deep">Home</Link>
           <span className="mx-1.5">/</span>
-          <Link href="/lending" className="hover:text-emerald-600">Loan Programs</Link>
+          <Link href="/lending" className="hover:text-fetti-deep">Loan Programs</Link>
           <span className="mx-1.5">/</span>
           <span className="text-slate-700">{prod.label} in {state}</span>
         </nav>
-        <p className="text-emerald-600 font-mono text-sm">Lender &amp; broker · Fetti Financial Services LLC · NMLS #2267023</p>
+        <p className="text-fetti-deep font-mono text-sm">Lender &amp; broker · Fetti Financial Services LLC · NMLS #2267023</p>
         <h1 className="text-4xl font-extrabold mt-2 text-slate-900">{prod.label} in {state}</h1>
         <p className="text-slate-700 text-lg mt-4 leading-relaxed">{fill(deep?.lede || prod.intro)}</p>
         {/* Inline capture — convert organic visitors here instead of bouncing to /apply */}
@@ -149,7 +149,7 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
         <div className="space-y-3">
           {prod.bullets.map((b) => (
             <div key={b} className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-fetti-deep mt-0.5 shrink-0" />
               <span className="text-slate-700">{fill(b)}</span>
             </div>
           ))}
@@ -167,7 +167,7 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
         <h2 className="text-2xl font-bold mb-4 text-slate-900">What you&apos;ll need</h2>
         <ul className="space-y-2">
           {prod.requirements.map((r) => (
-            <li key={r} className="flex items-start gap-3 text-slate-700"><span className="text-emerald-600 mt-0.5">•</span><span>{fill(r)}</span></li>
+            <li key={r} className="flex items-start gap-3 text-slate-700"><span className="text-fetti-deep mt-0.5">•</span><span>{fill(r)}</span></li>
           ))}
         </ul>
       </section>
@@ -201,7 +201,7 @@ export default async function LendingPage({ params }: { params: Promise<{ slug: 
             </div>
           ))}
         </div>
-        <Link href={applyHrefForProduct(parsed.product)} className="inline-block mt-8 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full shadow-lg shadow-emerald-600/25 transition">
+        <Link href={applyHrefForProduct(parsed.product)} className="inline-block mt-8 bg-fetti-green hover:bg-fetti-deep text-white font-bold px-8 py-4 rounded-full shadow-lg shadow-fetti-green/25 transition">
           Get pre-qualified →
         </Link>
         <p className="text-slate-500 text-xs mt-3">No impact to your credit to get started.</p>

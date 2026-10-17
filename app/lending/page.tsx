@@ -68,7 +68,12 @@ export default function LendingIndex() {
 
       <section className="max-w-5xl mx-auto px-6 pt-14 pb-8 text-center">
         <img src="/mark-owl.png?v=vest" alt="Mark. The all-knowing Fetti owl" width={88} height={128} className="h-28 w-auto mx-auto mb-3 drop-shadow-md" />
-        <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Mark presents · Programs</p>
+        {/* The tiny-caps mono kicker was here ("MARK PRESENTS · PROGRAMS"). It had already been
+            RECOLOURED to a brand token, which is exactly the trap verify:brand-palette documents —
+            "guarding the hue of a defect is not guarding the defect" — and it survived because this
+            page was never in the guard's hand-listed roster. The heading below already says
+            "Loan programs for every goal"; a kicker that restates the heading in 12px caps is
+            decoration pretending to be structure. */}
         <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900">Loan programs for every goal</h1>
         <p className="text-slate-600 text-lg mt-4 max-w-2xl mx-auto">
           Home, investment, and business financing. All under one roof, and <span className="font-semibold text-slate-700">built for the way you actually earn</span> — qualify on bank deposits, on a property&apos;s rent, or on a full-doc file. Pick a program, or get pre-qualified in minutes.
@@ -80,14 +85,14 @@ export default function LendingIndex() {
           <div key={g.title}>
             <div className="flex items-baseline gap-3 mb-4">
               <h2 className="text-2xl font-bold text-slate-900">{g.title}</h2>
-              <span className="text-xs text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-full px-2.5 py-0.5">{g.tag}</span>
+              <span className="text-xs text-fetti-deep border border-fetti-line bg-fetti-wash rounded-full px-2.5 py-0.5">{g.tag}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {g.products.map((p) => (
                 <div key={p.slug}
-                  className="group bg-white border border-slate-200 shadow-sm hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-600/5 rounded-2xl p-5 transition flex flex-col">
+                  className="group bg-white border border-slate-200 shadow-sm hover:border-fetti-green/40 hover:shadow-lg hover:shadow-fetti-green/5 rounded-2xl p-5 transition flex flex-col">
                   <Link href={`/lending/${p.slug}-${g.state}`} className="block">
-                    <h3 className="font-bold flex items-center justify-between text-slate-900">{p.label} <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" /></h3>
+                    <h3 className="font-bold flex items-center justify-between text-slate-900">{p.label} <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-fetti-deep group-hover:translate-x-0.5 transition" /></h3>
                     <p className="text-slate-500 mt-1 text-sm">{p.blurb}</p>
                   </Link>
                   {/* Per-state links. Without these, only the 12 cards above were reachable
@@ -99,7 +104,7 @@ export default function LendingIndex() {
                   <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-x-2 gap-y-1">
                     {statesFor(p.slug, g.state).map((s) => (
                       <Link key={s} href={`/lending/${p.slug}-${s}`}
-                        className="text-[11px] text-slate-500 hover:text-emerald-600 hover:underline transition">
+                        className="text-[11px] text-slate-500 hover:text-fetti-deep hover:underline transition">
                         {stateLabel(s)}
                       </Link>
                     ))}
@@ -114,7 +119,7 @@ export default function LendingIndex() {
       <section className="max-w-3xl mx-auto px-6 py-16 text-center">
         <h2 className="text-3xl font-bold text-slate-900">Not sure which fits?</h2>
         <p className="text-slate-600 mt-3">Two minutes to pre-qualify. A specialist will point you to the right program.</p>
-        <Link href="/apply/form" className="inline-block mt-7 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-10 py-4 rounded-full text-lg shadow-lg shadow-emerald-600/25 transition">Get pre-qualified →</Link>
+        <Link href="/apply/form" className="inline-block mt-7 bg-fetti-green hover:bg-fetti-deep text-white font-bold px-10 py-4 rounded-full text-lg shadow-lg shadow-fetti-green/25 transition">Get pre-qualified →</Link>
       </section>
 
       <SiteFooter />

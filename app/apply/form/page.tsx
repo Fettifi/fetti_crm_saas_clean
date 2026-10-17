@@ -772,7 +772,7 @@ function appSteps(a: Answers): Q[] {
   return steps;
 }
 
-const field = "w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none";
+const field = "w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-fetti-green focus:outline-none";
 // OPTIONAL SMS consent (TCPA + carrier A2P/toll-free rule: agreeing to texts must NOT
 // be a condition of service). Collected via a separate, unchecked checkbox — never
 // bundled into form submission. When unchecked, we do not text the lead.
@@ -1214,17 +1214,17 @@ export default function ApplyWizard() {
     return (
       <Shell pct={100}>
         <div className="text-center">
-          <CheckCircle2 className="w-16 h-16 text-emerald-600 mx-auto mb-4" />
+          <CheckCircle2 className="w-16 h-16 text-fetti-deep mx-auto mb-4" />
           <h1 className="text-2xl font-bold">You're all set! 🎉</h1>
           <p className="text-slate-600 mt-3">
-            Based on everything you shared, a <span className="text-emerald-600 font-semibold">{prod || "loan"}</span> looks
+            Based on everything you shared, a <span className="text-fetti-deep font-semibold">{prod || "loan"}</span> looks
             like a strong fit. And your application is essentially done. A Fetti specialist will reach out shortly to confirm
             your numbers and send next steps.
           </p>
           <CediBubble center size={56} className="mt-6">We got it from here. Sit back. I&apos;ll make sure your file moves. 🌴</CediBubble>
           {fileLink ? (
             <div className="mt-7 flex flex-col items-center gap-3">
-              <a href={fileLink} className="inline-block bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3 rounded-full">
+              <a href={fileLink} className="inline-block bg-fetti-green hover:bg-fetti-deep text-white font-bold px-8 py-3 rounded-full">
                 Upload your documents securely →
               </a>
               <p className="text-xs text-slate-500 max-w-sm">This is your private, secure upload link — we&apos;ve also sent it to your email{contact.sms_consent ? " and phone" : ""}. Uploading now gets your file moving fastest.</p>
@@ -1241,11 +1241,11 @@ export default function ApplyWizard() {
   if (coach) {
     return (
       <Shell pct={pct} onBack={() => { advanceRef.current = null; setCoach(null); }}>
-        <div className="rounded-2xl bg-gradient-to-b from-emerald-500/15 to-white/0 border border-emerald-200 p-6">
-          <div className="flex items-center gap-2 text-emerald-700 font-semibold"><Lightbulb className="w-5 h-5" /> Good news. There's a path here</div>
+        <div className="rounded-2xl bg-fetti-wash border border-fetti-line p-6">
+          <div className="flex items-center gap-2 text-fetti-deep font-semibold"><Lightbulb className="w-5 h-5" /> Good news. There's a path here</div>
           <p className="text-slate-800 text-lg leading-relaxed mt-3">{coach.message}</p>
         </div>
-        <button onClick={continueCoach} className="w-full mt-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-full">
+        <button onClick={continueCoach} className="w-full mt-5 bg-fetti-green hover:bg-fetti-deep text-white font-bold py-3 rounded-full">
           Keep going →
         </button>
         <p className="text-center text-xs text-slate-400 mt-3">No obligation. We'll show you real options either way.</p>
@@ -1301,7 +1301,7 @@ export default function ApplyWizard() {
               <input name="zip" inputMode="numeric" pattern="[0-9]{5}" maxLength={5} required placeholder="Property ZIP code"
                 onChange={(e) => { const z = e.currentTarget.value.replace(/\D/g, "").slice(0, 5); e.currentTarget.value = z; setZipState(z.length === 5 ? (zipToState(z) || "") : ""); }}
                 className={`${field} flex-1`} />
-              {zipState && <span className="shrink-0 text-sm font-bold text-emerald-600 px-2" aria-label={`State: ${zipState}`}>{zipState}</span>}
+              {zipState && <span className="shrink-0 text-sm font-bold text-fetti-deep px-2" aria-label={`State: ${zipState}`}>{zipState}</span>}
             </div>
             {/* THIS FIELD IS THE SUBJECT PROPERTY'S STATE AND NOTHING ELSE.
                 Ramon, 2026-10-17, asked directly which jurisdiction governs the licence check:
@@ -1332,14 +1332,14 @@ export default function ApplyWizard() {
           {isConsumer(answers) ? (
             <p className="text-[11px] text-amber-700">Owner-occupied home loans are offered in FL, MI &amp; CA. Other states: we'll connect you with the right option.</p>
           ) : (
-            <p className="text-[11px] text-emerald-600/80">Investment &amp; business-purpose loans are available in all 50 states.</p>
+            <p className="text-[11px] text-fetti-deep/80">Investment &amp; business-purpose loans are available in all 50 states.</p>
           )}
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <label className="flex items-start gap-2 text-left cursor-pointer">
-            <input type="checkbox" name="sms_optin" className="mt-1 h-4 w-4 shrink-0 accent-emerald-600" />
+            <input type="checkbox" name="sms_optin" className="mt-1 h-4 w-4 shrink-0 accent-fetti-green" />
             <span className="text-[11px] text-slate-400 leading-relaxed">{SMS_CONSENT}</span>
           </label>
-          <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3 rounded-full">
+          <button type="submit" disabled={submitting} className="w-full bg-fetti-green hover:bg-fetti-deep disabled:opacity-60 text-white font-bold py-3 rounded-full">
             {submitting ? "Submitting…" : "See my options →"}
           </button>
           <p className="text-[11px] text-slate-400 text-center">
@@ -1357,9 +1357,9 @@ export default function ApplyWizard() {
     return (
       <Shell pct={pct} onBack={back}>
         {ai === 0 && (
-          <div className="mb-4 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-            <p className="text-xs text-emerald-700">Nice. You pre-qualify! A few quick details and your pre-approval is ready.</p>
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-fetti-wash border border-fetti-line px-3 py-2">
+            <ShieldCheck className="w-4 h-4 text-fetti-deep shrink-0" />
+            <p className="text-xs text-fetti-deep">Nice. You pre-qualify! A few quick details and your pre-approval is ready.</p>
           </div>
         )}
         <QuestionView q={q} input={input} setInput={setInput} applicantName={contact.full_name as string | undefined} onAnswer={(v) => answerApp(q.id, v, q.kind)} onSkip={q.kind !== "select" && q.kind !== "authorization" && q.kind !== "checklist" && q.kind !== "repeater" && q.optional ? () => answerApp(q.id, String((answers as Record<string, string | undefined>)[q.id] ?? ""), q.kind) : undefined} />
@@ -1386,13 +1386,13 @@ export default function ApplyWizard() {
           every downstream goal (incl. the weak refi/invest lanes). Copy only. */}
       {q.id === "goal" && (
         <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-slate-500">
-          <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> About 60 seconds</span>
-          <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> No credit pull to see options</span>
-          <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> A real specialist follows up</span>
+          <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-fetti-deep shrink-0" /> About 60 seconds</span>
+          <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-fetti-deep shrink-0" /> No credit pull to see options</span>
+          <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-fetti-deep shrink-0" /> A real specialist follows up</span>
         </div>
       )}
       {q.id === "goal" && tip && (
-        <p className="mt-4 text-xs text-emerald-700/80 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 shrink-0" /> {tip}</p>
+        <p className="mt-4 text-xs text-fetti-deep/80 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 shrink-0" /> {tip}</p>
       )}
     </Shell>
   );
@@ -1472,7 +1472,7 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
               </button>
             </div>
             <button disabled={!rows.length} onClick={() => onAnswer(JSON.stringify(rows))}
-              className="mt-3 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 py-3 transition">
+              className="mt-3 w-full bg-fetti-green hover:bg-fetti-deep disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 py-3 transition">
               {rows.length ? `Continue with ${rows.length}` : "Continue"}
             </button>
             {/* "None" is an ANSWER — it records an EMPTY schedule, which is different from a
@@ -1494,8 +1494,8 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
                 const on = picked.includes(o.value);
                 return (
                   <button key={o.value} onClick={() => toggle(o.value)}
-                    className={`text-left rounded-xl px-4 py-3 border transition flex items-start gap-3 ${on ? "border-emerald-500 bg-emerald-50" : "border-slate-200 bg-white hover:border-emerald-300"}`}>
-                    <span className={`mt-0.5 w-4 h-4 rounded border flex-none ${on ? "bg-emerald-600 border-emerald-600" : "border-slate-300"}`} />
+                    className={`text-left rounded-xl px-4 py-3 border transition flex items-start gap-3 ${on ? "border-fetti-green bg-fetti-wash" : "border-slate-200 bg-white hover:border-fetti-green/40"}`}>
+                    <span className={`mt-0.5 w-4 h-4 rounded border flex-none ${on ? "bg-fetti-green border-fetti-deep" : "border-slate-300"}`} />
                     <span className="text-[14px]">{o.label}</span>
                   </button>
                 );
@@ -1507,7 +1507,7 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
               {q.noneLabel}
             </button>
             <button disabled={!picked.length} onClick={() => onAnswer(picked.join(","))}
-              className="mt-2 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 py-3 transition">
+              className="mt-2 w-full bg-fetti-green hover:bg-fetti-deep disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 py-3 transition">
               Continue
             </button>
           </div>
@@ -1536,7 +1536,7 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
             <button
               disabled={!v.ok}
               onClick={() => onAnswer(input.replace(/\s+/g, " ").trim())}
-              className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 py-3 transition">
+              className="mt-4 w-full bg-fetti-green hover:bg-fetti-deep disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 py-3 transition">
               Sign and submit my application
             </button>
             <p className="text-[11px] text-slate-400 mt-2">Version {AUTHORIZATION_VERSION} · a copy is saved to your file and available on request.</p>
@@ -1547,7 +1547,7 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
         <div className="grid grid-cols-1 gap-2.5 mt-5">
           {q.options.map((o) => (
             <button key={o.value} onClick={() => onAnswer(o.value)}
-              className="text-left bg-white border border-slate-200 hover:border-emerald-300 hover:bg-slate-50 rounded-xl px-4 py-3.5 transition">
+              className="text-left bg-white border border-slate-200 hover:border-fetti-green/40 hover:bg-slate-50 rounded-xl px-4 py-3.5 transition">
               <span className="font-medium">{o.emoji ? `${o.emoji} ` : ""}{o.label}</span>
               {o.hint && <span className="block text-xs text-slate-400 mt-0.5">{o.hint}</span>}
             </button>
@@ -1558,7 +1558,7 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
         <div className="mt-5">
           <AddressInput value={input} onChange={setInput} placeholder={q.placeholder} />
           <button disabled={!input} onClick={() => onAnswer(input)}
-            className="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold py-3 rounded-full">Continue →</button>
+            className="w-full mt-3 bg-fetti-green hover:bg-fetti-deep disabled:opacity-40 text-white font-bold py-3 rounded-full">Continue →</button>
           {onSkip && <button onClick={onSkip} className="w-full mt-2 text-slate-400 hover:text-slate-600 text-sm">Skip for now</button>}
         </div>
       )}
@@ -1598,7 +1598,7 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
             />
           )}
           <button disabled={q.kind === "date" ? !dobISO(input) : !input} onClick={() => onAnswer(input)}
-            className="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold py-3 rounded-full">Continue →</button>
+            className="w-full mt-3 bg-fetti-green hover:bg-fetti-deep disabled:opacity-40 text-white font-bold py-3 rounded-full">Continue →</button>
           {onSkip && (
             <button onClick={onSkip} className="w-full mt-2 text-slate-400 hover:text-slate-600 text-sm">Skip for now</button>
           )}
@@ -1611,13 +1611,13 @@ function QuestionView({ q, input, setInput, onAnswer, onSkip, applicantName }: {
 function Shell({ children, pct, onBack }: { children: React.ReactNode; pct: number; onBack?: () => void }) {
   return (
     <div className="min-h-screen bg-white text-slate-900 flex flex-col">
-      <div className="h-1.5 bg-slate-50"><div className="h-1.5 bg-emerald-600 transition-all" style={{ width: `${pct}%` }} /></div>
+      <div className="h-1.5 bg-slate-50"><div className="h-1.5 bg-fetti-green transition-all" style={{ width: `${pct}%` }} /></div>
       <div className="flex-1 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-lg">
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2">
               <img src="/fetti-emblem.png" alt="Fetti Financial Services LLC logo" width={34} height={34} className="w-[34px] h-[34px]" />
-              <div className="text-emerald-600 font-extrabold">Fetti<span className="text-slate-900"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
+              <div className="text-fetti-deep font-extrabold">Fetti<span className="text-slate-900"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></div>
             </div>
             {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-900 text-sm flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Back</button>}
           </div>

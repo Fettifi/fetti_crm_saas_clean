@@ -144,7 +144,7 @@ export default function CardAuthPage({ params }: { params: Promise<{ token: stri
               </div>
 
               <label className="flex items-start gap-2 text-[13px] text-slate-700 mt-1">
-                <input type="checkbox" checked={f.consent} onChange={(e) => setF({ ...f, consent: e.target.checked })} className="accent-emerald-600 mt-0.5" />
+                <input type="checkbox" checked={f.consent} onChange={(e) => setF({ ...f, consent: e.target.checked })} className="accent-fetti-green mt-0.5" />
                 <span>I have read and agree to the authorization above, and I am the cardholder or am authorized to use this card.</span>
               </label>
               <Field label="Sign — type your full name"><input value={f.signature} onChange={(e) => setF({ ...f, signature: e.target.value })} className={inp + " font-semibold"} placeholder="Your full legal name" /></Field>

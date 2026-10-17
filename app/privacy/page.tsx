@@ -117,11 +117,11 @@ export default function PrivacyPage() {
       <div className="max-w-3xl mx-auto">
         <h1 className="text-3xl font-bold">Privacy Policy</h1>
         <p className="text-gray-500 mt-1">Last updated: {EFFECTIVE}</p>
-        <div className="mt-6 [&_p]:mt-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mt-2 [&_ul]:space-y-1 [&_li]:mt-0.5 [&_a]:text-emerald-700 [&_a]:underline [&_strong]:font-semibold [&_em]:italic text-sm leading-relaxed text-gray-800" dangerouslySetInnerHTML={{ __html: INTRO }} />
+        <div className="mt-6 [&_p]:mt-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mt-2 [&_ul]:space-y-1 [&_li]:mt-0.5 [&_a]:text-fetti-deep [&_a]:underline [&_strong]:font-semibold [&_em]:italic text-sm leading-relaxed text-gray-800" dangerouslySetInnerHTML={{ __html: INTRO }} />
         {SECTIONS.map((s, i) => (
           <section key={i} id={s.id ?? undefined} className="scroll-mt-24">
             <h2 className="text-xl font-semibold mt-8">{s.heading}</h2>
-            <div className="mt-1 [&_p]:mt-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mt-2 [&_ul]:space-y-1 [&_li]:mt-0.5 [&_a]:text-emerald-700 [&_a]:underline [&_strong]:font-semibold [&_em]:italic text-sm leading-relaxed text-gray-800" dangerouslySetInnerHTML={{ __html: s.html }} />
+            <div className="mt-1 [&_p]:mt-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mt-2 [&_ul]:space-y-1 [&_li]:mt-0.5 [&_a]:text-fetti-deep [&_a]:underline [&_strong]:font-semibold [&_em]:italic text-sm leading-relaxed text-gray-800" dangerouslySetInnerHTML={{ __html: s.html }} />
             {s.id === "choices" && <PrivacyChoices />}
           </section>
         ))}

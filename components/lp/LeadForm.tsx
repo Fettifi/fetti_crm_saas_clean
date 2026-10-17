@@ -24,7 +24,7 @@ export default function LeadForm({ config }: { config: LpConfig }) {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [propVal, setPropVal] = useState(""); // clean numeric string from CurrencyInput
-  const field = "w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none";
+  const field = "w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:border-fetti-green focus:outline-none";
   useEffect(() => { armFormShield(); }, []); // server-signed fill-time token (anti-bot)
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -65,10 +65,10 @@ export default function LeadForm({ config }: { config: LpConfig }) {
 
   if (done) return (
     <div className="text-center py-6">
-      <CheckCircle2 className="w-14 h-14 text-emerald-600 mx-auto mb-3" />
+      <CheckCircle2 className="w-14 h-14 text-fetti-deep mx-auto mb-3" />
       <h2 className="text-2xl font-bold">You&apos;re in! 🎉</h2>
       <p className="text-slate-600 mt-2">A Fetti specialist will reach out shortly with your options. No credit pull, no pressure.</p>
-      <a href={`/apply/form?utm_source=lp_${config.slug}`} className="inline-block mt-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-7 py-3 rounded-full">Finish your full pre-approval →</a>
+      <a href={`/apply/form?utm_source=lp_${config.slug}`} className="inline-block mt-5 bg-fetti-green hover:bg-fetti-deep text-white font-bold px-7 py-3 rounded-full">Finish your full pre-approval →</a>
       {leadId && (
         <div className="mt-6 pt-5 border-t border-slate-200 text-left">
           <p className="font-semibold text-slate-900 text-center text-sm">Know someone who needs a loan? Send them your link.</p>
@@ -118,10 +118,10 @@ export default function LeadForm({ config }: { config: LpConfig }) {
         )}
         {err && <p className="text-red-500 text-sm">{err}</p>}
         <label className="flex items-start gap-2 text-left cursor-pointer">
-          <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" />
+          <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-fetti-green" />
           <span className="text-[11px] text-slate-400 leading-relaxed">{SMS_CONSENT}</span>
         </label>
-        <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3.5 rounded-full text-lg shadow-lg shadow-emerald-600/25">
+        <button type="submit" disabled={submitting} className="w-full bg-fetti-green hover:bg-fetti-deep disabled:opacity-60 text-white font-bold py-3.5 rounded-full text-lg shadow-lg shadow-fetti-green/25">
           {submitting ? "Submitting…" : "See my options →"}
         </button>
         <p className="text-[11px] text-slate-400 text-center">{CONSENT} See our <a href="/privacy" className="underline hover:text-slate-600">Privacy Policy</a> &amp; <a href="/terms" className="underline hover:text-slate-600">Terms</a>.</p>

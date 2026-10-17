@@ -36,8 +36,8 @@ export default async function LandingPage({ params }: { params: Promise<{ produc
 
       <div className="max-w-5xl mx-auto px-5 py-8 lg:py-14 grid lg:grid-cols-2 gap-10 items-start">
         <div>
-          <div className="inline-flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1 text-xs font-semibold">{c.badge}</div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mt-4 leading-tight">{c.headline} <span className="text-emerald-600">{c.accent}</span></h1>
+          <div className="inline-flex items-center gap-1.5 text-fetti-deep bg-fetti-wash border border-fetti-line rounded-full px-3 py-1 text-xs font-semibold">{c.badge}</div>
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mt-4 leading-tight">{c.headline} <span className="text-fetti-deep">{c.accent}</span></h1>
           <p className="text-slate-600 text-lg mt-4">{c.subhead}</p>
           <div className="mt-6 space-y-2.5">
             {c.bullets.map((b, i) => <div key={i} className="flex items-start gap-2 text-slate-700"><span>{b}</span></div>)}

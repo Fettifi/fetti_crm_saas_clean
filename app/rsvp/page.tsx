@@ -79,7 +79,7 @@ export default function RsvpPage() {
   }
 
   const chip = (s: Rsvp["status"]) =>
-    s === "yes" ? "bg-emerald-600/80 text-white"
+    s === "yes" ? "bg-fetti-green/80 text-white"
     : s === "maybe" ? "bg-amber-600/80 text-white"
     : "bg-slate-700 text-slate-300";
 
@@ -91,7 +91,7 @@ export default function RsvpPage() {
       <div className="max-w-3xl mx-auto">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h1 className="text-2xl font-bold">Guest list</h1>
-          <a href="/rsvp/photos" className="text-sm text-emerald-400 hover:text-emerald-300">photos from the day →</a>
+          <a href="/rsvp/photos" className="text-sm text-fetti-green hover:text-fetti-gold">photos from the day →</a>
         </div>
         <p className="text-slate-400 text-sm mt-1">
           {event?.label || "Vow renewal"} · {event?.date || "September 19, 2026"}
@@ -133,14 +133,14 @@ export default function RsvpPage() {
               <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
               Text them a confirmation
             </label>
-            <button disabled={busy === "add"} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-lg px-4 py-2 text-sm font-semibold">
+            <button disabled={busy === "add"} className="bg-fetti-green hover:bg-fetti-deep disabled:opacity-50 rounded-lg px-4 py-2 text-sm font-semibold">
               {busy === "add" ? "Saving…" : "Add to list"}
             </button>
           </div>
         </form>
 
         {msg && (
-          <div className={`mt-3 text-sm rounded-lg px-3 py-2 border ${msg.ok ? "text-emerald-300 bg-emerald-950/20 border-emerald-800/40" : "text-red-300 bg-red-950/20 border-red-900/40"}`}>
+          <div className={`mt-3 text-sm rounded-lg px-3 py-2 border ${msg.ok ? "text-fetti-gold bg-fetti-forest/20 border-fetti-forest/40" : "text-red-300 bg-red-950/20 border-red-900/40"}`}>
             {msg.text}
           </div>
         )}

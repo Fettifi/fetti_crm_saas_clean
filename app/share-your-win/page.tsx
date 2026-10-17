@@ -56,13 +56,13 @@ export default function ShareYourWin() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50/60 to-white text-slate-900">
+    <div className="min-h-screen bg-gradient-to-b from-fetti-wash/60 to-white text-slate-900">
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-6">
           <Link href="/home" className="flex items-center gap-2.5">
             <img src="/fetti-emblem.png" alt="Fetti Financial Services LLC" width={32} height={32} className="h-8 w-8" />
             <span className="font-extrabold tracking-tight">
-              Fetti<span className="text-emerald-600"> Financial Services</span>
+              Fetti<span className="text-fetti-deep"> Financial Services</span>
             </span>
           </Link>
           <span className="hidden text-xs text-slate-500 sm:block">NMLS #2267023</span>
@@ -71,7 +71,7 @@ export default function ShareYourWin() {
 
       <main className="mx-auto max-w-xl px-6 py-14">
         {state === "done" ? (
-          <div className="rounded-3xl border border-emerald-200 bg-white p-10 text-center shadow-sm">
+          <div className="rounded-3xl border border-fetti-line bg-white p-10 text-center shadow-sm">
             <img src="/mark-owl.png?v=vest" alt="Mark" width={88} height={128} className="mx-auto mb-4 h-28 w-auto drop-shadow-md" />
             <h1 className="text-2xl font-bold text-slate-900">Thank you! 🦉</h1>
             <p className="mt-3 text-slate-600">
@@ -80,7 +80,7 @@ export default function ShareYourWin() {
             </p>
             <Link
               href="/home"
-              className="mt-7 inline-flex rounded-full bg-emerald-600 px-7 py-3 font-bold text-white transition hover:bg-emerald-500"
+              className="mt-7 inline-flex rounded-full bg-fetti-green px-7 py-3 font-bold text-white transition hover:bg-fetti-deep"
             >
               Back to home
             </Link>
@@ -114,7 +114,7 @@ export default function ShareYourWin() {
                 value={form.author_name}
                 onChange={(e) => setForm({ ...form, author_name: e.target.value })}
                 placeholder="Your first name + last initial (e.g. John S.)"
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-fetti-green/50 focus:outline-none focus:ring-2 focus:ring-fetti-line"
               />
               <div className="grid gap-3 sm:grid-cols-2">
                 <input
@@ -122,12 +122,12 @@ export default function ShareYourWin() {
                   value={form.author_location}
                   onChange={(e) => setForm({ ...form, author_location: e.target.value })}
                   placeholder="City, State (optional)"
-                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-fetti-green/50 focus:outline-none focus:ring-2 focus:ring-fetti-line"
                 />
                 <select
                   value={form.loan_type}
                   onChange={(e) => setForm({ ...form, loan_type: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-emerald-400 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-fetti-green/50 focus:outline-none"
                 >
                   {LOAN_TYPES.map(([v, l]) => (
                     <option key={v} value={v}>
@@ -142,7 +142,7 @@ export default function ShareYourWin() {
                 <select
                   value={form.rating}
                   onChange={(e) => setForm({ ...form, rating: Number(e.target.value) })}
-                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:border-emerald-400 focus:outline-none"
+                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:border-fetti-green/50 focus:outline-none"
                 >
                   {[5, 4, 3, 2, 1].map((r) => (
                     <option key={r} value={r}>
@@ -159,7 +159,7 @@ export default function ShareYourWin() {
                 onChange={(e) => setForm({ ...form, quote: e.target.value })}
                 placeholder="What was working with Fetti like?"
                 rows={4}
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-fetti-green/50 focus:outline-none focus:ring-2 focus:ring-fetti-line"
               />
 
               <label className="flex items-start gap-2.5 text-sm text-slate-600">
@@ -178,7 +178,7 @@ export default function ShareYourWin() {
               <button
                 type="submit"
                 disabled={state === "sending"}
-                className="w-full rounded-full bg-emerald-600 px-6 py-3 font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"
+                className="w-full rounded-full bg-fetti-green px-6 py-3 font-bold text-white transition hover:bg-fetti-deep disabled:opacity-50"
               >
                 {state === "sending" ? "Sending…" : "Share my story"}
               </button>

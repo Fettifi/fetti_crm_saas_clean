@@ -180,7 +180,7 @@ export default function SignPage({ params }: { params: Promise<{ token: string }
             <button onClick={adopt} className="mt-3 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold px-4 py-2 rounded-lg">Adopt &amp; place</button>
           </>
         )}
-        <label className="flex items-start gap-2 mt-4 text-sm text-slate-700"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1 accent-emerald-600" /><span>I agree to sign this document electronically. My electronic signature is legally binding, equivalent to a handwritten signature under the U.S. ESIGN Act and applicable UETA.</span></label>
+        <label className="flex items-start gap-2 mt-4 text-sm text-slate-700"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1 accent-fetti-green" /><span>I agree to sign this document electronically. My electronic signature is legally binding, equivalent to a handwritten signature under the U.S. ESIGN Act and applicable UETA.</span></label>
         {err && <p className="text-sm text-red-600 mt-2">{err}</p>}
         <button onClick={submit} disabled={submitting || !adopted} className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl py-3 flex items-center justify-center gap-2">{submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <PenLine className="w-5 h-5" />} Finish &amp; sign</button>
         <button onClick={decline} disabled={submitting} className="mt-2 w-full text-slate-500 hover:text-red-600 text-xs">Decline to sign</button>

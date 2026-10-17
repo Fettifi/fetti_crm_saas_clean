@@ -285,8 +285,8 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
             {/* Header */}
             <div className="bg-slate-900 p-4 border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <div className="w-10 h-10 rounded-full bg-fetti-green/10 flex items-center justify-center border border-fetti-green/20">
+                        <div className="w-2 h-2 rounded-full bg-fetti-green animate-pulse" />
                     </div>
                     <div>
                         <h2 className="font-semibold text-white">Rupee</h2>
@@ -296,7 +296,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => setIsMuted(!isMuted)}
-                        className="text-slate-500 hover:text-emerald-500 transition-colors"
+                        className="text-slate-500 hover:text-fetti-deep transition-colors"
                         title={isMuted ? "Unmute" : "Mute"}
                     >
                         {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
@@ -304,7 +304,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                     <a
                         href="/portal/login"
                         target="_blank"
-                        className="text-xs text-slate-500 hover:text-emerald-500 transition-colors flex items-center gap-1"
+                        className="text-xs text-slate-500 hover:text-fetti-deep transition-colors flex items-center gap-1"
                     >
                         Existing User? <span className="underline">Log In</span>
                     </a>
@@ -316,7 +316,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 {state.history.map((msg) => (
                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[80%] p-3 rounded-2xl ${msg.role === 'user'
-                            ? 'bg-emerald-600 text-white rounded-tr-none'
+                            ? 'bg-fetti-green text-white rounded-tr-none'
                             : 'bg-slate-900 text-slate-200 border border-slate-800 rounded-tl-none'
                             }`}>
                             {msg.content}
@@ -328,7 +328,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                                         <button
                                             key={opt}
                                             onClick={() => handleSendMessage(opt)}
-                                            className="text-xs bg-slate-800 hover:bg-emerald-600/20 hover:text-emerald-400 border border-slate-700 hover:border-emerald-500/50 text-slate-300 px-3 py-2 rounded-full transition-all"
+                                            className="text-xs bg-slate-800 hover:bg-fetti-green/20 hover:text-fetti-green border border-slate-700 hover:border-fetti-green/50 text-slate-300 px-3 py-2 rounded-full transition-all"
                                         >
                                             {opt}
                                         </button>
@@ -345,16 +345,16 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
 
                             {/* Verification Rendering */}
                             {(msg.type === 'verify_identity' || msg.type === 'verify_assets' || msg.type === 'verify_property') && (
-                                <div className="mt-3 bg-slate-950 border border-emerald-900/30 rounded-lg p-3 flex items-center gap-3">
-                                    <ShieldCheck className="text-emerald-500 w-5 h-5" />
-                                    <div className="text-xs text-emerald-400">
+                                <div className="mt-3 bg-slate-950 border border-fetti-forest/30 rounded-lg p-3 flex items-center gap-3">
+                                    <ShieldCheck className="text-fetti-deep w-5 h-5" />
+                                    <div className="text-xs text-fetti-green">
                                         {msg.type === 'verify_identity' && "Secure Identity Verification Active"}
                                         {msg.type === 'verify_assets' && "Bank-Level Encryption Active"}
                                         {msg.type === 'verify_property' && "Real-Time AVM Valuation"}
                                     </div>
                                     <button
                                         onClick={() => handleSendMessage("Verify Now")} // Simulate click
-                                        className="ml-auto text-xs bg-emerald-600 text-white px-3 py-1 rounded hover:bg-emerald-500"
+                                        className="ml-auto text-xs bg-fetti-green text-white px-3 py-1 rounded hover:bg-fetti-deep"
                                     >
                                         Connect
                                     </button>
@@ -367,7 +367,7 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                 {isTyping && (
                     <div className="flex justify-start">
                         <div className="bg-slate-900 p-3 rounded-2xl rounded-tl-none border border-slate-800">
-                            <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+                            <Loader2 className="w-4 h-4 animate-spin text-fetti-deep" />
                         </div>
                     </div>
                 )}
@@ -395,14 +395,14 @@ export default function ChatInterface({ initialProduct }: ChatInterfaceProps) {
                             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(input)}
                             placeholder={state.step === 'COMPLETE' ? "Application submitted." : "Type your answer..."}
                             disabled={state.step === 'COMPLETE' || isSubmitting}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder:text-slate-600 focus:outline-none focus:border-fetti-green/50 focus:ring-1 focus:ring-fetti-green/50 transition-all"
                         />
                     </div>
 
                     <button
                         onClick={() => handleSendMessage(input)}
                         disabled={!input.trim() || state.step === 'COMPLETE' || isSubmitting}
-                        className="p-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="p-3 bg-fetti-green hover:bg-fetti-deep text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                         <Send size={20} />
                     </button>

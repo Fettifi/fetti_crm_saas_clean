@@ -56,7 +56,7 @@ export default function LetterPage({ params }: { params: Promise<{ token: string
 
       <div className="max-w-[760px] mx-auto">
         <div className="flex justify-end gap-2 mb-3 print-hide">
-          <a href={`/api/letter/${token}/pdf`} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+          <a href={`/api/letter/${token}/pdf`} className="flex items-center gap-2 bg-fetti-green hover:bg-fetti-deep text-white text-sm font-semibold px-4 py-2 rounded-lg">
             <Download className="w-4 h-4" /> Download PDF
           </a>
           <button onClick={() => window.print()} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
@@ -72,12 +72,12 @@ export default function LetterPage({ params }: { params: Promise<{ token: string
           )}
 
           {/* Letterhead with logo */}
-          <div className="border-b-2 border-emerald-600 pb-3 flex items-end justify-between">
+          <div className="border-b-2 border-fetti-deep pb-3 flex items-end justify-between">
             <div className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/fetti-logo.png" alt="Fetti Financial Services" className="h-12 w-12 rounded-md object-contain" />
               <div>
-                <div className="text-xl font-extrabold text-emerald-700 leading-tight">Fetti Financial Services LLC</div>
+                <div className="text-xl font-extrabold text-fetti-deep leading-tight">Fetti Financial Services LLC</div>
                 <div className="text-[10px] text-slate-500">NMLS #2267023 · CA DFPI Financing Law License #60DBO-153798</div>
               </div>
             </div>
@@ -102,7 +102,7 @@ export default function LetterPage({ params }: { params: Promise<{ token: string
               different letters. There is now one list and neither renderer owns it. */}
           {sections.map((sec) => (
             <div key={sec.name} className="mt-4">
-              <div className="text-[10px] font-semibold tracking-wide text-emerald-700 uppercase mb-1">{sec.name}</div>
+              <div className="text-[10px] font-semibold tracking-wide text-fetti-deep uppercase mb-1">{sec.name}</div>
               <div className="border border-slate-200 rounded-md overflow-hidden text-[13px]">
                 {sec.rows.map((r, i) => (
                   <div key={r.key} className={`flex justify-between gap-4 px-3 py-1.5 ${i % 2 ? "bg-slate-50" : ""}`}>

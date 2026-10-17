@@ -30,7 +30,7 @@ export default async function ProductApplyPage({ params }: Props) {
     return (
         <main className="flex min-h-screen flex-col items-center justify-center p-4 md:p-24 bg-slate-950">
             <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex mb-8">
-                <p className="fixed left-0 top-0 flex w-full justify-center border-b border-slate-800 bg-gradient-to-b from-slate-900 pb-6 pt-8 backdrop-blur-2xl lg:static lg:w-auto lg:rounded-xl lg:border lg:bg-slate-900/50 lg:p-4 text-emerald-400">
+                <p className="fixed left-0 top-0 flex w-full justify-center border-b border-slate-800 bg-gradient-to-b from-slate-900 pb-6 pt-8 backdrop-blur-2xl lg:static lg:w-auto lg:rounded-xl lg:border lg:bg-slate-900/50 lg:p-4 text-fetti-green">
                     Fetti Financial Services &nbsp;
                     <span className="font-bold text-white">Loan Application</span>
                 </p>

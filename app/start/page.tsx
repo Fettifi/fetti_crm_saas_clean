@@ -33,9 +33,9 @@ export default async function StartPage({
     <div className="min-h-screen bg-slate-950 text-white">
       {/* Hero */}
       <section className="max-w-5xl mx-auto px-6 pt-16 pb-10 text-center">
-        <p className="text-emerald-400 font-mono text-sm mb-3">Fetti Financial Services</p>
+        <p className="text-fetti-green font-mono text-sm mb-3">Fetti Financial Services</p>
         <h1 className="text-4xl md:text-5xl font-extrabold leading-tight">
-          Financing built for <span className="text-emerald-400">real estate investors</span>
+          Financing built for <span className="text-fetti-green">real estate investors</span>
         </h1>
         <p className="text-slate-300 text-lg mt-5 max-w-2xl mx-auto">
           DSCR rentals, fix-and-flip, bridge, and hard money — fast pre-qualification and a
@@ -44,13 +44,13 @@ export default async function StartPage({
         <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
           <Link
             href={applyHref}
-            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-8 py-4 rounded-full text-lg"
+            className="bg-fetti-green hover:bg-fetti-green text-slate-950 font-bold px-8 py-4 rounded-full text-lg"
           >
             Get pre-qualified →
           </Link>
           <Link
             href={chatHref}
-            className="border border-slate-700 hover:border-emerald-500/50 text-slate-200 px-8 py-4 rounded-full text-lg"
+            className="border border-slate-700 hover:border-fetti-green/50 text-slate-200 px-8 py-4 rounded-full text-lg"
           >
             Chat with our AI loan coordinator
           </Link>
@@ -62,7 +62,7 @@ export default async function StartPage({
       <section className="max-w-5xl mx-auto px-6 py-10 grid grid-cols-1 md:grid-cols-3 gap-5">
         {PRODUCTS.map((p) => (
           <div key={p.name} className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6">
-            <p.icon className="w-8 h-8 text-emerald-400 mb-3" />
+            <p.icon className="w-8 h-8 text-fetti-green mb-3" />
             <h3 className="font-bold text-lg">{p.name}</h3>
             <p className="text-slate-400 mt-1 text-sm">{p.desc}</p>
           </div>
@@ -75,7 +75,7 @@ export default async function StartPage({
         <div className="space-y-3">
           {POINTS.map((pt) => (
             <div key={pt} className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 mt-0.5 shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-fetti-green mt-0.5 shrink-0" />
               <span className="text-slate-200">{pt}</span>
             </div>
           ))}
@@ -88,7 +88,7 @@ export default async function StartPage({
         <p className="text-slate-300 mt-3">Two minutes to pre-qualify. A specialist reaches out fast.</p>
         <Link
           href="/apply/form"
-          className="inline-block mt-7 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-10 py-4 rounded-full text-lg"
+          className="inline-block mt-7 bg-fetti-green hover:bg-fetti-green text-slate-950 font-bold px-10 py-4 rounded-full text-lg"
         >
           Start my application →
         </Link>
