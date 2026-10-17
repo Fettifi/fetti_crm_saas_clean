@@ -441,6 +441,19 @@ if [ -n "$ANYTS" ]; then
   fi
 fi
 
+# NO PHOTOGRAPH OF RAMON ON THE PUBLIC SITE. He said so plainly on 2026-10-17 — "Don't put my
+# actual picture on the website" — and /about was already carrying it. Every creative direction for
+# a lender's homepage reaches for a founder photo eventually; it is the standard answer to "this
+# page has no people on it", which is a real and documented weakness of the current design. A
+# preference stated once in conversation does not survive that. A failing build does.
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:no-founder-photo"
+  OUT=$(npm run --silent verify:no-founder-photo 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:no-founder-photo"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 # A DROPPED CALL MUST NAME WHAT ENDED IT. 2026-10-17: 83 of 160 phone messages said "AI connection
 # dropped" and NOT ONE said "caller disconnected" — four months, a business line, nobody ever hung
 # up. The honest branch was unreachable: Twilio's `stop` closed the OpenAI socket synchronously, so

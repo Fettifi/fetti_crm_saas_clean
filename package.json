@@ -156,7 +156,8 @@
     "verify:rate-limiter": "tsx scripts/verify-rate-limiter.ts",
     "verify:letter-expiry": "tsx scripts/verify-letter-expiry.ts",
     "verify:config-number": "tsx scripts/verify-config-number.ts",
-    "verify:voice-salvage": "tsx scripts/verify-voice-salvage-reason.ts"
+    "verify:voice-salvage": "tsx scripts/verify-voice-salvage-reason.ts",
+    "verify:no-founder-photo": "tsx scripts/verify-no-founder-photo.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

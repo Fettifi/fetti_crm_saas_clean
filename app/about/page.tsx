@@ -50,13 +50,13 @@ export default function AboutPage() {
         </ul>
 
         <h2 className={H2}>Ramon Dent — founder</h2>
-        <img
-          src="/ramon-dent.jpg"
-          alt="Ramon Dent, founder of Fetti Financial Services LLC"
-          width={192}
-          height={240}
-          className="float-right ml-6 mb-3 w-40 sm:w-48 rounded-2xl shadow-lg object-cover"
-        />
+        {/* NO PHOTOGRAPH OF RAMON ON ANY PUBLIC PAGE.
+            Ramon, 2026-10-17, plainly: "Don't put my actual picture on the website."
+            This page carried /ramon-dent.jpg floated right here until that instruction; it is
+            removed rather than left, because the instruction is about the end state and not only
+            about the homepage I had been proposing it for. The asset stays in /public — it is used
+            internally — and `npm run verify:no-founder-photo` fails if it reappears on any public
+            route. Restoring it is one line plus deleting that guard, if he ever changes his mind. */}
         <p className="text-slate-700 leading-relaxed">
           Ramon Dent founded Fetti Financial Services to make financing straightforward and honest. He leads the firm as
           a licensed mortgage professional (NMLS #2235992), focused on matching each borrower to the right structure —
