@@ -1,8 +1,6 @@
 import Link from "next/link";
 import {
-  Home as HomeIcon, RefreshCw, Building2, TrendingUp, Zap, Briefcase, Landmark,
-  CheckCircle2, ArrowRight, ShieldCheck, Headphones, Sparkles, BadgeCheck, Lock,
-  Scale, Rocket, Award, HeartHandshake, X,
+  Home as HomeIcon, RefreshCw, Building2, TrendingUp, Zap, Briefcase, Landmark, ArrowRight,
 } from "lucide-react";
 import { LICENSING_NOTE } from "@/lib/legal";
 import { indexableGuides } from "@/lib/seoIndexable";
@@ -97,18 +95,7 @@ const CONTRAST = [
   { them: "Income has to arrive on two W-2s", us: "Built for income that arrives any other way" },
 ];
 
-const AUDIENCE = [
-  { icon: HomeIcon, title: "Homebuyers & families", desc: "First-time or move-up. We make the biggest purchase of your life feel handled." },
-  { icon: TrendingUp, title: "Real-estate investors", desc: "DSCR, flips, bridge, BRRRR. Financing built to scale a portfolio, not slow it down." },
-  { icon: Briefcase, title: "Self-employed & 1099", desc: "Bank statements over tax returns. We speak entrepreneur because we are one." },
-  { icon: Landmark, title: "Business owners", desc: "Working capital, CRE, SBA. Capital to start, run, and grow." },
-];
 
-const STEPS = [
-  { n: "01", icon: Sparkles, title: "Tell us your goal", desc: "Two-minute pre-qualification. Purchase, refinance, investment, or business. No credit pull to start." },
-  { n: "02", icon: Headphones, title: "A specialist reaches out", desc: "A real loan expert reviews your scenario and maps the path — including the ones that take more than a template." },
-  { n: "03", icon: BadgeCheck, title: "Get funded", desc: "We move fast, keep you updated at every step, and get you to the closing table." },
-];
 
 
 const FAQ = [
@@ -415,48 +402,31 @@ export default async function MarketingHome() {
         </Well>
       </Section>
 
-      {/* ───────────── 05 PROCESS — one literal rule with nodes on it ───────────── */}
+      {/* ───────────── WHAT HAPPENS NEXT ──────────────────────────────────────────────────
+          NO NUMERALS. This section carried "01 02 03" in mono at 44px, which is precisely what
+          Ramon named: *"It's numbered on the side like it's still in production being built
+          status."* A step list does not need to be enumerated — the reading order already is the
+          order, and a 44px numeral competes with the heading that actually says something.
+
+          The copy moves into the borrower's second person too. "A specialist reaches out" is an
+          org chart; "A person reads it — not a form" is the thing they are actually afraid of not
+          getting. Three columns over one rule, nothing else. ───────────────────────────────── */}
       <Section>
         <Well>
           <h2 className="max-w-[16ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
-            How it works.
+            What happens next.
           </h2>
-          <div className="relative mt-16">
-            <span aria-hidden className="absolute left-0 right-0 top-[4.5rem] hidden h-px bg-fetti-line lg:block" />
-            <div className="grid grid-cols-1 gap-12 lg:grid-cols-3 lg:gap-6">
-              {STEPS.map((s) => (
-                <div key={s.n} className="relative">
-                  <p className="font-mono text-[44px] font-medium leading-none tracking-[-0.01em] text-fetti-ink">
-                    {s.n}
-                  </p>
-                  <span aria-hidden className="mt-7 hidden h-[9px] w-[9px] bg-fetti-green lg:block" />
-                  <h3 className="mt-6 font-display text-[20px] font-semibold tracking-[-0.012em]">{s.title}</h3>
-                  <p className="mt-2 max-w-[42ch] text-[15px] leading-[1.58] text-fetti-body">{s.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Well>
-      </Section>
-
-      {/* ───────────── 06 WHO WE BUILD FOR — the only section using VERTICAL rules, which is
-          exactly why it cannot be confused with 02. ───────────── */}
-      <Section>
-        <Well>
-          <h2 className="max-w-[18ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
-            Built for how you actually earn.
-          </h2>
-          <div className="mt-14 grid grid-cols-1 gap-y-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-x-0">
-            {AUDIENCE.map((a, i) => (
-              <div
-                key={a.title}
-                className={`lg:px-6 ${i === 0 ? "lg:pl-0" : "lg:border-l lg:border-fetti-line"}`}
-              >
-                <p className="font-mono text-[12px] font-medium tracking-[0.04em] text-fetti-muted">
-                  {String(i + 1).padStart(2, "0")}
-                </p>
-                <h3 className="mt-3 font-display text-[20px] font-semibold tracking-[-0.012em]">{a.title}</h3>
-                <p className="mt-2 text-[15px] leading-[1.58] text-fetti-body">{a.desc}</p>
+          <div className="mt-14 grid grid-cols-1 gap-10 border-t border-fetti-line pt-10 lg:grid-cols-3 lg:gap-8">
+            {[
+              ["You tell us how you earn.", "Two minutes. No credit pull, and no documents to dig up yet."],
+              ["A person reads it — not a form.", "Someone licensed looks at your actual situation before anyone asks you for a single statement."],
+              ["We bring you what fits — and say so if nothing does.", "You get a straight answer either way, and we will tell you which way it is."],
+            ].map(([title, desc]) => (
+              <div key={title}>
+                <h3 className="font-display text-[20px] font-semibold leading-[1.25] tracking-[-0.012em] text-fetti-ink">
+                  {title}
+                </h3>
+                <p className="mt-3 max-w-[42ch] font-serif text-[16px] leading-[1.6] text-fetti-body">{desc}</p>
               </div>
             ))}
           </div>
