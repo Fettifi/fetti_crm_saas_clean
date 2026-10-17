@@ -46,15 +46,12 @@ export async function SocialProofWall({
       );
     }
     return (
-      <section className="border-t border-slate-100 bg-white">
-        <div className="mx-auto max-w-5xl px-6 py-14 text-center">
-          <p className="mb-3 font-mono text-xs uppercase tracking-widest text-emerald-600">
-            Licensed · Regulated · Real
-          </p>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+      <section className="border-t border-fetti-line bg-white">
+        <div className="mx-auto max-w-5xl px-6 py-14">
+          <h2 className="font-display text-[clamp(28px,3.2vw,40px)] font-semibold leading-[1.05] tracking-[-0.028em] text-fetti-ink">
             A licensed lender built to get it done.
           </h2>
-          <p className="mx-auto mt-3 max-w-xl text-slate-500">
+          <p className="mx-auto mt-3 max-w-xl text-fetti-muted">
             Fully licensed and regulated — and built for the way you actually earn. Start in two minutes, no credit impact.
           </p>
           <div className="mt-8">
@@ -69,7 +66,7 @@ export async function SocialProofWall({
   const wrap =
     variant === "compact"
       ? "mx-auto max-w-6xl px-6 py-10"
-      : "mx-auto max-w-6xl px-6 py-20 border-t border-slate-100";
+      : "mx-auto max-w-6xl px-6 py-20 border-t border-fetti-line";
   const grid =
     items.length === 1
       ? "grid max-w-xl mx-auto grid-cols-1 gap-5"
@@ -79,20 +76,17 @@ export async function SocialProofWall({
 
   return (
     <section className={wrap}>
-      <div className="mx-auto mb-10 max-w-2xl text-center">
-        <p className="mb-3 font-mono text-xs uppercase tracking-widest text-emerald-600">
-          Real clients · real reviews
-        </p>
-        <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+      <div className="mb-10 max-w-2xl">
+        <h2 className="font-display text-[clamp(30px,3.6vw,46px)] font-semibold leading-[1.02] tracking-[-0.028em] text-fetti-ink">
           {heading || "Don't take our word for it."}
         </h2>
-        {subheading ? <p className="mt-3 text-slate-500">{subheading}</p> : null}
+        {subheading ? <p className="mt-3 text-fetti-muted">{subheading}</p> : null}
         {showRating ? (
-          <div className="mt-5 inline-flex items-center gap-2.5 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
+          <div className="mt-5 inline-flex items-center gap-2.5 rounded-[4px] border border-fetti-line bg-white px-4 py-2">
             <StarRating value={data.rating as number} />
-            <span className="text-sm font-semibold text-slate-900">{(data.rating as number).toFixed(1)}</span>
-            <span className="text-sm text-slate-400">·</span>
-            <span className="text-sm text-slate-500">
+            <span className="text-sm font-semibold text-fetti-ink">{(data.rating as number).toFixed(1)}</span>
+            <span className="text-sm text-fetti-muted">·</span>
+            <span className="text-sm text-fetti-muted">
               {data.count} Google {data.count === 1 ? "review" : "reviews"}
             </span>
           </div>
@@ -109,7 +103,7 @@ export async function SocialProofWall({
         <TrustBadgeRow />
       </div>
 
-      <p className="mx-auto mt-6 max-w-3xl text-center text-[11px] leading-relaxed text-slate-400">
+      <p className="mx-auto mt-6 max-w-3xl text-center text-[11px] leading-relaxed text-fetti-muted">
         Reviews are from real Google customers. Client wins are shared with the borrower&apos;s permission and
         reflect individual experiences — not a guarantee of future results. This is an advertisement, not a
         commitment to lend; all loans are subject to credit approval and program guidelines.

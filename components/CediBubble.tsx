@@ -13,11 +13,11 @@ export function CediBubble({
         width={Math.round(size * 0.69)}
         height={size}
         style={{ height: size, width: "auto" }}
-        className="shrink-0 drop-shadow-md"
+        className="shrink-0 drop-"
       />
-      <div className="relative min-w-0 max-w-[15rem] sm:max-w-sm rounded-2xl rounded-bl-sm border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-left text-sm font-medium text-slate-700 shadow-sm">
+      <div className="relative min-w-0 max-w-[15rem] sm:max-w-sm rounded-[4px] rounded-bl-sm border border-fetti-line bg-fetti-wash px-4 py-2.5 text-left text-sm font-medium text-fetti-body ">
         {children}
-        <span aria-hidden className="absolute -left-1.5 bottom-3 h-3 w-3 rotate-45 border-b border-l border-emerald-100 bg-emerald-50" />
+        <span aria-hidden className="absolute -left-1.5 bottom-3 h-3 w-3 rotate-45 border-b border-l border-fetti-line bg-fetti-wash" />
       </div>
     </div>
   );

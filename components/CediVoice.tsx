@@ -23,7 +23,7 @@ export function CediVoice({ className = "" }: { className?: string }) {
     <button
       type="button"
       onClick={toggle}
-      className={`inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50 ${className}`}
+      className={`inline-flex items-center gap-2 rounded-full border border-fetti-line bg-white px-4 py-2 text-sm font-semibold text-fetti-deep  transition hover:bg-fetti-wash ${className}`}
     >
       {playing ? <Pause className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
       {playing ? "Mark's talking…" : "🔊 Hear Mark"}

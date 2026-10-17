@@ -53,12 +53,49 @@ ck("the wrong gold #ffcc33 is not a live value", !/#ffcc33/i.test(cfg));
 ck("…and the config still EXPLAINS what it replaced, so nobody reintroduces it",
    /#00ff99/i.test(cfgRaw) && /emblem/i.test(cfgRaw));
 
-// ── 2. the public pages
-const PUBLIC_PAGES = [
+// ── 2. the public pages — AND EVERYTHING THEY RENDER.
+//
+// THIS GUARD GAVE A FALSE GREEN ON ITS FIRST DAY, and the lesson is the familiar one: I guarded
+// three hand-listed FILES instead of the thing a visitor actually sees. app/home/page.tsx measured
+// 0 emerald, 0 slate, 0 pills — genuinely clean — while four components it renders did not:
+//   HeroCapture 11 emerald / 9 slate / 4 pills · SocialProofWall 2 / 11 / 1
+//   CediBubble   4 /  1 / 1              · CediVoice       3 / 0 / 1
+// Worse, SocialProofWall lines 51 and 83 still rendered
+//   font-mono text-xs uppercase tracking-widest text-emerald-600
+// — the EXACT eyebrow this redesign exists to delete — on the homepage, while the guard reported
+// the homepage clean. A near-monochrome ruled document with 2021-SaaS pill widgets dropped into it
+// reads WORSE than the original, because the inconsistency is legible.
+//
+// So the roster is now DERIVED: start at the public entry points and follow local imports one hop,
+// which is where rendered components live. A file added to the page is covered automatically.
+const ENTRY_POINTS = [
   "app/home/page.tsx",
   "components/SiteHeader.tsx",
   "components/SiteFooter.tsx",
 ];
+
+function localImportsOf(file: string): string[] {
+  let src: string;
+  try { src = readFileSync(file, "utf8"); } catch { return []; }
+  const out: string[] = [];
+  for (const m of src.matchAll(/from\s+["']@\/([^"']+)["']/g)) {
+    const base = m[1];
+    for (const ext of [".tsx", ".ts"]) {
+      for (const cand of [`${base}${ext}`, `${base}/index${ext}`]) {
+        try { if (statSync(cand).isFile()) { out.push(cand); } } catch { /* not this one */ }
+      }
+    }
+  }
+  return out;
+}
+
+// One hop from each entry point, plus the entry points themselves. Deliberately not the whole
+// transitive graph: lib/ modules carry no class names, and chasing them only adds noise.
+const PUBLIC_PAGES = [...new Set([
+  ...ENTRY_POINTS,
+  ...ENTRY_POINTS.flatMap(localImportsOf).filter((f) => f.startsWith("components/")),
+])];
+console.log(`  (roster: ${PUBLIC_PAGES.length} file(s) — entry points plus what they render)\n`);
 
 let stockHits = 0;
 const offenders: string[] = [];
@@ -84,6 +121,35 @@ for (const f of PUBLIC_PAGES) {
 }
 ck("no gradient-clipped headline text (the template signature)", gradientText === 0,
    gradientText ? `${gradientText} occurrence(s)` : "");
+
+// ── 3b. THE EYEBROW, which is a DEVICE and not a colour — and this check exists because the guard
+// went green over it once already. After the redesign I recoloured
+//   font-mono text-xs uppercase tracking-widest text-emerald-600   ->   ...text-fetti-deep
+// and the colour check passed while the tiny-caps mono kicker — the single clearest template tell,
+// repeated seven times on the old page — was still rendering on the homepage via SocialProofWall.
+// Guarding the hue of a defect is not guarding the defect.
+//
+// THE MONO LAW this enforces: IBM Plex Mono carries only a number, a code, a jurisdiction, an index
+// or a unit. It is never a section kicker and never a sentence. That rule is what structurally
+// denies the eyebrow anywhere to live. Mono data labels are short and are NOT caught by this,
+// because the pattern requires the full tiny-caps-kicker stack.
+let eyebrows = 0;
+const eyebrowFiles: string[] = [];
+for (const f of PUBLIC_PAGES) {
+  let src: string;
+  try { src = strip(readFileSync(f, "utf8")); } catch { continue; }
+  let n = 0;
+  for (const cls of src.match(/className="[^"]*"/g) || []) {
+    const isMono = /\bfont-mono\b/.test(cls);
+    const isTiny = /\btext-(xs|\[1[0-2]px\])\b/.test(cls);
+    const isCaps = /\buppercase\b/.test(cls);
+    const isTracked = /\btracking-(widest|wider)\b/.test(cls);
+    if (isMono && isTiny && isCaps && isTracked) n++;
+  }
+  if (n) { eyebrows += n; eyebrowFiles.push(`${f}: ${n}`); }
+}
+ck("no tiny-caps mono eyebrow kickers (the device, not the colour)", eyebrows === 0,
+   eyebrows ? `${eyebrows} — ${eyebrowFiles.join(" · ")}` : "");
 
 // ── 4. his mark, never a generated one
 const home = (() => { try { return readFileSync("app/home/page.tsx", "utf8"); } catch { return ""; } })();

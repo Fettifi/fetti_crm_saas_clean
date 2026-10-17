@@ -74,33 +74,33 @@ export default function HeroCapture({ source = "homepage_hero" }: { source?: str
   }
 
   if (done) return (
-    <div className="mt-9 max-w-md mx-auto bg-emerald-50 border border-emerald-200 rounded-2xl p-6">
+    <div className="mt-9 max-w-md mx-auto bg-fetti-wash border border-fetti-line rounded-[4px] p-6">
       <div className="text-center">
         <div className="text-3xl mb-1">🎉</div>
-        <p className="font-bold text-lg text-slate-900">Got it — you&apos;re in the door.</p>
+        <p className="font-bold text-lg text-fetti-ink">Got it — you&apos;re in the door.</p>
         {/* Say plainly that there IS more, and how much. Someone who was told "go fill out
             an application" must not read this as finished. */}
-        <p className="text-slate-600 text-sm mt-1">
+        <p className="text-fetti-body text-sm mt-1">
           Next: finish your application so we can pull real numbers. About 2 minutes, no credit pull.
         </p>
         <Link
           href={applyHrefForProduct(source)}
-          className="inline-block mt-4 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-3.5 rounded-full shadow-lg shadow-emerald-600/25 transition"
+          className="inline-block mt-4 w-full bg-fetti-deep hover:bg-fetti-deep text-white font-bold px-8 py-3.5 rounded-full   transition"
         >
           Finish your application →
         </Link>
-        <p className="text-slate-500 text-xs mt-2">Or sit tight — a specialist will reach out either way.</p>
+        <p className="text-fetti-muted text-xs mt-2">Or sit tight — a specialist will reach out either way.</p>
       </div>
       {leadId && (
-        <div className="mt-5 pt-5 border-t border-emerald-200 text-left">
-          <p className="font-semibold text-slate-900 text-center">Know someone who needs a loan? Send them your link.</p>
+        <div className="mt-5 pt-5 border-t border-fetti-line text-left">
+          <p className="font-semibold text-fetti-ink text-center">Know someone who needs a loan? Send them your link.</p>
           <ReferShare code={referralCode(leadId)} />
         </div>
       )}
     </div>
   );
 
-  const field = "w-full bg-white border border-slate-300 rounded-full px-5 py-3.5 text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none text-base";
+  const field = "w-full bg-white border border-fetti-line rounded-full px-5 py-3.5 text-fetti-ink placeholder-slate-400 focus:border-fetti-line focus:outline-none text-base";
   return (
     <form onSubmit={submit} className="mt-9 max-w-md mx-auto">
       <input type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: "absolute", left: "-9999px" }} />
@@ -110,14 +110,14 @@ export default function HeroCapture({ source = "homepage_hero" }: { source?: str
       </div>
       <input name="email" type="email" placeholder="Email (optional)" className={`${field} mt-2.5`} />
       <label className="flex items-start gap-2 mt-2.5 text-left cursor-pointer">
-        <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" />
-        <span className="text-[10px] text-slate-400 leading-relaxed">{SMS_CONSENT}</span>
+        <input type="checkbox" name="sms_optin" className="mt-0.5 h-4 w-4 shrink-0 accent-fetti-deep" />
+        <span className="text-[10px] text-fetti-muted leading-relaxed">{SMS_CONSENT}</span>
       </label>
-      <button type="submit" disabled={busy} className="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold px-8 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">
+      <button type="submit" disabled={busy} className="w-full mt-3 bg-fetti-deep hover:bg-fetti-deep disabled:opacity-60 text-white font-bold px-8 py-4 rounded-full text-lg transition">
         {busy ? "Sending…" : "See what you qualify for →"}
       </button>
       {err && <p className="text-red-500 text-sm mt-2 text-center">{err}</p>}
-      <p className="text-[10px] text-slate-400 text-center mt-2 leading-relaxed">{CONSENT}</p>
+      <p className="text-[10px] text-fetti-muted text-center mt-2 leading-relaxed">{CONSENT}</p>
     </form>
   );
 }
