@@ -409,3 +409,66 @@ This is the shape §5 says governs the compounding rate, and it is applied in tw
 | `READS` non-watchers | `desk-run.mjs` | `verify-desk-reads` covers `*-watch.mjs` only — a stated limit, not silent coverage |
 
 Recorded as the memory `a-registry-must-enumerate-its-own-surface`.
+
+---
+
+## PART 4 — Build 2 unblocked, 2026-10-17 14:2x–14:34Z
+
+### The open question is answered, and the code already agreed
+
+Part 2 §3 #2 made Build 2 conditional on one thing only: *"is the `state` fed to `licenceCheck` the
+subject property's state or the borrower's mailing state?"* — because moving an incorrectly-aimed gate
+closer to the act makes it worse, not better.
+
+**Ramon, 2026-10-17: "It's the subject property state."** Recorded to the fact ledger under
+`Fetti licence gate / jurisdiction basis`.
+
+Verified against the tree rather than assumed: `app/apply/form/page.tsx:1301` labels the field
+**"Property ZIP code"**, and the hidden `state` input is derived from it via `zipToState`. There is no
+state dropdown. So the gate has been reading the right jurisdiction all along, and the audit's open
+question resolves in Fetti's favour.
+
+### But the fallback on that field answered a different question — FIXED, `8cc60fb`, live
+
+The hidden input read `value={zipState || prefill?.state || ""}`. `prefill.state` is `leads.state`
+(`app/api/apply/prefill/route.ts:50`) — whatever an earlier marketing form captured, which is normally
+where the **borrower** is, not where the **property** is.
+
+As a cosmetic stand-in "until a ZIP is typed" that is harmless. The problem is that `zip` is
+`required`, so the only way the fallback survives to submit is when a ZIP **was** typed and
+`zipToState` could not map it.
+
+Measured, not estimated: `lib/pricer.ts:48` covers **943 of 1000** three-digit prefixes and returns
+`null` for **57** — including **Puerto Rico (006–009)**, **Guam and Micronesia (969)** and **APO/FPO
+(090–099, 962–966)**.
+
+So a San Juan purchase, arriving on a magic link whose lead row said CA, produced a **consumer
+application whose licence check read "CA" and passed.** Fetti is not licensed in Puerto Rico.
+
+**Why the fix is a one-liner and still correct:** dropping the fallback creates no gap, it restores
+one that already fails properly. `lib/licensedStates.ts:71` treats an empty state as NOT OK — *"No
+state on the application, and this reads as owner-occupied… confirm the state before anyone works
+it."* An unmapped ZIP now reaches that branch instead of borrowing a plausible wrong answer. **A
+missing jurisdiction must read as missing.**
+
+`verify:licensed-states` gained two halves so they fail independently — a static check that the field
+is ZIP-derived with no `prefill` and that the ZIP is asked as the property's, and a behavioural walk of
+the whole chain (ZIP → state → verdict) across LA, Miami, the real Georgia FHA+DPA case, and San Juan
+/ Guam / APO. Plus the check that keeps the fix honest: **an unmappable ZIP on a DSCR still passes**,
+because business-purpose is nationwide and must not become collateral damage from closing a consumer
+hole.
+
+Sabotage-proven: restoring the fallback turns the guard red *with the reason*; removing it turns it
+green. `npm run build` green, 49/49 hook suite green, pushed, and `deploy-watch` confirms
+**`main 8cc60fb is live (ready)`** at 14:33:54Z.
+
+*(An exit code was misread once on the way: `node deploy-watch.mjs | tail` returns `tail`'s status, not
+the guard's — the exact zsh trap the desk brief warns about. Re-read unpiped before believing it.)*
+
+### Still outstanding on Build 2
+
+The input is now right; the gate is still **advisory**. The remaining work — moving the refusal onto
+`lib/los.ts`'s file-creation functions so all six paths inherit it, a durable refused state that
+`lib/selfheal.ts` cannot swallow, the borrower-upload path not losing a document, reconciling the two
+classifiers, rendering `licence_block`, and the Reg B / ECOA §1002.9 exit — is being designed against
+the live call graph now, with every claim adversarially verified before anything is written.
