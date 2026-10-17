@@ -159,7 +159,7 @@ export default async function MarketingHome() {
 
       {/* ───────────── 01 HERO — asymmetric 7/4. The facts panel does the stats job and the
           compliance job at once, which retires the centred four-up stat bar. ───────────── */}
-      <Section index="01" fact="NO CREDIT PULL" pad="pt-20 pb-24 lg:pt-24 lg:pb-28">
+      <Section pad="pt-20 pb-24 lg:pt-24 lg:pb-28">
         <Well>
           <div className="grid grid-cols-1 lg:grid-cols-12 lg:gap-x-6">
             <div className="lg:col-span-7">
@@ -249,7 +249,7 @@ export default async function MarketingHome() {
       </Section>
 
       {/* ───────────── 02 PROGRAMS — a ruled table, not a deck of cards ───────────── */}
-      <Section index="02" fact="CA · FL · MI / ALL 50 — INVESTMENT ONLY">
+      <Section>
         <Well>
           <h2 className="max-w-[18ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
             Start with your scenario.
@@ -319,7 +319,7 @@ export default async function MarketingHome() {
 
       {/* ───────────── 03 THE DIFFERENCE — a paired ledger read across a shared rule.
           De-emphasis is pure colour value: no X icons, no check icons, no badges. ───────────── */}
-      <Section index="03">
+      <Section>
         <Well>
           <h2 className="max-w-[20ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
             We find the program that fits it.
@@ -346,7 +346,7 @@ export default async function MarketingHome() {
 
       {/* ───────────── 04 AUTHORITY — the serif section. The TYPEFACE CHANGE is the section
           break: no band, no background, no border. ───────────── */}
-      <Section index="04" fact="NMLS 2267023" pad="py-28 lg:py-36">
+      <Section pad="py-28 lg:py-36">
         <Well>
           <div className="grid grid-cols-1 lg:grid-cols-12 lg:gap-x-6">
             <div className="lg:col-span-8 lg:col-start-3">
@@ -368,7 +368,7 @@ export default async function MarketingHome() {
       </Section>
 
       {/* ───────────── 05 PROCESS — one literal rule with nodes on it ───────────── */}
-      <Section index="05">
+      <Section>
         <Well>
           <h2 className="max-w-[16ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
             How it works.
@@ -393,7 +393,7 @@ export default async function MarketingHome() {
 
       {/* ───────────── 06 WHO WE BUILD FOR — the only section using VERTICAL rules, which is
           exactly why it cannot be confused with 02. ───────────── */}
-      <Section index="06">
+      <Section>
         <Well>
           <h2 className="max-w-[18ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
             Built for how you actually earn.
@@ -416,7 +416,7 @@ export default async function MarketingHome() {
       </Section>
 
       {/* ───────────── 07 QUESTIONS ───────────── */}
-      <Section index="07" fact="NOT A COMMITMENT TO LEND">
+      <Section>
         <Well>
           <h2 className="max-w-[16ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
             Straight answers.
@@ -440,7 +440,7 @@ export default async function MarketingHome() {
         </Well>
       </Section>
 
-      <Section index="08" pad="pt-4 pb-20">
+      <Section pad="pt-4 pb-20">
         <Well>
           <SocialProofWall />
         </Well>
