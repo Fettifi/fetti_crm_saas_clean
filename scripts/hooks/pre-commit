@@ -361,6 +361,18 @@ fi
 # shipped D.1 and A.1 blank while an imported one kept them. This asserts the metric a reader acts
 # on — a fully-answered application yields FIFTEEN — and reads the wizard's own source, so adding a
 # declaration without adding a way to answer it goes red here instead of at a lender.
+# THE PUBLIC SITE MUST WEAR RAMON'S BRAND, NOT TAILWIND'S DEFAULTS. 2026-10-17: the marketing
+# pages used stock emerald-600 in 90 places and the emblem-sampled brand green #309C30 in zero,
+# with the hero gradient running emerald -> teal, a colour the brand does not contain. That is the
+# measurable form of "this looks AI-built". Guards the identity, never the art direction.
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:brand-palette"
+  OUT=$(npm run --silent verify:brand-palette 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:brand-palette"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$ANYTS" ]; then
   printf "   %-24s " "verify:decl-capture"
   OUT=$(npm run --silent verify:declaration-capture 2>&1)
