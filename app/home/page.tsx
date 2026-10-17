@@ -281,39 +281,68 @@ export default async function MarketingHome() {
             actually earn, then match a program to that.
           </p>
 
-          <div className="mt-12 border-t border-fetti-rule">
-            {PROGRAM_ROWS.map((p) => (
-              <Link
-                key={p.href}
-                href={p.href}
-                className="group grid grid-cols-12 items-center gap-x-4 border-b border-fetti-line py-6 transition-colors hover:bg-[#FAFCFA]"
+          {/* CATEGORY CARDS, NOT A ROW TABLE.
+              This was twelve ruled rows with a jurisdiction column on the right — a catalogue you
+              audit rather than products you want. The data already carried an `icon` per item and
+              the flattening into PROGRAM_ROWS was throwing it away.
+
+              The licensing footprint survives and is MORE legible, not less: it sits as a badge on
+              each card, where "CA · FL · MI" reads as a fact about that product instead of a column
+              header. Owner-occupied and all-50 can never be blurred because they are attached to
+              different cards. */}
+          <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
+            {CATEGORIES.map((c) => (
+              <div
+                key={c.title}
+                className="group relative flex flex-col rounded-2xl border border-fetti-line bg-white p-7 transition-all duration-200 hover:border-fetti-green/40 hover:shadow-[0_12px_40px_-12px_rgba(15,61,22,0.18)]"
               >
-                <span aria-hidden className="col-span-12 -mb-6 h-0 w-0 lg:col-span-0" />
-                <span className="col-span-8 lg:col-span-3">
-                  <span className="block font-display text-[20px] font-semibold leading-[1.25] tracking-[-0.012em]">
-                    {p.name}
-                  </span>
-                  <span className="mt-1 block font-mono text-[12px] font-medium tracking-[0.04em] text-fetti-muted lg:hidden">
-                    {p.jurisdiction}
-                  </span>
+                {/* Badge ABOVE the title: side by side it squeezed every heading onto two lines
+                    ("Home / Loans"), which reads as a broken card rather than a designed one. */}
+                <span className="self-start rounded-full bg-fetti-wash px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-fetti-deep">
+                  {c.state === "usa" ? "All 50 states" : "CA · FL · MI"}
                 </span>
-                <span className="col-span-12 mt-2 text-[15px] leading-[1.58] text-fetti-body lg:col-span-6 lg:mt-0">
-                  {p.desc}
-                </span>
-                <span className="col-span-3 hidden font-mono text-[12px] font-medium tracking-[0.04em] text-fetti-muted lg:col-span-2 lg:block">
-                  {p.jurisdiction}
-                </span>
-                <span className="col-span-1 justify-self-end text-fetti-muted transition-colors group-hover:text-fetti-ink">
-                  <ArrowRight className="h-4 w-4" />
-                </span>
-              </Link>
+                <h3 className="mt-4 font-display text-[23px] font-semibold leading-[1.15] tracking-[-0.02em] text-fetti-ink">
+                  {c.title}
+                </h3>
+
+                <p className="mt-2.5 text-[15px] leading-[1.6] text-fetti-body">{c.blurb}</p>
+
+                <ul className="mt-6 space-y-1 border-t border-fetti-line pt-4">
+                  {c.items.map((it) => {
+                    const Icon = it.icon;
+                    return (
+                      <li key={it.slug}>
+                        <Link
+                          href={`/lending/${it.slug}/${c.state}`}
+                          className="flex items-start gap-3 rounded-lg -mx-2 px-2 py-2.5 transition-colors hover:bg-fetti-wash"
+                        >
+                          <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-fetti-wash text-fetti-deep transition-colors group-hover:bg-fetti-green/15">
+                            <Icon className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block font-display text-[15px] font-semibold leading-snug text-fetti-ink">
+                              {it.name}
+                            </span>
+                            <span className="mt-0.5 block text-[13.5px] leading-[1.5] text-fetti-body">
+                              {it.desc}
+                            </span>
+                          </span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             ))}
           </div>
 
           {GUIDES.length > 0 && (
             <>
-              <p className="mt-14 border-b border-fetti-rule pb-2 font-mono text-[12px] font-medium uppercase tracking-[0.04em] text-fetti-muted">
-                Guides — how these loans actually get underwritten
+              <h3 className="mt-16 font-display text-[26px] font-semibold leading-[1.2] tracking-[-0.02em] text-fetti-ink">
+                How these loans actually get underwritten
+              </h3>
+              <p className="mt-2 mb-6 max-w-[56ch] text-[15px] leading-[1.6] text-fetti-body">
+                Plain-English guides to what a lender is really looking at, before you apply.
               </p>
               <div className="border-t-0">
                 {GUIDES.map((g) => (
