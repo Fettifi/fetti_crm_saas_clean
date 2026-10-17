@@ -11,7 +11,9 @@ import { stateLabel } from "@/lib/lendingMatrix";
 import { ORGANIZATION, WEBSITE } from "@/lib/seo/schema";
 import { CediBubble } from "@/components/CediBubble";
 import { CediVoice } from "@/components/CediVoice";
+import { SiteHeader } from "@/components/SiteHeader";
 import HeroCapture from "@/components/HeroCapture";
+import { Section, Well } from "@/components/site/Ledger";
 import { SocialProofWall } from "@/components/SocialProofWall";
 
 // ISR: keep the static speed of the marketing homepage but let newly approved
@@ -127,348 +129,396 @@ const FAQ = [
   { q: "How fast can I close?", a: "It depends on the loan, but we move fast. Bridge and hard-money options can close in days, and we keep you posted at every step. All loans are subject to credit approval and program guidelines." },
   { q: "What states do you cover?", a: "Investment and business-purpose loans — DSCR, fix & flip, bridge, hard money, and business loans — are available nationwide, in all 50 states. Owner-occupied home loans are available in Florida, Michigan, and California. Not sure we cover your scenario? Start in two minutes and we'll tell you exactly what we can do." },
   { q: "What do I need to start?", a: "Just a couple minutes and a few basics about your goal. No documents required to pre-qualify. A specialist tells you exactly what's needed for your scenario." },
-  { q: "Is it really no-obligation?", a: "100%. Pre-qualifying costs nothing, doesn't impact your credit, and comes with zero pressure. Wise money moves only. 🦉" },
+  { q: "Is it really no-obligation?", a: "100%. Pre-qualifying costs nothing, doesn't impact your credit, and comes with zero pressure. Wise money moves only." },
 ];
+
+// Programs flattened from CATEGORIES into ONE ruled table. Cards became a table because nine
+// programmes in a deck of boxes is a template; nine programmes in a ruled register with a
+// jurisdiction column is a document — and the jurisdiction column is the compliance point. A row
+// tagged "All 50 states" is investment/business ONLY; owner-occupied is CA · FL · MI, and the two
+// must never blur. The link targets are unchanged.
+const PROGRAM_ROWS = CATEGORIES.flatMap((c) =>
+  c.items.map((it) => ({
+    name: it.name,
+    desc: it.desc,
+    href: `/lending/${it.slug}/${c.state}`,
+    jurisdiction: c.state === "usa" ? "ALL 50" : "CA · FL · MI",
+    group: c.title,
+  })),
+);
 
 export default async function MarketingHome() {
   return (
-    <div className="min-h-screen bg-white text-slate-900 antialiased selection:bg-emerald-200">
-      {/* The canonical homepage emitted no structured data at all until 2026-08-12, so Google had
-          no root entity node for the brand. One Organization, referenced by @id everywhere. */}
+    <div className="min-h-screen bg-fetti-paper font-display text-fetti-ink antialiased [font-variant-numeric:tabular-nums]">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE) }} />
-      {/* ---------- Sticky header ---------- */}
-      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/home" className="flex items-center gap-2.5">
-            <img src="/fetti-emblem.png" alt="Fetti Financial Services LLC logo" width={36} height={36} className="w-9 h-9" />
-            <span className="text-lg font-extrabold tracking-tight text-slate-900">Fetti<span className="text-emerald-600"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></span>
-          </Link>
-          <nav className="flex items-center gap-2 sm:gap-5 text-sm">
-            <Link href="/lending" className="text-slate-600 hover:text-slate-900 transition hidden md:inline">Programs</Link>
-            <Link href="/quote" className="text-slate-600 hover:text-slate-900 transition hidden sm:inline">Instant Quote</Link>
-            <Link href="/apply/form" className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 rounded-full transition shadow-sm shadow-emerald-600/20">Apply</Link>
-          </nav>
-        </div>
-      </header>
 
-      {/* ---------- Hero ---------- */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-emerald-50/60 to-white">
-        <div aria-hidden className="absolute inset-0 -z-10">
-          <div className="absolute top-[-12%] left-1/2 -translate-x-1/2 h-[440px] w-[820px] rounded-full bg-emerald-200/50 blur-[150px]" />
-          <div className="absolute inset-0 opacity-[0.5]" style={{ backgroundImage: "linear-gradient(rgba(15,23,42,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.035) 1px, transparent 1px)", backgroundSize: "56px 56px", maskImage: "radial-gradient(ellipse 60% 50% at 50% 0%, #000 55%, transparent 100%)" }} />
-        </div>
+      {/* USE THE SHARED COMPONENT. This page used to carry its own inline copy of SiteHeader, so the
+          busiest page on the site was the one page that never received header fixes. */}
+      <SiteHeader />
 
-        <div className="max-w-5xl mx-auto px-6 pt-20 pb-20 text-center">
-          <img src="/fetti-logo.png" alt="Fetti Financial Services LLC" width={320} height={293} className="w-56 sm:w-72 lg:w-80 mx-auto mb-6 drop-shadow-sm" />
-          <p className="mb-6 text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
-            We <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">DO</span> Money<span className="text-emerald-600">!</span>
-          </p>
-          {/* LEAD WITH THE BORROWER, AND NAME NO COMPETITOR. Ramon, 2026-10-13: the old line was
-              "The loans the banks won't do" — "I don't think it sounds right... something a little
-              more catchy and a little more accepting without lying or boasting," then "Lead with the
-              borrower, don't mention banks at all."
-              It also claimed something we cannot know: whether a bank declined this visitor. What we
-              CAN say is what is true of our own book — we are built for income that does not come on
-              two W-2s. That is specific, it is checkable, and it promises no approval. */}
-          <h1 className="mt-7 text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.05] text-slate-900">
-            Built for the way you{" "}
-            <span className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent">actually earn.</span>
-          </h1>
-          <p className="mt-6 text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            Self-employed, commissioned, investing, or buying your first place — if your income
-            doesn&apos;t fit a template, that&apos;s exactly what we&apos;re built for. Home, investment
-            and business loans, with down payment assistance for buyers who qualify. Start in two
-            minutes. No credit impact.
-          </p>
-          <div className="mt-9 flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/apply/form" className="group inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">
-              Get pre-qualified <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition" />
-            </Link>
-            <Link href="/quote" className="inline-flex items-center justify-center border border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 text-slate-800 px-8 py-4 rounded-full text-lg transition">
-              See what you qualify for
-            </Link>
+      {/* ───────────── 01 HERO — asymmetric 7/4. The facts panel does the stats job and the
+          compliance job at once, which retires the centred four-up stat bar. ───────────── */}
+      <Section index="01" fact="NO CREDIT PULL" pad="pt-20 pb-24 lg:pt-24 lg:pb-28">
+        <Well>
+          <div className="grid grid-cols-1 lg:grid-cols-12 lg:gap-x-6">
+            <div className="lg:col-span-7">
+              <p className="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-fetti-ink">
+                Fetti Financial Services LLC
+              </p>
+
+              {/* The tagline IS the headline. Flat ink, with a period. The old treatment —
+                  gradient-clipped "DO" and a green exclamation mark — was the loudest
+                  cheap-template signal on the page. */}
+              <h1 className="mt-6 font-display font-semibold leading-[0.94] tracking-[-0.035em] text-[clamp(44px,7.2vw,92px)]">
+                We do money.
+              </h1>
+
+              <p className="mt-7 max-w-[52ch] font-serif text-[clamp(19px,1.6vw,24px)] leading-[1.5] text-fetti-body">
+                Self-employed, commissioned, investing, or buying your first place — if your income
+                doesn&apos;t fit a template, that&apos;s exactly what we&apos;re built for.
+              </p>
+
+              <div className="mt-9 flex flex-col sm:flex-row gap-3">
+                <Link
+                  href="/apply/form"
+                  className="inline-flex items-center justify-center rounded-[4px] bg-fetti-deep px-7 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-fetti-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fetti-deep"
+                >
+                  Get pre-qualified
+                </Link>
+                <Link
+                  href="/quote"
+                  className="inline-flex items-center justify-center rounded-[4px] border border-fetti-ink px-7 py-3.5 text-[15px] font-semibold text-fetti-ink transition-colors hover:bg-fetti-wash"
+                >
+                  See what you qualify for
+                </Link>
+              </div>
+
+              <p className="mt-6 font-mono text-[12px] font-medium tracking-[0.04em] text-fetti-muted">
+                NO CREDIT PULL · NO OBLIGATION · EQUAL HOUSING OPPORTUNITY
+              </p>
+            </div>
+
+            {/* col 8 is a true gutter; the facts panel occupies 9–12 */}
+            <div className="mt-14 lg:mt-2 lg:col-span-4 lg:col-start-9">
+              <dl className="border-t border-fetti-line">
+                {[
+                  ["PRE-QUALIFY", "2 minutes"],
+                  ["CREDIT IMPACT", "None"],
+                  ["OWNER-OCCUPIED", "CA · FL · MI"],
+                  ["INVESTMENT & BUSINESS", "All 50 states"],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex items-baseline justify-between gap-4 border-b border-fetti-line py-4">
+                    <dt className="font-mono text-[12px] font-medium uppercase tracking-[0.04em] text-fetti-muted">{k}</dt>
+                    <dd className="font-display text-[15px] font-semibold text-fetti-ink text-right">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              {/* The emblem as a seal pressed onto a ruled document — anchored to the panel's
+                  baseline rather than floating centred in a void. His mark, never regenerated. */}
+              <div className="relative mt-10 hidden lg:block">
+                <span aria-hidden className="absolute left-0 right-0 top-14 h-px bg-fetti-rule" />
+                <span aria-hidden className="absolute left-14 top-0 h-28 w-px bg-fetti-rule" />
+                <img
+                  src="/fetti-emblem.png"
+                  alt=""
+                  aria-hidden="true"
+                  width={112}
+                  height={112}
+                  className="relative h-28 w-28"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Inline capture — convert hero traffic on the spot instead of bouncing to /apply */}
-          <HeroCapture />
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1.5"><Lock className="w-3.5 h-3.5 text-emerald-600" /> No credit impact to start</span>
-            <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> No obligation, no pressure</span>
-            <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Equal Housing Opportunity</span>
+          <div className="mt-14 max-w-[640px]">
+            <HeroCapture />
           </div>
-          <CediBubble center size={64} className="mt-10">
-            I&apos;m <span className="font-bold text-slate-900">Mark</span> with Fetti Financial Services. Tell me your goal below and how your income is put together — however that looks, there is usually a program built for it. Two minutes, no credit pull.
-          </CediBubble>
-          <div className="mt-4 flex justify-center"><CediVoice /></div>
-        </div>
 
-        {/* stats bar */}
-        <div className="max-w-6xl mx-auto px-6 pb-16">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 shadow-sm">
-            {STATS.map((s) => (
-              <div key={s.label} className="bg-white px-6 py-6 text-center">
-                <div className="text-2xl sm:text-3xl font-extrabold text-emerald-600">{s.value}</div>
-                <div className="mt-1 text-xs sm:text-sm text-slate-500">{s.label}</div>
-              </div>
+          <div className="mt-12 max-w-[640px]">
+            <CediBubble size={56}>
+              I&apos;m <span className="font-semibold text-fetti-ink">Mark</span> with Fetti Financial
+              Services. Tell me your goal and how your income is put together — however that looks,
+              there is usually a program built for it. Two minutes, no credit pull.
+            </CediBubble>
+            <div className="mt-4"><CediVoice /></div>
+          </div>
+        </Well>
+      </Section>
+
+      {/* ───────────── 02 PROGRAMS — a ruled table, not a deck of cards ───────────── */}
+      <Section index="02" fact="CA · FL · MI / ALL 50 — INVESTMENT ONLY">
+        <Well>
+          <h2 className="max-w-[18ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
+            Start with your scenario.
+          </h2>
+          <p className="mt-5 max-w-[56ch] text-[16px] leading-[1.6] text-fetti-body">
+            Most lending starts with a template and asks you to match it. We start with how you
+            actually earn, then match a program to that.
+          </p>
+
+          <div className="mt-12 border-t border-fetti-rule">
+            {PROGRAM_ROWS.map((p) => (
+              <Link
+                key={p.href}
+                href={p.href}
+                className="group grid grid-cols-12 items-center gap-x-4 border-b border-fetti-line py-6 transition-colors hover:bg-[#FAFCFA]"
+              >
+                <span aria-hidden className="col-span-12 -mb-6 h-0 w-0 lg:col-span-0" />
+                <span className="col-span-8 lg:col-span-3">
+                  <span className="block font-display text-[20px] font-semibold leading-[1.25] tracking-[-0.012em]">
+                    {p.name}
+                  </span>
+                  <span className="mt-1 block font-mono text-[12px] font-medium tracking-[0.04em] text-fetti-muted lg:hidden">
+                    {p.jurisdiction}
+                  </span>
+                </span>
+                <span className="col-span-12 mt-2 text-[15px] leading-[1.58] text-fetti-body lg:col-span-6 lg:mt-0">
+                  {p.desc}
+                </span>
+                <span className="col-span-3 hidden font-mono text-[12px] font-medium tracking-[0.04em] text-fetti-muted lg:col-span-2 lg:block">
+                  {p.jurisdiction}
+                </span>
+                <span className="col-span-1 justify-self-end text-fetti-muted transition-colors group-hover:text-fetti-ink">
+                  <ArrowRight className="h-4 w-4" />
+                </span>
+              </Link>
             ))}
           </div>
-        </div>
-      </section>
 
-      {/* ---------- Template vs your scenario ---------- */}
-      <section className="max-w-6xl mx-auto px-6 py-20">
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">The Fetti advantage</p>
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Start with your scenario. We find the program that fits it.</h2>
-          <p className="text-slate-500 mt-3">Most lending starts with a template and asks you to match it. We start with how you actually earn, then match a program to that.</p>
-        </div>
-        <div className="grid md:grid-cols-2 gap-5 max-w-4xl mx-auto">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-7">
-            <div className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-4">A one-size process</div>
-            <ul className="space-y-3">
-              {CONTRAST.map((r) => (
-                <li key={r.them} className="flex items-start gap-3 text-slate-500">
-                  <X className="w-5 h-5 text-slate-400 mt-0.5 shrink-0" /><span>{r.them}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="rounded-2xl border-2 border-emerald-300 bg-white p-7 shadow-lg shadow-emerald-600/5 relative">
-            <span className="absolute -top-3 left-7 rounded-full bg-emerald-600 text-white text-xs font-bold px-3 py-1 shadow">Fetti</span>
-            <div className="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-4">Fetti</div>
-            <ul className="space-y-3">
-              {CONTRAST.map((r) => (
-                <li key={r.us} className="flex items-start gap-3 text-slate-800">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" /><span>{r.us}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      {/* ---------- Social proof (real reviews + consented wins) ---------- */}
-      <SocialProofWall heading="Don't take our word for it." />
-
-      {/* ---------- Programs ---------- */}
-      <section className="max-w-7xl mx-auto px-6 py-16 border-t border-slate-100">
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-4">Lending programs</p>
-          <CediBubble center className="mb-5">Whatever the move, I&apos;ve got a play for it. Pick yours. 🦉</CediBubble>
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Financing for every objective</h2>
-          <p className="text-slate-500 mt-3">Tap any program to see details. Every page leads straight to a fast pre-qualification.</p>
-        </div>
-        <div className="space-y-12">
-          {CATEGORIES.map((cat) => (
-            <div key={cat.title}>
-              <div className="flex flex-wrap items-baseline gap-3 mb-1">
-                <h3 className="text-2xl font-bold text-slate-900">{cat.title}</h3>
-                <span className="text-xs text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-full px-2.5 py-0.5">{cat.tag}</span>
-              </div>
-              <p className="text-slate-500 text-sm mb-5">{cat.blurb}</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {cat.items.map((p) => (
-                  <Link key={p.name} href={`/lending/${p.slug}-${cat.state}`}
-                    className="group relative block rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-600/5 hover:-translate-y-0.5">
-                    <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 ring-1 ring-emerald-100 mb-4 group-hover:bg-emerald-100 transition">
-                      <p.icon className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <h4 className="font-bold text-slate-900 flex items-center justify-between">{p.name}<ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" /></h4>
-                    <p className="text-slate-500 mt-1.5 text-sm leading-relaxed">{p.desc}</p>
-                    <span className="mt-4 inline-block text-emerald-600 text-xs font-semibold opacity-0 group-hover:opacity-100 transition">Learn more →</span>
+          {GUIDES.length > 0 && (
+            <>
+              <p className="mt-14 border-b border-fetti-rule pb-2 font-mono text-[12px] font-medium uppercase tracking-[0.04em] text-fetti-muted">
+                Guides — how these loans actually get underwritten
+              </p>
+              <div className="border-t-0">
+                {GUIDES.map((g) => (
+                  <Link
+                    key={g.slug}
+                    href={`/lending/${g.slug}`}
+                    className="group grid grid-cols-12 items-baseline gap-x-4 border-b border-fetti-line py-5 transition-colors hover:bg-[#FAFCFA]"
+                  >
+                    <span className="col-span-11 font-display text-[17px] font-semibold tracking-[-0.012em] lg:col-span-4">
+                      {g.title}
+                    </span>
+                    <span className="col-span-12 mt-1 text-[15px] leading-[1.58] text-fetti-body lg:col-span-7 lg:mt-0">
+                      {g.blurb}
+                    </span>
+                    <span className="col-span-1 justify-self-end text-fetti-muted transition-colors group-hover:text-fetti-ink">
+                      <ArrowRight className="h-4 w-4" />
+                    </span>
                   </Link>
                 ))}
               </div>
-            </div>
-          ))}
+            </>
+          )}
+        </Well>
+      </Section>
 
-          {/* ---------- In-depth guides — the pages that carry real, indexable copy ---------- */}
-          <div className="mt-16 pt-12 border-t border-slate-200">
-            <div className="flex flex-wrap items-baseline gap-3 mb-1">
-              <h3 className="text-2xl font-bold text-slate-900">Program guides</h3>
-              <span className="text-xs text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-full px-2.5 py-0.5">Written by the people who underwrite them</span>
+      {/* ───────────── 03 THE DIFFERENCE — a paired ledger read across a shared rule.
+          De-emphasis is pure colour value: no X icons, no check icons, no badges. ───────────── */}
+      <Section index="03">
+        <Well>
+          <h2 className="max-w-[20ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
+            We find the program that fits it.
+          </h2>
+
+          <div className="mt-12 border-t border-fetti-rule">
+            <div className="grid grid-cols-1 gap-x-10 border-b border-fetti-line py-3 lg:grid-cols-2">
+              <p className="font-mono text-[12px] font-medium uppercase tracking-[0.04em] text-fetti-muted">
+                A one-size process
+              </p>
+              <p className="mt-2 font-mono text-[12px] font-medium uppercase tracking-[0.04em] text-fetti-ink lg:mt-0">
+                Fetti
+              </p>
             </div>
-            <p className="text-slate-500 text-sm mb-5">How these loans actually get underwritten — what moves the numbers, and what to have ready.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {GUIDES.map((g) => (
-                <Link key={g.slug} href={`/lending/${g.slug}`}
-                  className="group block rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-600/5 hover:-translate-y-0.5">
-                  <h4 className="font-bold text-slate-900 flex items-center justify-between gap-2">{g.title}<ArrowRight className="w-4 h-4 shrink-0 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" /></h4>
-                  <p className="text-slate-500 mt-1.5 text-sm leading-relaxed">{g.blurb}</p>
-                  <span className="mt-4 inline-block text-emerald-600 text-xs font-semibold opacity-0 group-hover:opacity-100 transition">Read the guide →</span>
-                </Link>
+            {CONTRAST.map((row) => (
+              <div key={row.us} className="grid grid-cols-1 gap-x-10 border-b border-fetti-line py-6 lg:grid-cols-2">
+                <p className="text-[16px] leading-[1.6] text-fetti-muted">{row.them}</p>
+                <p className="mt-3 text-[16px] leading-[1.6] text-fetti-ink lg:mt-0">{row.us}</p>
+              </div>
+            ))}
+          </div>
+        </Well>
+      </Section>
+
+      {/* ───────────── 04 AUTHORITY — the serif section. The TYPEFACE CHANGE is the section
+          break: no band, no background, no border. ───────────── */}
+      <Section index="04" fact="NMLS 2267023" pad="py-28 lg:py-36">
+        <Well>
+          <div className="grid grid-cols-1 lg:grid-cols-12 lg:gap-x-6">
+            <div className="lg:col-span-8 lg:col-start-3">
+              <p className="max-w-[62ch] font-serif text-[22px] leading-[1.55] text-fetti-ink">
+                <span className="font-display font-semibold uppercase tracking-[0.06em]">
+                  A licensed lender.
+                </span>{" "}
+                Fully licensed and regulated in every state we lend in, and built for the way you
+                actually earn. Owner-occupied home loans in California, Florida and Michigan.
+                Investment and business-purpose lending in all fifty. Start in two minutes, with no
+                impact on your credit.
+              </p>
+              <p className="mt-8 font-mono text-[12px] font-medium tracking-[0.04em] text-fetti-muted">
+                NMLS #2267023 · CA #60DBO-153798 · FL #MBR7286 · MI #FL0024463
+              </p>
+            </div>
+          </div>
+        </Well>
+      </Section>
+
+      {/* ───────────── 05 PROCESS — one literal rule with nodes on it ───────────── */}
+      <Section index="05">
+        <Well>
+          <h2 className="max-w-[16ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
+            How it works.
+          </h2>
+          <div className="relative mt-16">
+            <span aria-hidden className="absolute left-0 right-0 top-[4.5rem] hidden h-px bg-fetti-line lg:block" />
+            <div className="grid grid-cols-1 gap-12 lg:grid-cols-3 lg:gap-6">
+              {STEPS.map((s) => (
+                <div key={s.n} className="relative">
+                  <p className="font-mono text-[44px] font-medium leading-none tracking-[-0.01em] text-fetti-ink">
+                    {s.n}
+                  </p>
+                  <span aria-hidden className="mt-7 hidden h-[9px] w-[9px] bg-fetti-green lg:block" />
+                  <h3 className="mt-6 font-display text-[20px] font-semibold tracking-[-0.012em]">{s.title}</h3>
+                  <p className="mt-2 max-w-[42ch] text-[15px] leading-[1.58] text-fetti-body">{s.desc}</p>
+                </div>
               ))}
             </div>
           </div>
-        </div>
-      </section>
+        </Well>
+      </Section>
 
-      {/* ---------- Built for you (audience) ---------- */}
-      <section className="bg-slate-50 border-y border-slate-200 py-20">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Built for how you actually earn</p>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Whether you punch a clock or sign the checks</h2>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {AUDIENCE.map((a) => (
-              <div key={a.title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 ring-1 ring-emerald-100 mb-4">
-                  <a.icon className="w-5 h-5 text-emerald-600" />
-                </div>
-                <h3 className="font-bold text-slate-900">{a.title}</h3>
-                <p className="text-slate-500 mt-1.5 text-sm leading-relaxed">{a.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ---------- Founder / authority ---------- */}
-      <section className="max-w-5xl mx-auto px-6 py-20">
-        <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-emerald-50 to-white p-8 sm:p-12 shadow-sm">
-          <div className="flex items-center gap-2 text-emerald-600 font-mono text-xs uppercase tracking-widest mb-5">
-            <Award className="w-4 h-4" /> Experience-led
-          </div>
-          <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-slate-900 leading-tight">
-            Built by people who&apos;ve been there.
+      {/* ───────────── 06 WHO WE BUILD FOR — the only section using VERTICAL rules, which is
+          exactly why it cannot be confused with 02. ───────────── */}
+      <Section index="06">
+        <Well>
+          <h2 className="max-w-[18ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
+            Built for how you actually earn.
           </h2>
-          <p className="text-slate-600 mt-5 text-lg leading-relaxed max-w-3xl">
-            We&apos;ve spent years helping build and scale companies. From a billion-dollar energy enterprise to
-            businesses that went public. In some of the most heavily-regulated industries around. The lesson that
-            stuck: do right by people, and do it by the book. So compliance and discipline aren&apos;t talking
-            points here. They&apos;re just how we work.
-          </p>
-          <p className="text-slate-600 mt-4 text-lg leading-relaxed max-w-3xl">
-            And having been on both sides. The entrepreneur chasing the next deal and the everyday grind toward a
-            home. We get what you actually need: straight answers, real speed, and no games.
-          </p>
-          <p className="mt-6 font-semibold text-slate-700">Decades of combined experience. One standard: do it right.</p>
-          <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-500">
-            <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-emerald-600" /> Compliance-first by design</span>
-            <span className="inline-flex items-center gap-1.5"><Scale className="w-4 h-4 text-emerald-600" /> Your side of the table</span>
-            <span className="inline-flex items-center gap-1.5"><Award className="w-4 h-4 text-emerald-600" /> Hands-on, not corporate</span>
-          </div>
-        </div>
-      </section>
-
-      {/* ---------- How it works ---------- */}
-      <section className="relative py-20 border-y border-slate-200 bg-slate-50">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center max-w-2xl mx-auto mb-14">
-            <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-4">How it works</p>
-            <CediBubble center className="mb-5">Three steps and you&apos;re funded. Eyes open. I&apos;ll guide you, all day. 🌴</CediBubble>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">We take you from hello to funded</h2>
-          </div>
-          <div className="grid md:grid-cols-3 gap-6">
-            {STEPS.map((s) => (
-              <div key={s.n} className="relative rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 ring-1 ring-emerald-100">
-                    <s.icon className="w-5 h-5 text-emerald-600" />
-                  </div>
-                  <span className="text-4xl font-extrabold text-slate-100">{s.n}</span>
-                </div>
-                <h3 className="mt-5 text-lg font-bold text-slate-900">{s.title}</h3>
-                <p className="mt-2 text-slate-500 text-sm leading-relaxed">{s.desc}</p>
+          <div className="mt-14 grid grid-cols-1 gap-y-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-x-0">
+            {AUDIENCE.map((a, i) => (
+              <div
+                key={a.title}
+                className={`lg:px-6 ${i === 0 ? "lg:pl-0" : "lg:border-l lg:border-fetti-line"}`}
+              >
+                <p className="font-mono text-[12px] font-medium tracking-[0.04em] text-fetti-muted">
+                  {String(i + 1).padStart(2, "0")}
+                </p>
+                <h3 className="mt-3 font-display text-[20px] font-semibold tracking-[-0.012em]">{a.title}</h3>
+                <p className="mt-2 text-[15px] leading-[1.58] text-fetti-body">{a.desc}</p>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </Well>
+      </Section>
 
-      {/* ---------- Why Fetti ---------- */}
-      <section className="max-w-6xl mx-auto px-6 py-20">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
-          <div>
-            <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-4">Why Fetti</p>
-            <CediBubble className="mb-5">I don&apos;t miss. Here&apos;s why folks roll with Fetti. Straight from me. 🦉</CediBubble>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-slate-900">Moves like a fintech. Answers like a person.</h2>
-            <p className="text-slate-500 mt-4 leading-relaxed">
-              Institutional-grade programs, operator-grade discipline, and a team that actually picks up the phone.
-              We carry the load — structuring, funding, and guiding — so you get your loan done, closed fast, without the stress.
-            </p>
-            <Link href="/apply/form" className="mt-7 inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-7 py-3.5 rounded-full transition shadow-lg shadow-emerald-600/25">
-              Start my application <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            {WHY.map((w) => (
-              <div key={w.title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <w.icon className="w-7 h-7 text-emerald-600 mb-3" />
-                <h3 className="font-bold text-slate-900">{w.title}</h3>
-                <p className="text-slate-500 mt-1.5 text-sm leading-relaxed">{w.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ---------- FAQ (objection handling) ---------- */}
-      <section className="bg-slate-50 border-y border-slate-200 py-20">
-        <div className="max-w-3xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <p className="text-emerald-600 font-mono text-xs uppercase tracking-widest mb-3">Straight answers</p>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Questions? Mark&apos;s got you.</h2>
-          </div>
-          <div className="space-y-3">
+      {/* ───────────── 07 QUESTIONS ───────────── */}
+      <Section index="07" fact="NOT A COMMITMENT TO LEND">
+        <Well>
+          <h2 className="max-w-[16ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
+            Straight answers.
+          </h2>
+          <div className="mt-12 border-t border-fetti-rule">
             {FAQ.map((f) => (
-              <details key={f.q} className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm open:shadow-md transition">
-                <summary className="flex cursor-pointer items-center justify-between font-semibold text-slate-900 list-none">
-                  {f.q}
-                  <span className="ml-4 shrink-0 text-emerald-600 transition group-open:rotate-45 text-2xl leading-none">+</span>
+              <details key={f.q} className="group border-b border-fetti-line py-5">
+                <summary className="flex cursor-pointer list-none items-baseline justify-between gap-6">
+                  <span className="font-display text-[18px] font-semibold tracking-[-0.012em]">{f.q}</span>
+                  <span aria-hidden className="shrink-0 font-mono text-[12px] font-medium text-fetti-ink">
+                    <span className="group-open:hidden">+</span>
+                    <span className="hidden group-open:inline">−</span>
+                  </span>
                 </summary>
-                <p className="mt-3 text-slate-600 text-sm leading-relaxed">{f.a}</p>
+                <p className="mt-4 max-w-[62ch] text-[16px] leading-[1.6] text-fetti-body lg:pl-[8.333%]">
+                  {f.a}
+                </p>
               </details>
             ))}
           </div>
-        </div>
-      </section>
+        </Well>
+      </Section>
 
-      {/* ---------- Final CTA ---------- */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-white to-emerald-50/70 border-t border-slate-200">
-        <div aria-hidden className="absolute inset-0 -z-10">
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[340px] w-[760px] rounded-full bg-emerald-200/50 blur-[140px]" />
-        </div>
-        <div className="max-w-3xl mx-auto px-6 py-24 text-center">
-          <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900">Ready to get funded?</h2>
-          <p className="text-slate-600 mt-4 text-lg">You start; we take it from there. A specialist reaches out fast and handles the rest. No pressure, no credit impact to start.</p>
-          <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/apply/form" className="inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-10 py-4 rounded-full text-lg transition shadow-xl shadow-emerald-600/25">
-              Get pre-qualified <ArrowRight className="w-5 h-5" />
+      <Section index="08" pad="pt-4 pb-20">
+        <Well>
+          <SocialProofWall />
+        </Well>
+      </Section>
+
+      {/* ───────────── 09 ACTION — the single inverted band on the whole site. Large white type
+          on #309C30 clears AA at 3.56:1; no legal copy ever sits on a coloured ground. ────── */}
+      <section className="bg-fetti-green">
+        <div className="mx-auto w-full max-w-[1280px] px-6 py-28 lg:px-20">
+          <h2 className="max-w-[20ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-white text-[clamp(34px,4.4vw,56px)]">
+            Two minutes. No credit pull.
+          </h2>
+          <div className="mt-10 flex flex-col sm:flex-row gap-3">
+            <Link
+              href="/apply/form"
+              className="inline-flex items-center justify-center rounded-[4px] bg-white px-7 py-3.5 text-[15px] font-semibold text-fetti-deep transition-opacity hover:opacity-90"
+            >
+              Get pre-qualified
             </Link>
-            <Link href="/quote" className="inline-flex items-center justify-center border border-slate-300 hover:border-emerald-400 hover:bg-white text-slate-800 px-10 py-4 rounded-full text-lg transition">
-              Instant quote
+            <Link
+              href="/quote"
+              className="inline-flex items-center justify-center rounded-[4px] border border-white px-7 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-white/10"
+            >
+              See what you qualify for
             </Link>
           </div>
-          <CediBubble center size={64} className="mt-12">Sun&apos;s out, money&apos;s out. Let&apos;s ride. 🏝️</CediBubble>
         </div>
       </section>
 
-      {/* ---------- Footer ---------- */}
-      <footer className="border-t border-slate-200 bg-slate-50">
-        <div className="max-w-7xl mx-auto px-6 py-12">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="flex items-center gap-2.5">
-              <img src="/fetti-emblem.png" alt="Fetti Financial Services LLC logo" width={32} height={32} className="w-8 h-8" />
-              <div className="leading-tight">
-                <span className="font-extrabold tracking-tight text-slate-900">Fetti<span className="text-emerald-600"> Financial Services</span> <span className="text-slate-400 text-[0.7em] font-bold align-middle">LLC</span></span>
-                <p className="text-xs font-bold text-emerald-600">We DO Money!</p>
+      {/* ───────────── THE REGISTER — the footer, and the close of the argument. The most
+          carefully typeset block on the page, because it is the one that is legally required
+          to be here. ───────────── */}
+      <footer className="bg-fetti-wash">
+        <div className="mx-auto w-full max-w-[1280px] px-6 py-16 lg:px-20">
+          <div className="flex items-center gap-3">
+            <img src="/fetti-emblem.png" alt="" aria-hidden="true" width={32} height={32} className="h-8 w-8" />
+            {/* Full size, full ink. Shrinking and greying the licensed entity's name is a tell. */}
+            <span className="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-fetti-ink">
+              Fetti Financial Services LLC
+            </span>
+          </div>
+
+          <dl className="mt-10 border-t border-fetti-rule">
+            {[
+              ["LICENSEE", "NMLS #2267023"],
+              ["CALIFORNIA", "DFPI Financing Law License · 60DBO-153798"],
+              ["FLORIDA", "Mortgage Broker License · MBR7286"],
+              ["MICHIGAN", "1st Mortgage Broker/Lender License · FL0024463"],
+              ["OWNER-OCCUPIED", "California · Florida · Michigan"],
+              ["INVESTMENT & BUSINESS", "All 50 states"],
+              ["FAIR HOUSING", "Equal Housing Opportunity"],
+            ].map(([k, v]) => (
+              <div key={k} className="grid grid-cols-1 gap-1 border-b border-fetti-line py-3 sm:grid-cols-12 sm:gap-4">
+                <dt className="font-mono text-[12px] font-medium uppercase tracking-[0.04em] text-fetti-muted sm:col-span-4">
+                  {k}
+                </dt>
+                <dd className="font-display text-[13px] text-fetti-body sm:col-span-8">{v}</dd>
               </div>
-            </div>
-            <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-500">
-              <Link href="/lending" className="hover:text-slate-900 transition">Programs</Link>
-              <Link href="/quote" className="hover:text-slate-900 transition">Instant Quote</Link>
-              <Link href="/apply/form" className="hover:text-slate-900 transition">Apply</Link>
-              <Link href="/privacy" className="hover:text-slate-900 transition">Privacy</Link>
-              <Link href="/terms" className="hover:text-slate-900 transition">Terms</Link>
-            </nav>
-          </div>
-          <div className="mt-8 pt-8 border-t border-slate-200 text-xs text-slate-500 leading-relaxed">
-            <p className="mb-2">© {new Date().getFullYear()} Fetti Financial Services LLC · 5777 W Century Blvd, Suite 1435, Los Angeles, CA 90045 · info@fettifi.com</p>
+            ))}
+          </dl>
+
+          <nav className="mt-10 flex flex-wrap gap-x-8 gap-y-2 text-[15px]">
+            {[
+              ["/lending", "Programs"],
+              ["/quote", "Instant Quote"],
+              ["/apply/form", "Apply"],
+              ["/privacy", "Privacy"],
+              ["/terms", "Terms"],
+            ].map(([href, label]) => (
+              <Link key={href} href={href} className="text-fetti-body transition-colors hover:text-fetti-ink">
+                {label}
+              </Link>
+            ))}
+          </nav>
+
+          <p className="mt-10 border-t border-fetti-rule pt-8 text-[13px] leading-[1.65] text-fetti-body">
             {LICENSING_NOTE}
-          </div>
+          </p>
         </div>
       </footer>
     </div>
