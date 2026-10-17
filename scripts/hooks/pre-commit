@@ -441,6 +441,19 @@ if [ -n "$ANYTS" ]; then
   fi
 fi
 
+# A DROPPED CALL MUST NAME WHAT ENDED IT. 2026-10-17: 83 of 160 phone messages said "AI connection
+# dropped" and NOT ONE said "caller disconnected" — four months, a business line, nobody ever hung
+# up. The honest branch was unreachable: Twilio's `stop` closed the OpenAI socket synchronously, so
+# oai.on("close") always salvaged first and stamped a cause it could not know. That label was
+# reported upward as "the phone agent is dropping half our calls".
+if [ -n "$ANYTS" ]; then
+  printf "   %-24s " "verify:voice-salvage"
+  OUT=$(npm run --silent verify:voice-salvage 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:voice-salvage"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 if [ -n "$ANYTS" ]; then
   printf "   %-24s " "verify:auth-document"
   OUT=$(npm run --silent verify:authorization-document 2>&1)

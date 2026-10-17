@@ -212,6 +212,10 @@ wss.on("connection", (twilio) => {
   let messageSaved = false;       // save_message succeeded → no salvage needed
   let transferred = false;        // live transfer accepted → stream teardown is EXPECTED
   let salvaged = false;
+  // Set the moment Twilio tells us the CALLER ended the call (a `stop` event, or the media socket
+  // closing). It is the difference between "they hung up" and "our AI connection died", and without
+  // it the two are indistinguishable at teardown — see the oai.on("close") note below.
+  let callerEnded = false;
   const transcript = [];
   // On ANY teardown (caller hung up early, OpenAI dropped, bridge restart): if Penny
   // heard something real but never saved a message, persist the partial transcript —
@@ -437,7 +441,13 @@ wss.on("connection", (twilio) => {
     }
     else if (m.event === "media" && oai.readyState === WebSocket.OPEN) {
       oai.send(JSON.stringify({ type: "input_audio_buffer.append", audio: m.media.payload }));
-    } else if (m.event === "stop") { try { oai.close(); } catch {} }
+    } else if (m.event === "stop") {
+      // TWILIO SENT `stop` — THE CALL IS OVER AT THE CALLER'S END. Record WHY before closing
+      // the OpenAI socket, because closing it fires oai.on("close") synchronously and that
+      // handler used to stamp every one of these as "AI connection dropped".
+      callerEnded = true;
+      try { oai.close(); } catch {}
+    }
   });
 
   twilio.on("close", () => {
@@ -445,9 +455,30 @@ wss.on("connection", (twilio) => {
     // briefly so that last utterance still lands in `transcript` before we salvage —
     // otherwise "who they are" is lost on a quick drop. oai.on("close") salvages too
     // (idempotent via the `salvaged` flag), so nothing double-posts.
+    callerEnded = true;
     setTimeout(() => { salvageIfNeeded("caller disconnected"); try { oai.close(); } catch {} }, 1200);
   });
-  oai.on("close", () => { salvageIfNeeded("AI connection dropped"); try { twilio.close(); } catch {} });
+  // !! THIS LINE REPORTED A CAUSE IT COULD NOT KNOW, AND THE DESK BELIEVED IT FOR MONTHS.
+  //
+  // Measured 2026-10-17 across 160 phone messages since June: 83 of them — 51.9% — carried
+  // "AI connection dropped", and **not one single call** carried "caller disconnected". Over four
+  // months, on a business line, nobody ever hung up. That is not credible, and it was not true.
+  //
+  // THE RACE, which "caller disconnected" always lost: a caller hangs up → Twilio sends `stop` →
+  // the handler above calls `oai.close()` IMMEDIATELY → oai.on("close") fires and salvages as
+  // "AI connection dropped", setting `salvaged = true` → 1,200ms later the twilio.on("close")
+  // timeout runs salvageIfNeeded("caller disconnected") and returns at the first line because
+  // `salvaged` is already set. The honest branch was unreachable. Dead code that reads as a
+  // diagnosis is worse than no diagnosis: it was reported upward as "the phone agent is dropping
+  // half our calls", which named a cause nothing had established.
+  //
+  // So the reason is now derived from WHO ENDED IT, not from which socket closed first. A genuine
+  // OpenAI drop still reports as one — `callerEnded` is only ever set by a Twilio-side event.
+  // [[documents-identified-by-content]] · [[verified-the-check-never-read-the-value]]
+  oai.on("close", () => {
+    salvageIfNeeded(callerEnded ? "caller disconnected" : "AI connection dropped");
+    try { twilio.close(); } catch {}
+  });
   oai.on("error", (e) => { console.error("OpenAI ws error", e?.message); salvageIfNeeded("AI error"); });
 });
 
