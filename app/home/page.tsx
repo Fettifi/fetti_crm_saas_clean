@@ -14,6 +14,7 @@ import { CediVoice } from "@/components/CediVoice";
 import { SiteHeader } from "@/components/SiteHeader";
 import HeroCapture from "@/components/HeroCapture";
 import { Section, Well } from "@/components/site/Ledger";
+import { IncomeWall, IncomeMethodWall } from "@/components/site/IncomeWall";
 import { SocialProofWall } from "@/components/SocialProofWall";
 
 // ISR: keep the static speed of the marketing homepage but let newly approved
@@ -85,12 +86,6 @@ const GUIDES = indexableGuides().map((slug) => {
   };
 });
 
-const STATS = [
-  { value: "Low/$0 down", label: "FHA, VA & USDA + down payment help" },
-  { value: "All 50", label: "States. Investment & business" },
-  { value: "Turned down?", label: "We figure out how to get it done" },
-  { value: "2 min", label: "To pre-qualify · no credit pull" },
-];
 
 // The contrast, with no competitor named. Ramon, 2026-10-13: "Lead with the borrower, don't mention
 // banks at all." The left column is a PROCESS, not a company — we can describe a template honestly
@@ -115,12 +110,6 @@ const STEPS = [
   { n: "03", icon: BadgeCheck, title: "Get funded", desc: "We move fast, keep you updated at every step, and get you to the closing table." },
 ];
 
-const WHY = [
-  { icon: ShieldCheck, title: "Compliance in our DNA", desc: "Shaped by years in heavily-regulated industries. We do it right. Every file, every time." },
-  { icon: Rocket, title: "California-fast", desc: "Bridge and hard-money options close in days. Pre-qualification takes minutes." },
-  { icon: Scale, title: "We work for you", desc: "Your scenario is the starting point, and our job is finding the program that fits it." },
-  { icon: HeartHandshake, title: "We get you", desc: "Built by people who've been the operator and the everyday grinder. We respect what you need." },
-];
 
 const FAQ = [
   { q: "What makes Fetti different?", a: "We're built for the way people actually earn (NMLS #2267023) — first-time buyers, self-employed, commissioned, investors, and income that does not arrive on two W-2s. We have programs that qualify you on bank deposits, on a property's rent, or on a full-doc file, and we start from your scenario rather than asking you to fit one. All loans are subject to credit approval and program guidelines." },
@@ -254,21 +243,41 @@ export default async function MarketingHome() {
 
       {/* Capture sits on the pale ground immediately under the hero, so the ask is the first thing
           after the promise rather than buried eight sections down. */}
-      <Section pad="pt-14 pb-20">
+      {/* ───────────── WHICH ONE OF THESE IS YOUR YEAR? — the conversion engine ──────────────
+          The page used to ask a declined borrower to read nine ruled table rows and work out which
+          one was them. This asks them to point at a picture of their own bank account. Recognition
+          arrives before the defences do; reading is where the defences are.
+
+          The jurisdiction split IS the layout — "Where you live" (CA/FL/MI) and "Where you invest"
+          (all 50) are separate grounds with their own derived jurisdiction line, so an
+          owner-occupied nationwide claim cannot be made by accident.
+
+          Capture sits INSIDE this ground, under the chips, rather than directly under the hero —
+          the form belongs where intent has been declared, not before it.
+          ───────────────────────────────────────────────────────────────────────────────────── */}
+      <section id="how-you-get-paid" className="bg-fetti-wash py-20 lg:py-28">
         <Well>
-          <div className="max-w-[640px]">
+          <h2 className="max-w-[20ch] font-display font-semibold leading-[1.04] tracking-[-0.028em] text-[clamp(32px,4.2vw,52px)]">
+            Which one of these is your year?
+          </h2>
+          <p className="mt-5 max-w-[52ch] font-serif text-[17px] leading-[1.6] text-fetti-body">
+            Pick the shape that looks like your income. We&apos;ll start the file from there — two
+            minutes, no credit pull.
+          </p>
+
+          <div className="mt-12">
+            <IncomeWall />
+          </div>
+
+          <div className="mt-16 border-t border-fetti-line pt-12">
+            <IncomeMethodWall />
+          </div>
+
+          <div className="mt-12 max-w-[560px]">
             <HeroCapture />
           </div>
-          <div className="mt-12 max-w-[640px]">
-            <CediBubble size={56}>
-              I&apos;m <span className="font-semibold text-fetti-ink">Mark</span> with Fetti Financial
-              Services. Tell me your goal and how your income is put together — however that looks,
-              there is usually a program built for it. Two minutes, no credit pull.
-            </CediBubble>
-            <div className="mt-4"><CediVoice /></div>
-          </div>
         </Well>
-      </Section>
+      </section>
 
       {/* ───────────── 02 PROGRAMS — a ruled table, not a deck of cards ───────────── */}
       <Section>
@@ -368,29 +377,17 @@ export default async function MarketingHome() {
         </Well>
       </Section>
 
-      {/* ───────────── 03 THE DIFFERENCE — a paired ledger read across a shared rule.
-          De-emphasis is pure colour value: no X icons, no check icons, no badges. ───────────── */}
-      <Section>
+      {/* ───────────── THE TURN — one sentence, alone on the screen.
+          Replaces the paired "A one-size process / Fetti" ledger. A competitor-contrast table is
+          lender-voice and reads as insecurity; this says the same thing from the borrower's side
+          and asks nothing of them. ───────────── */}
+      <Section pad="py-28 lg:py-36">
         <Well>
-          <h2 className="max-w-[20ch] font-display font-semibold leading-[1.02] tracking-[-0.028em] text-[clamp(34px,4.4vw,56px)]">
-            We find the program that fits it.
-          </h2>
-
-          <div className="mt-12 border-t border-fetti-rule">
-            <div className="grid grid-cols-1 gap-x-10 border-b border-fetti-line py-3 lg:grid-cols-2">
-              <p className="font-mono text-[12px] font-medium uppercase tracking-[0.04em] text-fetti-muted">
-                A one-size process
-              </p>
-              <p className="mt-2 font-mono text-[12px] font-medium uppercase tracking-[0.04em] text-fetti-ink lg:mt-0">
-                Fetti
-              </p>
-            </div>
-            {CONTRAST.map((row) => (
-              <div key={row.us} className="grid grid-cols-1 gap-x-10 border-b border-fetti-line py-6 lg:grid-cols-2">
-                <p className="text-[16px] leading-[1.6] text-fetti-muted">{row.them}</p>
-                <p className="mt-3 text-[16px] leading-[1.6] text-fetti-ink lg:mt-0">{row.us}</p>
-              </div>
-            ))}
+          <div className="mx-auto max-w-[62ch]">
+            <p className="font-serif text-[clamp(22px,2.4vw,30px)] leading-[1.5] text-fetti-ink">
+              <span className="font-display font-semibold">A tax return is a tax document.</span>{" "}
+              It was never built to show what you earn. So we stopped asking it to.
+            </p>
           </div>
         </Well>
       </Section>
