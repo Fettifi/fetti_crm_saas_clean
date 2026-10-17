@@ -31,7 +31,15 @@ import { supabaseAdmin } from "@/lib/supabaseAdminClient";
 /** Lead stages that mean the application already happened. Matched case-insensitively
  *  against the LEAD stage vocabulary (lib/leadStage.ts LEAD_STAGES) — not the LOS file
  *  stages, which is the mismatch that made the old guard dead. */
-export const CONVERTED_LEAD_STAGES = ["application", "submitted", "funded", "closed", "won"];
+// "client" added 2026-10-17. It was in NONE of the three lists the nurture engine consults —
+// not LEAD_STAGES, not here, not STOP_STAGES — so a lead marked "Client", a word that plainly
+// means a customer, was DRIP-ELIGIBLE. It did no harm on the day it was found only because all
+// three such rows happened to carry nurture_paused = true and had never been sent anything.
+// That is luck, not a mechanism. Same shape as the dead DONE_STAGES guard that lib/nurture.ts
+// documents: a vocabulary somebody typed drifting from the vocabulary the data uses, invisible
+// because both sides keep working. scripts/verify-stage-vocabulary.ts now reads the DISTINCT
+// stages out of the live table and fails if any is unknown to all three lists.
+export const CONVERTED_LEAD_STAGES = ["application", "submitted", "funded", "closed", "won", "client"];
 
 export type ConvertedReason = "app_completed" | "loan_file" | "uploaded_doc" | "stage";
 

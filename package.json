@@ -16,6 +16,7 @@
     "verify:declaration-capture": "NODE_OPTIONS=--conditions=react-server npx tsx scripts/verify-declaration-capture.ts",
     "verify:mismo-decl": "NODE_OPTIONS=--conditions=react-server npx tsx scripts/verify-mismo-declarations.ts",
     "verify:urla-amount-dob": "NODE_OPTIONS=--conditions=react-server npx tsx scripts/verify-urla-amount-dob.ts",
+    "verify:stage-vocabulary": "npx tsx scripts/verify-stage-vocabulary.ts",
     "verify:leadscore": "npx tsx scripts/verify-leadscore.ts",
     "verify:income": "npx tsx scripts/verify-income-stability.ts",
     "verify:income-logic": "npx tsx scripts/verify-income-logic.ts",
