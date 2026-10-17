@@ -49,6 +49,35 @@ ck("the 'convert while it's hot' line is conditional on the footprint",
 ck("a blocked application is NOT labelled with the normal hot-lead subject",
   /UNLICENSED STATE/.test(apply));
 
+// ── 3b. THE GATE'S INPUT. A correct check fed the wrong jurisdiction is a wrong check.
+//
+// Ramon, asked directly on 2026-10-17: "It's the subject property state." Everything above proves
+// the check RUNS and is not short-circuited; none of it proves it is asked about the right place.
+//
+// The wizard carries no state dropdown — `state` is derived from the ZIP and passed in a hidden
+// field, and that field used to read `zipState || prefill?.state || ""`. `prefill.state` is
+// `leads.state` (app/api/apply/prefill/route.ts), i.e. whatever an earlier marketing form captured,
+// which is normally where the BORROWER is. As a stand-in "until a ZIP is typed" that is harmless;
+// the problem is that `zip` is `required`, so the ONLY way the fallback reaches submit is when a ZIP
+// was typed and `zipToState` could not map it. lib/pricer.ts covers 943 of 1000 three-digit
+// prefixes; the 57 it returns null for include Puerto Rico (006-009), Guam (969) and APO/FPO
+// (090-099, 962-966). A San Juan purchase arriving on a magic link whose lead row said CA produced a
+// consumer application that licenceCheck read as "CA" and PASSED.
+//
+// So this asserts the field is ZIP-DERIVED ONLY. Removing the fallback is not a new gap: an empty
+// state already fails closed in licenceCheck (proved behaviourally in section 4), which is the
+// correct answer for a jurisdiction we could not determine.
+const wiz = strip("app/apply/form/page.tsx");
+const stateField = (wiz.match(/<input[^>]*name="state"[^>]*>/) || [""])[0];
+ck("the wizard has exactly one hidden state field", !!stateField,
+  stateField ? "" : "no `name=\"state\"` input found — the wizard changed shape, re-read it");
+ck("…and it is derived from the ZIP", /value=\{\s*zipState\b/.test(stateField));
+ck("…with NO fallback to another question's answer (prefill = the borrower's state, not the property's)",
+  !!stateField && !/prefill/.test(stateField),
+  /prefill/.test(stateField) ? "the prefill fallback is back — an unmappable property ZIP will borrow the lead row's state" : "");
+ck("the ZIP the state is derived from is asked as the PROPERTY's",
+  /name="zip"[^>]*placeholder="Property ZIP/.test(wiz));
+
 // ── 4. behaviour, run for real
 const run = async () => {
   const { licenceCheck, CONSUMER_STATE_CODES, isConsumerRequest } = await import("../lib/licensedStates");
@@ -85,6 +114,34 @@ const run = async () => {
   // full state names, not just codes
   ck("a full state name resolves", licenceCheck({ state: "Georgia", occupancy: "Owner", loan_purpose: "FHA" }).ok === false);
   ck("a full licensed state name resolves", licenceCheck({ state: "California", occupancy: "Owner", loan_purpose: "FHA" }).ok);
+
+  // ── THE WHOLE INPUT PATH, END TO END. ZIP -> state -> verdict, the way the wizard does it.
+  //
+  // The static checks in 3b prove the field is shaped right today; this proves the CHAIN gives the
+  // right answer, so the two fail independently. The San Juan case is the one that was live.
+  const { zipToState } = await import("../lib/pricer");
+  const asWizard = (zip: string, occupancy: string, purpose: string) =>
+    licenceCheck({ state: zipToState(zip) || "", occupancy, loan_purpose: purpose });
+
+  ck("a Los Angeles property ZIP originates fine",
+    asWizard("90012", "Owner", "FHA Purchase").ok);
+  ck("a Miami property ZIP originates fine",
+    asWizard("33101", "Owner", "Conventional Purchase").ok);
+  ck("a Georgia property ZIP is blocked (the real 2026-10-16 case)",
+    asWizard("30301", "Owner", "FHA Purchase + Down Payment Assistance").ok === false);
+
+  // THE 57 UNMAPPED PREFIXES. zipToState returns null, so the wizard's state is "" and the check
+  // must refuse rather than guess. Before 2026-10-17 the hidden field borrowed prefill.state here.
+  ck("a Puerto Rico property ZIP is NOT silently allowed (zipToState returns null)",
+    zipToState("00601") === null && asWizard("00601", "Owner", "FHA Purchase").ok === false);
+  ck("a Guam property ZIP is NOT silently allowed",
+    zipToState("96910") === null && asWizard("96910", "Owner", "Conventional Purchase").ok === false);
+  ck("an APO/FPO ZIP is NOT silently allowed",
+    zipToState("09012") === null && asWizard("09012", "Owner", "VA Purchase").ok === false);
+  // …and the same unmappable ZIP on an INVESTMENT deal still passes — business-purpose is nationwide
+  // and must not be collateral damage from closing the consumer hole.
+  ck("…but an unmappable ZIP on a DSCR is still fine (business-purpose is nationwide)",
+    asWizard("00601", "Investor", "DSCR rental").ok);
 
   console.log(fail ? `\n❌ verify:licensed-states — ${fail} check(s) failed\n`
                    : `\n✅ verify:licensed-states — the footprint is enforced where the application is taken\n`);

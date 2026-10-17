@@ -1303,9 +1303,31 @@ export default function ApplyWizard() {
                 className={`${field} flex-1`} />
               {zipState && <span className="shrink-0 text-sm font-bold text-emerald-600 px-2" aria-label={`State: ${zipState}`}>{zipState}</span>}
             </div>
-            {/* State is derived from the ZIP (no dropdown) — carried in a hidden field so the
-                submit still records it; falls back to a magic-link prefill state until a ZIP is typed. */}
-            <input type="hidden" name="state" value={zipState || prefill?.state || ""} />
+            {/* THIS FIELD IS THE SUBJECT PROPERTY'S STATE AND NOTHING ELSE.
+                Ramon, 2026-10-17, asked directly which jurisdiction governs the licence check:
+                "It's the subject property state." That is what `licenceCheck` consumes, via
+                app/api/apply/route.ts:185 — so whatever lands here decides whether Fetti may
+                lawfully originate, and a wrong value decides it wrongly in both directions.
+
+                IT USED TO READ `zipState || prefill?.state || ""`, AND THAT FALLBACK ANSWERED A
+                DIFFERENT QUESTION. `prefill.state` is `leads.state` (app/api/apply/prefill/route.ts:50)
+                — whatever an earlier marketing form captured, typically where the BORROWER is, not
+                where the PROPERTY is. It was there as a cosmetic stand-in "until a ZIP is typed",
+                which is harmless on its own, except that `zip` is `required`, so the only way it
+                survives to submit is when the ZIP IS typed and `zipToState` cannot map it.
+
+                Measured: lib/pricer.ts:48 covers 943 of 1000 three-digit prefixes and returns null
+                for 57 — including Puerto Rico (006-009), Guam and Micronesia (969), and APO/FPO
+                (090-099, 962-966). So a borrower buying in San Juan, arriving on a magic link whose
+                lead row says CA, submitted a CONSUMER application whose licence check read "CA" and
+                PASSED. Fetti is not licensed in Puerto Rico.
+
+                Dropping the fallback does not create a gap, it restores one that already fails
+                correctly: lib/licensedStates.ts:71 treats an empty state as NOT OK — "No state on
+                the application, and this reads as owner-occupied... confirm the state before anyone
+                works it." An unmapped ZIP now reaches that branch instead of borrowing a plausible
+                wrong answer. A missing jurisdiction must read as missing. */}
+            <input type="hidden" name="state" value={zipState} />
           </div>
           {isConsumer(answers) ? (
             <p className="text-[11px] text-amber-700">Owner-occupied home loans are offered in FL, MI &amp; CA. Other states: we'll connect you with the right option.</p>
