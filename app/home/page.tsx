@@ -155,88 +155,110 @@ export default async function MarketingHome() {
 
       {/* USE THE SHARED COMPONENT. This page used to carry its own inline copy of SiteHeader, so the
           busiest page on the site was the one page that never received header fixes. */}
-      <SiteHeader />
+      <SiteHeader onDark />
 
-      {/* ───────────── 01 HERO — asymmetric 7/4. The facts panel does the stats job and the
-          compliance job at once, which retires the centred four-up stat bar. ───────────── */}
-      <Section pad="pt-20 pb-24 lg:pt-24 lg:pb-28">
-        <Well>
-          <div className="grid grid-cols-1 lg:grid-cols-12 lg:gap-x-6">
+      {/* ───────────── HERO ─────────────────────────────────────────────────────────────────
+          Ramon, 2026-10-17: "our website is not a compliance metrics. It's meant to get our
+          customers happily involved with our products and services... treat it as if you were the
+          top marketing advertising company in the world."
+
+          WHAT THIS REPLACES AND WHY. The previous hero was black type on white beside a four-row
+          SPEC TABLE — PRE-QUALIFY / CREDIT IMPACT / OWNER-OCCUPIED / INVESTMENT & BUSINESS — with
+          the emblem set as a seal on ruled lines. Every element of it was accurate and none of it
+          was persuasive. A data sheet is what you hand someone who has already decided; this page
+          has to make them decide.
+
+          THREE DELIBERATE MOVES:
+
+          1. A DARK BRAND GROUND. #309C30 is 3.55:1 on white, so it can never carry text and was
+             confined to a single button — which forced the whole page to be black-on-white, i.e. to
+             look like a legal filing. `fetti-forest` (#0F3D16, 12.4:1 with white) lets the brand BE
+             the page. This is the single change that stops it reading as a document.
+
+          2. THE HEADLINE SELLS; THE TAGLINE SIGNS. "We do money." is Ramon's line and it stays —
+             but as a signature beside the mark, not as the thing doing the persuading. The headline
+             is now the promise the audience actually cares about, and the audience is specific:
+             people conventional lenders turn away or misprice.
+
+          3. MARK IS ON THE PAGE. The brand owns a fully-realised mascot, already drawn in the
+             brand gold and deep green, and the homepage was rendering exactly ONE image — the
+             emblem, four times. The distinctiveness was sitting unused in /public.
+
+          NO PHOTOGRAPH OF RAMON — 2026-10-17, his instruction, enforced by verify:no-founder-photo.
+          ───────────────────────────────────────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden bg-fetti-forest">
+        {/* Depth without decoration: two very soft radial pools, no gradient text, no mesh. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.55]"
+             style={{ background: "radial-gradient(60rem 36rem at 72% 18%, rgba(48,156,48,0.30), transparent 62%), radial-gradient(44rem 30rem at 8% 96%, rgba(252,192,84,0.10), transparent 60%)" }} />
+
+        <div className="relative mx-auto w-full max-w-[1280px] px-6 lg:px-20 pt-16 pb-20 lg:pt-20 lg:pb-24">
+          <div className="grid grid-cols-1 lg:grid-cols-12 lg:gap-x-10 items-center">
             <div className="lg:col-span-7">
-              <p className="font-display text-[15px] font-semibold uppercase tracking-[0.08em] text-fetti-ink">
-                Fetti Financial Services LLC
-              </p>
+              <div className="flex items-center gap-3">
+                <img src="/fetti-emblem.png" alt="" aria-hidden="true" width={40} height={40} className="h-10 w-10" />
+                <span className="font-display text-[13px] font-semibold uppercase tracking-[0.14em] text-fetti-gold">
+                  Fetti Financial Services
+                </span>
+              </div>
 
-              {/* The tagline IS the headline. Flat ink, with a period. The old treatment —
-                  gradient-clipped "DO" and a green exclamation mark — was the loudest
-                  cheap-template signal on the page. */}
-              <h1 className="mt-6 font-display font-semibold leading-[0.94] tracking-[-0.035em] text-[clamp(44px,7.2vw,92px)]">
-                We do money.
+              <h1 className="mt-8 font-display font-semibold text-white leading-[0.95] tracking-[-0.035em] text-[clamp(42px,6.4vw,82px)]">
+                Built for how you
+                <br className="hidden sm:block" />{" "}
+                <span className="text-fetti-gold">actually</span> earn.
               </h1>
 
-              <p className="mt-7 max-w-[52ch] font-serif text-[clamp(19px,1.6vw,24px)] leading-[1.5] text-fetti-body">
-                Self-employed, commissioned, investing, or buying your first place — if your income
-                doesn&apos;t fit a template, that&apos;s exactly what we&apos;re built for.
+              <p className="mt-7 max-w-[54ch] font-serif text-[clamp(18px,1.55vw,23px)] leading-[1.55] text-fetti-wash/90">
+                Self-employed, commissioned, investing, or buying your first place. If your income
+                doesn&apos;t fit a template, that&apos;s exactly what we&apos;re built for — and
+                we&apos;ll tell you where you stand in about two minutes.
               </p>
 
-              <div className="mt-9 flex flex-col sm:flex-row gap-3">
-                <Link
-                  href="/apply/form"
-                  className="inline-flex items-center justify-center rounded-[4px] bg-fetti-deep px-7 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-fetti-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fetti-deep"
-                >
+              <div className="mt-10 flex flex-col sm:flex-row gap-3">
+                <Link href="/apply/form"
+                  className="inline-flex items-center justify-center rounded-full bg-fetti-gold px-8 py-4 text-[16px] font-bold text-fetti-forest transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fetti-gold">
                   Get pre-qualified
                 </Link>
-                <Link
-                  href="/quote"
-                  className="inline-flex items-center justify-center rounded-[4px] border border-fetti-ink px-7 py-3.5 text-[15px] font-semibold text-fetti-ink transition-colors hover:bg-fetti-wash"
-                >
+                <Link href="/quote"
+                  className="inline-flex items-center justify-center rounded-full border border-white/35 px-8 py-4 text-[16px] font-semibold text-white transition hover:bg-white/10">
                   See what you qualify for
                 </Link>
               </div>
 
-              <p className="mt-6 font-mono text-[12px] font-medium tracking-[0.04em] text-fetti-muted">
-                NO CREDIT PULL · NO OBLIGATION · EQUAL HOUSING OPPORTUNITY
+              {/* The four facts survive — as one quiet line a person reads, not a table they audit. */}
+              <p className="mt-7 text-[14px] leading-relaxed text-fetti-wash/70">
+                Two minutes · <span className="text-white font-semibold">No credit pull</span> · No obligation
+                <span className="mx-2 text-white/25">|</span>
+                Home loans in CA, FL &amp; MI · Investment &amp; business lending in all 50 states
               </p>
             </div>
 
-            {/* col 8 is a true gutter; the facts panel occupies 9–12 */}
-            <div className="mt-14 lg:mt-2 lg:col-span-4 lg:col-start-9">
-              <dl className="border-t border-fetti-line">
-                {[
-                  ["PRE-QUALIFY", "2 minutes"],
-                  ["CREDIT IMPACT", "None"],
-                  ["OWNER-OCCUPIED", "CA · FL · MI"],
-                  ["INVESTMENT & BUSINESS", "All 50 states"],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex items-baseline justify-between gap-4 border-b border-fetti-line py-4">
-                    <dt className="font-mono text-[12px] font-medium uppercase tracking-[0.04em] text-fetti-muted">{k}</dt>
-                    <dd className="font-display text-[15px] font-semibold text-fetti-ink text-right">{v}</dd>
-                  </div>
-                ))}
-              </dl>
-
-              {/* The emblem as a seal pressed onto a ruled document — anchored to the panel's
-                  baseline rather than floating centred in a void. His mark, never regenerated. */}
-              <div className="relative mt-10 hidden lg:block">
-                <span aria-hidden className="absolute left-0 right-0 top-14 h-px bg-fetti-rule" />
-                <span aria-hidden className="absolute left-14 top-0 h-28 w-px bg-fetti-rule" />
+            {/* MARK. The brand's own character, finally on the brand's own homepage. */}
+            <div className="mt-14 lg:mt-0 lg:col-span-5 flex justify-center lg:justify-end">
+              <div className="relative">
+                <div aria-hidden className="absolute inset-0 -m-10 rounded-full bg-fetti-green/15 blur-2xl" />
                 <img
-                  src="/fetti-emblem.png"
-                  alt=""
-                  aria-hidden="true"
-                  width={112}
-                  height={112}
-                  className="relative h-28 w-28"
+                  src="/mark-golden-owl.png"
+                  alt="Mark, the Fetti Financial Services guide"
+                  width={420}
+                  height={420}
+                  className="relative w-[240px] sm:w-[300px] lg:w-[400px] h-auto drop-shadow-2xl"
                 />
+                <p className="relative mt-5 text-center lg:text-right font-display text-[15px] font-semibold uppercase tracking-[0.12em] text-white/80">
+                  We do money.
+                </p>
               </div>
             </div>
           </div>
+        </div>
+      </section>
 
-          {/* Inline capture — convert hero traffic on the spot instead of bouncing to /apply */}
-          <div className="mt-14 max-w-[640px]">
+      {/* Capture sits on the pale ground immediately under the hero, so the ask is the first thing
+          after the promise rather than buried eight sections down. */}
+      <Section pad="pt-14 pb-20">
+        <Well>
+          <div className="max-w-[640px]">
             <HeroCapture />
           </div>
-
           <div className="mt-12 max-w-[640px]">
             <CediBubble size={56}>
               I&apos;m <span className="font-semibold text-fetti-ink">Mark</span> with Fetti Financial

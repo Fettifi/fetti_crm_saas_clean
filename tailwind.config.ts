@@ -18,6 +18,17 @@ const brand = {
   deep: "#23842B",    // deepened green — use when green must carry TEXT contrast
   gold: "#FCC054",    // accent / caution only — rare and meaningful, never a background wash
   wash: "#EFF7EF",    // the pale ground tint
+
+  // FOREST — the dark ground the brand never had, and the absence of it is why the site read as a
+  // document. #309C30 is only 3.55:1 on white, so it can never carry text and ends up relegated to
+  // one button; the page then has no choice but to be black type on white, which is what a legal
+  // filing looks like. A dark green GROUND lets the brand be the page instead of an accent on it.
+  //
+  // Measured, not guessed — contrast against this ground:
+  //   white     12.36:1  (AAA)      wash #EFF7EF  11.31:1      gold #FCC054  7.54:1
+  // so body copy, large display and the gold accent are all comfortably AA and mostly AAA.
+  // Derived from the emblem green by darkening, not sampled from somewhere new.
+  forest: "#0F3D16",
 };
 
 const config: Config = {
@@ -38,6 +49,7 @@ const config: Config = {
           green: brand.green,
           deep: brand.deep,
           gold: brand.gold,
+          forest: brand.forest,
           wash: brand.wash,
 
           // THE INK RAMP. A faint green cast, so the near-monochrome belongs to THIS brand rather

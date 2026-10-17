@@ -15,9 +15,15 @@ import Link from "next/link";
 //    the business card. The header now matches the paper. See tailwind.config.ts.
 //
 // The mark itself is HIS and is never regenerated — only placed. [[visual-design-is-ramons]]
-export function SiteHeader() {
+// `onDark` — the homepage hero is a full-bleed forest ground, and a white bar sitting on top of it
+// read as two unrelated pages stacked. The header merges into the hero instead. Stays STICKY: a
+// disappearing nav on the busiest page is a real cost, and the forest ground stays legible over the
+// pale sections below. Every other page keeps the white header untouched.
+export function SiteHeader({ onDark = false }: { onDark?: boolean }) {
   return (
-    <header className="sticky top-0 z-50 border-b border-fetti-line/80 bg-white/85 backdrop-blur-xl supports-[backdrop-filter]:bg-white/70">
+    <header className={onDark
+      ? "sticky top-0 z-50 border-b border-white/10 bg-fetti-forest/95 backdrop-blur-xl"
+      : "sticky top-0 z-50 border-b border-fetti-line/80 bg-white/85 backdrop-blur-xl supports-[backdrop-filter]:bg-white/70"}>
       <div className="max-w-7xl mx-auto px-5 sm:px-6 h-16 flex items-center justify-between gap-4">
         <Link
           href="/home"
@@ -33,10 +39,10 @@ export function SiteHeader() {
             className="w-9 h-9 shrink-0"
           />
           {/* whitespace-nowrap is the actual fix — the lockup is one unbreakable unit. */}
-          <span className="whitespace-nowrap text-[17px] font-extrabold tracking-[-0.02em] text-fetti-ink">
+          <span className={`whitespace-nowrap text-[17px] font-extrabold tracking-[-0.02em] ${onDark ? "text-white" : "text-fetti-ink"}`}>
             Fetti
-            <span className="hidden sm:inline text-fetti-green"> Financial Services</span>
-            <span className="hidden sm:inline text-fetti-muted text-[0.68em] font-bold align-middle ml-1">LLC</span>
+            <span className={`hidden sm:inline ${onDark ? "text-fetti-gold" : "text-fetti-green"}`}> Financial Services</span>
+            <span className={`hidden sm:inline text-[0.68em] font-bold align-middle ml-1 ${onDark ? "text-white/60" : "text-fetti-muted"}`}>LLC</span>
           </span>
         </Link>
 
@@ -49,14 +55,14 @@ export function SiteHeader() {
             <Link
               key={l.href}
               href={l.href}
-              className={`${l.hide} items-center rounded-lg px-3 py-2 font-medium text-fetti-body transition-colors hover:text-fetti-ink hover:bg-fetti-wash`}
+              className={`${l.hide} items-center rounded-lg px-3 py-2 font-medium transition-colors ${onDark ? "text-white/85 hover:text-white hover:bg-white/10" : "text-fetti-body hover:text-fetti-ink hover:bg-fetti-wash"}`}
             >
               {l.label}
             </Link>
           ))}
           <Link
             href="/apply/form"
-            className="inline-flex items-center rounded-lg bg-fetti-green px-4 py-2 font-semibold text-white transition-colors hover:bg-fetti-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fetti-green"
+            className={`inline-flex items-center rounded-full px-5 py-2 font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${onDark ? "bg-fetti-gold text-fetti-forest hover:brightness-105 focus-visible:outline-fetti-gold" : "bg-fetti-green text-white hover:bg-fetti-deep focus-visible:outline-fetti-green"}`}
           >
             Apply
           </Link>
