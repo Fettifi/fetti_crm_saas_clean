@@ -39,11 +39,11 @@ export function TestimonialCard({ item }: { item: Item }) {
   const label = win ? loanLabel(item.loan_type) : "via Google";
 
   return (
-    <figure className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-600/5">
+    <figure className="flex h-full flex-col rounded-2xl border border-fetti-line bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-fetti-green/40 hover:shadow-lg hover:shadow-fetti-green/10">
       <div className="mb-3 flex items-center justify-between">
         <StarRating value={item.rating} />
         {label ? (
-          <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-100">
+          <span className="rounded-full bg-fetti-wash px-2.5 py-0.5 text-[11px] font-semibold text-fetti-deep ring-1 ring-fetti-line">
             {label}
           </span>
         ) : null}
@@ -64,7 +64,7 @@ export function TestimonialCard({ item }: { item: Item }) {
             className="h-8 w-8 rounded-full object-cover"
           />
         ) : (
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-fetti-wash text-xs font-bold text-fetti-deep">
             {(item.author_name || "?").charAt(0).toUpperCase()}
           </span>
         )}

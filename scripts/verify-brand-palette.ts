@@ -89,12 +89,33 @@ function localImportsOf(file: string): string[] {
   return out;
 }
 
-// One hop from each entry point, plus the entry points themselves. Deliberately not the whole
-// transitive graph: lib/ modules carry no class names, and chasing them only adds noise.
-const PUBLIC_PAGES = [...new Set([
-  ...ENTRY_POINTS,
-  ...ENTRY_POINTS.flatMap(localImportsOf).filter((f) => f.startsWith("components/")),
-])];
+// TWO hops, not one — and the second hop is the whole lesson of 2026-10-17.
+//
+// The roster was widened from three hand-listed files to "entry points plus what they render",
+// which caught HeroCapture, SocialProofWall, CediBubble and CediVoice. It still reported GREEN over
+// `components/TrustBadgeRow.tsx`, which renders UNCONDITIONALLY on the homepage in four
+// `rounded-full` pills wearing eleven stock `emerald-*`/`slate-*` utilities — because it is reached
+// THROUGH SocialProofWall, which is one hop further than the roster walked.
+//
+// So the identical false green recurred one level down from the fix for it: TrustBadgeRow 11,
+// TestimonialCard 11, ReferShare 8, StarRating 1. Depth-limiting a reachability check is the same
+// defect as hand-listing it, just with a bigger list. The limit is now 2, which covers every
+// rendered component on the public pages today; lib/ still carries no class names, so the noise
+// argument for stopping is unchanged.
+//
+// If a THIRD hop ever appears, this number is the thing to raise — not the roster to hand-edit.
+const HOPS = 2;
+const PUBLIC_PAGES = (() => {
+  const seen = new Set<string>(ENTRY_POINTS);
+  let frontier = ENTRY_POINTS;
+  for (let i = 0; i < HOPS; i++) {
+    const next = frontier.flatMap(localImportsOf).filter((f) => f.startsWith("components/") && !seen.has(f));
+    next.forEach((f) => seen.add(f));
+    frontier = next;
+    if (!next.length) break;
+  }
+  return [...seen];
+})();
 console.log(`  (roster: ${PUBLIC_PAGES.length} file(s) — entry points plus what they render)\n`);
 
 let stockHits = 0;

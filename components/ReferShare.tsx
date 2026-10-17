@@ -9,7 +9,7 @@ export default function ReferShare({ code, compact = false }: { code: string; co
   const link = referralLink(code);
   const text = referralShareText(code);
   const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* */ } };
-  const btn = "flex-1 text-center text-sm font-semibold px-3 py-2 rounded-lg border border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 text-slate-800 transition";
+  const btn = "flex-1 text-center text-sm font-semibold px-3 py-2 rounded-lg border border-slate-300 hover:border-fetti-green/50 hover:bg-fetti-wash text-slate-800 transition";
   const sms = `sms:?&body=${encodeURIComponent(text)}`;
   const email = `mailto:?subject=${encodeURIComponent("Check out Fetti for your mortgage")}&body=${encodeURIComponent(text)}`;
   const x = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
@@ -19,7 +19,7 @@ export default function ReferShare({ code, compact = false }: { code: string; co
     <div className={compact ? "" : "mt-4"}>
       <div className="flex items-center gap-2">
         <input readOnly value={link} onClick={(e) => e.currentTarget.select()} className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 font-mono" />
-        <button onClick={copy} className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm px-4 py-2 rounded-lg whitespace-nowrap">{copied ? "✓ Copied" : "Copy"}</button>
+        <button onClick={copy} className="bg-fetti-green hover:bg-fetti-wash0 text-white font-semibold text-sm px-4 py-2 rounded-lg whitespace-nowrap">{copied ? "✓ Copied" : "Copy"}</button>
       </div>
       <div className="flex gap-2 mt-2">
         <a href={sms} className={btn}>Text</a>
