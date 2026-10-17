@@ -274,6 +274,16 @@ if printf '%s\n' "$CHANGED" | grep -q -e 'recomputeFromFacts' -e 'verify-income/
   fi
 fi
 
+# A failed Supabase read on the income route was read as EMPTY: "not found", a URLA without the
+# lead, and "No income documents … collect them first" on a file holding them (2026-10-17).
+if printf '%s\n' "$CHANGED" | grep -q -e 'verify-income/route' -e 'supabaseAdminClient' -e 'verify-income-reads-fail-closed'; then
+  printf "   %-24s " "verify:income-reads-fail-closed"
+  OUT=$(npm run --silent verify:income-reads-fail-closed 2>&1)
+  if [ $? -eq 0 ]; then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED verify:income-reads-fail-closed"; printf '%s\n' "$OUT" | sed 's/^/      /'
+  fi
+fi
+
 # A text FROM our own Twilio number is our outbound reflected back, not a stranger; the inbound
 # route filed one as a lead and queued a drip at ourselves (2026-08-24, found 2026-09-17).
 if printf '%s\n' "$CHANGED" | grep -q -e 'api/sms/inbound' -e 'lib/comms.ts' -e 'ownNumbers' -e 'verify-own-number-loopback'; then

@@ -130,6 +130,7 @@
     "verify:cron-watched": "tsx scripts/verify-cron-watched.ts",
     "verify:continuity-verdict": "tsx scripts/verify-continuity-verdict.ts",
     "verify:income-drift-gate": "tsx scripts/verify-income-drift-gate.ts",
+    "verify:income-reads-fail-closed": "tsx --conditions=react-server scripts/verify-income-reads-fail-closed.ts",
     "verify:stub-variability": "npx tsx scripts/verify-stub-variability.ts",
     "verify:income-pin-date": "tsx scripts/verify-income-pin-date.ts",
     "verify:supabase-grants": "tsx scripts/verify-supabase-grants.ts",

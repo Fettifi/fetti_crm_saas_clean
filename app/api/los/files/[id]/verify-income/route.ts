@@ -312,10 +312,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (isFinite(dv) && dv >= 60 && dv <= 360) depletionDivisor = dv;
   } catch { /* no body — normal verify */ }
   try {
-    const { data: loanFile } = await supabaseAdmin.from("loan_files").select("*").eq("id", id).maybeSingle();
+    // A FAILED READ IS NOT AN EMPTY ONE. Each read below refuses with 503 on `error` rather than
+    // carrying on with null: a lost loan_files read said "not found", a lost leads read built the
+    // URLA without the lead (an FHA file then qualifies as conventional), and a lost loan_documents
+    // read told the LO "No income documents are uploaded … Request and collect them first" — an
+    // ask to the borrower for documents we already hold. `verify:income-reads-fail-closed`.
+    const { data: loanFile, error: loanFileErr } = await supabaseAdmin.from("loan_files").select("*").eq("id", id).maybeSingle();
+    if (loanFileErr) return NextResponse.json({ error: `Couldn't read the loan file (${loanFileErr.message}). Nothing was verified — try again.` }, { status: 503 });
     if (!loanFile) return NextResponse.json({ error: "Loan file not found." }, { status: 404 });
     let lead: any = null;
-    if (loanFile.lead_id) { const r = await supabaseAdmin.from("leads").select("*").eq("id", loanFile.lead_id).maybeSingle(); lead = r.data; }
+    if (loanFile.lead_id) {
+      const { data: leadRow, error: leadErr } = await supabaseAdmin.from("leads").select("*").eq("id", loanFile.lead_id).maybeSingle();
+      if (leadErr) return NextResponse.json({ error: `Couldn't read the lead behind this file (${leadErr.message}). Nothing was verified — try again.` }, { status: 503 });
+      lead = leadRow;
+    }
     const urla: Urla = assembleUrla(lead, loanFile);
     const loanType: LoanType = /fha/i.test(urla.loan?.loanType || "") ? "fha" : "conventional";
     // Investment deals qualify on the property (DSCR), not the borrower. Read the loan file
@@ -338,9 +348,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Rejected docs are excluded — an LO who rejected an upload (wrong person's stub, junk
     // image) must not have it feed the income math anyway.
-    const { data: docs } = await supabaseAdmin.from("loan_documents")
+    const { data: docs, error: docsErr } = await supabaseAdmin.from("loan_documents")
       .select("id, name, category, file_name, storage_path, status, size_bytes")
       .eq("loan_file_id", id).not("storage_path", "is", null).neq("status", "rejected");
+    if (docsErr) return NextResponse.json({ error: `Couldn't read this file's documents (${docsErr.message}). Nothing was verified — try again; do not ask the borrower for anything on the strength of this.` }, { status: 503 });
     // DETERMINISTIC co-borrower detection — a co-borrower is routinely missing from the
     // 1003 but unmistakably documented: their name LEADS several checklist labels ("Paul
     // 2025 w2", "Paul ID", "Paul DD214"…). Find a proper-name token that starts ≥2 doc

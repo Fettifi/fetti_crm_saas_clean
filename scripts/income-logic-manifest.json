@@ -2,7 +2,7 @@
   "logicVersion": "2026-10-15-str-haircut-survives-lease-resolution",
   "pinnedAt": "2026-10-16T04:53:03.946Z",
   "files": {
-    "app/api/los/files/[id]/verify-income/route.ts": "495cc8eb649c2fad",
+    "app/api/los/files/[id]/verify-income/route.ts": "bf459ff02bdaec35",
     "lib/income/altDoc.ts": "b2ae8b7aaeec69f0",
     "lib/income/bankReplay.ts": "bbb61927f654be5a",
     "lib/income/bankStatement.ts": "6ab317b2e7088d12",
@@ -81,6 +81,14 @@
       "files": [
         "app/api/los/files/[id]/verify-income/route.ts",
         "lib/income/recomputeFromFacts.ts"
+      ]
+    },
+    {
+      "at": "2026-10-17T16:22:15.417Z",
+      "logicVersion": "2026-10-15-str-haircut-survives-lease-resolution",
+      "reason": "2026-10-17 autopilot: verify-income now refuses with 503 when the loan_files/leads/loan_documents read returns error. Only reachable when a read failed (data null); every successful read follows the identical path, so no stored figure can move. Proven by verify:income-reads-fail-closed control case + verify:income-replay unchanged (10 files).",
+      "files": [
+        "app/api/los/files/[id]/verify-income/route.ts"
       ]
     }
   ]
