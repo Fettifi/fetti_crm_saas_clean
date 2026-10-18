@@ -1010,6 +1010,16 @@ fi
 # rather than waiting for someone to touch exactly the right path. These are the ones whose silence
 # was load-bearing: consent, disclosure, signature verification, the URLA, money formatting.
 if [ -n "$ANYTS" ]; then
+  # !! TYPE-CHECK BEFORE ANYTHING ELSE. 2026-10-18: the full guard suite went green and the
+  # PRODUCTION BUILD THEN FAILED on a type error in scripts/verify-stage-vocabulary.ts —
+  # "Type 'unknown[]' is not assignable to type 'string[]'". Nothing here type-checked scripts/,
+  # Vercel does, and the site sat on the previous build until someone noticed. A suite that
+  # passes while the deploy breaks is worse than no suite: it certifies the wrong thing.
+  printf "   %-24s " "tsc --noEmit"
+  if TSC=$(npx tsc --noEmit 2>&1); then echo "PASS"; else
+    echo "FAIL"; FAILED="$FAILED tsc"; printf '%s\n' "$TSC" | head -20 | sed 's/^/      /'
+  fi
+
   for G in verify:sms-consent verify:disclosure verify:twilio-sig verify:1003 verify:currency-input verify:model-pin \
            verify:synthetic verify:caller-name verify:persona verify:patterns verify:reply-paths \
            verify:flag-action verify:leadscore verify:desk-lien verify:column-map \

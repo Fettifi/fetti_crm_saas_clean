@@ -86,7 +86,11 @@ async function main() {
   try {
     const { data, error } = await supabaseAdmin.from("leads").select("stage").limit(5000);
     if (error) throw new Error(error.message);
-    stages = [...new Set((data || []).map((r: any) => String(r.stage ?? "")).filter(Boolean))].sort();
+    // `new Set(...)` spread infers unknown[] here, which broke the PRODUCTION BUILD on
+    // 2026-10-18: the pre-commit hook does not type-check scripts/, Vercel does, and
+    // "Type 'unknown[]' is not assignable to type 'string[]'" took the whole deploy down.
+    // Type the Set explicitly. Lesson recorded: npx tsc --noEmit before any push.
+    stages = [...new Set<string>((data || []).map((r: any) => String(r.stage ?? "")).filter(Boolean))].sort();
   } catch (e: any) {
     // "could not read" and "nothing unknown" must never produce the same result.
     console.log(`  ✗ could not read the live stage vocabulary — ${String(e?.message).slice(0, 120)}`);
