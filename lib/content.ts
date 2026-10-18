@@ -27,6 +27,38 @@ async function latestEpisodes(n = 3): Promise<ShowEp[]> {
 
 export type Post = { hook: string; script: string; caption: string; hashtags: string };
 
+// ── INDUSTRY CLIMATE, FROM OUR OWN COMPETITOR WATCH ────────────────────────────────────────────
+// Ramon, 2026-10-12 by voice: "use competitor-watch data on industry flow/climate to drive what the
+// daily posts say." Wired 2026-10-18. The data was already there and already fresh — the
+// COMPETITOR_WATCH_CACHE refreshes daily and COMPETITOR_HISTORY is ~390KB — and the generator
+// ignored all of it, writing from a static list of teaching pillars every single day.
+//
+// The weekly brief is the useful half: it names what is actually working in the market this week,
+// e.g. "rate-context explainers that reframe the obvious outperformed by teaching a second-order
+// consequence, not reporting the number."
+//
+// !! THREE HARD RULES, because this text names real competitors and their follower counts.
+// 1. NO COMPETITOR MAY BE NAMED in a public post. We are a licensed brokerage; naming rivals in
+//    marketing is comparative advertising and an entirely different risk class.
+// 2. NO NUMBER FROM THE BRIEF MAY APPEAR. Those are THEIR engagement figures, not market data and
+//    not ours, and the prompt's standing rule is to never invent or borrow statistics.
+// 3. A STALE BRIEF IS WORSE THAN NONE. Market climate decays; a three-week-old read of "what is
+//    working" would steer today's post wrongly and with confidence. Past the window it is dropped
+//    silently and generation continues exactly as before — this must never block the daily post.
+const CLIMATE_MAX_AGE_DAYS = 14;
+export async function industryClimate(nowMs = Date.now()): Promise<string> {
+  try {
+    const raw: any = await getSetting("COMPETITOR_WEEKLY_BRIEF");
+    const v = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const brief = String(v?.brief || "").trim();
+    if (!brief) return "";
+    const at = Date.parse(v?.at || "");
+    if (!Number.isFinite(at)) return "";
+    if ((nowMs - at) / 86400000 > CLIMATE_MAX_AGE_DAYS) return "";
+    return brief;
+  } catch { return ""; }
+}
+
 export async function generatePosts(n: number, topic = ""): Promise<Post[]> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY not configured");
@@ -78,9 +110,22 @@ classifier; these are HARD rules so brand content never pattern-matches money-sc
   "guaranteed", "fast cash", "get rich", "double your". Teach like a fiduciary, not a hustler.
 - No urgency-pressure framing ("act now before it's gone").
 - Frame Fetti as what it is: a LICENSED mortgage brokerage (never imply investment advice).`;
+  const climate = await industryClimate();
+  // Appended as CONTEXT, never as material to repeat. See industryClimate() for why the three
+  // prohibitions below are not optional.
+  const climateBlock = climate
+    ? `\n\nINDUSTRY CLIMATE THIS WEEK (internal competitor research — CONTEXT ONLY):\n${climate}\n` +
+      `USE IT ONLY to choose the ANGLE and what is worth teaching right now. HARD RULES:\n` +
+      `- NEVER name, describe or allude to any competitor or other lender. Not once.\n` +
+      `- NEVER repeat any number, follower count or engagement figure from the text above — those\n` +
+      `  are other companies' internal metrics, not market data, and not ours to publish.\n` +
+      `- NEVER mention giveaways, follower counts, or any growth tactic as a subject.\n` +
+      `- Write as Fetti Financial Services teaching its own audience. If the climate note suggests\n` +
+      `  nothing genuinely useful to teach, IGNORE IT and fall back to the standard pillars.`
+    : "";
   const user = topic
-    ? `Create ${n} posts on this theme: ${topic}. Each distinct, each passing the Fetti Content Test (≥4 of 5).`
-    : `Create ${n} posts, EDUCATION-FIRST. Each OPENS with a real, useful finance/mortgage fact or insight — rotate the teaching pillar: home-buying know-how, DSCR & investment-loan basics, credit & how you qualify, building equity & wealth, rent-vs-buy math, market intel, core money principles. Deliver genuine value, THEN blend in Fetti / why Ramon Dent built it / the mission as the bridge to a rotated CTA. Distinct hooks, all TRUE, accurate, and compliant — never invent stats, rates, awards, or testimonials. Each passes the Fetti Content Test.`;
+    ? `Create ${n} posts on this theme: ${topic}. Each distinct, each passing the Fetti Content Test (≥4 of 5).${climateBlock}`
+    : `Create ${n} posts, EDUCATION-FIRST. Each OPENS with a real, useful finance/mortgage fact or insight — rotate the teaching pillar: home-buying know-how, DSCR & investment-loan basics, credit & how you qualify, building equity & wealth, rent-vs-buy math, market intel, core money principles. Deliver genuine value, THEN blend in Fetti / why Ramon Dent built it / the mission as the bridge to a rotated CTA. Distinct hooks, all TRUE, accurate, and compliant — never invent stats, rates, awards, or testimonials. Each passes the Fetti Content Test.${climateBlock}`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({ model: MODEL, temperature: 0.9, max_tokens: 2600, response_format: { type: "json_object" },
