@@ -117,7 +117,13 @@ const PROGRAM_ROWS = CATEGORIES.flatMap((c) =>
   c.items.map((it) => ({
     name: it.name,
     desc: it.desc,
-    href: `/lending/${it.slug}/${c.state}`,
+    // A SLASH HERE WAS A 404. The canonical lending slug is `${product}-${state}` — ONE path
+    // segment joined by a HYPHEN (lib/lendingMatrix.ts lendingSlugs()), and app/lending/[slug]
+    // is a single dynamic segment. `/lending/dscr-loans/usa` matched no route, so every
+    // Investment and Business programme link on the homepage returned a bare, unstyled
+    // Next.js 404 — four dead links on the most-visited page, while the real pages
+    // (/lending/dscr-loans-usa and friends) existed and were fine.
+    href: `/lending/${it.slug}-${c.state}`,
     jurisdiction: c.state === "usa" ? "ALL 50" : "CA · FL · MI",
     group: c.title,
   })),
@@ -309,7 +315,7 @@ export default async function MarketingHome() {
                     return (
                       <li key={it.slug}>
                         <Link
-                          href={`/lending/${it.slug}/${c.state}`}
+                          href={`/lending/${it.slug}-${c.state}`}
                           className="flex items-start gap-3 rounded-lg -mx-2 px-2 py-2.5 transition-colors hover:bg-fetti-wash"
                         >
                           <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-fetti-wash text-fetti-deep transition-colors group-hover:bg-fetti-green/15">
